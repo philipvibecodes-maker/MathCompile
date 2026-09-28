@@ -6,6 +6,8 @@ interface OutputPanelProps {
   onTargetChange: (t: TargetId) => void;
   dIsDerivative: boolean;
   onDIsDerivativeChange: (v: boolean) => void;
+  smartMode: boolean;
+  onSmartModeChange: (v: boolean) => void;
 }
 
 export default function OutputPanel({
@@ -14,6 +16,8 @@ export default function OutputPanel({
   onTargetChange,
   dIsDerivative,
   onDIsDerivativeChange,
+  smartMode,
+  onSmartModeChange,
 }: OutputPanelProps) {
   const c = COMMENT_PREFIX[target];
   const targetLabel = TARGETS.find((t) => t.id === target)?.label ?? target;
@@ -47,6 +51,14 @@ ${captured}`;
             onChange={(e) => onDIsDerivativeChange(e.target.checked)}
           />
           d/dx means derivative
+        </label>
+        <label className="option-checkbox" title="Auto-convert typed text like 'sqrt' or 'pi' into math">
+          <input
+            type="checkbox"
+            checked={smartMode}
+            onChange={(e) => onSmartModeChange(e.target.checked)}
+          />
+          Smart mode
         </label>
         <label className="target-select">
           Target

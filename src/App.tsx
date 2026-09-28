@@ -15,6 +15,7 @@ export default function App() {
   const [exprs, setExprs] = useState<Expr[]>([createExpr()]);
   const [target, setTarget] = useState<TargetId>('python');
   const [dIsDerivative, setDIsDerivative] = useState(true);
+  const [smartMode, setSmartMode] = useState(true);
   const [focus, setFocus] = useState<{
     id: number;
     edge?: 'start' | 'end';
@@ -57,6 +58,7 @@ export default function App() {
                 <MathFieldInput
                   value={e.latex}
                   dIsDerivative={dIsDerivative}
+                  smartMode={smartMode}
                   autoFocus={focus?.id === e.id}
                   focusEdge={focus?.id === e.id ? focus.edge : undefined}
                   onFocus={() => setFocus({ id: e.id })}
@@ -94,6 +96,8 @@ export default function App() {
           onTargetChange={setTarget}
           dIsDerivative={dIsDerivative}
           onDIsDerivativeChange={setDIsDerivative}
+          smartMode={smartMode}
+          onSmartModeChange={setSmartMode}
         />
       </div>
     </div>

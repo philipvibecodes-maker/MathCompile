@@ -54,6 +54,7 @@ interface MathFieldInputProps {
   autoFocus?: boolean;
   focusEdge?: 'start' | 'end';
   dIsDerivative: boolean;
+  smartMode: boolean;
 }
 
 export default function MathFieldInput({
@@ -65,6 +66,7 @@ export default function MathFieldInput({
   autoFocus,
   focusEdge,
   dIsDerivative,
+  smartMode,
 }: MathFieldInputProps) {
   const ref = useRef<MathfieldElement>(null);
   const latest = useRef({ onChange, onNewCell, onMoveOut, onFocus });
@@ -77,7 +79,6 @@ export default function MathFieldInput({
     const mf = ref.current;
     if (!mf) return;
 
-    mf.smartMode = true;
     mf.mathVirtualKeyboardPolicy = 'auto';
 
     const handleInput = () => latest.current.onChange(mf.value);
@@ -208,6 +209,11 @@ export default function MathFieldInput({
       mf.removeEventListener('move-out', handleMoveOut);
     };
   }, []);
+
+  useEffect(() => {
+    const mf = ref.current;
+    if (mf) mf.smartMode = smartMode;
+  }, [smartMode]);
 
   useEffect(() => {
     const mf = ref.current;
