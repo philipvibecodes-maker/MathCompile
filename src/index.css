@@ -100,6 +100,7 @@ body {
   border-radius: 4px;
   outline: none;
   transition: border-color 0.12s ease;
+  --contains-highlight-background-color: transparent;
 }
 
 .expr-row:focus-within math-field {
@@ -182,16 +183,33 @@ body {
   color: #555;
 }
 
+.output-options {
+  display: flex;
+  gap: 16px;
+  margin-left: auto;
+  margin-right: 16px;
+}
+
+.option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
 .option-checkbox {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
-  margin-right: 16px;
   font-size: 13px;
   color: #555;
   cursor: pointer;
   user-select: none;
+}
+
+.option-shortcut {
+  margin-top: 2px;
+  font-size: 10px;
+  color: #999;
 }
 
 .option-checkbox input {

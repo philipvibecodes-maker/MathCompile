@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import MathFieldInput from './MathFieldInput';
 import OutputPanel from './OutputPanel';
 import type { TargetId } from './targets';
@@ -12,14 +12,27 @@ let nextId = 1;
 const createExpr = (): Expr => ({ id: nextId++, latex: '' });
 
 export default function App() {
-  const [exprs, setExprs] = useState<Expr[]>([createExpr()]);
+  const [initialExpr] = useState(createExpr);
+  const [exprs, setExprs] = useState<Expr[]>([initialExpr]);
   const [target, setTarget] = useState<TargetId>('python');
   const [dIsDerivative, setDIsDerivative] = useState(true);
-  const [smartMode, setSmartMode] = useState(true);
+  const [smartMode, setSmartMode] = useState(false);
   const [focus, setFocus] = useState<{
     id: number;
     edge?: 'start' | 'end';
-  } | null>(null);
+  } | null>({ id: initialExpr.id });
+
+  useEffect(() => {
+    const onKeydown = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.code === 'KeyS') {
+        e.preventDefault();
+        setSmartMode((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKeydown);
+    return () => window.removeEventListener('keydown', onKeydown);
+  }, []);
 
   const updateExpr = (id: number, latex: string) =>
     setExprs((es) => es.map((e) => (e.id === id ? { ...e, latex } : e)));

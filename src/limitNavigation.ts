@@ -6,6 +6,9 @@ export interface InternalAtom {
   rightSibling?: InternalAtom | null;
   superscript?: InternalAtom[];
   subscript?: InternalAtom[];
+  above?: InternalAtom[];
+  below?: InternalAtom[];
+  children?: InternalAtom[];
 }
 
 export interface InternalModel {

@@ -44,22 +44,29 @@ ${captured}`;
     <aside className="output-panel">
       <div className="output-header">
         <h2>Output</h2>
-        <label className="option-checkbox" title="Interpret a plain d/dx as the derivative operator">
-          <input
-            type="checkbox"
-            checked={dIsDerivative}
-            onChange={(e) => onDIsDerivativeChange(e.target.checked)}
-          />
-          d/dx means derivative
-        </label>
-        <label className="option-checkbox" title="Auto-convert typed text like 'sqrt' or 'pi' into math">
-          <input
-            type="checkbox"
-            checked={smartMode}
-            onChange={(e) => onSmartModeChange(e.target.checked)}
-          />
-          Smart mode
-        </label>
+        <div className="output-options">
+          <div className="option">
+            <label className="option-checkbox" title="Interpret a plain d/dx as the derivative operator">
+              <input
+                type="checkbox"
+                checked={dIsDerivative}
+                onChange={(e) => onDIsDerivativeChange(e.target.checked)}
+              />
+              d/dx means derivative
+            </label>
+          </div>
+          <div className="option">
+            <label className="option-checkbox" title="Auto-convert typed text like 'sqrt' or 'pi' into math">
+              <input
+                type="checkbox"
+                checked={smartMode}
+                onChange={(e) => onSmartModeChange(e.target.checked)}
+              />
+              Smart mode
+            </label>
+            <span className="option-shortcut">alt+s</span>
+          </div>
+        </div>
         <label className="target-select">
           Target
           <select

@@ -32,6 +32,12 @@ cells are MathLive `<math-field>` elements.
 - At top/bottom row dead ends MathLive emits a cancelable `move-out`
   CustomEvent (`detail.direction`: `upward`/`downward`/`forward`/`backward`)
   on the `<math-field>` host — used for cross-cell navigation.
+- Custom `mf.macros` (e.g. `\derivative`) parse into a `macro` atom that
+  serializes verbatim (`\derivative{..}{..}`); edits inside the expansion
+  never reach `mf.value`. `MathFieldInput`'s `input` handler detects `macro`
+  atoms and bakes them into real atoms via `setValue(getValue('latex-expanded'))`.
+  Beware: `latex-expanded` also canonicalizes (`x + 1` -> `x+1`), so only use
+  it when a macro is actually present.
 
 ## Codegraph
 

@@ -10,7 +10,11 @@ import {
   isBoundsCarrier,
   lowerPlaceholderSelection,
 } from './limitNavigation';
-import type { CaretAction, InternalModel } from './limitNavigation';
+import type {
+  CaretAction,
+  InternalAtom,
+  InternalModel,
+} from './limitNavigation';
 
 declare module 'react' {
   namespace JSX {
@@ -26,6 +30,53 @@ declare module 'react' {
 const getModel = (mf: MathfieldElement): InternalModel | undefined =>
   (mf as unknown as { _mathfield?: { model?: InternalModel } })._mathfield
     ?.model;
+
+const hasMacroAtom = (model: InternalModel): boolean => {
+  let root = model.at(0);
+  while (root?.parent) root = root.parent;
+  const stack = root ? [root] : [];
+  while (stack.length) {
+    const atom = stack.pop()!;
+    if (atom.type === 'macro') return true;
+    if (atom.children) stack.push(...atom.children);
+  }
+  return false;
+};
+
+// After a macro is baked into real atoms, put the caret where the user
+// would type next: end of the denominator for \frac{d#1}{d#2}, inside the
+// parens for D(#1). The expansion is the atom nearest `pos` (the caret sat
+// right after the macro it replaced).
+const expansionCaret = (
+  model: InternalModel,
+  pos: number,
+  dIsDerivative: boolean,
+): number | undefined => {
+  let root = model.at(0);
+  while (root?.parent) root = root.parent;
+  if (!root) return undefined;
+  const want = dIsDerivative ? 'genfrac' : 'mclose';
+  let best: InternalAtom | undefined;
+  let bestDist = Infinity;
+  const stack = [root];
+  while (stack.length) {
+    const atom = stack.pop()!;
+    if (atom.type === want) {
+      const dist = Math.abs(model.offsetOf(atom) - pos);
+      if (dist < bestDist) {
+        best = atom;
+        bestDist = dist;
+      }
+    }
+    if (atom.children) stack.push(...atom.children);
+  }
+  if (!best) return undefined;
+  if (best.type === 'genfrac') {
+    const last = best.below?.at(-1);
+    return last ? model.offsetOf(last) : undefined;
+  }
+  return model.offsetOf(best) - 1;
+};
 
 const insertLineBreak = (mf: MathfieldElement) => {
   const model = getModel(mf);
@@ -69,10 +120,10 @@ export default function MathFieldInput({
   smartMode,
 }: MathFieldInputProps) {
   const ref = useRef<MathfieldElement>(null);
-  const latest = useRef({ onChange, onNewCell, onMoveOut, onFocus });
+  const latest = useRef({ onChange, onNewCell, onMoveOut, onFocus, dIsDerivative });
   const suppressMoveOut = useRef(false);
   useEffect(() => {
-    latest.current = { onChange, onNewCell, onMoveOut, onFocus };
+    latest.current = { onChange, onNewCell, onMoveOut, onFocus, dIsDerivative };
   });
 
   useEffect(() => {
@@ -81,7 +132,22 @@ export default function MathFieldInput({
 
     mf.mathVirtualKeyboardPolicy = 'auto';
 
-    const handleInput = () => latest.current.onChange(mf.value);
+    const handleInput = () => {
+      const model = getModel(mf);
+      if (model && hasMacroAtom(model)) {
+        // A committed macro (\derivative{..}{..}) stays a single atom that
+        // serializes verbatim — edits inside the expansion never reach
+        // mf.value. Bake it into its real atoms so the fraction is ordinary
+        // editable content and serializes as \frac{df}{dx}.
+        const pos = mf.position;
+        mf.setValue(mf.getValue('latex-expanded'));
+        const m2 = getModel(mf);
+        mf.position =
+          (m2 && expansionCaret(m2, pos, latest.current.dIsDerivative)) ??
+          Math.min(pos, mf.lastOffset);
+      }
+      latest.current.onChange(mf.value);
+    };
     // The 'input' event is dispatched deferred (setTimeout), which is too
     // late for fast typing — 'selection-change' fires synchronously, so the
     // placeholder selection is moved before the next keystroke lands.
@@ -220,9 +286,11 @@ export default function MathFieldInput({
     if (!mf) return;
     mf.macros = {
       ...mf.macros,
-      derivative: dIsDerivative
-        ? '\\frac{d#1}{d#2}'
-        : '\\frac{ⅆ#1}{ⅆ#2}',
+      derivative: {
+        args: 2,
+        def: dIsDerivative ? '\\frac{d#1}{d#2}' : 'D(#1)',
+        captureSelection: false,
+      },
     };
     // Macros expand at parse time, so re-parse to restyle existing content.
     // setValue() is a no-op for identical input, so clear first to force it.
