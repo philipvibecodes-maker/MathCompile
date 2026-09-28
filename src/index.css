@@ -1,0 +1,223 @@
+:root {
+  --accent: #2d70b3;
+  --border: #d4d4d4;
+  --bg: #f5f5f5;
+  --panel-bg: #ffffff;
+  --text: #333;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-family:
+    'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  height: 44px;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.logo {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.logo em {
+  font-style: normal;
+  color: var(--accent);
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* ── Expression list (left) ─────────────────────────── */
+
+.expr-panel {
+  width: 46%;
+  min-width: 380px;
+  overflow-y: auto;
+  padding: 20px 16px;
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+}
+
+.expr-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.expr-row {
+  display: flex;
+  align-items: stretch;
+  margin-bottom: 6px;
+}
+
+.expr-index {
+  flex: 0 0 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #999;
+  user-select: none;
+}
+
+.expr-row math-field {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  font-size: 18px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  outline: none;
+  transition: border-color 0.12s ease;
+}
+
+.expr-row:focus-within math-field {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.expr-delete {
+  flex: 0 0 28px;
+  margin-left: 4px;
+  border: none;
+  background: transparent;
+  color: #aaa;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+  opacity: 0;
+  transition:
+    opacity 0.12s ease,
+    color 0.12s ease;
+}
+
+.expr-row:hover .expr-delete,
+.expr-row:focus-within .expr-delete {
+  opacity: 1;
+}
+
+.expr-delete:hover {
+  color: #c00;
+}
+
+.add-expr {
+  margin: 8px 0 0 32px;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--accent);
+  background: transparent;
+  border: 1px dashed #b8c8d8;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.add-expr:hover {
+  background: #eef4fa;
+}
+
+/* ── Output panel (right) ───────────────────────────── */
+
+.output-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 20px;
+  background: var(--panel-bg);
+}
+
+.output-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.output-header h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #666;
+}
+
+.target-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #555;
+}
+
+.option-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  margin-right: 16px;
+  font-size: 13px;
+  color: #555;
+  cursor: pointer;
+  user-select: none;
+}
+
+.option-checkbox input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.target-select select {
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel-bg);
+  color: var(--text);
+}
+
+.output-body {
+  flex: 1;
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #6a9955;
+  background: #1e1e1e;
+  border-radius: 6px;
+  white-space: pre-wrap;
+}
