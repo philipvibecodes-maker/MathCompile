@@ -15,7 +15,10 @@ export default function App() {
   const [exprs, setExprs] = useState<Expr[]>([createExpr()]);
   const [target, setTarget] = useState<TargetId>('python');
   const [dIsDerivative, setDIsDerivative] = useState(true);
-  const [focusId, setFocusId] = useState<number | null>(null);
+  const [focus, setFocus] = useState<{
+    id: number;
+    edge?: 'start' | 'end';
+  } | null>(null);
 
   const updateExpr = (id: number, latex: string) =>
     setExprs((es) => es.map((e) => (e.id === id ? { ...e, latex } : e)));
@@ -28,7 +31,7 @@ export default function App() {
       copy.splice(Math.max(idx, 0), 0, e);
       return copy;
     });
-    setFocusId(e.id);
+    setFocus({ id: e.id });
   };
 
   const removeExpr = (id: number) =>
@@ -54,10 +57,21 @@ export default function App() {
                 <MathFieldInput
                   value={e.latex}
                   dIsDerivative={dIsDerivative}
-                  autoFocus={focusId === e.id}
-                  onFocus={() => setFocusId(e.id)}
+                  autoFocus={focus?.id === e.id}
+                  focusEdge={focus?.id === e.id ? focus.edge : undefined}
+                  onFocus={() => setFocus({ id: e.id })}
                   onChange={(latex) => updateExpr(e.id, latex)}
-                  onEnterKey={() => addExpr(e.id)}
+                  onNewCell={() => addExpr(e.id)}
+                  onMoveOut={(dir) => {
+                    const next = i + (dir === 'down' ? 1 : -1);
+                    if (next < 0) return;
+                    if (next >= exprs.length) addExpr();
+                    else
+                      setFocus({
+                        id: exprs[next].id,
+                        edge: dir === 'down' ? 'start' : 'end',
+                      });
+                  }}
                 />
                 <button
                   className="expr-delete"

@@ -1,7 +1,16 @@
 import { useEffect, useRef } from 'react';
 import 'mathlive';
 import 'mathlive/fonts.css';
-import type { MathfieldElement } from 'mathlive';
+import type { MathfieldElement, MoveOutEvent } from 'mathlive';
+import {
+  applyCaret,
+  arrowLeftInLimits,
+  arrowRightInLimits,
+  hasBounds,
+  isBoundsCarrier,
+  lowerPlaceholderSelection,
+} from './limitNavigation';
+import type { CaretAction, InternalModel } from './limitNavigation';
 
 declare module 'react' {
   namespace JSX {
@@ -14,60 +23,54 @@ declare module 'react' {
   }
 }
 
-interface InternalAtom {
-  type: string;
-  parentBranch?: string;
-  parent?: InternalAtom | null;
-  leftSibling?: InternalAtom | null;
-  rightSibling?: InternalAtom | null;
-  superscript?: InternalAtom[];
-  subscript?: InternalAtom[];
-}
-
-interface InternalModel {
-  position: number;
-  selectionIsCollapsed: boolean;
-  at(offset: number): InternalAtom | null | undefined;
-  offsetOf(atom: InternalAtom): number;
-  setSelection(anchor: number, extent: number): void;
-}
-
 const getModel = (mf: MathfieldElement): InternalModel | undefined =>
   (mf as unknown as { _mathfield?: { model?: InternalModel } })._mathfield
     ?.model;
 
-const hasBounds = (a?: InternalAtom | null) =>
-  !!(a?.superscript || a?.subscript);
-
-const isBoundsCarrier = (a?: InternalAtom | null) =>
-  !!a &&
-  (a.type === 'extensible-symbol' ||
-    a.type === 'operator' ||
-    a.type === 'mop' ||
-    a.type === 'subsup' ||
-    hasBounds(a));
+const insertLineBreak = (mf: MathfieldElement) => {
+  const model = getModel(mf);
+  if (!model) return;
+  // addRowAfter no-ops when the caret is nested inside an atom (e.g.
+  // \frac{1}{|2}): snap it to just after the nearest ancestor that is a
+  // direct child of a row (or of the root), so the break lands on a line
+  // boundary with that atom kept whole.
+  let atom = model.at(model.position);
+  while (
+    atom?.parent?.parent &&
+    !Array.isArray(atom.parentBranch) &&
+    atom.parent.type !== 'root'
+  )
+    atom = atom.parent;
+  if (atom?.parent) mf.position = model.offsetOf(atom);
+  mf.executeCommand('addRowAfter');
+};
 
 interface MathFieldInputProps {
   value: string;
   onChange: (latex: string) => void;
-  onEnterKey?: () => void;
+  onNewCell?: () => void;
+  onMoveOut?: (direction: 'up' | 'down') => void;
   onFocus?: () => void;
   autoFocus?: boolean;
+  focusEdge?: 'start' | 'end';
   dIsDerivative: boolean;
 }
 
 export default function MathFieldInput({
   value,
   onChange,
-  onEnterKey,
+  onNewCell,
+  onMoveOut,
   onFocus,
   autoFocus,
+  focusEdge,
   dIsDerivative,
 }: MathFieldInputProps) {
   const ref = useRef<MathfieldElement>(null);
-  const latest = useRef({ onChange, onEnterKey, onFocus });
+  const latest = useRef({ onChange, onNewCell, onMoveOut, onFocus });
+  const suppressMoveOut = useRef(false);
   useEffect(() => {
-    latest.current = { onChange, onEnterKey, onFocus };
+    latest.current = { onChange, onNewCell, onMoveOut, onFocus };
   });
 
   useEffect(() => {
@@ -77,27 +80,48 @@ export default function MathFieldInput({
     mf.smartMode = true;
     mf.mathVirtualKeyboardPolicy = 'auto';
 
-    const handleInput = () => {
-      latest.current.onChange(mf.value);
-      // When a template with both limits is inserted (e.g. \int_{#?}^{#?}),
-      // MathLive selects the upper bound placeholder first because
-      // "superscript" precedes "subscript" in its branch order. Reading order
-      // is lower-then-upper, so move the selection down.
+    const handleInput = () => latest.current.onChange(mf.value);
+    // The 'input' event is dispatched deferred (setTimeout), which is too
+    // late for fast typing — 'selection-change' fires synchronously, so the
+    // placeholder selection is moved before the next keystroke lands.
+    // The placeholder fix only applies to selections set by template
+    // insertion — suppress it while caret navigation (ours or MathLive's
+    // arrow/tab keybindings) is in flight, or ArrowRight into the upper
+    // limit would immediately be moved back down.
+    let suppressSelectionFix = false;
+    const apply = (action: CaretAction) => {
+      const prev = suppressSelectionFix;
+      suppressSelectionFix = true;
+      try {
+        applyCaret(mf, action);
+      } finally {
+        suppressSelectionFix = prev;
+      }
+    };
+    const handleSelectionChange = () => {
+      if (suppressSelectionFix) return;
       const model = getModel(mf);
-      if (!model) return;
-      const atom = model.at(model.position);
-      if (atom?.type !== 'placeholder' || atom.parentBranch !== 'superscript')
-        return;
-      const lower = atom.parent?.subscript?.find(
-        (a) => a.type === 'placeholder',
-      );
-      if (!lower) return;
-      const off = model.offsetOf(lower);
-      model.setSelection(off - 1, off);
+      const action = model && lowerPlaceholderSelection(model);
+      if (action) apply(action);
     };
     const handleFocusIn = () => latest.current.onFocus?.();
+    // Same for mouse placement: a click on the upper placeholder is deliberate.
+    const handlePointerDown = () => {
+      suppressSelectionFix = true;
+      setTimeout(() => (suppressSelectionFix = false), 0);
+    };
     const handleKeydown = (ev: KeyboardEvent) => {
-      if (ev.key === 'Enter' && !ev.shiftKey && !ev.ctrlKey && !ev.metaKey) {
+      // Shift+Arrow at the field's edge also emits move-out; it should only
+      // extend the selection, not hop cells.
+      suppressMoveOut.current =
+        ev.shiftKey && (ev.key === 'ArrowUp' || ev.key === 'ArrowDown');
+      // MathLive's caret keybindings dispatch 'selection-change' during this
+      // same event; don't let the placeholder fix fight deliberate moves.
+      if (ev.key === 'Tab' || ev.key.startsWith('Arrow')) {
+        suppressSelectionFix = true;
+        setTimeout(() => (suppressSelectionFix = false), 0);
+      }
+      if (ev.key === 'Enter' && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
         // Capture phase: this runs before MathLive's own keybinding. While the
         // user is typing a \command, Enter accepts the autocomplete
         // suggestion — let MathLive handle it.
@@ -106,7 +130,28 @@ export default function MathFieldInput({
           ?.classList.contains('is-visible');
         if (mf.mode === 'latex' || popoverOpen) return;
         ev.preventDefault();
-        latest.current.onEnterKey?.();
+        if (ev.shiftKey) latest.current.onNewCell?.();
+        else insertLineBreak(mf);
+        return;
+      }
+      if (
+        (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft') &&
+        !ev.shiftKey &&
+        !ev.ctrlKey &&
+        !ev.metaKey &&
+        !ev.altKey
+      ) {
+        const model = getModel(mf);
+        if (model && mf.mode === 'math') {
+          const action =
+            ev.key === 'ArrowRight'
+              ? arrowRightInLimits(model)
+              : arrowLeftInLimits(model);
+          if (action) {
+            ev.preventDefault();
+            apply(action);
+          }
+        }
         return;
       }
       if (ev.key !== 'Backspace' || ev.shiftKey || ev.ctrlKey || ev.metaKey)
@@ -121,7 +166,7 @@ export default function MathFieldInput({
         // order is the upper one, so go there instead.
         ev.preventDefault();
         const last = atom.superscript?.at(-1) ?? atom.subscript?.at(-1);
-        if (last) model.position = model.offsetOf(last);
+        if (last) mf.position = model.offsetOf(last);
         return;
       }
       if (atom.type === 'first') {
@@ -131,18 +176,36 @@ export default function MathFieldInput({
         // cleared): backspace can only look left, where there's nothing.
         // Hop over its bounds — or if it's a bare operator, delete it.
         ev.preventDefault();
-        if (right && hasBounds(right)) model.position = model.offsetOf(right);
+        if (right && hasBounds(right)) mf.position = model.offsetOf(right);
         else mf.executeCommand('deleteForward');
       }
     };
 
+    // MathLive dispatches move-out when the caret hits the top/bottom edge of
+    // the field (or of a nested environment); hop to the adjacent cell.
+    const handleMoveOut = (ev: CustomEvent<MoveOutEvent>) => {
+      if (suppressMoveOut.current) {
+        suppressMoveOut.current = false;
+        return;
+      }
+      const dir = ev.detail?.direction;
+      if (dir === 'upward' || dir === 'downward')
+        latest.current.onMoveOut?.(dir === 'upward' ? 'up' : 'down');
+    };
+
     mf.addEventListener('input', handleInput);
+    mf.addEventListener('selection-change', handleSelectionChange);
     mf.addEventListener('focusin', handleFocusIn);
+    mf.addEventListener('pointerdown', handlePointerDown, true);
     mf.addEventListener('keydown', handleKeydown, true);
+    mf.addEventListener('move-out', handleMoveOut);
     return () => {
       mf.removeEventListener('input', handleInput);
+      mf.removeEventListener('selection-change', handleSelectionChange);
       mf.removeEventListener('focusin', handleFocusIn);
+      mf.removeEventListener('pointerdown', handlePointerDown, true);
       mf.removeEventListener('keydown', handleKeydown, true);
+      mf.removeEventListener('move-out', handleMoveOut);
     };
   }, []);
 
@@ -170,8 +233,12 @@ export default function MathFieldInput({
   }, [value]);
 
   useEffect(() => {
-    if (autoFocus) ref.current?.focus();
-  }, [autoFocus]);
+    const mf = ref.current;
+    if (!mf || !autoFocus) return;
+    mf.focus();
+    if (focusEdge === 'start') mf.executeCommand('moveToMathfieldStart');
+    else if (focusEdge === 'end') mf.executeCommand('moveToMathfieldEnd');
+  }, [autoFocus, focusEdge]);
 
   return <math-field ref={ref} />;
 }
