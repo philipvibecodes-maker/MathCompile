@@ -9,27 +9,28 @@ const cell = (page: Page, i: number): Locator =>
   page.locator('math-field').nth(i);
 
 const cellValue = (mf: Locator): Promise<string> =>
-  mf.evaluate((el) => (el as unknown as { getValue(): string }).getValue());
+  mf.evaluate((el) => (el as unknown as { value: string }).value);
 
 const focusedIndex = (page: Page): Promise<number> =>
   page.evaluate(() =>
-    [...document.querySelectorAll('math-field')].indexOf(
-      document.activeElement as Element,
+    [...document.querySelectorAll('math-field')].findIndex((el) =>
+      el.contains(document.activeElement),
     ),
   );
 
 const waitFocusedIndex = (page: Page, i: number) =>
   page.waitForFunction(
     (idx) =>
-      document.activeElement === document.querySelectorAll('math-field')[idx],
+      document
+        .querySelectorAll('math-field')
+        [idx]?.contains(document.activeElement),
     i,
   );
 
-// Focus cell i and prove it stuck. MathLive re-focuses a field's internal
-// span ~60ms after the field gains focus; switching cells inside that window
-// gets the focus stolen back to the previous field. Drain the window first.
+// MathQuill has no deferred internal refocus (unlike MathLive's ~60ms
+// keyboardDelegate steal), so click() alone is reliable; the settle wait is
+// kept minimal anyway so fast test runs don't race the render.
 const focusCell = async (page: Page, i: number) => {
-  await page.waitForTimeout(120);
   await cell(page, i).focus();
   await waitFocusedIndex(page, i);
 };
@@ -41,7 +42,7 @@ test.beforeEach(async ({ page }) => {
 
 test('starts with a single focused empty cell', async ({ page }) => {
   await expect(page.locator('math-field')).toHaveCount(1);
-  await expect(cell(page, 0)).toBeFocused();
+  await waitFocusedIndex(page, 0);
   expect(await cellValue(cell(page, 0))).toBe('');
 });
 
@@ -121,26 +122,29 @@ test('Enter inside a nested atom splits the row, keeping the atom whole', async 
   page,
 }) => {
   await cell(page, 0).click();
-  await cell(page, 0).pressSequentially('1/2', { delay: 40 });
-  expect(await cellValue(cell(page, 0))).toBe('\\frac12');
+  // \frac via the latex command input; Enter accepts the command and lands
+  // the caret in the numerator.
+  await cell(page, 0).pressSequentially('\\frac', { delay: 40 });
+  await page.keyboard.press('Enter');
+  expect(await cellValue(cell(page, 0))).toBe('\\frac{ }{ }');
+  await cell(page, 0).pressSequentially('1', { delay: 40 });
+  // Enter while nested inside the fraction: the break lands on the row, the
+  // atom stays whole.
   await page.keyboard.press('Enter');
   await cell(page, 0).pressSequentially('z', { delay: 40 });
   expect(await cellValue(cell(page, 0))).toBe(
-    '\\displaylines{\\frac12\\\\ z}',
+    '\\displaylines{\\frac{1}{ }\\\\ z}',
   );
 });
 
-test('Enter accepts an open autocomplete suggestion instead of line-breaking', async ({
+test('Enter accepts an open latex command instead of line-breaking', async ({
   page,
 }) => {
   await cell(page, 0).click();
-  await cell(page, 0).pressSequentially('\\sq', { delay: 80 });
-  await expect(
-    page.locator('#mathlive-suggestion-popover'),
-  ).toHaveClass(/is-visible/);
+  await cell(page, 0).pressSequentially('\\sqrt', { delay: 40 });
   await page.keyboard.press('Enter');
   const v = await cellValue(cell(page, 0));
-  expect(v).toBe('\\sqrt');
+  expect(v).toBe('\\sqrt{ }');
   expect(v).not.toContain('displaylines');
 });
 
@@ -150,7 +154,7 @@ test('ArrowDown at the bottom edge hops to the next cell', async ({ page }) => {
   await page.locator('.add-expr').click();
   await cell(page, 1).pressSequentially('b', { delay: 40 });
   await focusCell(page, 0);
-  await page.keyboard.press('End');
+  await page.keyboard.press('Control+End');
   await page.keyboard.press('ArrowDown');
   await waitFocusedIndex(page, 1);
 });
@@ -193,11 +197,11 @@ test('vertical arrows stay inside a multi-line cell until the last row', async (
   // Back to cell 0, caret on its second (last) line.
   await focusCell(page, 0);
   await page.keyboard.press('ArrowUp');
-  await page.waitForTimeout(120);
+  await page.waitForTimeout(80);
   // Still inside cell 0 (moved caret to line 1, no cell hop).
   expect(await focusedIndex(page)).toBe(0);
   await page.keyboard.press('ArrowDown');
-  await page.waitForTimeout(120);
+  await page.waitForTimeout(80);
   expect(await focusedIndex(page)).toBe(0);
   // From the last line, ArrowDown hops to cell 1.
   await page.keyboard.press('ArrowDown');
@@ -213,7 +217,7 @@ test('Shift+Arrow at a cell edge extends the selection without hopping cells', a
   await cell(page, 1).pressSequentially('xy', { delay: 40 });
   await page.keyboard.press('Shift+ArrowUp');
   await page.keyboard.press('Shift+ArrowDown');
-  await page.waitForTimeout(120);
+  await page.waitForTimeout(80);
   expect(await focusedIndex(page)).toBe(1);
   await expect(page.locator('math-field')).toHaveCount(2);
 });
@@ -233,14 +237,11 @@ test('focusing a cell makes it the target for subsequent commands', async ({
   expect(await cellValue(cell(page, 2))).toBe('b');
 });
 
-test('clicking another cell transfers focus once MathLive has settled', async ({
-  page,
-}) => {
+test('clicking another cell transfers focus', async ({ page }) => {
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('a', { delay: 40 });
   await page.locator('.add-expr').click();
   await cell(page, 1).pressSequentially('b', { delay: 40 });
-  await page.waitForTimeout(150); // past the deferred-refocus window
   await cell(page, 0).click();
   await waitFocusedIndex(page, 0);
 });

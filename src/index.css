@@ -93,14 +93,31 @@ body {
 .expr-row math-field {
   flex: 1;
   min-width: 0;
-  padding: 10px 12px;
+  display: block;
   font-size: 18px;
   background: var(--panel-bg);
   border: 1px solid var(--border);
   border-radius: 4px;
   outline: none;
   transition: border-color 0.12s ease;
-  --contains-highlight-background-color: transparent;
+}
+
+/* The host is a plain custom element; MathQuill renders a
+   .mq-editable-field inside .mq-mount. Padding lives on the editable
+   field so clicks in the padded area still reach MQ's DOM. */
+.expr-row math-field .mq-mount,
+.expr-row math-field .mq-editable-field {
+  display: block;
+}
+
+.expr-row math-field .mq-editable-field {
+  padding: 10px 12px;
+  cursor: text;
+}
+
+.expr-row math-field .mq-editable-field.mq-focused {
+  box-shadow: none;
+  border-color: transparent;
 }
 
 .expr-row:focus-within math-field {
@@ -268,6 +285,8 @@ body {
   color: #999;
 }
 
+/* The palette is permanently mounted: hidden keeps it laid out (and out of
+   hit-testing/tab order), so opening is a style flip, not a mount. */
 .palette-backdrop {
   position: fixed;
   inset: 0;
@@ -277,6 +296,13 @@ body {
   align-items: flex-start;
   padding-top: 12vh;
   background: rgba(0, 0, 0, 0.28);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.palette-backdrop.open {
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .palette {
@@ -288,6 +314,7 @@ body {
   border-radius: 8px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
   overflow: hidden;
+  contain: layout style paint;
 }
 
 .palette-input {

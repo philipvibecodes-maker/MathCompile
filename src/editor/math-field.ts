@@ -33,8 +33,8 @@ export class MathFieldElement extends HTMLElement {
     return this._options;
   }
   set options(value: MQConfig) {
-    this._options = value;
     this._mq?.config(value);
+    this._options = value;
   }
 
   private host: HTMLSpanElement | undefined;
@@ -57,6 +57,16 @@ export class MathFieldElement extends HTMLElement {
     this.host.className = 'mq-mount';
     this.appendChild(this.host);
 
+    // Make the host itself focusable (off the tab order) so programmatic
+    // focus() — e.g. Playwright's locator.focus() — lands somewhere real;
+    // the focus listener below hands it to MQ's hidden textarea.
+    if (!this.hasAttribute('tabindex')) this.tabIndex = -1;
+    this.addEventListener('focus', (e) => {
+      // 'focus' doesn't bubble, so this only fires for the host itself —
+      // MQ-internal focus (the textarea) has a different target.
+      if (e.target === this) this._mq?.focus();
+    });
+
     const opts = this._options;
     const userHandlers = opts.handlers;
     this._mq = mq3.MathField(this.host, {
@@ -67,9 +77,13 @@ export class MathFieldElement extends HTMLElement {
           this.dispatchEvent(new InputEvent('input', { bubbles: true }));
           userHandlers?.edit?.(mq);
         },
-        // App hook wins; default Enter semantics is a line break.
+        // App hook wins; default Enter semantics is a line break. The
+        // handler param is typed BaseMathQuill but is always an
+        // EditableMathQuill for a MathField instance.
         enter: (mq) =>
-          userHandlers?.enter ? userHandlers.enter(mq) : mq.insertLineBreak(),
+          userHandlers?.enter
+            ? userHandlers.enter(mq)
+            : (mq as MQ).insertLineBreak(),
         moveOutOf: (dir, mq) => {
           this.emitMoveOut(dir === -1 ? 'backward' : 'forward');
           userHandlers?.moveOutOf?.(dir, mq);
@@ -131,7 +145,9 @@ export class MathFieldElement extends HTMLElement {
     );
   }
 
-  focus(opts?: { edge?: 'start' | 'end' }) {
+  // Options extend the platform's FocusOptions so the signature stays
+  // compatible with HTMLElement.focus.
+  focus(opts?: FocusOptions & { edge?: 'start' | 'end' }) {
     const mq = this._mq;
     if (!mq) return;
     mq.focus();
@@ -151,4 +167,75 @@ export class MathFieldElement extends HTMLElement {
 export function defineMathField() {
   if (!customElements.get(MathFieldElement.tag))
     customElements.define(MathFieldElement.tag, MathFieldElement);
+}
+
+export interface FieldCallbacks {
+  onChange: (latex: string) => void;
+  // Shift+Enter (new-cell event): create a new cell below the current one.
+  onNewCell?: () => void;
+  // Caret hit the top/bottom edge of the field: hop to the adjacent cell.
+  onMoveOut?: (direction: 'up' | 'down') => void;
+  onFocus?: () => void;
+}
+
+export interface FieldHandle {
+  focus: (edge?: 'start' | 'end') => void;
+  getValue: () => string;
+  setValue: (latex: string) => void;
+  // `\derivative` at the caret — expands to real \frac{d}{d} atoms (or
+  // D()) with the caret in the denominator/parens, matching the typed
+  // path. Used by the palette's "insert derivative" command.
+  insertDerivative: () => void;
+  // Smart mode = MQ autoCommands + autoSubscriptNumerals.
+  setSmartMode: (v: boolean) => void;
+  setDIsDerivative: (v: boolean) => void;
+  dispose: () => void;
+}
+
+const SMART_AUTO_COMMANDS = 'int sum sqrt prod pi infty theta derivative';
+
+// Attach the app's editing behavior to a <math-field>. This module is the
+// single boundary with the editor internals (challenges.md §2 analog).
+export function attachField(
+  el: MathFieldElement,
+  cb: FieldCallbacks,
+): FieldHandle {
+  const handleInput = () => cb.onChange(el.value);
+  const handleFocusIn = () => cb.onFocus?.();
+
+  // move-out: hop cells on vertical edges; skip selection extensions
+  // (shift-arrow dead-ends emit move-out with selecting=true).
+  const handleMoveOut = (ev: Event) => {
+    const detail = (ev as CustomEvent<MoveOutDetail>).detail;
+    if (detail.selecting) return;
+    if (detail.direction === 'upward') cb.onMoveOut?.('up');
+    else if (detail.direction === 'downward') cb.onMoveOut?.('down');
+  };
+  const handleNewCell = () => cb.onNewCell?.();
+
+  el.addEventListener('input', handleInput);
+  el.addEventListener('focusin', handleFocusIn);
+  el.addEventListener('move-out', handleMoveOut);
+  el.addEventListener('new-cell', handleNewCell);
+
+  return {
+    focus: (edge) => el.focus({ edge }),
+    getValue: () => el.value,
+    setValue: (latex) => {
+      el.value = latex;
+    },
+    insertDerivative: () => el.mq?.cmd('\\derivative'),
+    setSmartMode: (v) =>
+      el.config({
+        autoCommands: v ? SMART_AUTO_COMMANDS : '',
+        autoSubscriptNumerals: v,
+      }),
+    setDIsDerivative: (v) => el.config({ dIsDerivative: v }),
+    dispose() {
+      el.removeEventListener('input', handleInput);
+      el.removeEventListener('focusin', handleFocusIn);
+      el.removeEventListener('move-out', handleMoveOut);
+      el.removeEventListener('new-cell', handleNewCell);
+    },
+  };
 }
