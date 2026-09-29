@@ -3,6 +3,14 @@
 // keeps working; if the cell editor stops being a <math-field>, provide the
 // same surface (tag name, getValue(), focus()) via a thin adapter element.
 //
+// Two editor backends implement that surface today:
+// - MathLive <math-field>: el.getValue(), and the host itself is the
+//   document.activeElement when focused.
+// - MathQuill adapters (rewrite/*-mathquill): a <math-field> host that may
+//   expose getValue() or only a .value property, and focuses an internal
+//   textarea — so focus is always checked with contains()/closest(), and
+//   value reads use the readLatex fallback below.
+//
 // Nothing here reaches into app state, component internals, or a framework
 // API — that is what makes the battery framework-agnostic.
 
@@ -29,8 +37,19 @@ export const cell = (page: Page, i = 0): Locator =>
 export const cellCount = (page: Page): Promise<number> =>
   page.locator(SEL.cell).count();
 
+interface CellEl {
+  getValue?(): string;
+  value: string;
+}
+
+// getValue() on MathLive and the Solid+MathQuill adapter; .value on the
+// Svelte+MathQuill element. Callbacks passed to evaluate/waitForFunction are
+// serialized into the page, so this fallback is inlined at each call site.
 export const cellValue = (mf: Locator): Promise<string> =>
-  mf.evaluate((el) => (el as unknown as { getValue(): string }).getValue());
+  mf.evaluate((el) => {
+    const e = el as unknown as CellEl;
+    return e.getValue?.() ?? e.value;
+  });
 
 // NB: functions passed to evaluate/waitForFunction are serialized and run in
 // the browser — they can't close over SEL. Selector literals inside page-side
@@ -38,10 +57,10 @@ export const cellValue = (mf: Locator): Promise<string> =>
 
 export const valueLen = (page: Page, i = 0): Promise<number> =>
   page.evaluate(
-    (idx) =>
-      (document.querySelectorAll('math-field')[idx] as unknown as {
-        getValue(): string;
-      }).getValue().length,
+    (idx) => {
+      const e = document.querySelectorAll('math-field')[idx] as unknown as CellEl;
+      return (e.getValue?.() ?? e.value).length;
+    },
     i,
   );
 
@@ -49,17 +68,20 @@ export const valueLen = (page: Page, i = 0): Promise<number> =>
 export const lenGrows =
   (page: Page, i: number, before: number) => () =>
     page.waitForFunction(
-      ([sel, idx, n]) =>
-        (document.querySelectorAll(sel)[idx] as unknown as {
-          getValue(): string;
-        }).getValue().length > n,
+      ([sel, idx, n]) => {
+        const e = document.querySelectorAll(sel as string)[idx as number] as unknown as CellEl;
+        return (e.getValue?.() ?? e.value).length > (n as number);
+      },
       [SEL.cell, i, before] as const,
     );
 
+// contains() not ===: a MathQuill field's activeElement is its hidden
+// textarea, not the <math-field> host. Reflexive for MathLive, whose host
+// itself takes focus.
 export const focusedIndex = (page: Page): Promise<number> =>
   page.evaluate(() =>
-    [...document.querySelectorAll('math-field')].indexOf(
-      document.activeElement as Element,
+    [...document.querySelectorAll('math-field')].findIndex((el) =>
+      el.contains(document.activeElement),
     ),
   );
 
@@ -68,8 +90,9 @@ export const focusedIndex = (page: Page): Promise<number> =>
 export const waitFocusedIndex = (page: Page, i: number) =>
   page.waitForFunction(
     (idx) =>
-      document.activeElement ===
-      document.querySelectorAll('math-field')[idx],
+      document
+        .querySelectorAll('math-field')
+        [idx]?.contains(document.activeElement),
     i,
   );
 
@@ -81,10 +104,10 @@ export const waitFocusedIndex = (page: Page, i: number) =>
 export const committedToOutput =
   (page: Page, i = 0) => async () => {
     const v = await page.evaluate(
-      (idx) =>
-        (document.querySelectorAll('math-field')[idx] as unknown as {
-          getValue(): string;
-        }).getValue(),
+      (idx) => {
+        const e = document.querySelectorAll('math-field')[idx] as unknown as CellEl;
+        return e.getValue?.() ?? e.value;
+      },
       i,
     );
     if (!v) return;

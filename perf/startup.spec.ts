@@ -39,7 +39,7 @@ test('cold load: first cell painted, interactive, bytes, heap', async ({
         );
         const interactive = await new Promise<number>((res) => {
           const check = () =>
-            document.activeElement?.matches(cellSel)
+            document.activeElement?.closest(cellSel)
               ? res(performance.now())
               : requestAnimationFrame(check);
           check();
