@@ -46,6 +46,10 @@ export default function App() {
       <header class="app-header">
         <span class="logo">
           Math<em>Compile</em>
+          <span class="engine-badge" title="SolidJS + MathQuill">
+            <img src="/solid.svg" alt="SolidJS" />
+            MathQuill
+          </span>
         </span>
         <button
           class="palette-button"
