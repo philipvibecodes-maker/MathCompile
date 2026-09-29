@@ -7227,6 +7227,11 @@ var __assign = (this && this.__assign) || function () {
         _maxLength: 0
     };
     baseOptionProcessors.autoCommands = function (cmds) {
+        // '' disables autoCommands entirely (the stock processor had no way to
+        // turn the list back off once set \u2014 needed for the smartMode toggle).
+        if (cmds === '') {
+            return { _maxLength: 0 };
+        }
         if (typeof cmds !== 'string' || !/^[a-z]+(?: [a-z]+)*$/i.test(cmds)) {
             throw '"' + cmds + '" not a space-delimited list of only letters';
         }

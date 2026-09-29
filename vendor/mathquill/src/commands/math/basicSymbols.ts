@@ -333,6 +333,11 @@ Options.prototype.autoCommands = {
   _maxLength: 0
 };
 baseOptionProcessors.autoCommands = function (cmds: string | undefined) {
+  // '' disables autoCommands entirely (the stock processor had no way to
+  // turn the list back off once set — needed for the smartMode toggle).
+  if (cmds === '') {
+    return { _maxLength: 0 };
+  }
   if (typeof cmds !== 'string' || !/^[a-z]+(?: [a-z]+)*$/i.test(cmds)) {
     throw '"' + cmds + '" not a space-delimited list of only letters';
   }

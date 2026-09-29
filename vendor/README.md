@@ -34,6 +34,10 @@ Vendored copy of the Desmos fork of MathQuill
 - `mathquill.d.ts`: `insertLineBreak()` on `EditableMathQuill` and
   `dIsDerivative` on `v1.Config`.
 - `src/css/math.less`: `.mq-matrix` / `.mq-displaylines` rules.
+- `src/commands/math/basicSymbols.ts`: the `autoCommands` option
+  processor accepts `''` (empty dict — disables auto-commands) so the
+  app's smartMode toggle can turn it back off; upstream had no way to
+  clear the list once set.
 
 Coverage: `test/unit/environments.test.js` (mocha; run `make test` then
 open `test/unit.html`, or run `npx playwright test e2e/vendor.spec.ts`
