@@ -480,6 +480,14 @@ function getInterface(v: number): MathQuill.v3.API | MathQuill.v1.API {
         this.__controller.typedText(text.charAt(i));
       return this;
     }
+    // Vendored patch: Enter semantics — matrix row inside a matrix,
+    // \displaylines row split otherwise (src/commands/math/environments.ts).
+    insertLineBreak() {
+      var ctrlr = this.__controller;
+      insertLineBreakAtCursor(ctrlr);
+      if (ctrlr.blurred) ctrlr.cursor.hide().parent.blur(ctrlr.cursor);
+      return this;
+    }
     dropEmbedded(pageX: number, pageY: number, options: EmbedOptions) {
       var clientX = pageX - getScrollX();
       var clientY = pageY - getScrollY();

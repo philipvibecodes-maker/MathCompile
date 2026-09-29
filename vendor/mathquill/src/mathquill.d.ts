@@ -55,6 +55,8 @@ declare namespace MathQuill {
       write: (latex: string) => EditableMathQuill;
       keystroke: (key: string, evt?: KeyboardEvent) => EditableMathQuill;
       typedText: (text: string) => EditableMathQuill;
+      // Vendored patch: Enter semantics (matrix row / displaylines split).
+      insertLineBreak: () => EditableMathQuill;
       clearSelection: () => EditableMathQuill;
       getAriaPostLabel: () => string;
       setAriaPostLabel: (str: string, timeout?: number) => EditableMathQuill;
@@ -136,6 +138,9 @@ declare namespace MathQuill {
       quietEmptyDelimiters?: string;
       disableAutoSubstitutionInSubscripts?: boolean | { except: string };
       interpretTildeAsSim?: boolean;
+      // Vendored patch: controls \derivative expansion (true → \frac{d#1}{d#2},
+      // false → D(#1)); defaults to true.
+      dIsDerivative?: boolean;
       handlers?: HandlerOptions<BaseMathQuill<$>>;
       askIfShouldIgnoreMousemove?: (
         evt: MouseEvent,

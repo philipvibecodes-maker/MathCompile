@@ -303,6 +303,47 @@
     text-align: center;
   }
 
+  // matrix / displaylines environments (vendored patch)
+  .mq-matrix,
+  .mq-displaylines {
+    vertical-align: middle;
+    margin-left: 0.1em;
+    margin-right: 0.1em;
+    position: relative;
+
+    table {
+      width: auto;
+      border-bottom: none;
+      border-spacing: 3px;
+      border-collapse: separate;
+      &.mq-rows-1 {
+        // better alignment when there's just one row
+        vertical-align: middle;
+        margin-bottom: 1px;
+      }
+    }
+
+    td {
+      border: none;
+      width: auto; // defensive resets
+      padding: 0.1em 0.3em;
+      vertical-align: baseline;
+      min-width: 0.5em;
+    }
+
+    .mq-paren {
+      position: absolute;
+      top: 0;
+      bottom: 2px;
+    }
+    .mq-bracket-l {
+      left: 0;
+    }
+    .mq-bracket-r {
+      right: 0;
+    }
+  }
+
   .mq-array > span {
     display: block;
   }

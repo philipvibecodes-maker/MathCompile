@@ -388,7 +388,7 @@ var __assign = (this && this.__assign) || function () {
             return this.queue(dir === L ? 'beginning of' : 'end of');
         };
         Aria.prototype.alert = function (t) {
-            var _this_1 = this;
+            var _this = this;
             this.attach();
             if (t)
                 this.queue(t);
@@ -415,9 +415,9 @@ var __assign = (this && this.__assign) || function () {
                             clearTimeout(this.firstMessageTimeout);
                         }
                         this.firstMessageTimeout = setTimeout(function () {
-                            _this_1.firstMessageSent = true;
-                            _this_1.firstMessageTimeout = null;
-                            _this_1.span.textContent = _this_1.msg;
+                            _this.firstMessageSent = true;
+                            _this.firstMessageTimeout = null;
+                            _this.span.textContent = _this.msg;
                         }, 50);
                     }
                     else {
@@ -1719,9 +1719,9 @@ var __assign = (this && this.__assign) || function () {
     var Anticursor = /** @class */ (function (_super) {
         __extends(Anticursor, _super);
         function Anticursor(parent, leftward, rightward) {
-            var _this_1 = _super.call(this, parent, leftward, rightward) || this;
-            _this_1.ancestors = {};
-            return _this_1;
+            var _this = _super.call(this, parent, leftward, rightward) || this;
+            _this.ancestors = {};
+            return _this;
         }
         Anticursor.fromCursor = function (cursor) {
             return new Anticursor(cursor.parent, cursor[L], cursor[R]);
@@ -1731,21 +1731,21 @@ var __assign = (this && this.__assign) || function () {
     var Cursor = /** @class */ (function (_super) {
         __extends(Cursor, _super);
         function Cursor(initParent, options, controller) {
-            var _this_1 = _super.call(this, initParent, 0, 0) || this;
+            var _this = _super.call(this, initParent, 0, 0) || this;
             /** Slightly more than just a "cache", this remembers the cursor's position in each block node, so that we can return to the right
              * point in that node when moving up and down among blocks.
              */
-            _this_1.upDownCache = {};
-            _this_1.cursorElement = h('span', { class: 'mq-cursor' }, [h.text(U_ZERO_WIDTH_SPACE)]);
-            _this_1._domFrag = domFrag();
-            _this_1.controller = controller;
-            _this_1.options = options;
-            _this_1.setDOMFrag(domFrag(_this_1.cursorElement));
+            _this.upDownCache = {};
+            _this.cursorElement = h('span', { class: 'mq-cursor' }, [h.text(U_ZERO_WIDTH_SPACE)]);
+            _this._domFrag = domFrag();
+            _this.controller = controller;
+            _this.options = options;
+            _this.setDOMFrag(domFrag(_this.cursorElement));
             //closured for setInterval
-            _this_1.blink = function () {
-                domFrag(_this_1.cursorElement).toggleClass('mq-blink');
+            _this.blink = function () {
+                domFrag(_this.cursorElement).toggleClass('mq-blink');
             };
-            return _this_1;
+            return _this;
         }
         Cursor.prototype.setDOMFrag = function (frag) {
             this._domFrag = frag;
@@ -2050,10 +2050,10 @@ var __assign = (this && this.__assign) || function () {
     var MQSelection = /** @class */ (function (_super) {
         __extends(MQSelection, _super);
         function MQSelection(withDir, oppDir, dir) {
-            var _this_1 = _super.call(this, withDir, oppDir, dir) || this;
-            _this_1._el = h('span', { class: 'mq-selection' });
-            _this_1.getDOMFragFromEnds().wrapAll(_this_1._el);
-            return _this_1;
+            var _this = _super.call(this, withDir, oppDir, dir) || this;
+            _this._el = h('span', { class: 'mq-selection' });
+            _this.getDOMFragFromEnds().wrapAll(_this._el);
+            return _this;
         }
         MQSelection.prototype.isCleared = function () {
             return this._el === undefined;
@@ -2166,7 +2166,7 @@ var __assign = (this && this.__assign) || function () {
             }
         };
         ControllerBase.prototype.setAriaPostLabel = function (ariaPostLabel, timeout) {
-            var _this_1 = this;
+            var _this = this;
             if (ariaPostLabel &&
                 typeof ariaPostLabel === 'string' &&
                 ariaPostLabel !== '') {
@@ -2174,13 +2174,13 @@ var __assign = (this && this.__assign) || function () {
                     if (this._ariaAlertTimeout)
                         clearTimeout(this._ariaAlertTimeout);
                     this._ariaAlertTimeout = setTimeout(function () {
-                        if (_this_1.containerHasFocus()) {
+                        if (_this.containerHasFocus()) {
                             // Voice the new label, but do not update content mathspeak to prevent double-speech.
-                            _this_1.aria.alert(_this_1.root.mathspeak().trim() + ' ' + ariaPostLabel.trim());
+                            _this.aria.alert(_this.root.mathspeak().trim() + ' ' + ariaPostLabel.trim());
                         }
                         else {
                             // This mathquill does not have focus, so update its mathspeak.
-                            _this_1.updateMathspeak();
+                            _this.updateMathspeak();
                         }
                     }, timeout);
                 }
@@ -2370,12 +2370,12 @@ var __assign = (this && this.__assign) || function () {
         var AbstractMathQuill = /** @class */ (function (_super) {
             __extends(AbstractMathQuill, _super);
             function AbstractMathQuill(ctrlr) {
-                var _this_1 = _super.call(this) || this;
-                _this_1.__controller = ctrlr;
-                _this_1.__options = ctrlr.options;
-                _this_1.id = ctrlr.id;
-                _this_1.data = ctrlr.data;
-                return _this_1;
+                var _this = _super.call(this) || this;
+                _this.__controller = ctrlr;
+                _this.__options = ctrlr.options;
+                _this.id = ctrlr.id;
+                _this.data = ctrlr.data;
+                return _this;
             }
             AbstractMathQuill.prototype.mathquillify = function (classNames) {
                 var ctrlr = this.__controller, root = ctrlr.root, el = ctrlr.container;
@@ -2920,13 +2920,13 @@ var __assign = (this && this.__assign) || function () {
             this.timeoutId = setTimeout(this.fn);
         };
         EveryTick.prototype.listenOnce = function (fn) {
-            var _this_1 = this;
+            var _this = this;
             this.listen(function () {
                 var args = [];
                 for (var _i = 0; _i < arguments.length; _i++) {
                     args[_i] = arguments[_i];
                 }
-                _this_1.clearListener();
+                _this.clearListener();
                 fn.apply(void 0, args);
             });
         };
@@ -3380,72 +3380,72 @@ var __assign = (this && this.__assign) || function () {
     var Controller_focusBlur = /** @class */ (function (_super) {
         __extends(Controller_focusBlur, _super);
         function Controller_focusBlur() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            _this_1.handleTextareaFocusEditable = function () {
-                var cursor = _this_1.cursor;
-                _this_1.updateMathspeak();
-                _this_1.blurred = false;
-                clearTimeout(_this_1.blurTimeout);
-                domFrag(_this_1.container).addClass('mq-focused');
+            var _this = _super !== null && _super.apply(this, arguments) || this;
+            _this.handleTextareaFocusEditable = function () {
+                var cursor = _this.cursor;
+                _this.updateMathspeak();
+                _this.blurred = false;
+                clearTimeout(_this.blurTimeout);
+                domFrag(_this.container).addClass('mq-focused');
                 if (!cursor.parent)
-                    cursor.insAtRightEnd(_this_1.root);
+                    cursor.insAtRightEnd(_this.root);
                 if (cursor.selection) {
                     cursor.selection.domFrag().removeClass('mq-blur');
-                    _this_1.selectionChanged(); //re-select textarea contents after tabbing away and back
+                    _this.selectionChanged(); //re-select textarea contents after tabbing away and back
                 }
                 else {
                     cursor.show();
                 }
-                _this_1.setOverflowClasses();
+                _this.setOverflowClasses();
             };
-            _this_1.handleTextareaBlurEditable = function () {
-                if (_this_1.textareaSelectionTimeout) {
-                    clearTimeout(_this_1.textareaSelectionTimeout);
-                    _this_1.textareaSelectionTimeout = 0;
+            _this.handleTextareaBlurEditable = function () {
+                if (_this.textareaSelectionTimeout) {
+                    clearTimeout(_this.textareaSelectionTimeout);
+                    _this.textareaSelectionTimeout = 0;
                 }
-                if (_this_1.options.enableDigitGrouping) {
-                    clearTimeout(_this_1.__showGroupingTimeout);
-                    _this_1.root.domFrag().addClass('mq-show-grouping');
+                if (_this.options.enableDigitGrouping) {
+                    clearTimeout(_this.__showGroupingTimeout);
+                    _this.root.domFrag().addClass('mq-show-grouping');
                 }
-                _this_1.blurred = true;
-                _this_1.blurTimeout = setTimeout(function () {
+                _this.blurred = true;
+                _this.blurTimeout = setTimeout(function () {
                     // wait for blur on window; if
-                    _this_1.root.postOrder(function (node) {
+                    _this.root.postOrder(function (node) {
                         node.intentionalBlur();
                     }); // none, intentional blur: #264
-                    _this_1.cursor.clearSelection().endSelection();
-                    _this_1.blur();
-                    _this_1.updateMathspeak({ emptyContent: true });
-                    _this_1.scrollHoriz();
+                    _this.cursor.clearSelection().endSelection();
+                    _this.blur();
+                    _this.updateMathspeak({ emptyContent: true });
+                    _this.scrollHoriz();
                 });
-                window.addEventListener('blur', _this_1.handleWindowBlur);
+                window.addEventListener('blur', _this.handleWindowBlur);
             };
-            _this_1.handleTextareaFocusStatic = function () {
-                if (!_this_1.cursor.selection) {
-                    _this_1.cursor.controller.selectAll();
+            _this.handleTextareaFocusStatic = function () {
+                if (!_this.cursor.selection) {
+                    _this.cursor.controller.selectAll();
                 }
-                _this_1.blurred = false;
+                _this.blurred = false;
             };
-            _this_1.handleTextareaBlurStatic = function () {
-                _this_1.cursor.clearSelection();
-                _this_1.updateMathspeak({ emptyContent: true });
+            _this.handleTextareaBlurStatic = function () {
+                _this.cursor.clearSelection();
+                _this.updateMathspeak({ emptyContent: true });
             };
-            _this_1.handleWindowBlur = function () {
+            _this.handleWindowBlur = function () {
                 // blur event also fired on window, just switching
-                clearTimeout(_this_1.blurTimeout); // tabs/windows, not intentional blur
-                if (_this_1.cursor.selection)
-                    _this_1.cursor.selection.domFrag().addClass('mq-blur');
-                _this_1.blurWithoutResettingCursor();
-                _this_1.updateMathspeak({ emptyContent: true });
+                clearTimeout(_this.blurTimeout); // tabs/windows, not intentional blur
+                if (_this.cursor.selection)
+                    _this.cursor.selection.domFrag().addClass('mq-blur');
+                _this.blurWithoutResettingCursor();
+                _this.updateMathspeak({ emptyContent: true });
             };
-            return _this_1;
+            return _this;
         }
         Controller_focusBlur.prototype.hideGroupingForEdit = function () {
-            var _this_1 = this;
+            var _this = this;
             clearTimeout(this.__showGroupingTimeout);
             this.root.domFrag().removeClass('mq-show-grouping');
             this.__showGroupingTimeout = setTimeout(function () {
-                _this_1.root.domFrag().addClass('mq-show-grouping');
+                _this.root.domFrag().addClass('mq-show-grouping');
             }, 1000);
         };
         Controller_focusBlur.prototype.blur = function () {
@@ -4001,11 +4001,11 @@ var __assign = (this && this.__assign) || function () {
          * with extra error handling and invariant enforcement
          */
         Controller_keystroke.prototype.withIncrementalSelection = function (cb) {
-            var _this_1 = this;
+            var _this = this;
             try {
                 this.startIncrementalSelection();
                 try {
-                    cb(function (dir) { return _this_1.selectDirIncremental(dir); });
+                    cb(function (dir) { return _this.selectDirIncremental(dir); });
                 }
                 finally {
                     // Since we have started a selection, attempt to finish it even
@@ -4052,10 +4052,10 @@ var __assign = (this && this.__assign) || function () {
             });
         };
         Controller_keystroke.prototype.selectToRootEndInDir = function (dir) {
-            var _this_1 = this;
+            var _this = this;
             var cursor = this.cursor;
             this.withIncrementalSelection(function (selectDir) {
-                while (cursor[dir] || cursor.parent !== _this_1.root) {
+                while (cursor[dir] || cursor.parent !== _this.root) {
                     selectDir(dir);
                 }
             });
@@ -4172,7 +4172,7 @@ var __assign = (this && this.__assign) || function () {
             return this.notify('move').cursor;
         };
         Controller_latex.prototype.restoreLatexSelection = function (newSelection) {
-            var _this_1 = this;
+            var _this = this;
             var oldSelectionInfo = this.exportLatexSelection();
             var oldSelection = oldSelectionInfo.selection;
             var oldLatex = oldSelection.latex;
@@ -4222,10 +4222,10 @@ var __assign = (this && this.__assign) || function () {
                                 selectDir(L);
                                 // if something goes wrong avoid an infinite loop. We should eventually
                                 // reach the leftmost side.
-                                if (!_this_1.cursor[L] && _this_1.cursor.parent === root_1) {
+                                if (!_this.cursor[L] && _this.cursor.parent === root_1) {
                                     break;
                                 }
-                            } while (_this_1.cursor[R] !== restoreInfo_1.selectionL);
+                            } while (_this.cursor[R] !== restoreInfo_1.selectionL);
                         });
                         // TODO - should we validate that we ended up with exactly the correct selectionL
                         // and selectionR? It might be a little late to restore the previous selection. The
@@ -4672,11 +4672,11 @@ var __assign = (this && this.__assign) || function () {
     var Controller_mouse = /** @class */ (function (_super) {
         __extends(Controller_mouse, _super);
         function Controller_mouse() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            _this_1.handleMouseDown = function (e) {
+            var _this = _super !== null && _super.apply(this, arguments) || this;
+            _this.handleMouseDown = function (e) {
                 var rootElement = closest(e.target, '.mq-root-block');
                 var root = ((rootElement && NodeBase.getNodeOfElement(rootElement)) ||
-                    NodeBase.getNodeOfElement(_this_1.root.domFrag().oneElement()));
+                    NodeBase.getNodeOfElement(_this.root.domFrag().oneElement()));
                 var ownerDocument = root.domFrag().firstNode().ownerDocument;
                 var ctrlr = root.controller, cursor = ctrlr.cursor, blink = cursor.blink;
                 var textarea = ctrlr.getTextarea();
@@ -4751,7 +4751,7 @@ var __assign = (this && this.__assign) || function () {
                 };
                 if (ctrlr.blurred) {
                     //for static mathquills, we focus on mousemove
-                    if (_this_1.editable)
+                    if (_this.editable)
                         textarea.focus();
                     // focus call may bubble to clients, who may then write to
                     // mathquill, triggering cancelSelectionOnEdit. If that happens, we
@@ -4772,7 +4772,7 @@ var __assign = (this && this.__assign) || function () {
                 // listen on document not just body to not only hear about mousemove and
                 // mouseup on page outside field, but even outside page, except iframes: https://github.com/mathquill/mathquill/commit/8c50028afcffcace655d8ae2049f6e02482346c5#commitcomment-6175800
             };
-            return _this_1;
+            return _this;
         }
         Controller_mouse.prototype.addMouseEventListener = function () {
             //drag-to-select event handling
@@ -4836,7 +4836,7 @@ var __assign = (this && this.__assign) || function () {
                 root.classList.toggle('mq-editing-overflow-left');
         };
         Controller_scrollHoriz.prototype.scrollHoriz = function () {
-            var _this_1 = this;
+            var _this = this;
             var cursor = this.cursor, seln = cursor.selection;
             var rootRect = getBoundingClientRect(this.root.domFrag().oneElement());
             if (cursor.domFrag().isEmpty() && !seln) {
@@ -4848,12 +4848,12 @@ var __assign = (this && this.__assign) || function () {
                 var start_1 = rootElt_1.scrollLeft;
                 animate(this.getScrollAnimationDuration(), function (progress, scheduleNext, cancel) {
                     if (progress >= 1) {
-                        _this_1.cancelScrollHoriz = undefined;
+                        _this.cancelScrollHoriz = undefined;
                         rootElt_1.scrollLeft = 0;
-                        _this_1.setOverflowClasses();
+                        _this.setOverflowClasses();
                     }
                     else {
-                        _this_1.cancelScrollHoriz = cancel;
+                        _this.cancelScrollHoriz = cancel;
                         scheduleNext();
                         rootElt_1.scrollLeft = Math.round((1 - progress) * start_1);
                     }
@@ -4911,12 +4911,12 @@ var __assign = (this && this.__assign) || function () {
             var start = rootElt.scrollLeft;
             animate(this.getScrollAnimationDuration(), function (progress, scheduleNext, cancel) {
                 if (progress >= 1) {
-                    _this_1.cancelScrollHoriz = undefined;
+                    _this.cancelScrollHoriz = undefined;
                     rootElt.scrollLeft = Math.round(start + scrollBy);
-                    _this_1.setOverflowClasses();
+                    _this.setOverflowClasses();
                 }
                 else {
-                    _this_1.cancelScrollHoriz = cancel;
+                    _this.cancelScrollHoriz = cancel;
                     scheduleNext();
                     rootElt.scrollLeft = Math.round(start + progress * scrollBy);
                 }
@@ -4956,9 +4956,9 @@ var __assign = (this && this.__assign) || function () {
     var Controller = /** @class */ (function (_super) {
         __extends(Controller, _super);
         function Controller() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            _this_1.selectFn = noop;
-            return _this_1;
+            var _this = _super !== null && _super.apply(this, arguments) || this;
+            _this.selectFn = noop;
+            return _this;
         }
         Controller.prototype.createTextarea = function () {
             this.textareaSpan = h('span', { class: 'mq-textarea' });
@@ -5264,11 +5264,11 @@ var __assign = (this && this.__assign) || function () {
     var MathCommand = /** @class */ (function (_super) {
         __extends(MathCommand, _super);
         function MathCommand(ctrlSeq, domView, textTemplate) {
-            var _this_1 = _super.call(this) || this;
-            _this_1.textTemplate = [''];
-            _this_1.mathspeakTemplate = [''];
-            _this_1.setCtrlSeqHtmlAndText(ctrlSeq, domView, textTemplate);
-            return _this_1;
+            var _this = _super.call(this) || this;
+            _this.textTemplate = [''];
+            _this.mathspeakTemplate = [''];
+            _this.setCtrlSeqHtmlAndText(ctrlSeq, domView, textTemplate);
+            return _this;
         }
         MathCommand.prototype.setEnds = function (ends) {
             pray('MathCommand ends are never empty', ends[L] && ends[R]);
@@ -5296,14 +5296,14 @@ var __assign = (this && this.__assign) || function () {
             });
         };
         MathCommand.prototype.parser = function () {
-            var _this_1 = this;
+            var _this = this;
             var block = latexMathParser.block;
             return block.times(this.numBlocks()).map(function (blocks) {
-                _this_1.blocks = blocks;
+                _this.blocks = blocks;
                 for (var i = 0; i < blocks.length; i += 1) {
-                    blocks[i].adopt(_this_1, _this_1.getEnd(R), 0);
+                    blocks[i].adopt(_this, _this.getEnd(R), 0);
                 }
-                return _this_1;
+                return _this;
             });
         };
         // createLeftOf(cursor) and the methods it calls
@@ -5491,11 +5491,11 @@ var __assign = (this && this.__assign) || function () {
     var MQSymbol = /** @class */ (function (_super) {
         __extends(MQSymbol, _super);
         function MQSymbol(ctrlSeq, html, text, mathspeak) {
-            var _this_1 = _super.call(this) || this;
-            _this_1.setCtrlSeqHtmlTextAndMathspeak(ctrlSeq, html
+            var _this = _super.call(this) || this;
+            _this.setCtrlSeqHtmlTextAndMathspeak(ctrlSeq, html
                 ? new DOMView(0, function () { return html.cloneNode(true); })
                 : undefined, text, mathspeak);
-            return _this_1;
+            return _this;
         }
         MQSymbol.prototype.setCtrlSeqHtmlTextAndMathspeak = function (ctrlSeq, html, text, mathspeak) {
             if (!text && !!ctrlSeq) {
@@ -5565,14 +5565,14 @@ var __assign = (this && this.__assign) || function () {
     var BinaryOperator = /** @class */ (function (_super) {
         __extends(BinaryOperator, _super);
         function BinaryOperator(ctrlSeq, html, text, mathspeak, treatLikeSymbol) {
-            var _this_1 = this;
+            var _this = this;
             if (treatLikeSymbol) {
-                _this_1 = _super.call(this, ctrlSeq, h('span', {}, [html || h.text(ctrlSeq || '')]), undefined, mathspeak) || this;
+                _this = _super.call(this, ctrlSeq, h('span', {}, [html || h.text(ctrlSeq || '')]), undefined, mathspeak) || this;
             }
             else {
-                _this_1 = _super.call(this, ctrlSeq, h('span', { class: 'mq-binary-operator' }, html ? [html] : []), text, mathspeak) || this;
+                _this = _super.call(this, ctrlSeq, h('span', { class: 'mq-binary-operator' }, html ? [html] : []), text, mathspeak) || this;
             }
-            return _this_1;
+            return _this;
         }
         /**
          * PlusMinus overrides this to be false when it looks like unary positive/negative.
@@ -5595,9 +5595,9 @@ var __assign = (this && this.__assign) || function () {
     var MathBlock = /** @class */ (function (_super) {
         __extends(MathBlock, _super);
         function MathBlock() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            _this_1.ariaLabel = 'block';
-            return _this_1;
+            var _this = _super !== null && _super.apply(this, arguments) || this;
+            _this.ariaLabel = 'block';
+            return _this;
         }
         MathBlock.prototype.join = function (methodName) {
             return this.foldChildren('', function (fold, child) {
@@ -5817,12 +5817,12 @@ var __assign = (this && this.__assign) || function () {
         return _c = /** @class */ (function (_super) {
                 __extends(StaticMath, _super);
                 function StaticMath(el) {
-                    var _this_1 = _super.call(this, el) || this;
-                    var innerFields = (_this_1.innerFields = []);
-                    _this_1.__controller.root.postOrder(function (node) {
+                    var _this = _super.call(this, el) || this;
+                    var innerFields = (_this.innerFields = []);
+                    _this.__controller.root.postOrder(function (node) {
                         node.registerInnerField(innerFields, APIClasses.InnerMathField);
                     });
-                    return _this_1;
+                    return _this;
                 }
                 StaticMath.prototype.__mathquillify = function (opts, _interfaceVersion) {
                     this.config(opts);
@@ -5914,1007 +5914,6 @@ var __assign = (this && this.__assign) || function () {
             return class_1;
         }(APIClasses.MathField));
     };
-    /*************************************************
-     * Abstract classes of text blocks
-     ************************************************/
-    /**
-     * Blocks of plain text, with one or two TextPiece's as children.
-     * Represents flat strings of typically serif-font Roman characters, as
-     * opposed to hierchical, nested, tree-structured math.
-     * Wraps a single HTMLSpanElement.
-     */
-    var TextBlock = /** @class */ (function (_super) {
-        __extends(TextBlock, _super);
-        function TextBlock() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            _this_1.ctrlSeq = '\\text';
-            _this_1.ariaLabel = 'Text';
-            _this_1.mathspeakTemplate = ['StartText', 'EndText'];
-            return _this_1;
-        }
-        TextBlock.prototype.replaces = function (replacedText) {
-            if (replacedText instanceof Fragment) {
-                this.replacedText = replacedText.remove().domFrag().text();
-            }
-            else if (typeof replacedText === 'string')
-                this.replacedText = replacedText;
-        };
-        TextBlock.prototype.setDOMFrag = function (el) {
-            _super.prototype.setDOM.call(this, el);
-            var endsL = this.getEnd(L);
-            if (endsL) {
-                var children = this.domFrag().children();
-                if (!children.isEmpty()) {
-                    endsL.setDOM(children.oneText());
-                }
-            }
-            return this;
-        };
-        TextBlock.prototype.createLeftOf = function (cursor) {
-            var textBlock = this;
-            _super.prototype.createLeftOf.call(this, cursor);
-            cursor.insAtRightEnd(textBlock);
-            if (textBlock.replacedText)
-                for (var i = 0; i < textBlock.replacedText.length; i += 1)
-                    textBlock.write(cursor, textBlock.replacedText.charAt(i));
-            var textBlockR = textBlock[R];
-            if (textBlockR)
-                textBlockR.siblingCreated(cursor.options, L);
-            var textBlockL = textBlock[L];
-            if (textBlockL)
-                textBlockL.siblingCreated(cursor.options, R);
-            textBlock.bubble(function (node) {
-                node.reflow();
-                return undefined;
-            });
-        };
-        TextBlock.prototype.parser = function () {
-            var textBlock = this;
-            // TODO: correctly parse text mode
-            var string = Parser.string;
-            var regex = Parser.regex;
-            var optWhitespace = Parser.optWhitespace;
-            return optWhitespace
-                .then(string('{'))
-                .then(regex(/^[^}]*/))
-                .skip(string('}'))
-                .map(function (text) {
-                if (text.length === 0)
-                    return new Fragment(0, 0);
-                new TextPiece(text).adopt(textBlock, 0, 0);
-                return textBlock;
-            });
-        };
-        TextBlock.prototype.textContents = function () {
-            return this.foldChildren('', function (text, child) {
-                return text + child.textStr;
-            });
-        };
-        TextBlock.prototype.text = function () {
-            return '"' + this.textContents() + '"';
-        };
-        TextBlock.prototype.latexRecursive = function (ctx) {
-            this.checkCursorContextOpen(ctx);
-            var contents = this.textContents();
-            if (contents.length > 0) {
-                ctx.uncleanedLatex += this.ctrlSeq + '{';
-                ctx.uncleanedLatex += contents
-                    .replace(/\\/g, '\\backslash ')
-                    .replace(/[{}]/g, '\\$&');
-                ctx.uncleanedLatex += '}';
-            }
-            this.checkCursorContextClose(ctx);
-        };
-        TextBlock.prototype.html = function () {
-            var out = h('span', { class: 'mq-text-mode' }, [
-                h.text(this.textContents())
-            ]);
-            this.setDOM(out);
-            NodeBase.linkElementByCmdNode(out, this);
-            return out;
-        };
-        TextBlock.prototype.mathspeak = function (opts) {
-            if (opts && opts.ignoreShorthand) {
-                return (this.mathspeakTemplate[0] +
-                    ', ' +
-                    this.textContents() +
-                    ', ' +
-                    this.mathspeakTemplate[1]);
-            }
-            else {
-                return this.textContents();
-            }
-        };
-        TextBlock.prototype.isTextBlock = function () {
-            return true;
-        };
-        // editability methods: called by the cursor for editing, cursor movements,
-        // and selection of the MathQuill tree, these all take in a direction and
-        // the cursor
-        TextBlock.prototype.moveTowards = function (dir, cursor) {
-            cursor.insAtDirEnd(-dir, this);
-            cursor.controller.aria
-                .queueDirEndOf(-dir)
-                .queue(cursor.parent, true);
-        };
-        TextBlock.prototype.moveOutOf = function (dir, cursor) {
-            cursor.insDirOf(dir, this);
-            cursor.controller.aria.queueDirOf(dir).queue(this);
-        };
-        TextBlock.prototype.unselectInto = function (dir, cursor) {
-            this.moveTowards(dir, cursor);
-        };
-        // TODO: make these methods part of a shared mixin or something.
-        TextBlock.prototype.selectTowards = function (dir, cursor) {
-            MathCommand.prototype.selectTowards.call(this, dir, cursor);
-        };
-        TextBlock.prototype.deleteTowards = function (dir, cursor) {
-            MathCommand.prototype.deleteTowards.call(this, dir, cursor);
-        };
-        TextBlock.prototype.selectOutOf = function (dir, cursor) {
-            cursor.insDirOf(dir, this);
-        };
-        TextBlock.prototype.deleteOutOf = function (_dir, cursor) {
-            // backspace and delete at ends of block don't unwrap
-            if (this.isEmpty())
-                cursor.insRightOf(this);
-        };
-        TextBlock.prototype.write = function (cursor, ch) {
-            cursor.show().deleteSelection();
-            if (ch !== '$') {
-                var cursorL = cursor[L];
-                if (!cursorL)
-                    new TextPiece(ch).createLeftOf(cursor);
-                else if (cursorL instanceof TextPiece)
-                    cursorL.appendText(ch);
-            }
-            else if (this.isEmpty()) {
-                cursor.insRightOf(this);
-                new VanillaSymbol('\\$', h.text('$')).createLeftOf(cursor);
-            }
-            else if (!cursor[R])
-                cursor.insRightOf(this);
-            else if (!cursor[L])
-                cursor.insLeftOf(this);
-            else {
-                // split apart
-                var leftBlock = new TextBlock();
-                var leftPc = this.getEnd(L);
-                if (leftPc) {
-                    leftPc.disown().domFrag().detach();
-                    leftPc.adopt(leftBlock, 0, 0);
-                }
-                cursor.insLeftOf(this);
-                _super.prototype.createLeftOf.call(leftBlock, cursor); // micro-optimization, not for correctness
-            }
-            this.bubble(function (node) {
-                node.reflow();
-                return undefined;
-            });
-            // TODO needs tests
-            cursor.controller.aria.alert(ch);
-        };
-        TextBlock.prototype.writeLatex = function (cursor, latex) {
-            var cursorL = cursor[L];
-            if (!cursorL)
-                new TextPiece(latex).createLeftOf(cursor);
-            else if (cursorL instanceof TextPiece)
-                cursorL.appendText(latex);
-            this.bubble(function (node) {
-                node.reflow();
-                return undefined;
-            });
-        };
-        TextBlock.prototype.seek = function (clientX, cursor) {
-            cursor.hide();
-            var textPc = TextBlockFuseChildren(this);
-            if (!textPc)
-                return;
-            // insert cursor at approx position in DOMTextNode
-            var textNode = this.domFrag().children().oneText();
-            var range = document.createRange();
-            range.selectNodeContents(textNode);
-            var rects = range.getClientRects();
-            if (rects.length === 1) {
-                var _c = rects[0], width = _c.width, left = _c.left;
-                var avgChWidth = width / this.textContents().length;
-                var approxPosition = Math.round((clientX - left) / avgChWidth);
-                if (approxPosition <= 0) {
-                    cursor.insAtLeftEnd(this);
-                }
-                else if (approxPosition >= textPc.textStr.length) {
-                    cursor.insAtRightEnd(this);
-                }
-                else {
-                    cursor.insLeftOf(textPc.splitRight(approxPosition));
-                }
-            }
-            else {
-                cursor.insAtLeftEnd(this);
-            }
-            // move towards mousedown (clientX)
-            var displ = clientX - cursor.show().getBoundingClientRectWithoutMargin().left; // displacement
-            var dir = displ && displ < 0 ? L : R;
-            var prevDispl = dir;
-            // displ * prevDispl > 0 iff displacement direction === previous direction
-            while (cursor[dir] && displ * prevDispl > 0) {
-                cursor[dir].moveTowards(dir, cursor);
-                prevDispl = displ;
-                displ = clientX - cursor.getBoundingClientRectWithoutMargin().left;
-            }
-            if (dir * displ < -dir * prevDispl)
-                cursor[-dir].moveTowards(-dir, cursor);
-            if (!cursor.anticursor) {
-                // about to start mouse-selecting, the anticursor is gonna get put here
-                var cursorL = cursor[L];
-                this.anticursorPosition =
-                    cursorL && cursorL.textStr.length;
-                // ^ get it? 'cos if there's no cursor[L], it's 0... I'm a terrible person.
-            }
-            else if (cursor.anticursor.parent === this) {
-                // mouse-selecting within this TextBlock, re-insert the anticursor
-                var cursorL = cursor[L];
-                var cursorPosition = cursorL && cursorL.textStr.length;
-                if (this.anticursorPosition === cursorPosition) {
-                    cursor.anticursor = Anticursor.fromCursor(cursor);
-                }
-                else {
-                    if (this.anticursorPosition < cursorPosition) {
-                        var newTextPc = cursorL.splitRight(this.anticursorPosition);
-                        cursor[L] = newTextPc;
-                    }
-                    else {
-                        var cursorR = cursor[R];
-                        var newTextPc = cursorR.splitRight(this.anticursorPosition - cursorPosition);
-                    }
-                    cursor.anticursor = new Anticursor(this, newTextPc[L], newTextPc);
-                }
-            }
-        };
-        TextBlock.prototype.blur = function (cursor) {
-            MathBlock.prototype.blur.call(this, cursor);
-            if (!cursor)
-                return;
-            if (this.textContents() === '') {
-                this.remove();
-                if (cursor[L] === this)
-                    cursor[L] = this[L];
-                else if (cursor[R] === this)
-                    cursor[R] = this[R];
-            }
-            else
-                TextBlockFuseChildren(this);
-        };
-        TextBlock.prototype.focus = function () {
-            MathBlock.prototype.focus.call(this);
-        };
-        return TextBlock;
-    }(MQNode));
-    function TextBlockFuseChildren(self) {
-        self.domFrag().oneElement().normalize();
-        var children = self.domFrag().children();
-        if (children.isEmpty())
-            return;
-        var textPcDom = children.oneText();
-        pray('only node in TextBlock span is Text node', textPcDom.nodeType === 3);
-        // nodeType === 3 has meant a Text node since ancient times:
-        //   http://reference.sitepoint.com/javascript/Node/nodeType
-        var textPc = new TextPiece(textPcDom.data);
-        textPc.setDOM(textPcDom);
-        self.children().disown();
-        textPc.adopt(self, 0, 0);
-        return textPc;
-    }
-    /**
-     * Piece of plain text, with a TextBlock as a parent and no children.
-     * Wraps a single DOMTextNode.
-     * For convenience, has a .textStr property that's just a JavaScript string
-     * mirroring the text contents of the DOMTextNode.
-     * Text contents must always be nonempty.
-     */
-    var TextPiece = /** @class */ (function (_super) {
-        __extends(TextPiece, _super);
-        function TextPiece(text) {
-            var _this_1 = _super.call(this) || this;
-            _this_1.textStr = text;
-            return _this_1;
-        }
-        TextPiece.prototype.html = function () {
-            var out = h.text(this.textStr);
-            this.setDOM(out);
-            return out;
-        };
-        TextPiece.prototype.appendText = function (text) {
-            this.textStr += text;
-            this.domFrag().oneText().appendData(text);
-        };
-        TextPiece.prototype.prependText = function (text) {
-            this.textStr = text + this.textStr;
-            this.domFrag().oneText().insertData(0, text);
-        };
-        TextPiece.prototype.insTextAtDirEnd = function (text, dir) {
-            prayDirection(dir);
-            if (dir === R)
-                this.appendText(text);
-            else
-                this.prependText(text);
-        };
-        TextPiece.prototype.splitRight = function (i) {
-            var newPc = new TextPiece(this.textStr.slice(i)).adopt(this.parent, this, this[R]);
-            newPc.setDOM(this.domFrag().oneText().splitText(i));
-            this.textStr = this.textStr.slice(0, i);
-            return newPc;
-        };
-        TextPiece.prototype.endChar = function (dir, text) {
-            return text.charAt(dir === L ? 0 : -1 + text.length);
-        };
-        TextPiece.prototype.moveTowards = function (dir, cursor) {
-            prayDirection(dir);
-            var ch = this.endChar(-dir, this.textStr);
-            var from = this[-dir];
-            if (from instanceof TextPiece)
-                from.insTextAtDirEnd(ch, dir);
-            else
-                new TextPiece(ch).createDir(-dir, cursor);
-            return this.deleteTowards(dir, cursor);
-        };
-        TextPiece.prototype.mathspeak = function () {
-            return this.textStr;
-        };
-        TextPiece.prototype.latexRecursive = function (ctx) {
-            this.checkCursorContextOpen(ctx);
-            ctx.uncleanedLatex += this.textStr;
-            this.checkCursorContextClose(ctx);
-        };
-        TextPiece.prototype.deleteTowards = function (dir, cursor) {
-            if (this.textStr.length > 1) {
-                var deletedChar;
-                if (dir === R) {
-                    this.domFrag().oneText().deleteData(0, 1);
-                    deletedChar = this.textStr[0];
-                    this.textStr = this.textStr.slice(1);
-                }
-                else {
-                    // note that the order of these 2 lines is annoyingly important
-                    // (the second line mutates this.textStr.length)
-                    this.domFrag()
-                        .oneText()
-                        .deleteData(-1 + this.textStr.length, 1);
-                    deletedChar = this.textStr[this.textStr.length - 1];
-                    this.textStr = this.textStr.slice(0, -1);
-                }
-                cursor.controller.aria.queue(deletedChar);
-            }
-            else {
-                this.remove();
-                cursor[dir] = this[dir];
-                cursor.controller.aria.queue(this.textStr);
-            }
-        };
-        TextPiece.prototype.selectTowards = function (dir, cursor) {
-            prayDirection(dir);
-            var anticursor = cursor.anticursor;
-            if (!anticursor)
-                return;
-            var ch = this.endChar(-dir, this.textStr);
-            if (anticursor[dir] === this) {
-                var newPc = new TextPiece(ch).createDir(dir, cursor);
-                anticursor[dir] = newPc;
-                cursor.insDirOf(dir, newPc);
-            }
-            else {
-                var from = this[-dir];
-                if (from instanceof TextPiece)
-                    from.insTextAtDirEnd(ch, dir);
-                else {
-                    var newPc = new TextPiece(ch).createDir(-dir, cursor);
-                    var selection = cursor.selection;
-                    if (selection) {
-                        newPc.domFrag().insDirOf(-dir, selection.domFrag());
-                    }
-                }
-                if (this.textStr.length === 1 && anticursor[-dir] === this) {
-                    anticursor[-dir] = this[-dir]; // `this` will be removed in deleteTowards
-                }
-            }
-            return this.deleteTowards(dir, cursor);
-        };
-        return TextPiece;
-    }(MQNode));
-    LatexCmds.text =
-        LatexCmds.textnormal =
-            LatexCmds.textrm =
-                LatexCmds.textup =
-                    LatexCmds.textmd =
-                        TextBlock;
-    function makeTextBlock(latex, ariaLabel, tagName, attrs) {
-        return /** @class */ (function (_super) {
-            __extends(class_2, _super);
-            function class_2() {
-                var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-                _this_1.ctrlSeq = latex;
-                _this_1.mathspeakTemplate = ['Start' + ariaLabel, 'End' + ariaLabel];
-                _this_1.ariaLabel = ariaLabel;
-                return _this_1;
-            }
-            class_2.prototype.html = function () {
-                var out = h(tagName, attrs, [h.text(this.textContents())]);
-                this.setDOM(out);
-                NodeBase.linkElementByCmdNode(out, this);
-                return out;
-            };
-            return class_2;
-        }(TextBlock));
-    }
-    LatexCmds.em =
-        LatexCmds.italic =
-            LatexCmds.italics =
-                LatexCmds.emph =
-                    LatexCmds.textit =
-                        LatexCmds.textsl =
-                            makeTextBlock('\\textit', 'Italic', 'i', { class: 'mq-text-mode' });
-    LatexCmds.strong =
-        LatexCmds.bold =
-            LatexCmds.textbf =
-                makeTextBlock('\\textbf', 'Bold', 'b', { class: 'mq-text-mode' });
-    LatexCmds.sf = LatexCmds.textsf = makeTextBlock('\\textsf', 'Sans serif font', 'span', { class: 'mq-sans-serif mq-text-mode' });
-    LatexCmds.tt = LatexCmds.texttt = makeTextBlock('\\texttt', 'Mono space font', 'span', { class: 'mq-monospace mq-text-mode' });
-    LatexCmds.textsc = makeTextBlock('\\textsc', 'Variable font', 'span', {
-        style: 'font-variant:small-caps',
-        class: 'mq-text-mode'
-    });
-    LatexCmds.uppercase = makeTextBlock('\\uppercase', 'Uppercase', 'span', {
-        style: 'text-transform:uppercase',
-        class: 'mq-text-mode'
-    });
-    LatexCmds.lowercase = makeTextBlock('\\lowercase', 'Lowercase', 'span', {
-        style: 'text-transform:lowercase',
-        class: 'mq-text-mode'
-    });
-    var RootMathCommand = /** @class */ (function (_super) {
-        __extends(RootMathCommand, _super);
-        function RootMathCommand(cursor) {
-            var _this_1 = _super.call(this, '$') || this;
-            _this_1.domView = new DOMView(1, function (blocks) {
-                return h.block('span', { class: 'mq-math-mode' }, blocks[0]);
-            });
-            _this_1.cursor = cursor;
-            return _this_1;
-        }
-        RootMathCommand.prototype.createBlocks = function () {
-            _super.prototype.createBlocks.call(this);
-            var endsL = this.getEnd(L); // TODO - how do we know this is a RootMathCommand?
-            endsL.cursor = this.cursor;
-            endsL.write = function (cursor, ch) {
-                if (ch !== '$')
-                    MathBlock.prototype.write.call(this, cursor, ch);
-                else if (this.isEmpty()) {
-                    cursor.insRightOf(this.parent);
-                    this.parent.deleteTowards(undefined, cursor);
-                    new VanillaSymbol('\\$', h.text('$')).createLeftOf(cursor.show());
-                }
-                else if (!cursor[R])
-                    cursor.insRightOf(this.parent);
-                else if (!cursor[L])
-                    cursor.insLeftOf(this.parent);
-                else
-                    MathBlock.prototype.write.call(this, cursor, ch);
-            };
-        };
-        RootMathCommand.prototype.latexRecursive = function (ctx) {
-            this.checkCursorContextOpen(ctx);
-            ctx.uncleanedLatex += '$';
-            this.getEnd(L).latexRecursive(ctx);
-            ctx.uncleanedLatex += '$';
-            this.checkCursorContextClose(ctx);
-        };
-        return RootMathCommand;
-    }(MathCommand));
-    var RootTextBlock = /** @class */ (function (_super) {
-        __extends(RootTextBlock, _super);
-        function RootTextBlock() {
-            return _super !== null && _super.apply(this, arguments) || this;
-        }
-        RootTextBlock.prototype.keystroke = function (key, e, ctrlr) {
-            if (key === 'Spacebar' || key === 'Shift-Spacebar')
-                return;
-            return _super.prototype.keystroke.call(this, key, e, ctrlr);
-        };
-        RootTextBlock.prototype.write = function (cursor, ch) {
-            cursor.show().deleteSelection();
-            if (ch === '$')
-                new RootMathCommand(cursor).createLeftOf(cursor);
-            else {
-                var html;
-                if (ch === '<')
-                    html = h.entityText('&lt;');
-                else if (ch === '>')
-                    html = h.entityText('&gt;');
-                new VanillaSymbol(ch, html).createLeftOf(cursor);
-            }
-        };
-        return RootTextBlock;
-    }(RootMathBlock));
-    API.TextField = function (APIClasses) {
-        var _c;
-        return _c = /** @class */ (function (_super) {
-                __extends(TextField, _super);
-                function TextField() {
-                    return _super !== null && _super.apply(this, arguments) || this;
-                }
-                TextField.prototype.__mathquillify = function () {
-                    _super.prototype.mathquillify.call(this, 'mq-editable-field mq-text-mode');
-                    return this;
-                };
-                TextField.prototype.latex = function (latex) {
-                    if (latex) {
-                        this.__controller.renderLatexText(latex);
-                        if (this.__controller.blurred)
-                            this.__controller.cursor.hide().parent.blur();
-                        var _this = this; // just to help help TS out
-                        return _this;
-                    }
-                    return this.__controller.exportLatex();
-                };
-                return TextField;
-            }(APIClasses.EditableField)),
-            _c.RootBlock = RootTextBlock,
-            _c;
-    };
-    /************************************
-     * Symbols for Advanced Mathematics
-     ***********************************/
-    function bindSimpleBinop(latex) {
-        return bindBinaryOperator('\\' + latex + ' ', '&' + latex + ';', latex);
-    }
-    LatexCmds['\u2209'] = LatexCmds.notin = bindSimpleBinop('notin');
-    LatexCmds['\u2261'] = LatexCmds.equiv = bindSimpleBinop('equiv');
-    LatexCmds['\u2295'] = LatexCmds.oplus = bindSimpleBinop('oplus');
-    LatexCmds['\u2297'] = LatexCmds.otimes = bindSimpleBinop('otimes');
-    LatexCmds['\u2217'] =
-        LatexCmds.ast =
-            LatexCmds.star =
-                LatexCmds.loast =
-                    LatexCmds.lowast =
-                        bindBinaryOperator('\\ast ', '&lowast;', 'low asterisk');
-    LatexCmds['\u2234'] =
-        LatexCmds.therefor =
-            LatexCmds.therefore =
-                bindBinaryOperator('\\therefore ', '&there4;', 'therefore');
-    LatexCmds['\u2235'] =
-        LatexCmds.cuz =
-            LatexCmds.because =
-                bindBinaryOperator(
-                // l33t
-                '\\because ', '&#8757;', 'because');
-    LatexCmds['\u221d'] =
-        LatexCmds.prop =
-            LatexCmds.propto =
-                bindBinaryOperator('\\propto ', '&prop;', 'proportional to');
-    // Note "\u2248" is dupliucated in basicSymbols.
-    LatexCmds['\u2248'] =
-        LatexCmds.asymp =
-            LatexCmds.approx =
-                bindBinaryOperator('\\approx ', '&asymp;', 'approximately equal to');
-    LatexCmds['\u2208'] =
-        LatexCmds.isin =
-            LatexCmds['in'] =
-                bindBinaryOperator('\\in ', '&isin;', 'is in');
-    LatexCmds['\u220b'] =
-        LatexCmds.ni =
-            LatexCmds.contains =
-                bindBinaryOperator('\\ni ', '&ni;', 'contains');
-    LatexCmds['\u220c'] =
-        LatexCmds.notni =
-            LatexCmds.niton =
-                LatexCmds.notcontains =
-                    LatexCmds.doesnotcontain =
-                        bindBinaryOperator('\\not\\ni ', '&#8716;', 'does not contain');
-    LatexCmds['\u2282'] =
-        LatexCmds.sub =
-            LatexCmds.subset =
-                bindBinaryOperator('\\subset ', '&sub;', 'subset');
-    LatexCmds['\u2283'] =
-        LatexCmds.sup =
-            LatexCmds.supset =
-                LatexCmds.superset =
-                    bindBinaryOperator('\\supset ', '&sup;', 'superset');
-    LatexCmds['\u2284'] =
-        LatexCmds.nsub =
-            LatexCmds.notsub =
-                LatexCmds.nsubset =
-                    LatexCmds.notsubset =
-                        bindBinaryOperator('\\not\\subset ', '&#8836;', 'not a subset');
-    LatexCmds['\u2285'] =
-        LatexCmds.nsup =
-            LatexCmds.notsup =
-                LatexCmds.nsupset =
-                    LatexCmds.notsupset =
-                        LatexCmds.nsuperset =
-                            LatexCmds.notsuperset =
-                                bindBinaryOperator('\\not\\supset ', '&#8837;', 'not a superset');
-    LatexCmds['\u2286'] =
-        LatexCmds.sube =
-            LatexCmds.subeq =
-                LatexCmds.subsete =
-                    LatexCmds.subseteq =
-                        bindBinaryOperator('\\subseteq ', '&sube;', 'subset or equal to');
-    LatexCmds['\u2287'] =
-        LatexCmds.supe =
-            LatexCmds.supeq =
-                LatexCmds.supsete =
-                    LatexCmds.supseteq =
-                        LatexCmds.supersete =
-                            LatexCmds.superseteq =
-                                bindBinaryOperator('\\supseteq ', '&supe;', 'superset or equal to');
-    LatexCmds['\u228a'] =
-        LatexCmds.nsube =
-            LatexCmds.nsubeq =
-                LatexCmds.notsube =
-                    LatexCmds.notsubeq =
-                        LatexCmds.nsubsete =
-                            LatexCmds.nsubseteq =
-                                LatexCmds.notsubsete =
-                                    LatexCmds.notsubseteq =
-                                        bindBinaryOperator('\\not\\subseteq ', '&#8840;', 'not subset or equal to');
-    LatexCmds['\u228b'] =
-        LatexCmds.nsupe =
-            LatexCmds.nsupeq =
-                LatexCmds.notsupe =
-                    LatexCmds.notsupeq =
-                        LatexCmds.nsupsete =
-                            LatexCmds.nsupseteq =
-                                LatexCmds.notsupsete =
-                                    LatexCmds.notsupseteq =
-                                        LatexCmds.nsupersete =
-                                            LatexCmds.nsuperseteq =
-                                                LatexCmds.notsupersete =
-                                                    LatexCmds.notsuperseteq =
-                                                        bindBinaryOperator('\\not\\supseteq ', '&#8841;', 'not superset or equal to');
-    //the canonical sets of numbers
-    LatexCmds.mathbb = /** @class */ (function (_super) {
-        __extends(class_3, _super);
-        function class_3() {
-            return _super !== null && _super.apply(this, arguments) || this;
-        }
-        class_3.prototype.createLeftOf = function (_cursor) { };
-        class_3.prototype.numBlocks = function () {
-            return 1;
-        };
-        class_3.prototype.parser = function () {
-            var string = Parser.string;
-            var regex = Parser.regex;
-            var optWhitespace = Parser.optWhitespace;
-            return optWhitespace
-                .then(string('{'))
-                .then(optWhitespace)
-                .then(regex(/^[NPZQRCH]/))
-                .skip(optWhitespace)
-                .skip(string('}'))
-                .map(function (c) {
-                // instantiate the class for the matching char
-                var cmd = LatexCmds[c];
-                if (isMQNodeClass(cmd)) {
-                    return new cmd();
-                }
-                else {
-                    return cmd();
-                }
-            });
-        };
-        return class_3;
-    }(MathCommand));
-    LatexCmds['\u2115'] =
-        LatexCmds.N =
-            LatexCmds.naturals =
-                LatexCmds.Naturals =
-                    bindVanillaSymbol('\\mathbb{N}', '&#8469;', 'naturals');
-    LatexCmds['\u2119'] =
-        LatexCmds.P =
-            LatexCmds.primes =
-                LatexCmds.Primes =
-                    LatexCmds.projective =
-                        LatexCmds.Projective =
-                            LatexCmds.probability =
-                                LatexCmds.Probability =
-                                    bindVanillaSymbol('\\mathbb{P}', '&#8473;', 'P');
-    LatexCmds['\u2124'] =
-        LatexCmds.Z =
-            LatexCmds.integers =
-                LatexCmds.Integers =
-                    bindVanillaSymbol('\\mathbb{Z}', '&#8484;', 'integers');
-    LatexCmds['\u211a'] =
-        LatexCmds.Q =
-            LatexCmds.rationals =
-                LatexCmds.Rationals =
-                    bindVanillaSymbol('\\mathbb{Q}', '&#8474;', 'rationals');
-    LatexCmds['\u211d'] =
-        LatexCmds.R =
-            LatexCmds.reals =
-                LatexCmds.Reals =
-                    bindVanillaSymbol('\\mathbb{R}', '&#8477;', 'reals');
-    LatexCmds['\u2102'] =
-        LatexCmds.C =
-            LatexCmds.complex =
-                LatexCmds.Complex =
-                    LatexCmds.complexes =
-                        LatexCmds.Complexes =
-                            LatexCmds.complexplane =
-                                LatexCmds.Complexplane =
-                                    LatexCmds.ComplexPlane =
-                                        bindVanillaSymbol('\\mathbb{C}', '&#8450;', 'complexes');
-    LatexCmds['\u210d'] =
-        LatexCmds.H =
-            LatexCmds.Hamiltonian =
-                LatexCmds.quaternions =
-                    LatexCmds.Quaternions =
-                        bindVanillaSymbol('\\mathbb{H}', '&#8461;', 'quaternions');
-    //spacing
-    LatexCmds.quad = LatexCmds.emsp = bindVanillaSymbol('\\quad ', '    ', '4 spaces');
-    LatexCmds.qquad = bindVanillaSymbol('\\qquad ', '        ', '8 spaces');
-    /* spacing special characters, gonna have to implement this in LatexCommandInput::onText somehow
-    case ',':
-      return VanillaSymbol('\\, ',' ', 'comma');
-    case ':':
-      return VanillaSymbol('\\: ','  ', 'colon');
-    case ';':
-      return VanillaSymbol('\\; ','   ', 'semicolon');
-    case '!':
-      return MQSymbol('\\! ','<span style="margin-right:-.2em"></span>', 'exclamation point');
-    */
-    //binary operators
-    LatexCmds['\u25c7'] = LatexCmds.diamond = bindVanillaSymbol('\\diamond ', '&#9671;', 'diamond');
-    LatexCmds.bigtriangleup = bindVanillaSymbol('\\bigtriangleup ', '&#9651;', 'triangle up');
-    LatexCmds['\u2296'] = LatexCmds.ominus = bindVanillaSymbol('\\ominus ', '&#8854;', 'o minus');
-    LatexCmds['\u228e'] = LatexCmds.uplus = bindVanillaSymbol('\\uplus ', '&#8846;', 'disjoint union');
-    LatexCmds.bigtriangledown = bindVanillaSymbol('\\bigtriangledown ', '&#9661;', 'triangle down');
-    LatexCmds['\u2293'] = LatexCmds.sqcap = bindVanillaSymbol('\\sqcap ', '&#8851;', 'greatest lower bound');
-    LatexCmds['\u22b2'] = LatexCmds.triangleleft = bindVanillaSymbol('\\triangleleft ', '&#8882;', 'triangle left');
-    LatexCmds['\u2294'] = LatexCmds.sqcup = bindVanillaSymbol('\\sqcup ', '&#8852;', 'least upper bound');
-    LatexCmds['\u22b3'] = LatexCmds.triangleright = bindVanillaSymbol('\\triangleright ', '&#8883;', 'triangle right');
-    //circledot is not a not real LaTex command see https://github.com/mathquill/mathquill/pull/552 for more details
-    LatexCmds['\u2299'] =
-        LatexCmds.odot =
-            LatexCmds.circledot =
-                bindVanillaSymbol('\\odot ', '&#8857;', 'circle dot');
-    LatexCmds['\u2020'] = LatexCmds.dagger = bindVanillaSymbol('\\dagger ', '&#0134;', 'dagger');
-    LatexCmds['\u2021'] = LatexCmds.ddagger = bindVanillaSymbol('\\ddagger ', '&#135;', 'big dagger');
-    LatexCmds['\u2240'] = LatexCmds.wr = bindVanillaSymbol('\\wr ', '&#8768;', 'wreath');
-    LatexCmds['\u2210'] = LatexCmds.amalg = bindVanillaSymbol('\\amalg ', '&#8720;', 'amalgam');
-    //relationship symbols
-    LatexCmds['\u22a8'] = LatexCmds.models = bindVanillaSymbol('\\models ', '&#8872;', 'models');
-    LatexCmds['\u227a'] = LatexCmds.prec = bindVanillaSymbol('\\prec ', '&#8826;', 'precedes');
-    LatexCmds['\u227b'] = LatexCmds.succ = bindVanillaSymbol('\\succ ', '&#8827;', 'succeeds');
-    LatexCmds['\u227c'] = LatexCmds.preceq = bindVanillaSymbol('\\preceq ', '&#8828;', 'precedes or equals');
-    LatexCmds['\u227d'] = LatexCmds.succeq = bindVanillaSymbol('\\succeq ', '&#8829;', 'succeeds or equals');
-    LatexCmds['\u2243'] = LatexCmds.simeq = bindVanillaSymbol('\\simeq ', '&#8771;', 'similar or equal to');
-    LatexCmds['\u2223'] = LatexCmds.mid = bindVanillaSymbol('\\mid ', '&#8739;', 'divides');
-    LatexCmds['\u226a'] = LatexCmds.ll = bindVanillaSymbol('\\ll ', '&#8810;', 'll');
-    LatexCmds['\u226b'] = LatexCmds.gg = bindVanillaSymbol('\\gg ', '&#8811;', 'gg');
-    LatexCmds.parallel = bindVanillaSymbol('\\parallel ', '&#8741;', 'parallel with');
-    LatexCmds.nparallel = bindVanillaSymbol('\\nparallel ', '&#8742;', 'not parallel with');
-    LatexCmds['\u22c8'] = LatexCmds.bowtie = bindVanillaSymbol('\\bowtie ', '&#8904;', 'bowtie');
-    LatexCmds['\u228f'] = LatexCmds.sqsubset = bindVanillaSymbol('\\sqsubset ', '&#8847;', 'square subset');
-    LatexCmds['\u2290'] = LatexCmds.sqsupset = bindVanillaSymbol('\\sqsupset ', '&#8848;', 'square superset');
-    LatexCmds['\u2323'] = LatexCmds.smile = bindVanillaSymbol('\\smile ', '&#8995;', 'smile');
-    LatexCmds['\u2291'] = LatexCmds.sqsubseteq = bindVanillaSymbol('\\sqsubseteq ', '&#8849;', 'square subset or equal to');
-    LatexCmds['\u2292'] = LatexCmds.sqsupseteq = bindVanillaSymbol('\\sqsupseteq ', '&#8850;', 'square superset or equal to');
-    LatexCmds['\u2250'] = LatexCmds.doteq = bindVanillaSymbol('\\doteq ', '&#8784;', 'dotted equals');
-    LatexCmds['\u2322'] = LatexCmds.frown = bindVanillaSymbol('\\frown ', '&#8994;', 'frown');
-    LatexCmds['\u22a6'] = LatexCmds.vdash = bindVanillaSymbol('\\vdash ', '&#8870;', 'v dash');
-    LatexCmds['\u22a3'] = LatexCmds.dashv = bindVanillaSymbol('\\dashv ', '&#8867;', 'dash v');
-    LatexCmds['\u226e'] = LatexCmds.nless = bindVanillaSymbol('\\nless ', '&#8814;', 'not less than');
-    LatexCmds['\u226f'] = LatexCmds.ngtr = bindVanillaSymbol('\\ngtr ', '&#8815;', 'not greater than');
-    //arrows
-    LatexCmds.longleftarrow = bindVanillaSymbol('\\longleftarrow ', '&#8592;', 'left arrow');
-    LatexCmds.longrightarrow = bindVanillaSymbol('\\longrightarrow ', '&#8594;', 'right arrow');
-    LatexCmds.Longleftarrow = bindVanillaSymbol('\\Longleftarrow ', '&#8656;', 'left arrow');
-    LatexCmds.Longrightarrow = bindVanillaSymbol('\\Longrightarrow ', '&#8658;', 'right arrow');
-    LatexCmds.longleftrightarrow = bindVanillaSymbol('\\longleftrightarrow ', '&#8596;', 'left and right arrow');
-    LatexCmds['\u2195'] = LatexCmds.updownarrow = bindVanillaSymbol('\\updownarrow ', '&#8597;', 'up and down arrow');
-    LatexCmds.Longleftrightarrow = bindVanillaSymbol('\\Longleftrightarrow ', '&#8660;', 'left and right arrow');
-    LatexCmds['\u21d5'] = LatexCmds.Updownarrow = bindVanillaSymbol('\\Updownarrow ', '&#8661;', 'up and down arrow');
-    LatexCmds['\u21a6'] = LatexCmds.mapsto = bindVanillaSymbol('\\mapsto ', '&#8614;', 'maps to');
-    LatexCmds['\u2197'] = LatexCmds.nearrow = bindVanillaSymbol('\\nearrow ', '&#8599;', 'northeast arrow');
-    LatexCmds['\u21a9'] = LatexCmds.hookleftarrow = bindVanillaSymbol('\\hookleftarrow ', '&#8617;', 'hook left arrow');
-    LatexCmds['\u21aa'] = LatexCmds.hookrightarrow = bindVanillaSymbol('\\hookrightarrow ', '&#8618;', 'hook right arrow');
-    LatexCmds['\u2198'] = LatexCmds.searrow = bindVanillaSymbol('\\searrow ', '&#8600;', 'southeast arrow');
-    LatexCmds['\u21bc'] = LatexCmds.leftharpoonup = bindVanillaSymbol('\\leftharpoonup ', '&#8636;', 'left harpoon up');
-    LatexCmds['\u21c0'] = LatexCmds.rightharpoonup = bindVanillaSymbol('\\rightharpoonup ', '&#8640;', 'right harpoon up');
-    LatexCmds['\u2199'] = LatexCmds.swarrow = bindVanillaSymbol('\\swarrow ', '&#8601;', 'southwest arrow');
-    LatexCmds['\u21bd'] = LatexCmds.leftharpoondown = bindVanillaSymbol('\\leftharpoondown ', '&#8637;', 'left harpoon down');
-    LatexCmds['\u21c1'] = LatexCmds.rightharpoondown = bindVanillaSymbol('\\rightharpoondown ', '&#8641;', 'right harpoon down');
-    LatexCmds['\u2196'] = LatexCmds.nwarrow = bindVanillaSymbol('\\nwarrow ', '&#8598;', 'northwest arrow');
-    //Misc
-    // \dots has the unicode for \ldots
-    LatexCmds.ldots = bindVanillaSymbol('\\ldots ', '&#8230;', 'l dots');
-    LatexCmds['\u22ef'] = LatexCmds.cdots = bindVanillaSymbol('\\cdots ', '&#8943;', 'c dots');
-    LatexCmds['\u22ee'] = LatexCmds.vdots = bindVanillaSymbol('\\vdots ', '&#8942;', 'v dots');
-    LatexCmds['\u22f1'] = LatexCmds.ddots = bindVanillaSymbol('\\ddots ', '&#8945;', 'd dots');
-    // LatexCmds['\u221a'] is defined in basicSymbols
-    LatexCmds.surd = bindVanillaSymbol('\\surd ', '&#8730;', 'unresolved root');
-    LatexCmds['\u2113'] = LatexCmds.ell = bindVanillaSymbol('\\ell ', '&#8467;', 'ell');
-    LatexCmds['\u22a4'] = LatexCmds.top = bindVanillaSymbol('\\top ', '&#8868;', 'top');
-    LatexCmds['\u266d'] = LatexCmds.flat = bindVanillaSymbol('\\flat ', '&#9837;', 'flat');
-    LatexCmds['\u266e'] = LatexCmds.natural = bindVanillaSymbol('\\natural ', '&#9838;', 'natural');
-    LatexCmds['\u266f'] = LatexCmds.sharp = bindVanillaSymbol('\\sharp ', '&#9839;', 'sharp');
-    LatexCmds['\u2118'] = LatexCmds.wp = bindVanillaSymbol('\\wp ', '&#8472;', 'wp');
-    LatexCmds['\u22a5'] = LatexCmds.bot = bindVanillaSymbol('\\bot ', '&#8869;', 'bot');
-    LatexCmds['\u2663'] = LatexCmds.clubsuit = bindVanillaSymbol('\\clubsuit ', '&#9827;', 'club suit');
-    LatexCmds['\u2662'] = LatexCmds.diamondsuit = bindVanillaSymbol('\\diamondsuit ', '&#9826;', 'diamond suit');
-    LatexCmds['\u2661'] = LatexCmds.heartsuit = bindVanillaSymbol('\\heartsuit ', '&#9825;', 'heart suit');
-    LatexCmds['\u2660'] = LatexCmds.spadesuit = bindVanillaSymbol('\\spadesuit ', '&#9824;', 'spade suit');
-    LatexCmds['\u2b1c'] = LatexCmds.square = bindVanillaSymbol('\\square ', '&#11036;', 'square');
-    //variable-sized
-    // These are not actually variable-sized, and bigX (bigcap...) is the same as X (cap...)
-    LatexCmds['\u222e'] = LatexCmds.oint = bindVanillaSymbol('\\oint ', '&#8750;', 'o int');
-    LatexCmds.bigcap = bindVanillaSymbol('\\bigcap ', '&#8745;', 'big cap');
-    LatexCmds.bigcup = bindVanillaSymbol('\\bigcup ', '&#8746;', 'big cup');
-    LatexCmds.bigsqcup = bindVanillaSymbol('\\bigsqcup ', '&#8852;', 'big square cup');
-    LatexCmds.bigvee = bindVanillaSymbol('\\bigvee ', '&#8744;', 'big vee');
-    LatexCmds.bigwedge = bindVanillaSymbol('\\bigwedge ', '&#8743;', 'big wedge');
-    LatexCmds.bigodot = bindVanillaSymbol('\\bigodot ', '&#8857;', 'big o dot');
-    LatexCmds.bigotimes = bindVanillaSymbol('\\bigotimes ', '&#8855;', 'big o times');
-    LatexCmds.bigoplus = bindVanillaSymbol('\\bigoplus ', '&#8853;', 'big o plus');
-    LatexCmds.biguplus = bindVanillaSymbol('\\biguplus ', '&#8846;', 'big u plus');
-    //delimiters
-    LatexCmds['\u230a'] = LatexCmds.lfloor = bindVanillaSymbol('\\lfloor ', '&#8970;', 'left floor');
-    LatexCmds['\u230b'] = LatexCmds.rfloor = bindVanillaSymbol('\\rfloor ', '&#8971;', 'right floor');
-    LatexCmds['\u2308'] = LatexCmds.lceil = bindVanillaSymbol('\\lceil ', '&#8968;', 'left ceiling');
-    LatexCmds['\u2309'] = LatexCmds.rceil = bindVanillaSymbol('\\rceil ', '&#8969;', 'right ceiling');
-    LatexCmds.opencurlybrace = LatexCmds.lbrace = bindVanillaSymbol('\\lbrace ', '{', 'left brace');
-    LatexCmds.closecurlybrace = LatexCmds.rbrace = bindVanillaSymbol('\\rbrace ', '}', 'right brace');
-    LatexCmds.lbrack = bindVanillaSymbol('[', 'left bracket');
-    LatexCmds.rbrack = bindVanillaSymbol(']', 'right bracket');
-    //various symbols
-    LatexCmds.slash = bindVanillaSymbol('/', 'slash');
-    LatexCmds.vert = bindVanillaSymbol('|', 'vertical bar');
-    LatexCmds.perp = LatexCmds.perpendicular = bindVanillaSymbol('\\perp ', '&perp;', 'perpendicular');
-    LatexCmds['\u2207'] =
-        LatexCmds.nabla =
-            LatexCmds.del =
-                bindVanillaSymbol('\\nabla ', '&nabla;');
-    LatexCmds['\u210f'] = LatexCmds.hbar = bindVanillaSymbol('\\hbar ', '&#8463;', 'horizontal bar');
-    LatexCmds['\u212b'] =
-        LatexCmds.AA =
-            LatexCmds.Angstrom =
-                LatexCmds.angstrom =
-                    bindVanillaSymbol('\\text\\AA ', '&#8491;', 'AA');
-    LatexCmds['\u2218'] =
-        LatexCmds.ring =
-            LatexCmds.circ =
-                LatexCmds.circle =
-                    bindVanillaSymbol('\\circ ', '&#8728;', 'circle');
-    LatexCmds['\u2022'] =
-        LatexCmds.bull =
-            LatexCmds.bullet =
-                bindVanillaSymbol('\\bullet ', '&bull;', 'bullet');
-    LatexCmds['\u2216'] =
-        LatexCmds.setminus =
-            LatexCmds.smallsetminus =
-                bindVanillaSymbol('\\setminus ', '&#8726;', 'set minus');
-    LatexCmds.not = //bind(MQSymbol,'\\not ','<span class="not">/</span>', 'not');
-        LatexCmds['\u00ac'] =
-            LatexCmds.neg =
-                bindVanillaSymbol('\\neg ', '&not;', 'not');
-    LatexCmds['\u2026'] =
-        LatexCmds.dots =
-            LatexCmds.ellip =
-                LatexCmds.hellip =
-                    LatexCmds.ellipsis =
-                        LatexCmds.hellipsis =
-                            bindVanillaSymbol('\\dots ', '&hellip;', 'ellipsis');
-    LatexCmds['\u2193'] =
-        LatexCmds.converges =
-            LatexCmds.darr =
-                LatexCmds.dnarr =
-                    LatexCmds.dnarrow =
-                        LatexCmds.downarrow =
-                            bindVanillaSymbol('\\downarrow ', '&darr;', 'converges with');
-    LatexCmds['\u21d3'] =
-        LatexCmds.dArr =
-            LatexCmds.dnArr =
-                LatexCmds.dnArrow =
-                    LatexCmds.Downarrow =
-                        bindVanillaSymbol('\\Downarrow ', '&dArr;', 'down arrow');
-    LatexCmds['\u2191'] =
-        LatexCmds.diverges =
-            LatexCmds.uarr =
-                LatexCmds.uparrow =
-                    bindVanillaSymbol('\\uparrow ', '&uarr;', 'diverges from');
-    LatexCmds['\u21d1'] =
-        LatexCmds.uArr =
-            LatexCmds.Uparrow =
-                bindVanillaSymbol('\\Uparrow ', '&uArr;', 'up arrow');
-    LatexCmds.rarr = LatexCmds.rightarrow = bindVanillaSymbol('\\rightarrow ', '&rarr;', 'right arrow');
-    LatexCmds.implies = bindBinaryOperator('\\Rightarrow ', '&rArr;', 'implies');
-    LatexCmds['\u21d2'] =
-        LatexCmds.rArr =
-            LatexCmds.Rightarrow =
-                bindVanillaSymbol('\\Rightarrow ', '&rArr;', 'right arrow');
-    LatexCmds.gets = bindBinaryOperator('\\gets ', '&larr;', 'gets');
-    LatexCmds['\u2190'] =
-        LatexCmds.larr =
-            LatexCmds.leftarrow =
-                bindVanillaSymbol('\\leftarrow ', '&larr;', 'left arrow');
-    LatexCmds.impliedby = bindBinaryOperator('\\Leftarrow ', '&lArr;', 'implied by');
-    LatexCmds['\u21d0'] =
-        LatexCmds.lArr =
-            LatexCmds.Leftarrow =
-                bindVanillaSymbol('\\Leftarrow ', '&lArr;', 'left arrow');
-    LatexCmds['\u2194'] =
-        LatexCmds.harr =
-            LatexCmds.lrarr =
-                LatexCmds.leftrightarrow =
-                    bindVanillaSymbol('\\leftrightarrow ', '&harr;', 'left and right arrow');
-    LatexCmds.iff = bindBinaryOperator('\\Leftrightarrow ', '&hArr;', 'if and only if');
-    LatexCmds['\u21d4'];
-    LatexCmds.hArr =
-        LatexCmds.lrArr =
-            LatexCmds.Leftrightarrow =
-                bindVanillaSymbol('\\Leftrightarrow ', '&hArr;', 'left and right arrow');
-    LatexCmds.Re =
-        LatexCmds.Real =
-            LatexCmds.real =
-                bindVanillaSymbol('\\Re ', '&real;', 'real');
-    LatexCmds.Im =
-        LatexCmds.imag =
-            LatexCmds.image =
-                LatexCmds.imagin =
-                    LatexCmds.imaginary =
-                        LatexCmds.Imaginary =
-                            bindVanillaSymbol('\\Im ', '&image;', 'imaginary');
-    LatexCmds['\u2202'] =
-        LatexCmds.part =
-            LatexCmds.partial =
-                bindVanillaSymbol('\\partial ', '&part;', 'partial');
-    LatexCmds['\u00a3'] = LatexCmds.pounds = bindVanillaSymbol('\\pounds ', '&pound;');
-    LatexCmds['\u2135'] =
-        LatexCmds.alef =
-            LatexCmds.alefsym =
-                LatexCmds.aleph =
-                    LatexCmds.alephsym =
-                        bindVanillaSymbol('\\aleph ', '&alefsym;', 'alef sym');
-    LatexCmds['\u2203'] =
-        LatexCmds.xist = //LOL
-            LatexCmds.xists =
-                LatexCmds.exist =
-                    LatexCmds.exists =
-                        bindVanillaSymbol('\\exists ', '&exist;', 'there exists at least 1');
-    // forall is in basicSymbols.
-    LatexCmds['\u2204'] =
-        LatexCmds.nexists =
-            LatexCmds.nexist =
-                bindVanillaSymbol('\\nexists ', '&#8708;', 'there is no');
-    LatexCmds['\u2227'] =
-        LatexCmds.and =
-            LatexCmds.land =
-                LatexCmds.wedge =
-                    bindBinaryOperator('\\wedge ', '&and;', 'and');
-    LatexCmds['\u2228'] =
-        LatexCmds.or =
-            LatexCmds.lor =
-                LatexCmds.vee =
-                    bindBinaryOperator('\\vee ', '&or;', 'or');
-    LatexCmds['\u2205'] =
-        LatexCmds.o =
-            LatexCmds.O =
-                LatexCmds.empty =
-                    LatexCmds.emptyset =
-                        LatexCmds.oslash =
-                            LatexCmds.Oslash =
-                                LatexCmds.nothing =
-                                    LatexCmds.varnothing =
-                                        bindBinaryOperator('\\varnothing ', '&empty;', 'nothing');
-    LatexCmds['\u222a'] =
-        LatexCmds.cup =
-            LatexCmds.union =
-                bindBinaryOperator('\\cup ', '&cup;', 'union');
-    LatexCmds['\u2229'] =
-        LatexCmds.cap =
-            LatexCmds.intersect =
-                LatexCmds.intersection =
-                    bindBinaryOperator('\\cap ', '&cap;', 'intersection');
     /*********************************
      * Symbols for Basic Mathematics
      ********************************/
@@ -7298,9 +6297,9 @@ var __assign = (this && this.__assign) || function () {
     var Letter = /** @class */ (function (_super) {
         __extends(Letter, _super);
         function Letter(ch) {
-            var _this_1 = _super.call(this, ch) || this;
-            _this_1.letter = ch;
-            return _this_1;
+            var _this = _super.call(this, ch) || this;
+            _this.letter = ch;
+            return _this;
         }
         Letter.prototype.checkAutoCmds = function (cursor) {
             var _c;
@@ -7637,15 +6636,15 @@ var __assign = (this && this.__assign) || function () {
             LatexCmds[fn] = OperatorName;
         }
     LatexCmds.operatorname = /** @class */ (function (_super) {
-        __extends(class_4, _super);
-        function class_4() {
+        __extends(class_2, _super);
+        function class_2() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_4.prototype.createLeftOf = function () { };
-        class_4.prototype.numBlocks = function () {
+        class_2.prototype.createLeftOf = function () { };
+        class_2.prototype.numBlocks = function () {
             return 1;
         };
-        class_4.prototype.parser = function () {
+        class_2.prototype.parser = function () {
             return latexMathParser.block.map(function (b) {
                 // Check for the special case of \operatorname{ans}, which has
                 // a special html representation
@@ -7668,28 +6667,28 @@ var __assign = (this && this.__assign) || function () {
                 return children;
             });
         };
-        return class_4;
+        return class_2;
     }(MathCommand));
     LatexCmds.f = /** @class */ (function (_super) {
-        __extends(class_5, _super);
-        function class_5() {
-            var _this_1 = this;
+        __extends(class_3, _super);
+        function class_3() {
+            var _this = this;
             var letter = 'f';
-            _this_1 = _super.call(this, letter) || this;
-            _this_1.letter = letter;
-            _this_1.domView = new DOMView(0, function () {
+            _this = _super.call(this, letter) || this;
+            _this.letter = letter;
+            _this.domView = new DOMView(0, function () {
                 return h('var', { class: 'mq-f' }, [h.text('f')]);
             });
-            return _this_1;
+            return _this;
         }
-        class_5.prototype.italicize = function (bool) {
+        class_3.prototype.italicize = function (bool) {
             // Why is this necesssary? Does someone replace the `f` at some
             // point?
             this.domFrag().eachElement(function (el) { return (el.textContent = 'f'); });
             this.domFrag().toggleClass('mq-f', bool);
             return _super.prototype.italicize.call(this, bool);
         };
-        return class_5;
+        return class_3;
     }(Letter));
     // VanillaSymbol's
     LatexCmds[' '] = LatexCmds.space = function () {
@@ -7734,11 +6733,11 @@ var __assign = (this && this.__assign) || function () {
         return new NonSymbolaSymbol('\\&', h.entityText('&amp;'), 'and');
     };
     LatexCmds['%'] = /** @class */ (function (_super) {
-        __extends(class_6, _super);
-        function class_6() {
+        __extends(class_4, _super);
+        function class_4() {
             return _super.call(this, '\\%', h.text('%'), 'percent') || this;
         }
-        class_6.prototype.parser = function () {
+        class_4.prototype.parser = function () {
             var optWhitespace = Parser.optWhitespace;
             var string = Parser.string;
             // Parse `\%\operatorname{of}` as special `percentof` node so that
@@ -7749,7 +6748,7 @@ var __assign = (this && this.__assign) || function () {
             }))
                 .or(_super.prototype.parser.call(this));
         };
-        return class_6;
+        return class_4;
     }(NonSymbolaSymbol));
     LatexCmds['\u2225'] = LatexCmds.parallel = bindVanillaSymbol('\\parallel ', '&#x2225;', 'parallel');
     LatexCmds['\u2226'] = LatexCmds.nparallel = bindVanillaSymbol('\\nparallel ', '&#x2226;', 'not parallel');
@@ -7865,9 +6864,9 @@ var __assign = (this && this.__assign) || function () {
     var LatexFragment = /** @class */ (function (_super) {
         __extends(LatexFragment, _super);
         function LatexFragment(latex) {
-            var _this_1 = _super.call(this) || this;
-            _this_1.latexStr = latex;
-            return _this_1;
+            var _this = _super.call(this) || this;
+            _this.latexStr = latex;
+            return _this;
         }
         LatexFragment.prototype.createLeftOf = function (cursor) {
             var block = latexMathParser.parse(this.latexStr);
@@ -8002,23 +7001,23 @@ var __assign = (this && this.__assign) || function () {
         return true;
     }
     var PlusMinus = /** @class */ (function (_super) {
-        __extends(class_7, _super);
-        function class_7(ch, html, mathspeak) {
+        __extends(class_5, _super);
+        function class_5(ch, html, mathspeak) {
             return _super.call(this, ch, html, undefined, mathspeak, true) || this;
         }
-        class_7.prototype.isBinaryOperator = function () {
+        class_5.prototype.isBinaryOperator = function () {
             return plusMinusIsBinaryOperator(this);
         };
-        class_7.prototype.contactWeld = function (cursor, dir) {
+        class_5.prototype.contactWeld = function (cursor, dir) {
             this.sharedSiblingMethod(cursor.options, dir);
         };
-        class_7.prototype.siblingCreated = function (opts, dir) {
+        class_5.prototype.siblingCreated = function (opts, dir) {
             this.sharedSiblingMethod(opts, dir);
         };
-        class_7.prototype.siblingDeleted = function (opts, dir) {
+        class_5.prototype.siblingDeleted = function (opts, dir) {
             this.sharedSiblingMethod(opts, dir);
         };
-        class_7.prototype.sharedSiblingMethod = function (_opts, dir) {
+        class_5.prototype.sharedSiblingMethod = function (_opts, dir) {
             if (dir === R)
                 return; // ignore if sibling only changed on the right
             this.domFrag().oneElement().className = plusMinusIsBinaryOperator(this)
@@ -8026,17 +7025,17 @@ var __assign = (this && this.__assign) || function () {
                 : '';
             return this;
         };
-        return class_7;
+        return class_5;
     }(BinaryOperator));
     LatexCmds['+'] = /** @class */ (function (_super) {
-        __extends(class_8, _super);
-        function class_8() {
+        __extends(class_6, _super);
+        function class_6() {
             return _super.call(this, '+', h.text('+')) || this;
         }
-        class_8.prototype.mathspeak = function () {
+        class_6.prototype.mathspeak = function () {
             return plusMinusIsBinaryOperator(this) ? 'plus' : 'positive';
         };
-        return class_8;
+        return class_6;
     }(PlusMinus));
     //yes, these are different dashes, en-dash, em-dash, unicode minus, actual dash
     var MinusNode = /** @class */ (function (_super) {
@@ -8089,12 +7088,12 @@ var __assign = (this && this.__assign) || function () {
     var Inequality = /** @class */ (function (_super) {
         __extends(Inequality, _super);
         function Inequality(data, strict) {
-            var _this_1 = this;
+            var _this = this;
             var strictness = strict ? 'Strict' : '';
-            _this_1 = _super.call(this, data["ctrlSeq".concat(strictness)], h.entityText(data["htmlEntity".concat(strictness)]), data["text".concat(strictness)], data["mathspeak".concat(strictness)]) || this;
-            _this_1.data = data;
-            _this_1.strict = strict;
-            return _this_1;
+            _this = _super.call(this, data["ctrlSeq".concat(strictness)], h.entityText(data["htmlEntity".concat(strictness)]), data["text".concat(strictness)], data["mathspeak".concat(strictness)]) || this;
+            _this.data = data;
+            _this.strict = strict;
+            return _this;
         }
         Inequality.prototype.swap = function (strict) {
             this.strict = strict;
@@ -8391,22 +7390,22 @@ var __assign = (this && this.__assign) || function () {
     var Style = /** @class */ (function (_super) {
         __extends(Style, _super);
         function Style(ctrlSeq, tagName, attrs, ariaLabel, opts) {
-            var _this_1 = _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
+            var _this = _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
                 var _c, _d;
                 return h.block(tagName, attrs, blocks[0], {
                     beforeChild: (_c = opts === null || opts === void 0 ? void 0 : opts.beforeChild) === null || _c === void 0 ? void 0 : _c.call(opts),
                     afterChild: (_d = opts === null || opts === void 0 ? void 0 : opts.afterChild) === null || _d === void 0 ? void 0 : _d.call(opts)
                 });
             })) || this;
-            _this_1.ariaLabel = ariaLabel || ctrlSeq.replace(/^\\/, '');
-            _this_1.mathspeakTemplate = [
-                'Start' + _this_1.ariaLabel + ',',
-                'End' + _this_1.ariaLabel
+            _this.ariaLabel = ariaLabel || ctrlSeq.replace(/^\\/, '');
+            _this.mathspeakTemplate = [
+                'Start' + _this.ariaLabel + ',',
+                'End' + _this.ariaLabel
             ];
             // In most cases, mathspeak should announce the start and end of style blocks.
             // There is one exception currently (mathrm).
-            _this_1.shouldNotSpeakDelimiters = opts && opts.shouldNotSpeakDelimiters;
-            return _this_1;
+            _this.shouldNotSpeakDelimiters = opts && opts.shouldNotSpeakDelimiters;
+            return _this;
         }
         Style.prototype.mathspeak = function (opts) {
             if (!this.shouldNotSpeakDelimiters || (opts && opts.ignoreShorthand)) {
@@ -8495,11 +7494,11 @@ var __assign = (this && this.__assign) || function () {
     // [Mozilla docs]: https://developer.mozilla.org/en-US/docs/CSS/color_value#Values
     // [W3C spec]: http://dev.w3.org/csswg/css3-color/#colorunits
     LatexCmds.textcolor = /** @class */ (function (_super) {
-        __extends(class_9, _super);
-        function class_9() {
+        __extends(class_7, _super);
+        function class_7() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_9.prototype.setColor = function (color) {
+        class_7.prototype.setColor = function (color) {
             this.color = color;
             this.domView = new DOMView(1, function (blocks) {
                 return h.block('span', { class: 'mq-textcolor', style: 'color:' + color }, blocks[0]);
@@ -8510,7 +7509,7 @@ var __assign = (this && this.__assign) || function () {
                 'End ' + this.ariaLabel
             ];
         };
-        class_9.prototype.latexRecursive = function (ctx) {
+        class_7.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
             var blocks0 = this.blocks[0];
             ctx.uncleanedLatex += '\\textcolor{' + this.color + '}{';
@@ -8518,8 +7517,8 @@ var __assign = (this && this.__assign) || function () {
             ctx.uncleanedLatex += '}';
             this.checkCursorContextClose(ctx);
         };
-        class_9.prototype.parser = function () {
-            var _this_1 = this;
+        class_7.prototype.parser = function () {
+            var _this = this;
             var optWhitespace = Parser.optWhitespace;
             var string = Parser.string;
             var regex = Parser.regex;
@@ -8528,45 +7527,45 @@ var __assign = (this && this.__assign) || function () {
                 .then(regex(/^[#\w\s.,()%-]*/))
                 .skip(string('}'))
                 .then(function (color) {
-                _this_1.setColor(color);
-                return _super.prototype.parser.call(_this_1);
+                _this.setColor(color);
+                return _super.prototype.parser.call(_this);
             });
         };
-        class_9.prototype.isStyleBlock = function () {
+        class_7.prototype.isStyleBlock = function () {
             return true;
         };
-        return class_9;
+        return class_7;
     }(MathCommand));
     // Very similar to the \textcolor command, but will add the given CSS class.
     // Usage: \class{classname}{math}
     // Note regex that whitelists valid CSS classname characters:
     // https://github.com/mathquill/mathquill/pull/191#discussion_r4327442
     var Class = (LatexCmds['class'] = /** @class */ (function (_super) {
-        __extends(class_10, _super);
-        function class_10() {
+        __extends(class_8, _super);
+        function class_8() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_10.prototype.parser = function () {
-            var _this_1 = this;
+        class_8.prototype.parser = function () {
+            var _this = this;
             var string = Parser.string, regex = Parser.regex;
             return Parser.optWhitespace
                 .then(string('{'))
                 .then(regex(/^[-\w\s\\\xA0-\xFF]*/))
                 .skip(string('}'))
                 .then(function (cls) {
-                _this_1.cls = cls || '';
-                _this_1.domView = new DOMView(1, function (blocks) {
+                _this.cls = cls || '';
+                _this.domView = new DOMView(1, function (blocks) {
                     return h.block('span', { class: "mq-class ".concat(cls) }, blocks[0]);
                 });
-                _this_1.ariaLabel = cls + ' class';
-                _this_1.mathspeakTemplate = [
-                    'Start ' + _this_1.ariaLabel + ',',
-                    'End ' + _this_1.ariaLabel
+                _this.ariaLabel = cls + ' class';
+                _this.mathspeakTemplate = [
+                    'Start ' + _this.ariaLabel + ',',
+                    'End ' + _this.ariaLabel
                 ];
-                return _super.prototype.parser.call(_this_1);
+                return _super.prototype.parser.call(_this);
             });
         };
-        class_10.prototype.latexRecursive = function (ctx) {
+        class_8.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
             var blocks0 = this.blocks[0];
             ctx.uncleanedLatex += '\\class{' + this.cls + '}{';
@@ -8574,10 +7573,10 @@ var __assign = (this && this.__assign) || function () {
             ctx.uncleanedLatex += '}';
             this.checkCursorContextClose(ctx);
         };
-        class_10.prototype.isStyleBlock = function () {
+        class_8.prototype.isStyleBlock = function () {
             return true;
         };
-        return class_10;
+        return class_8;
     }(MathCommand)));
     // This test is used to determine whether an item may be treated as a whole number
     // for shortening the verbalized (mathspeak) forms of some fractions and superscripts.
@@ -8604,7 +7603,7 @@ var __assign = (this && this.__assign) || function () {
     var SupSub = /** @class */ (function (_super) {
         __extends(SupSub, _super);
         function SupSub(supsub) {
-            var _this_1 = this;
+            var _this = this;
             var ctrlSeq = '_{...}^{...}';
             var domView;
             // Note this.domView doesn't change if the SupSub is edited to something that has both
@@ -8627,13 +7626,13 @@ var __assign = (this && this.__assign) || function () {
                     ]);
                 });
             }
-            _this_1 = _super.call(this, ctrlSeq, domView) || this;
+            _this = _super.call(this, ctrlSeq, domView) || this;
             // Note the ariaLabel doesn't change if the SupSub is edited between subscript and superscript.
             // That may be a bug, though I don't know where the ariaLabel is actually used; the mathspeak
             // method doesn't reference it.
-            _this_1.ariaLabel = supsub === 'sub' ? 'subscript' : 'superscript';
-            _this_1.supsub = supsub;
-            return _this_1;
+            _this.ariaLabel = supsub === 'sub' ? 'subscript' : 'superscript';
+            _this.supsub = supsub;
+            return _this;
         }
         SupSub.prototype.setEnds = function (ends) {
             pray('SupSub ends must be MathBlocks', ends[L] instanceof MathBlock && ends[R] instanceof MathBlock);
@@ -8966,8 +7965,8 @@ var __assign = (this && this.__assign) || function () {
     var SummationNotation = /** @class */ (function (_super) {
         __extends(SummationNotation, _super);
         function SummationNotation(ch, symbol, ariaLabel) {
-            var _this_1 = _super.call(this) || this;
-            _this_1.ariaLabel = ariaLabel || ch.replace(/^\\/, '');
+            var _this = _super.call(this) || this;
+            _this.ariaLabel = ariaLabel || ch.replace(/^\\/, '');
             var domView = new DOMView(2, function (blocks) {
                 return h('span', { class: 'mq-large-operator mq-non-leaf' }, [
                     h('span', { class: 'mq-to' }, [h.block('span', {}, blocks[1])]),
@@ -8975,8 +7974,8 @@ var __assign = (this && this.__assign) || function () {
                     h('span', { class: 'mq-from' }, [h.block('span', {}, blocks[0])])
                 ]);
             });
-            MQSymbol.prototype.setCtrlSeqHtmlTextAndMathspeak.call(_this_1, ch, domView);
-            return _this_1;
+            MQSymbol.prototype.setCtrlSeqHtmlTextAndMathspeak.call(_this, ch, domView);
+            return _this;
         }
         SummationNotation.prototype.createLeftOf = function (cursor) {
             _super.prototype.createLeftOf.call(this, cursor);
@@ -9065,11 +8064,11 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds['\u222b'] =
         LatexCmds['int'] =
             LatexCmds.integral = /** @class */ (function (_super) {
-                __extends(class_11, _super);
-                function class_11() {
-                    var _this_1 = _super.call(this, '\\int ', '', 'integral') || this;
-                    _this_1.ariaLabel = 'integral';
-                    _this_1.domView = new DOMView(2, function (blocks) {
+                __extends(class_9, _super);
+                function class_9() {
+                    var _this = _super.call(this, '\\int ', '', 'integral') || this;
+                    _this.ariaLabel = 'integral';
+                    _this.domView = new DOMView(2, function (blocks) {
                         return h('span', { class: 'mq-int mq-non-leaf' }, [
                             h('big', {}, [h.text(U_INTEGRAL)]),
                             h('span', { class: 'mq-supsub mq-non-leaf' }, [
@@ -9083,13 +8082,13 @@ var __assign = (this && this.__assign) || function () {
                             ])
                         ]);
                     });
-                    return _this_1;
+                    return _this;
                 }
-                class_11.prototype.createLeftOf = function (cursor) {
+                class_9.prototype.createLeftOf = function (cursor) {
                     // FIXME: refactor rather than overriding
                     MathCommand.prototype.createLeftOf.call(this, cursor);
                 };
-                return class_11;
+                return class_9;
             }(SummationNotation));
     var Fraction = (LatexCmds.frac =
         LatexCmds.dfrac =
@@ -9097,9 +8096,9 @@ var __assign = (this && this.__assign) || function () {
                 LatexCmds.fraction = /** @class */ (function (_super) {
                     __extends(FracNode, _super);
                     function FracNode() {
-                        var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-                        _this_1.ctrlSeq = '\\frac';
-                        _this_1.domView = new DOMView(2, function (blocks) {
+                        var _this = _super !== null && _super.apply(this, arguments) || this;
+                        _this.ctrlSeq = '\\frac';
+                        _this.domView = new DOMView(2, function (blocks) {
                             return h('span', { class: 'mq-fraction mq-non-leaf' }, [
                                 h.block('span', { class: 'mq-numerator' }, blocks[0]),
                                 h.block('span', { class: 'mq-denominator' }, blocks[1]),
@@ -9108,8 +8107,8 @@ var __assign = (this && this.__assign) || function () {
                                 ])
                             ]);
                         });
-                        _this_1.textTemplate = ['(', ')/(', ')'];
-                        return _this_1;
+                        _this.textTemplate = ['(', ')/(', ')'];
+                        return _this;
                     }
                     FracNode.prototype.finalizeTree = function () {
                         var endsL = this.getEnd(L);
@@ -9225,11 +8224,11 @@ var __assign = (this && this.__assign) || function () {
                 }(MathCommand)));
     var LiveFraction = (LatexCmds.over =
         CharCmds['/'] = /** @class */ (function (_super) {
-            __extends(class_12, _super);
-            function class_12() {
+            __extends(class_10, _super);
+            function class_10() {
                 return _super !== null && _super.apply(this, arguments) || this;
             }
-            class_12.prototype.createLeftOf = function (cursor) {
+            class_10.prototype.createLeftOf = function (cursor) {
                 if (!this.replacedFragment) {
                     var leftward = cursor[L];
                     var dontScan = cursor.options.typingSlashCreatesNewFraction &&
@@ -9269,7 +8268,7 @@ var __assign = (this && this.__assign) || function () {
                 }
                 _super.prototype.createLeftOf.call(this, cursor);
             };
-            return class_12;
+            return class_10;
         }(Fraction)));
     var AnsBuilder = function () {
         return new MQSymbol('\\operatorname{ans}', h('span', { class: 'mq-ans' }, [h.text('ans')]), 'ans');
@@ -9298,13 +8297,13 @@ var __assign = (this && this.__assign) || function () {
     var Token = /** @class */ (function (_super) {
         __extends(Token, _super);
         function Token() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            _this_1.tokenId = '';
-            _this_1.ctrlSeq = '\\token';
-            _this_1.textTemplate = ['token(', ')'];
-            _this_1.mathspeakTemplate = ['StartToken,', ', EndToken'];
-            _this_1.ariaLabel = 'token';
-            return _this_1;
+            var _this = _super !== null && _super.apply(this, arguments) || this;
+            _this.tokenId = '';
+            _this.ctrlSeq = '\\token';
+            _this.textTemplate = ['token(', ')'];
+            _this.mathspeakTemplate = ['StartToken,', ', EndToken'];
+            _this.ariaLabel = 'token';
+            return _this;
         }
         Token.prototype.html = function () {
             var out = h('span', {
@@ -9358,11 +8357,11 @@ var __assign = (this && this.__assign) || function () {
     var TokenName = /** @class */ (function (_super) {
         __extends(TokenName, _super);
         function TokenName() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            _this_1.ctrlSeq = '\\tokenName';
-            _this_1.textTemplate = ['tokenName(', ')'];
-            _this_1.ariaLabel = 'token name';
-            return _this_1;
+            var _this = _super !== null && _super.apply(this, arguments) || this;
+            _this.ctrlSeq = '\\tokenName';
+            _this.textTemplate = ['tokenName(', ')'];
+            _this.ariaLabel = 'token name';
+            return _this;
         }
         return TokenName;
     }(Token));
@@ -9370,9 +8369,9 @@ var __assign = (this && this.__assign) || function () {
     var SquareRoot = /** @class */ (function (_super) {
         __extends(SquareRoot, _super);
         function SquareRoot() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            _this_1.ctrlSeq = '\\sqrt';
-            _this_1.domView = new DOMView(1, function (blocks) {
+            var _this = _super !== null && _super.apply(this, arguments) || this;
+            _this.ctrlSeq = '\\sqrt';
+            _this.domView = new DOMView(1, function (blocks) {
                 return h('span', { class: 'mq-non-leaf mq-sqrt-container' }, [
                     h('span', { class: 'mq-scaled mq-sqrt-prefix' }, [
                         SVG_SYMBOLS.sqrt.html()
@@ -9380,10 +8379,10 @@ var __assign = (this && this.__assign) || function () {
                     h.block('span', { class: 'mq-non-leaf mq-sqrt-stem' }, blocks[0])
                 ]);
             });
-            _this_1.textTemplate = ['sqrt(', ')'];
-            _this_1.mathspeakTemplate = ['StartRoot,', ', EndRoot'];
-            _this_1.ariaLabel = 'root';
-            return _this_1;
+            _this.textTemplate = ['sqrt(', ')'];
+            _this.mathspeakTemplate = ['StartRoot,', ', EndRoot'];
+            _this.ariaLabel = 'root';
+            return _this;
         }
         SquareRoot.prototype.parser = function () {
             return latexMathParser.optBlock
@@ -9414,24 +8413,24 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.hat = /** @class */ (function (_super) {
         __extends(Hat, _super);
         function Hat() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            _this_1.ctrlSeq = '\\hat';
-            _this_1.domView = new DOMView(1, function (blocks) {
+            var _this = _super !== null && _super.apply(this, arguments) || this;
+            _this.ctrlSeq = '\\hat';
+            _this.domView = new DOMView(1, function (blocks) {
                 return h('span', { class: 'mq-non-leaf' }, [
                     h('span', { class: 'mq-hat-prefix' }, [h.text('^')]),
                     h.block('span', { class: 'mq-hat-stem' }, blocks[0])
                 ]);
             });
-            _this_1.textTemplate = ['hat(', ')'];
-            return _this_1;
+            _this.textTemplate = ['hat(', ')'];
+            return _this;
         }
         return Hat;
     }(MathCommand));
     var NthRoot = /** @class */ (function (_super) {
         __extends(NthRoot, _super);
         function NthRoot() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            _this_1.domView = new DOMView(2, function (blocks) {
+            var _this = _super !== null && _super.apply(this, arguments) || this;
+            _this.domView = new DOMView(2, function (blocks) {
                 return h('span', { class: 'mq-nthroot-container mq-non-leaf' }, [
                     h.block('sup', { class: 'mq-nthroot mq-non-leaf' }, blocks[0]),
                     h('span', { class: 'mq-scaled mq-sqrt-container' }, [
@@ -9442,8 +8441,8 @@ var __assign = (this && this.__assign) || function () {
                     ])
                 ]);
             });
-            _this_1.textTemplate = ['sqrt[', '](', ')'];
-            return _this_1;
+            _this.textTemplate = ['sqrt[', '](', ')'];
+            return _this;
         }
         NthRoot.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
@@ -9478,16 +8477,16 @@ var __assign = (this && this.__assign) || function () {
     }(SquareRoot));
     LatexCmds.nthroot = NthRoot;
     LatexCmds.cbrt = /** @class */ (function (_super) {
-        __extends(class_13, _super);
-        function class_13() {
+        __extends(class_11, _super);
+        function class_11() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_13.prototype.createLeftOf = function (cursor) {
+        class_11.prototype.createLeftOf = function (cursor) {
             _super.prototype.createLeftOf.call(this, cursor);
             new Digit('3').createLeftOf(cursor);
             cursor.controller.moveRight();
         };
-        return class_13;
+        return class_11;
     }(NthRoot));
     var DiacriticAbove = /** @class */ (function (_super) {
         __extends(DiacriticAbove, _super);
@@ -9534,19 +8533,19 @@ var __assign = (this && this.__assign) || function () {
         __extends(Bracket, _super);
         function Bracket(side, open, close, ctrlSeq, end) {
             var _c;
-            var _this_1 = _super.call(this, '\\left' + ctrlSeq, undefined, [open, close]) || this;
-            _this_1.side = side;
-            _this_1.sides = (_c = {},
+            var _this = _super.call(this, '\\left' + ctrlSeq, undefined, [open, close]) || this;
+            _this.side = side;
+            _this.sides = (_c = {},
                 _c[L] = { ch: open, ctrlSeq: ctrlSeq },
                 _c[R] = { ch: close, ctrlSeq: end },
                 _c);
-            return _this_1;
+            return _this;
         }
         Bracket.prototype.numBlocks = function () {
             return 1;
         };
         Bracket.prototype.html = function () {
-            var _this_1 = this;
+            var _this = this;
             var leftSymbol = this.getSymbol(L);
             var rightSymbol = this.getSymbol(R);
             // wait until now so that .side may
@@ -9557,7 +8556,7 @@ var __assign = (this && this.__assign) || function () {
                     h('span', {
                         style: 'width:' + leftSymbol.width,
                         class: 'mq-scaled mq-bracket-l mq-paren' +
-                            (_this_1.side === R ? ' mq-ghost' : '')
+                            (_this.side === R ? ' mq-ghost' : '')
                     }, [leftSymbol.html()]),
                     h.block('span', {
                         style: 'margin-left:' +
@@ -9569,7 +8568,7 @@ var __assign = (this && this.__assign) || function () {
                     h('span', {
                         style: 'width:' + rightSymbol.width,
                         class: 'mq-scaled mq-bracket-r mq-paren' +
-                            (_this_1.side === L ? ' mq-ghost' : '')
+                            (_this.side === L ? ' mq-ghost' : '')
                     }, [rightSymbol.html()])
                 ]);
             });
@@ -9913,9 +8912,9 @@ var __assign = (this && this.__assign) || function () {
     var Binomial = /** @class */ (function (_super) {
         __extends(Binomial, _super);
         function Binomial() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            _this_1.ctrlSeq = '\\binom';
-            _this_1.domView = new DOMView(2, function (blocks) {
+            var _this = _super !== null && _super.apply(this, arguments) || this;
+            _this.ctrlSeq = '\\binom';
+            _this.domView = new DOMView(2, function (blocks) {
                 return h('span', { class: 'mq-non-leaf mq-bracket-container' }, [
                     h('span', {
                         style: 'width:' + leftBinomialSymbol.width,
@@ -9939,10 +8938,10 @@ var __assign = (this && this.__assign) || function () {
                     }, [rightBinomialSymbol.html()])
                 ]);
             });
-            _this_1.textTemplate = ['choose(', ',', ')'];
-            _this_1.mathspeakTemplate = ['StartBinomial,', 'Choose', ', EndBinomial'];
-            _this_1.ariaLabel = 'binomial';
-            return _this_1;
+            _this.textTemplate = ['choose(', ',', ')'];
+            _this.mathspeakTemplate = ['StartBinomial,', 'Choose', ', EndBinomial'];
+            _this.ariaLabel = 'binomial';
+            return _this;
         }
         Binomial.prototype.finalizeTree = function () {
             var endsL = this.getEnd(L);
@@ -9957,21 +8956,21 @@ var __assign = (this && this.__assign) || function () {
     }(DelimsNode));
     LatexCmds.binom = LatexCmds.binomial = Binomial;
     LatexCmds.choose = /** @class */ (function (_super) {
-        __extends(class_14, _super);
-        function class_14() {
+        __extends(class_12, _super);
+        function class_12() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_14.prototype.createLeftOf = function (cursor) {
+        class_12.prototype.createLeftOf = function (cursor) {
             LiveFraction.prototype.createLeftOf.call(this, cursor);
         };
-        return class_14;
+        return class_12;
     }(Binomial));
     var MathFieldNode = /** @class */ (function (_super) {
         __extends(MathFieldNode, _super);
         function MathFieldNode() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            _this_1.ctrlSeq = '\\MathQuillMathField';
-            _this_1.domView = new DOMView(1, function (blocks) {
+            var _this = _super !== null && _super.apply(this, arguments) || this;
+            _this.ctrlSeq = '\\MathQuillMathField';
+            _this.domView = new DOMView(1, function (blocks) {
                 var spacingBugAppend = hasSpacingBug() ? ' mq-has-spacing-bug' : '';
                 return h('span', { class: 'mq-editable-field' }, [
                     h.block('span', {
@@ -9980,7 +8979,7 @@ var __assign = (this && this.__assign) || function () {
                     }, blocks[0])
                 ]);
             });
-            return _this_1;
+            return _this;
         }
         MathFieldNode.prototype.parser = function () {
             var self = this, string = Parser.string, regex = Parser.regex, succeed = Parser.succeed;
@@ -10104,972 +9103,6 @@ var __assign = (this && this.__assign) || function () {
         return EmbedNode;
     }(MQSymbol));
     LatexCmds.embed = EmbedNode;
-    /****************************************
-     * Input box to type backslash commands
-     ***************************************/
-    CharCmds['\\'] = /** @class */ (function (_super) {
-        __extends(LatexCommandInput, _super);
-        function LatexCommandInput() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            _this_1.ctrlSeq = '\\';
-            _this_1.domView = new DOMView(1, function (blocks) {
-                return h('span', { class: 'mq-latex-command-input-wrapper mq-non-leaf' }, [
-                    h('span', { class: 'mq-latex-command-input mq-non-leaf' }, [
-                        h.text('\\'),
-                        h.block('span', {}, blocks[0])
-                    ])
-                ]);
-            });
-            _this_1.textTemplate = ['\\'];
-            return _this_1;
-        }
-        LatexCommandInput.prototype.replaces = function (replacedFragment) {
-            this._replacedFragment = replacedFragment.disown();
-            this.isEmpty = function () {
-                return false;
-            };
-        };
-        LatexCommandInput.prototype.createBlocks = function () {
-            _super.prototype.createBlocks.call(this);
-            var endsL = this.getEnd(L);
-            endsL.focus = function () {
-                this.parent.domFrag().addClass('mq-hasCursor');
-                if (this.isEmpty())
-                    this.parent.domFrag().removeClass('mq-empty');
-                return this;
-            };
-            endsL.blur = function () {
-                this.parent.domFrag().removeClass('mq-hasCursor');
-                if (this.isEmpty())
-                    this.parent.domFrag().addClass('mq-empty');
-                return this;
-            };
-            endsL.write = function (cursor, ch) {
-                cursor.show().deleteSelection();
-                if (ch.match(/[a-z]/i)) {
-                    new VanillaSymbol(ch).createLeftOf(cursor);
-                    // TODO needs tests
-                    cursor.controller.aria.alert(ch);
-                }
-                else {
-                    var cmd = this.parent.renderCommand(cursor);
-                    // TODO needs tests
-                    cursor.controller.aria.queue(cmd.mathspeak({ createdLeftOf: cursor }));
-                    if (ch !== '\\' || !this.isEmpty())
-                        cursor.parent.write(cursor, ch);
-                    else
-                        cursor.controller.aria.alert();
-                }
-            };
-            var originalKeystroke = endsL.keystroke;
-            endsL.keystroke = function (key, e, ctrlr) {
-                if (key === 'Tab' || key === 'Enter' || key === 'Spacebar') {
-                    var cmd = this.parent.renderCommand(ctrlr.cursor);
-                    // TODO needs tests
-                    ctrlr.aria.alert(cmd.mathspeak({ createdLeftOf: ctrlr.cursor }));
-                    e === null || e === void 0 ? void 0 : e.preventDefault();
-                    return;
-                }
-                return originalKeystroke.call(this, key, e, ctrlr);
-            };
-        };
-        LatexCommandInput.prototype.createLeftOf = function (cursor) {
-            _super.prototype.createLeftOf.call(this, cursor);
-            if (this._replacedFragment) {
-                var frag = this.domFrag();
-                var el_1 = frag.oneElement();
-                this._replacedFragment.domFrag().addClass('mq-blur');
-                //FIXME: is monkey-patching the mousedown and mousemove handlers the right way to do this?
-                var rewriteMousedownEventTarget = function (e) {
-                    {
-                        // TODO - overwritting e.target
-                        e.target = el_1;
-                        el_1.dispatchEvent(e);
-                        return false;
-                    }
-                };
-                el_1.addEventListener('mousedown', rewriteMousedownEventTarget);
-                el_1.addEventListener('mouseup', rewriteMousedownEventTarget);
-                this._replacedFragment.domFrag().insertBefore(frag.children().first());
-            }
-        };
-        LatexCommandInput.prototype.latexRecursive = function (ctx) {
-            this.checkCursorContextOpen(ctx);
-            ctx.uncleanedLatex += '\\';
-            this.getEnd(L).latexRecursive(ctx);
-            ctx.uncleanedLatex += ' ';
-            this.checkCursorContextClose(ctx);
-        };
-        LatexCommandInput.prototype.renderCommand = function (cursor) {
-            this.setDOM(this.domFrag().children().lastElement());
-            this.remove();
-            if (this[R]) {
-                cursor.insLeftOf(this[R]);
-            }
-            else {
-                cursor.insAtRightEnd(this.parent);
-            }
-            var latex = this.getEnd(L).latex();
-            if (!latex)
-                latex = ' ';
-            var cmd = LatexCmds[latex];
-            if (cmd) {
-                var node = void 0;
-                if (isMQNodeClass(cmd)) {
-                    node = new cmd(latex);
-                }
-                else {
-                    node = cmd(latex);
-                }
-                if (this._replacedFragment)
-                    node.replaces(this._replacedFragment);
-                node.createLeftOf(cursor);
-                return node;
-            }
-            else {
-                var node = new TextBlock();
-                node.replaces(latex);
-                node.createLeftOf(cursor);
-                cursor.insRightOf(node);
-                if (this._replacedFragment) {
-                    this._replacedFragment.remove();
-                }
-                return node;
-            }
-        };
-        return LatexCommandInput;
-    }(MathCommand));
-    /*************************************************
-     * LaTeX environments: \begin{matrix} family and
-     * \displaylines{...}, plus insertion-time \derivative.
-     *
-     * Vendored patch on top of desmosinc/mathquill \u2014 the matrix
-     * implementation is a port of Learnosity/mathquill's `matrix`
-     * branch (upstream PR mathquill/mathquill#762, ~2017 jQuery
-     * base) to the jQuery-free TypeScript internals used here.
-     *************************************************/
-    var Environments = {};
-    LatexCmds.begin = /** @class */ (function (_super) {
-        __extends(class_15, _super);
-        function class_15() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            _this_1.ctrlSeq = '\\begin';
-            _this_1.domView = new DOMView(1, function (blocks) {
-                return h('span', { class: 'mq-non-leaf' }, [
-                    h.text('\\begin{'),
-                    h.block('span', {}, blocks[0]),
-                    h.text('}'),
-                ]);
-            });
-            return _this_1;
-        }
-        class_15.prototype.parser = function () {
-            var string = Parser.string;
-            var regex = Parser.regex;
-            return string('{')
-                .then(regex(/^[a-z]+/i))
-                .skip(string('}'))
-                .then(function (env) {
-                return (Environments[env]
-                    ? Environments[env]().parser()
-                    : Parser.fail('unknown environment type: ' + env)).skip(string('\\end{' + env + '}'));
-            });
-        };
-        return class_15;
-    }(MathCommand));
-    // A MathCommand whose children ("cells") are laid out in a grid:
-    // the matrix family (N columns, optional bracket delimiters) and
-    // displaylines (a single column).
-    var CellGrid = /** @class */ (function (_super) {
-        __extends(CellGrid, _super);
-        function CellGrid() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            // Delimiters consumed by the parser.
-            _this_1.delimiters = { column: '&', row: '\\\\' };
-            // Separators written by latex() \u2014 displaylines emits 'a\\ b'.
-            _this_1.rowSep = '\\\\';
-            _this_1.colSep = '&';
-            _this_1.parens = {
-                left: null,
-                right: null,
-            };
-            // When true the parser expects the cell grid in braces: `\pmatrix{a&b}`.
-            // Set for bare LatexCmds registrations; \begin{...} parses are
-            // \end{...}-bounded instead.
-            _this_1.needsBraces = false;
-            // number of columns; set by relink()
-            _this_1.rowSize = 0;
-            _this_1.gridClass = 'mq-matrix mq-non-leaf';
-            _this_1.cellTextAlign = 'center';
-            return _this_1;
-        }
-        Object.defineProperty(CellGrid.prototype, "cells", {
-            get: function () {
-                return (this.blocks || []);
-            },
-            enumerable: false,
-            configurable: true
-        });
-        CellGrid.prototype.latexOpen = function () {
-            return '';
-        };
-        CellGrid.prototype.latexClose = function () {
-            return '';
-        };
-        CellGrid.prototype.latexRecursive = function (ctx) {
-            this.checkCursorContextOpen(ctx);
-            ctx.uncleanedLatex += this.latexOpen();
-            var row;
-            var rowSep = this.rowSep, colSep = this.colSep;
-            this.eachChild(function (child) {
-                var cell = child;
-                if (row !== undefined) {
-                    ctx.uncleanedLatex += row !== cell.row ? rowSep : colSep;
-                }
-                row = cell.row;
-                cell.latexRecursive(ctx);
-                return undefined;
-            });
-            ctx.uncleanedLatex += this.latexClose();
-            this.checkCursorContextClose(ctx);
-        };
-        CellGrid.prototype.html = function () {
-            var self = this;
-            self.relink();
-            this.domView = new DOMView(0, function () {
-                var rows = [];
-                var tr;
-                var row = -1;
-                for (var _i = 0, _c = self.cells; _i < _c.length; _i++) {
-                    var cell = _c[_i];
-                    if (cell.row !== row) {
-                        row = cell.row;
-                        tr = h('tr', {});
-                        rows.push(tr);
-                    }
-                    tr.appendChild(h.block('td', { style: 'text-align:' + self.cellTextAlign }, cell));
-                }
-                var styleBits = [];
-                if (self.parens.left)
-                    styleBits.push('margin-left:' + SVG_SYMBOLS[self.parens.left].width);
-                if (self.parens.right)
-                    styleBits.push('margin-right:' + SVG_SYMBOLS[self.parens.right].width);
-                var table = h('table', {
-                    class: 'mq-non-leaf' + (rows.length === 1 ? ' mq-rows-1' : ''),
-                    style: styleBits.join(';') || undefined,
-                }, rows);
-                function parenHtml(side) {
-                    var paren = self.parens[side];
-                    if (!paren)
-                        return h('span', { style: 'display:none' });
-                    var symbol = SVG_SYMBOLS[paren];
-                    return h('span', {
-                        style: 'width:' + symbol.width,
-                        class: 'mq-scaled mq-paren mq-bracket-' +
-                            (side === 'left' ? 'l' : 'r'),
-                    }, [symbol.html()]);
-                }
-                return h('span', { class: self.gridClass }, [
-                    parenHtml('left'),
-                    table,
-                    parenHtml('right'),
-                ]);
-            });
-            return _super.prototype.html.call(this);
-        };
-        CellGrid.prototype.finalizeTree = function () {
-            var _c;
-            this.relink();
-            var trs = this.tableRows();
-            var table = (_c = trs[0]) === null || _c === void 0 ? void 0 : _c.parentElement;
-            table === null || table === void 0 ? void 0 : table.classList.toggle('mq-rows-1', trs.length === 1);
-        };
-        CellGrid.prototype.parser = function () {
-            var inner = this.cellsParser();
-            if (!this.needsBraces)
-                return inner;
-            return Parser.string('{')
-                .then(inner)
-                .skip(Parser.optWhitespace)
-                .skip(Parser.string('}'));
-        };
-        // Parses `&`- and `\\`-separated math blocks into cells.
-        CellGrid.prototype.cellsParser = function () {
-            var optWhitespace = Parser.optWhitespace;
-            var string = Parser.string;
-            var block = latexMathParser.block;
-            var self = this;
-            return optWhitespace
-                .then((this.delimiters.column
-                ? string(this.delimiters.column)
-                : Parser.fail('no column delimiter'))
-                .or(string(this.delimiters.row))
-                .or(block))
-                .many()
-                .skip(optWhitespace)
-                .then(function (items) {
-                var collected = [];
-                var row = 0;
-                self.blocks = [];
-                function addCell() {
-                    self.blocks.push(new MatrixCell(row, self, collected));
-                    collected = [];
-                }
-                for (var i = 0; i < items.length; i += 1) {
-                    var item = items[i];
-                    if (item instanceof MathBlock) {
-                        collected.push(item);
-                    }
-                    else {
-                        addCell();
-                        if (item === self.delimiters.row)
-                            row += 1;
-                    }
-                }
-                addCell();
-                self.autocorrect();
-                return Parser.succeed(self);
-            });
-        };
-        // Set up directional pointers between cells; also fixes rowSize,
-        // sibling links, and the command's ends.
-        CellGrid.prototype.relink = function () {
-            var _c, _d;
-            var blocks = this.cells;
-            var rows = [];
-            var row = -1, column = 0;
-            if (!blocks.length) {
-                this.ends = (_c = {}, _c[L] = 0, _c[R] = 0, _c);
-                return;
-            }
-            // Assume one row until a second shows up; overwritten below.
-            this.rowSize = blocks.length;
-            for (var i = 0; i < blocks.length; i += 1) {
-                var cell = blocks[i];
-                if (row !== cell.row) {
-                    if (cell.row === 1) {
-                        // Just finished iterating the first row.
-                        this.rowSize = column;
-                    }
-                    row = cell.row;
-                    rows[row] = [];
-                    column = 0;
-                }
-                rows[row][column] = cell;
-                // Horizontal linkage
-                cell[R] = blocks[i + 1] || 0;
-                cell[L] = blocks[i - 1] || 0;
-                // Vertical linkage
-                var above = rows[row - 1] && rows[row - 1][column];
-                if (above) {
-                    cell.upOutOf = above;
-                    above.downOutOf = cell;
-                }
-                else {
-                    delete cell.upOutOf;
-                }
-                delete cell.downOutOf;
-                column += 1;
-            }
-            this.setEnds((_d = {},
-                _d[L] = blocks[0],
-                _d[R] = blocks[blocks.length - 1],
-                _d));
-        };
-        // Pad shorter rows so the grid is rectangular (after parsing).
-        CellGrid.prototype.autocorrect = function () {
-            var lengths = [];
-            var rows = [];
-            var blocks = this.cells;
-            var row = -1;
-            for (var i = 0; i < blocks.length; i += 1) {
-                row = blocks[i].row;
-                rows[row] = rows[row] || [];
-                rows[row].push(blocks[i]);
-                lengths[row] = rows[row].length;
-            }
-            var maxLength = Math.max.apply(null, lengths);
-            if (rows.length === 1 || maxLength === Math.min.apply(null, lengths))
-                return;
-            for (i = 0; i < rows.length; i += 1) {
-                var shortfall = maxLength - rows[i].length;
-                while (shortfall) {
-                    var position = maxLength * i + rows[i].length;
-                    blocks.splice(position, 0, new MatrixCell(i, this));
-                    shortfall -= 1;
-                }
-            }
-            this.relink();
-        };
-        // Enter the grid at the top or bottom row when moving vertically.
-        CellGrid.prototype.getEntryPoint = function (dir, updown) {
-            if (updown === 'up') {
-                return dir === L ? this.cells[this.rowSize - 1] : this.cells[0];
-            }
-            else {
-                return dir === L
-                    ? this.cells[this.cells.length - 1]
-                    : this.cells[this.cells.length - this.rowSize];
-            }
-        };
-        // Exit the grid past the first and last columns when moving
-        // vertically out of it.
-        CellGrid.prototype.atExitPoint = function (dir, cursor) {
-            var i = this.cells.indexOf(cursor.parent);
-            if (dir === L) {
-                return i % this.rowSize === 0;
-            }
-            else {
-                return (i + 1) % this.rowSize === 0;
-            }
-        };
-        CellGrid.prototype.moveTowards = function (dir, cursor, updown) {
-            var entryPoint = updown && this.getEntryPoint(dir, updown);
-            cursor.insAtDirEnd(-dir, entryPoint || this.getEnd(-dir));
-            cursor.controller.aria
-                .queueDirEndOf(-dir)
-                .queue(cursor.parent, true);
-        };
-        CellGrid.prototype.tableRows = function () {
-            var table = this.domFrag().oneElement().querySelector('table');
-            return table ? Array.from(table.querySelectorAll('tr')) : [];
-        };
-        CellGrid.prototype.renderCell = function (cell) {
-            var td = h('td', {
-                class: cell.isEmpty() ? 'mq-empty' : '',
-                style: 'text-align:' + this.cellTextAlign,
-            });
-            cell.setDOM(td);
-            NodeBase.linkElementByBlockNode(td, cell);
-            return td;
-        };
-        // Split `cell` into two rows: content after `splitAfter` (a direct
-        // child of the cell, or 0 to keep the whole row) moves to a new row
-        // below; returns the new cell. `splitAfter === cell.getEnd(L)` splits
-        // *before* that node is not supported \u2014 pass the node to split after.
-        CellGrid.prototype.splitRowBelow = function (cell, splitAfter, cursor) {
-            var rightEnd = cell.getEnd(R);
-            // Everything after splitAfter moves to the new row; splitAfter = 0
-            // means the whole row moves down.
-            var rightStart = splitAfter ? splitAfter[R] : cell.getEnd(L);
-            var rightFrag = rightStart
-                ? new Fragment(rightStart, rightEnd)
-                : new Fragment(0, 0);
-            var newCell = new MatrixCell(cell.row + 1, this);
-            this.eachChild(function (child) {
-                var c = child;
-                if (c.row > cell.row)
-                    c.row += 1;
-                return undefined;
-            });
-            this.blocks.splice(this.cells.indexOf(cell) + 1, 0, newCell);
-            rightFrag.disown();
-            rightFrag.adopt(newCell, 0, 0);
-            // DOM: append a new <tr> after this cell's row.
-            var td = this.renderCell(newCell);
-            var tr = cell.domFrag().oneElement().closest('tr');
-            tr === null || tr === void 0 ? void 0 : tr.after(h('tr', {}, [td]));
-            this.relink();
-            newCell.blur(cursor);
-            return newCell;
-        };
-        // Deleting a cell also deletes the current row and column if they
-        // are empty, and relinks the grid.
-        CellGrid.prototype.deleteCell = function (currentCell) {
-            var _c;
-            var rows = [], columns = [], myRow = [], myColumn = [];
-            var blocks = this.cells, row = -1, column = 0;
-            this.eachChild(function (child) {
-                var cell = child;
-                if (row !== cell.row) {
-                    row = cell.row;
-                    rows[row] = [];
-                    column = 0;
-                }
-                columns[column] = columns[column] || [];
-                columns[column].push(cell);
-                rows[row].push(cell);
-                if (cell === currentCell) {
-                    myRow = rows[row];
-                    myColumn = columns[column];
-                }
-                column += 1;
-                return undefined;
-            });
-            function isEmpty(cells) {
-                var empties = [];
-                for (var i = 0; i < cells.length; i += 1) {
-                    if (cells[i].isEmpty())
-                        empties.push(cells[i]);
-                }
-                return empties.length === cells.length;
-            }
-            function remove(cells) {
-                for (var i = 0; i < cells.length; i += 1) {
-                    if (blocks.indexOf(cells[i]) > -1) {
-                        cells[i].remove();
-                        blocks.splice(blocks.indexOf(cells[i]), 1);
-                    }
-                }
-            }
-            if (isEmpty(myRow) && myColumn.length > 1) {
-                row = rows.indexOf(myRow);
-                // Decrease all following row numbers
-                this.eachChild(function (child) {
-                    var cell = child;
-                    if (cell.row > row)
-                        cell.row -= 1;
-                    return undefined;
-                });
-                // Dispose of cells and remove the <tr>
-                var trs = this.tableRows();
-                remove(myRow);
-                (_c = trs[row]) === null || _c === void 0 ? void 0 : _c.remove();
-            }
-            if (isEmpty(myColumn) && myRow.length > 1) {
-                var col_1 = columns.indexOf(myColumn);
-                remove(myColumn);
-                // Remove the orphaned <td>s from each row
-                this.tableRows().forEach(function (tr) {
-                    var _c;
-                    (_c = tr.children[col_1]) === null || _c === void 0 ? void 0 : _c.remove();
-                });
-            }
-            this.finalizeTree();
-        };
-        CellGrid.prototype.addRow = function (afterCell) {
-            var _c;
-            var previous = [], newCells = [], next = [];
-            var row = afterCell.row, columns = 0, column = 0;
-            this.eachChild(function (child) {
-                var cell = child;
-                // Cache previous rows
-                if (cell.row <= row)
-                    previous.push(cell);
-                // Work out how many columns
-                if (cell.row === row) {
-                    if (cell === afterCell)
-                        column = columns;
-                    columns += 1;
-                }
-                // Cache cells after the new row
-                if (cell.row > row) {
-                    cell.row += 1;
-                    next.push(cell);
-                }
-                return undefined;
-            });
-            // Add new cells, one for each column
-            var tds = [];
-            for (var i = 0; i < columns; i += 1) {
-                var block = new MatrixCell(row + 1, this);
-                newCells.push(block);
-                tds.push(this.renderCell(block));
-            }
-            // Insert the new <tr> after the current row's
-            var trs = this.tableRows();
-            (_c = trs[row]) === null || _c === void 0 ? void 0 : _c.after(h('tr', {}, tds));
-            this.blocks = previous.concat(newCells, next);
-            return newCells[column];
-        };
-        CellGrid.prototype.addColumn = function (afterCell) {
-            var rows = [], newCells = [];
-            var column = 0;
-            // Build the rows array and find the new column index
-            this.eachChild(function (child) {
-                var cell = child;
-                rows[cell.row] = rows[cell.row] || [];
-                rows[cell.row].push(cell);
-                if (cell === afterCell)
-                    column = rows[cell.row].length;
-                return undefined;
-            });
-            // Add new cells, one for each row
-            for (var i = 0; i < rows.length; i += 1) {
-                var block = new MatrixCell(i, this);
-                newCells.push(block);
-                rows[i].splice(column, 0, block);
-            }
-            // Add <td> elements in the right position in each row
-            var trs = this.tableRows();
-            for (i = 0; i < trs.length && i < rows.length; i += 1) {
-                var td = this.renderCell(newCells[i]);
-                var before = trs[i].children[column];
-                if (before)
-                    trs[i].insertBefore(td, before);
-                else
-                    trs[i].appendChild(td);
-            }
-            // Flatten the rows array-of-arrays
-            this.blocks = [].concat.apply([], rows);
-            return newCells[afterCell.row];
-        };
-        CellGrid.prototype.insert = function (method, afterCell, ctrlr) {
-            var cellToFocus = this[method](afterCell);
-            this.finalizeTree();
-            this.bubble(function (node) {
-                node.reflow();
-                return undefined;
-            });
-            ctrlr.cursor.insAtRightEnd(cellToFocus);
-        };
-        CellGrid.prototype.backspace = function (cell, dir, cursor, finalDeleteCallback) {
-            var dirwards = cell[dir];
-            if (cell.isEmpty()) {
-                this.deleteCell(cell);
-                while (dirwards &&
-                    dirwards[dir] &&
-                    this.cells.indexOf(dirwards) === -1) {
-                    dirwards = dirwards[dir];
-                }
-                if (dirwards) {
-                    cursor.insAtDirEnd(-dir, dirwards);
-                }
-                if (this.cells.length === 1 && this.cells[0].isEmpty()) {
-                    finalDeleteCallback();
-                    this.finalizeTree();
-                }
-                this.bubble(function (node) {
-                    node.reflow();
-                    return undefined;
-                });
-            }
-        };
-        return CellGrid;
-    }(MathCommand));
-    var MatrixCell = /** @class */ (function (_super) {
-        __extends(MatrixCell, _super);
-        function MatrixCell(row, parent, replaces) {
-            var _this_1 = _super.call(this) || this;
-            _this_1.row = row;
-            if (parent) {
-                _this_1.adopt(parent, parent.getEnd(R), 0);
-            }
-            if (replaces) {
-                for (var i = 0; i < replaces.length; i++) {
-                    replaces[i].children().adopt(_this_1, _this_1.getEnd(R), 0);
-                }
-            }
-            return _this_1;
-        }
-        MatrixCell.prototype.keystroke = function (key, e, ctrlr) {
-            switch (key) {
-                case 'Shift-Spacebar':
-                    e === null || e === void 0 ? void 0 : e.preventDefault();
-                    return this.parent.insert('addColumn', this, ctrlr);
-            }
-            return _super.prototype.keystroke.call(this, key, e, ctrlr);
-        };
-        MatrixCell.prototype.deleteOutOf = function (dir, cursor) {
-            var self = this;
-            this.parent.backspace(this, dir, cursor, function () {
-                // called when the last cell gets deleted
-                MathBlock.prototype.deleteOutOf.call(self, dir, cursor);
-            });
-        };
-        MatrixCell.prototype.moveOutOf = function (dir, cursor, updown) {
-            var atExitPoint = updown && this.parent.atExitPoint(dir, cursor);
-            // Step out of the grid if we've moved past an edge column
-            if (!atExitPoint && this[dir])
-                cursor.insAtDirEnd(-dir, this[dir]);
-            else
-                cursor.insDirOf(dir, this.parent);
-        };
-        return MatrixCell;
-    }(MathBlock));
-    var Matrix = /** @class */ (function (_super) {
-        __extends(Matrix, _super);
-        function Matrix() {
-            return _super !== null && _super.apply(this, arguments) || this;
-        }
-        Matrix.prototype.createBlocks = function () {
-            this.blocks = [
-                new MatrixCell(0, this),
-                new MatrixCell(0, this),
-                new MatrixCell(1, this),
-                new MatrixCell(1, this),
-            ];
-        };
-        return Matrix;
-    }(CellGrid));
-    function withBraces(env) {
-        env.needsBraces = true;
-        return env;
-    }
-    Environments.matrix = function () { return new Matrix(); };
-    LatexCmds.matrix = function () { return withBraces(new Matrix()); };
-    var PMatrix = /** @class */ (function (_super) {
-        __extends(PMatrix, _super);
-        function PMatrix() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            _this_1.parens = { left: '(', right: ')' };
-            return _this_1;
-        }
-        PMatrix.prototype.latexOpen = function () {
-            return '\\begin{pmatrix}';
-        };
-        PMatrix.prototype.latexClose = function () {
-            return '\\end{pmatrix}';
-        };
-        return PMatrix;
-    }(Matrix));
-    var BMatrix = /** @class */ (function (_super) {
-        __extends(BMatrix, _super);
-        function BMatrix() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            _this_1.parens = { left: '[', right: ']' };
-            return _this_1;
-        }
-        BMatrix.prototype.latexOpen = function () {
-            return '\\begin{bmatrix}';
-        };
-        BMatrix.prototype.latexClose = function () {
-            return '\\end{bmatrix}';
-        };
-        return BMatrix;
-    }(Matrix));
-    var BBMatrix = /** @class */ (function (_super) {
-        __extends(BBMatrix, _super);
-        function BBMatrix() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            _this_1.parens = { left: '{', right: '}' };
-            return _this_1;
-        }
-        BBMatrix.prototype.latexOpen = function () {
-            return '\\begin{Bmatrix}';
-        };
-        BBMatrix.prototype.latexClose = function () {
-            return '\\end{Bmatrix}';
-        };
-        return BBMatrix;
-    }(Matrix));
-    var VMatrix = /** @class */ (function (_super) {
-        __extends(VMatrix, _super);
-        function VMatrix() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            _this_1.parens = { left: '|', right: '|' };
-            return _this_1;
-        }
-        VMatrix.prototype.latexOpen = function () {
-            return '\\begin{vmatrix}';
-        };
-        VMatrix.prototype.latexClose = function () {
-            return '\\end{vmatrix}';
-        };
-        return VMatrix;
-    }(Matrix));
-    var VVMatrix = /** @class */ (function (_super) {
-        __extends(VVMatrix, _super);
-        function VVMatrix() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            _this_1.parens = { left: '&#8741;', right: '&#8741;' };
-            return _this_1;
-        }
-        VVMatrix.prototype.latexOpen = function () {
-            return '\\begin{Vmatrix}';
-        };
-        VVMatrix.prototype.latexClose = function () {
-            return '\\end{Vmatrix}';
-        };
-        return VVMatrix;
-    }(Matrix));
-    var MatrixEnv = /** @class */ (function (_super) {
-        __extends(MatrixEnv, _super);
-        function MatrixEnv() {
-            return _super !== null && _super.apply(this, arguments) || this;
-        }
-        MatrixEnv.prototype.latexOpen = function () {
-            return '\\begin{matrix}';
-        };
-        MatrixEnv.prototype.latexClose = function () {
-            return '\\end{matrix}';
-        };
-        return MatrixEnv;
-    }(Matrix));
-    Environments.pmatrix = function () { return new PMatrix(); };
-    Environments.bmatrix = function () { return new BMatrix(); };
-    Environments.Bmatrix = function () { return new BBMatrix(); };
-    Environments.vmatrix = function () { return new VMatrix(); };
-    Environments.Vmatrix = function () { return new VVMatrix(); };
-    // \displaylines{a\\ b}: a single-column grid for multi-line cells.
-    var DisplayLines = /** @class */ (function (_super) {
-        __extends(DisplayLines, _super);
-        function DisplayLines() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            // Rows only \u2014 no `&` column delimiter.
-            _this_1.delimiters = { column: '', row: '\\\\' };
-            _this_1.rowSep = '\\\\ ';
-            _this_1.gridClass = 'mq-displaylines mq-non-leaf';
-            _this_1.cellTextAlign = 'left';
-            return _this_1;
-        }
-        DisplayLines.prototype.latexOpen = function () {
-            return '\\displaylines{';
-        };
-        DisplayLines.prototype.latexClose = function () {
-            return '}';
-        };
-        DisplayLines.prototype.createBlocks = function () {
-            this.blocks = [new MatrixCell(0, this), new MatrixCell(1, this)];
-        };
-        return DisplayLines;
-    }(CellGrid));
-    Environments.displaylines = function () { return new DisplayLines(); };
-    LatexCmds.displaylines = function () { return withBraces(new DisplayLines()); };
-    LatexCmds.pmatrix = function () { return withBraces(new PMatrix()); };
-    LatexCmds.bmatrix = function () { return withBraces(new BMatrix()); };
-    LatexCmds.Bmatrix = function () { return withBraces(new BBMatrix()); };
-    LatexCmds.vmatrix = function () { return withBraces(new VMatrix()); };
-    LatexCmds.Vmatrix = function () { return withBraces(new VVMatrix()); };
-    // Fix up Environments.matrix to use the proper latex wrapper.
-    Environments.matrix = function () { return new MatrixEnv(); };
-    // \derivative{a}{b}: expands to real atoms at insertion time \u2014
-    // \frac{da}{db} when the dIsDerivative option is on (default), D(a)
-    // otherwise. Two blocks so `\derivative{a}{b}` in stored latex still
-    // round-trips verbatim; the typed path (`\derivative` + terminator, or
-    // the `derivative` autoCommand) expands via writeLatex so the result is
-    // ordinary editable content.
-    var Derivative = /** @class */ (function (_super) {
-        __extends(Derivative, _super);
-        function Derivative() {
-            return _super.call(this, '\\derivative', new DOMView(2, function (blocks) {
-                return h('span', { class: 'mq-non-leaf' }, [
-                    h.text('D('),
-                    h.block('span', {}, blocks[0]),
-                    h.text(', '),
-                    h.block('span', {}, blocks[1]),
-                    h.text(')'),
-                ]);
-            }), ['D(', ')']) || this;
-        }
-        Derivative.prototype.createLeftOf = function (cursor) {
-            var _this_1 = this;
-            var _c;
-            // Expand immediately instead of inserting a \derivative node.
-            var arg = function (i) {
-                var _c;
-                var block = (_c = _this_1.blocks) === null || _c === void 0 ? void 0 : _c[i];
-                return block && !block.isEmpty() ? block.latex() : '';
-            };
-            var isDeriv = cursor.options.dIsDerivative !== false;
-            var latex = isDeriv
-                ? '\\frac{d' + arg(0) + '}{d' + arg(1) + '}'
-                : 'D(' + arg(0) + ')';
-            cursor.parent.writeLatex(cursor, latex);
-            // Caret lands at the end of the denominator for \frac{d#1}{d#2};
-            // for D(#1) it goes before the closing paren ('(' and ')' parse as
-            // separate atoms in latex, so just step left of ')').
-            var prev = cursor[L];
-            if (isDeriv) {
-                if (prev instanceof MathCommand && ((_c = prev.blocks) === null || _c === void 0 ? void 0 : _c.length)) {
-                    cursor.insAtRightEnd(prev.getEnd(R));
-                }
-            }
-            else if (prev) {
-                cursor.insDirOf(L, prev);
-            }
-        };
-        return Derivative;
-    }(MathCommand));
-    LatexCmds.derivative = function () { return new Derivative(); };
-    /**
-     * Enter semantics for editable fields: add a row when inside a matrix
-     * cell, split the current row when inside a \displaylines cell, or wrap
-     * top-level content in a two-row \displaylines split at the row-level
-     * atom containing the caret.
-     */
-    function insertLineBreakAtCursor(ctrlr) {
-        var cursor = ctrlr.cursor;
-        if (cursor.selection)
-            cursor.deleteSelection();
-        // Find the line-level block (nearest MatrixCell / root block) and the
-        // atom inside it that contains the caret.
-        var lineBlock;
-        var atomInLine;
-        var node = cursor.parent;
-        while (true) {
-            if (node instanceof MatrixCell || Controller.isControllerRoot(node)) {
-                lineBlock = node;
-                break;
-            }
-            var par = node.parent;
-            if (!par)
-                break;
-            if (par instanceof MatrixCell || Controller.isControllerRoot(par)) {
-                lineBlock = par;
-                atomInLine = node;
-                break;
-            }
-            node = par;
-        }
-        if (!lineBlock)
-            return;
-        // Inside a matrix cell: Enter adds a row below the cell's row.
-        if (lineBlock instanceof MatrixCell &&
-            !(lineBlock.parent instanceof DisplayLines)) {
-            lineBlock.parent.insert('addRow', lineBlock, ctrlr);
-            ctrlr.notify('edit');
-            ctrlr.scrollHoriz();
-            return;
-        }
-        // Split point: just after the row-level atom containing the caret, or
-        // at the caret itself when it sits directly inside the line block.
-        var splitAfter = atomInLine || cursor[L];
-        if (Controller.isControllerRoot(lineBlock)) {
-            // Wrap the root's whole content in a two-row \displaylines.
-            var env = new DisplayLines();
-            var cellL = new MatrixCell(0, env);
-            var cellR = new MatrixCell(1, env);
-            env.blocks = [cellL, cellR];
-            env.relink();
-            var leftEnd = lineBlock.getEnd(L);
-            var rightEnd = lineBlock.getEnd(R);
-            // NB: adopt() mutates sibling links (clears rightEnd[R]), so both
-            // fragments must be constructed *before* any disown/adopt runs.
-            // leftFrag: [leftEnd .. splitAfter] \u2014 empty when splitting at the
-            // start of the line (splitAfter = 0).
-            var leftFrag = leftEnd && splitAfter
-                ? new Fragment(leftEnd, splitAfter)
-                : new Fragment(0, 0);
-            // rightFrag: [splitAfter's right sibling .. rightEnd] \u2014 everything
-            // when splitting at the start; empty when splitting at the end.
-            var rightStart = splitAfter ? splitAfter[R] : leftEnd;
-            var rightFrag = rightStart && rightEnd
-                ? new Fragment(rightStart, rightEnd)
-                : new Fragment(0, 0);
-            leftFrag.disown();
-            rightFrag.disown();
-            leftFrag.adopt(cellL, 0, 0);
-            rightFrag.adopt(cellR, 0, 0);
-            env.adopt(lineBlock, 0, 0);
-            var el = lineBlock.domFrag().oneElement();
-            lineBlock.domFrag().empty();
-            domFrag(env.html()).appendTo(el);
-            env.postOrder(function (n) {
-                n.finalizeTree(cursor.options);
-            });
-            env.postOrder(function (n) {
-                n.blur(cursor);
-            });
-            env.bubble(function (n) {
-                n.reflow();
-                return undefined;
-            });
-            cursor.insAtLeftEnd(cellR);
-        }
-        else {
-            // A \displaylines cell: split it into two rows.
-            var grid = lineBlock.parent;
-            var newCell = grid.splitRowBelow(lineBlock, splitAfter, cursor);
-            grid.bubble(function (n) {
-                n.reflow();
-                return undefined;
-            });
-            cursor.insAtLeftEnd(newCell);
-        }
-        ctrlr.notify('edit');
-        ctrlr.scrollHoriz();
-    }
     // For backwards compatibility, set up the global MathQuill object as an instance of API interface v1
     if (window.jQuery) {
         MQ1 = getInterface(1);

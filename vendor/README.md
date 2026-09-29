@@ -12,8 +12,32 @@ Vendored copy of the Desmos fork of MathQuill
 
 ### Local patches on top of upstream
 
-(none yet — Phase 1 adds `src/commands/math/environments.ts` for
-`\begin{matrix}`/`\displaylines` plus custom `LatexCmds` entries)
+`src/commands/math/environments.ts` (new file, appended to
+`SOURCES_FULL` in the Makefile):
+
+- `CellGrid`/`MatrixCell` — grid commands, a TypeScript port of
+  Learnosity/mathquill's `matrix` branch (upstream PR
+  mathquill/mathquill#762, jQuery-era) onto the jQuery-free internals
+  here (`h()`, `domFrag()`, `DOMView`, `SVG_SYMBOLS` parens — no JS
+  scaling needed).
+- Environments: `matrix`, `pmatrix`, `bmatrix`, `Bmatrix`, `vmatrix`,
+  `Vmatrix` via `\begin{env}…\end{env}`, and the same names as bare
+  `LatexCmds` parsing `\pmatrix{a&b\\c&d}` brace form.
+- `displaylines` (`\displaylines{a\\ b}`, also as an environment) — the
+  multi-line row model; a 1-column CellGrid.
+- `LatexCmds.derivative` — expands to `\frac{d#1}{d#2}` (default) or
+  `D(#1)` when `config({dIsDerivative:false})`, via `writeLatex` so the
+  expansion is ordinary editable atoms.
+- `EditableField.insertLineBreak()` (added in `src/publicapi.ts`) —
+  Enter semantics: add a row inside a matrix cell, split a
+  `\displaylines` row, or wrap top-level content in `\displaylines`.
+- `mathquill.d.ts`: `insertLineBreak()` on `EditableMathQuill` and
+  `dIsDerivative` on `v1.Config`.
+- `src/css/math.less`: `.mq-matrix` / `.mq-displaylines` rules.
+
+Coverage: `test/unit/environments.test.js` (mocha; run `make test` then
+open `test/unit.html`, or run `npx playwright test e2e/vendor.spec.ts`
+at the repo root to run the whole vendor suite headlessly).
 
 ### Rebuilding
 

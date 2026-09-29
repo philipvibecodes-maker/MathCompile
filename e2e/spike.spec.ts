@@ -13,6 +13,8 @@ declare global {
         focus(): void;
         moveToLeftEnd(): void;
         moveToRightEnd(): void;
+        insertLineBreak(): void;
+        config(o: { dIsDerivative?: boolean }): void;
         selection(): { latex: string; startIndex: number; endIndex: number };
       };
       el: HTMLElement;
@@ -159,4 +161,112 @@ test('capture keydown sees shiftKey; enter/upOutOf/downOutOf/moveOutOf fire', as
   expect(events).toContain('handler:upOutOf');
   expect(events).toContain('handler:downOutOf');
   expect(events).toContain('handler:moveOutOf:-1');
+});
+
+// --- Phase 1: vendored environments patch ---
+
+test('\\begin{matrix} parses, renders as a table, and round-trips', async ({
+  page,
+}) => {
+  const r = await spike(page, () => {
+    const { mq, el } = window.spike;
+    mq.latex('\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}');
+    return {
+      latex: mq.latex(),
+      tds: el.querySelectorAll('.mq-matrix td').length,
+      parens: el.querySelectorAll('.mq-matrix .mq-paren').length,
+      rows: el.querySelectorAll('.mq-matrix tr').length,
+    };
+  });
+  expect(r.latex).toBe('\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}');
+  expect(r.rows).toBe(2);
+  expect(r.tds).toBe(4);
+  expect(r.parens).toBe(2);
+});
+
+test('insertLineBreak inside a matrix cell adds a row', async ({ page }) => {
+  const r = await spike(page, () => {
+    const { mq } = window.spike;
+    mq.latex('\\begin{matrix}a&b\\\\c&d\\end{matrix}');
+    mq.focus();
+    // Caret lands in the last cell (d) after entering from the right.
+    mq.keystroke('Left');
+    mq.insertLineBreak();
+    return { latex: mq.latex() };
+  });
+  expect(r.latex).toBe('\\begin{matrix}a&b\\\\c&d\\\\&\\end{matrix}');
+});
+
+test('insertLineBreak at top level wraps content in \\displaylines', async ({
+  page,
+}) => {
+  const r = await spike(page, () => {
+    const { mq } = window.spike;
+    mq.latex('x+1');
+    mq.moveToLeftEnd();
+    mq.keystroke('Right'); // caret after 'x'
+    mq.insertLineBreak();
+    return { latex: mq.latex(), sel: mq.selection() };
+  });
+  expect(r.latex).toBe('\\displaylines{x\\\\ +1}');
+});
+
+test('insertLineBreak inside displaylines splits the row', async ({ page }) => {
+  const r = await spike(page, () => {
+    const { mq } = window.spike;
+    mq.latex('\\displaylines{x\\\\ +1}');
+    mq.focus();
+    mq.keystroke('Left'); // enter env -> right end of last row ('+1')
+    mq.keystroke('Left'); // caret between '+' and '1'
+    mq.insertLineBreak();
+    return { latex: mq.latex(), rows: mq.latex().split('\\\\').length };
+  });
+  expect(r.latex).toBe('\\displaylines{x\\\\ +\\\\ 1}');
+});
+
+test('Shift-Spacebar in a matrix cell adds a column', async ({ page }) => {
+  const r = await spike(page, () => {
+    const { mq, el } = window.spike;
+    mq.latex('\\begin{matrix}a&b\\\\c&d\\end{matrix}');
+    mq.focus();
+    mq.keystroke('Left'); // caret into last cell (d)
+    mq.keystroke('Shift-Spacebar');
+    return { latex: mq.latex(), tds: el.querySelectorAll('.mq-matrix td').length };
+  });
+  expect(r.tds).toBe(6);
+  expect(r.latex).toBe('\\begin{matrix}a&b&\\\\c&d&\\end{matrix}');
+});
+
+test('\\derivative expands to a real fraction with caret in the denominator', async ({
+  page,
+}) => {
+  const r = await spike(page, () => {
+    const { mq } = window.spike;
+    mq.latex('');
+    mq.typedText('\\');
+    for (const ch of 'derivative') mq.typedText(ch);
+    mq.keystroke('Enter'); // renderCommand -> expansion
+    const latex = mq.latex();
+    mq.typedText('f');
+    return { latex, after: mq.latex() };
+  });
+  expect(r.latex).toBe('\\frac{d}{d}');
+  expect(r.after).toBe('\\frac{d}{df}');
+});
+
+test('with dIsDerivative off, \\derivative expands to D()', async ({ page }) => {
+  const r = await spike(page, () => {
+    const { mq } = window.spike;
+    mq.config({ dIsDerivative: false });
+    mq.latex('');
+    mq.typedText('\\');
+    for (const ch of 'derivative') mq.typedText(ch);
+    mq.keystroke('Enter');
+    const latex = mq.latex();
+    mq.typedText('f');
+    mq.config({ dIsDerivative: true });
+    return { latex, after: mq.latex() };
+  });
+  expect(r.latex).toBe('D()');
+  expect(r.after).toBe('D(f)');
 });
