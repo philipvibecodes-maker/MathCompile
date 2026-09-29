@@ -122,15 +122,17 @@ test('when focus has drifted back to a math-field while open', async ({
   await escapeCloses(page);
 });
 
-test('when focus is programmatically moved out of the input', async ({
+test('a blur-to-nowhere closes the palette (keyboard-extension Escape)', async ({
   page,
 }) => {
   await mf(page).click();
   await mf(page).focus();
   await openPalette(page);
-  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
-  await page.waitForTimeout(80); // trap may have refocused; either is fine
-  await escapeCloses(page);
+  await expect(page.locator('.palette-input')).toBeFocused();
+  // Vimium & co. handle Escape in insert mode by blurring the input and
+  // suppressing the keydown itself — the focusout is the only signal left.
+  await page.locator('.palette-input').evaluate((el: HTMLElement) => el.blur());
+  await expect(page.locator('.palette')).toBeHidden();
 });
 
 test('with the virtual keyboard visible', async ({ page }) => {
