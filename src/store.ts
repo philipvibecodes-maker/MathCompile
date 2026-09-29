@@ -1,6 +1,6 @@
 import { createSignal } from 'solid-js';
 import { createStore } from 'solid-js/store';
-import type { FieldHandle } from './mathlive/adapter';
+import type { FieldHandle } from './editor/adapter';
 import type { TargetId } from './targets';
 
 export interface Expr {

@@ -1,24 +1,23 @@
 import { createEffect, onCleanup, onMount } from 'solid-js';
-import type { MathfieldElement } from 'mathlive';
-import { attachField } from '../mathlive/adapter';
-import type { FieldHandle } from '../mathlive/adapter';
+import { attachField } from '../editor/adapter';
+import type { FieldHandle } from '../editor/adapter';
 import { appStore } from '../store';
 import type { Expr } from '../store';
 
 declare module 'solid-js' {
   namespace JSX {
     interface IntrinsicElements {
-      'math-field': JSX.HTMLAttributes<MathfieldElement>;
+      'math-field': JSX.HTMLAttributes<HTMLElement>;
     }
   }
 }
 
-// Thin wrapper: the element is created here but every MathLive interaction
+// Thin wrapper: the element is created here but every MathQuill interaction
 // goes through the adapter handle (challenges.md §2). Imperative actions
 // (focus, setValue) are methods on the handle registered in the store — no
 // prop-delta channels like focusNonce.
 export default function MathFieldInput(props: { expr: Expr }) {
-  let mf!: MathfieldElement;
+  let mf!: HTMLElement;
   let handle: FieldHandle | undefined;
 
   onMount(() => {

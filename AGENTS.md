@@ -1,19 +1,40 @@
 # MathCompile
 
 Desmos-style multi-cell math expression editor. **SolidJS** + TypeScript +
-Vite, cells are MathLive `<math-field>` elements. Rewritten from React on the
-`solid-rewrite` worktree branch; see `challenges.md` for the rationale.
+Vite; cells are `<math-field>` elements backed by a **vendored Desmos
+MathQuill** build (not MathLive). Rewritten from React on the
+`rewrite/solidjs-mathquill` worktree branch; see `challenges.md` for the
+rationale.
 
 ## Commands
 
-- `npm run dev` — dev server (vite) on **:5273** (strict; chosen so this
-  worktree can run alongside the main checkout's :5173)
+- `npm run dev` — dev server (vite) on **:5473** (strict; chosen so this
+  worktree can run alongside the main checkout's :5173 and the other
+  rewrite worktrees' :5273/:5373)
 - `npm run build` — `tsc -b` + vite build
-- `npm run lint` — oxlint
-- `npm test` — vitest unit tests (`src/*.test.ts`, `src/mathlive/*.test.ts`,
-  node environment)
+- `npm run lint` — oxlint (vendor/ and dist/ excluded in .oxlintrc.json)
+- `npm test` — vitest unit tests (`src/*.test.ts`, node environment)
 - `npm run test:e2e` — Playwright tests (`e2e/`, reuses a running dev
-  server on :5273 or starts `npm run dev`)
+  server on :5473 or starts `npm run dev`)
+
+### Vendored MathQuill bootstrap
+
+`vendor/mathquill/` is a copy of
+`desmosinc/mathquill@bb9974ab` plus local patches (see `vendor/README.md`).
+Its `build/` output is gitignored — after a fresh clone:
+
+```
+cd vendor/mathquill && npm ci && make dev
+```
+
+produces `build/mathquill.{js,css}` + fonts, which `src/editor/mathquill.ts`
+imports as a side effect (IIFE sets `window.MathQuill`; the ambient types
+come from `vendor/mathquill/src/mathquill.d.ts`, included via tsconfig).
+
+Vendor patches live in `vendor/mathquill/src/commands/math/environments.ts`
+(matrix/displaylines envs, `\derivative` template, `insertRowBreak`) plus
+edits to `src/css/*.less`, `src/publicapi.ts`, `src/mathquill.d.ts`, and the
+`Makefile` source list. Rebuild with `make dev` after touching them.
 
 ## Architecture
 
@@ -22,21 +43,23 @@ src/
   store.ts            app state (createStore for exprs) + field registry +
                       focusCell() — the single focus owner
   commands.ts         Command type + createCommands() memo
-  mathlive/
-    adapter.ts        attachField(mf, cb) -> FieldHandle; the ONLY module that
-                      imports mathlive, touches mf._mathfield, or reads the
-                      suggestion popover's DOM
-    limitNavigation.ts  pure caret reducer for \int/\sum limits (unit-tested)
+  editor/
+    mathquill.ts      loads the vendored IIFE + CSS; exports MQ v3 + L
+    adapter.ts        attachField(el, cb) -> FieldHandle; the ONLY module
+                      that talks to MathQuill (config, handlers, __controller
+                      caret peeks, host element API)
+    mq.d.ts           ambient Window.MathQuill + the IIFE module decl
   components/
     MathFieldInput.tsx  <math-field> ref -> attachField; ~50 lines
     CommandPalette.tsx  always mounted, .open class toggles visibility
     OutputPanel.tsx     pure render of store signals
 ```
 
-- All private-API contact lives in `src/mathlive/` — a MathLive upgrade
-  should break types in one file, not across components.
+- All MathQuill contact lives in `src/editor/` — components see only
+  `FieldHandle`/`FieldCallbacks`, so an engine upgrade breaks types in one
+  file, not across components.
 - Commands reach fields via `store.fields.get(id)?.method()` — never via
-  prop deltas. `focusCell(id, edge)` replaces the old `focusNonce` prop.
+  prop deltas. `focusCell(id, edge)` is the single focus owner.
 - `exprs` is a `createStore` array: `setExprs(i, 'latex', v)` mutates the
   proxy in place so `<For>` keeps row identity — replacing `{...e, latex}`
   objects would remount the field and lose the caret every keystroke.
@@ -54,78 +77,60 @@ src/
 - The palette is **always mounted** (`.palette-backdrop.open` flips
   `visibility` + `pointer-events`; `.palette` has
   `contain: layout style paint`). Open cost is a class flip + `focus()`.
-- Any deferred focus call must re-check `paletteOpen()` inside the timeout:
-  with the palette mounted, a stale `focus()` after close would steal focus
-  back from a cell (the `focusout` trap and the 70ms re-assert both do this).
 - Closing the palette refocuses the active cell via an `App` effect →
   `focusCell(focusedId())`.
 
-## MathLive notes
+## MathQuill notes
 
-- Multi-line cells use the `\displaylines{...}` ("lines") environment:
-  `mf.executeCommand('addRowAfter')` wraps top-level content in it
-  automatically and splits the row at the caret. A single-row `lines` env
-  serializes without the `\displaylines{}` wrapper, so one-line cells keep
-  clean LaTeX.
-- `addRowAfter` silently no-ops when the caret is nested inside an atom
-  (`\frac{1}{|2}`); the adapter's `insertLineBreak` snaps the caret to the
-  row-level ancestor first.
-- Internal `model.position`/`model.setSelection` writes don't re-render;
-  move the caret through `mf.position`/`mf.selection` (see
-  `src/mathlive/limitNavigation.ts` `applyCaret`). Reading via `model.at`,
-  `model.offsetOf`, etc. is fine.
-- `input` is dispatched deferred (`setTimeout`); `selection-change` fires
-  synchronously — the lower-placeholder fix lives in `selection-change` so
-  it lands before the next keystroke.
-- ~60ms after a field is focused, MathLive's `onFocus` re-focuses its
-  internal span via a deferred `keyboardDelegate.focus()` — it can steal
-  focus from a modal opened right after editing a cell. The palette keeps a
-  focusout trap + one 70ms re-assert as defense (this is inside MathLive and
-  can't be removed while `<math-field>` is the editing surface).
-- At top/bottom row dead ends MathLive emits a cancelable `move-out`
-  CustomEvent (`detail.direction`: `upward`/`downward`/`forward`/`backward`)
-  on the `<math-field>` host — used for cross-cell navigation.
-- `derivative` is an **inline shortcut** (`mf.inlineShortcuts` in the
-  adapter), inserting real `\frac{d#?}{dx}` atoms — there is no macro atom,
-  no bake pass, and no `latex-expanded` canonicalization. The
-  `d/dx means derivative` toggle is a semantic (compiler) option consumed
-  by the future IR lowering; it never rewrites cell content.
-- Built-in shorthand worth remembering: typing `dx` expands to
-  `\differentialD x` (MathLive's default inline shortcut).
+- Focus: MQ focuses an inner `<textarea>`; the `<math-field>` host carries
+  `.mq-focused`. `document.activeElement === mathField` is NEVER true — test
+  helpers use `host.contains(activeElement)` (see `e2e/helpers.ts`).
+- The host is `tabindex=-1` and forwards `focus` events to the textarea —
+  so both `el.focus()` and Playwright's CDP-level `DOM.focus` work.
+- Multi-line cells use the `\displaylines{...}` env (vendor patch):
+  plain `Enter` calls `mq.insertRowBreak()` which wraps top-level content
+  and splits the row at the caret; nested atoms snap out first.
+  `\displaylines{x\\y}` serializes with no space after `\\`.
+- Enter semantics (all ours): inside a matrix cell → `addRow`; at top
+  level → displaylines split; `Shift+Enter` → `onNewCell` (intercepted in
+  a capture-phase keydown before MQ's textarea sees it).
+- Matrices: `\begin{matrix|pmatrix|bmatrix|Bmatrix|vmatrix|Vmatrix}` parse,
+  render as `.mq-matrix` tables, and support cell navigation, Enter=row,
+  Shift+Space=column, and empty-cell/env collapse. Typing `\begin` + Enter
+  drops a fresh 2x3 pmatrix.
+- `derivative` is an `autoCommands` word + `\derivative` LatexCmd that
+  expands to real `\frac{d}{dx}` atoms at insertion (caret in numerator) —
+  no macro atom, no bake pass.
+- `\int`/`\sum`/`\prod` are autoCommands inserting `{lower}^{upper}`
+  templates with the caret in the lower bound; arrow traversal goes
+  lower → upper → out in written order (the old `limitNavigation.ts` shim
+  is gone).
+- MQ has no placeholder atoms: empty template blocks serialize `{ }`.
+  Also no suggestion popover, latex mode, or virtual keyboard — those
+  MathLive states/tests are gone or rewritten.
+- `Home`/`End` are block-local in MQ; `Ctrl-Home`/`Ctrl-End` hit the field
+  edges. `Tab`/`Esc` move between blocks (Tab works — the MathLive Tab bug
+  pinned in the old limits spec doesn't exist).
+- `smartMode` maps to `autoSubscriptNumerals` + `sumStartsWithNEquals`
+  (live via `mq.config`); also exposed as a `smartMode` property on the
+  host element for e2e.
+- `moveOutOf`/`upOutOf`/`downOutOf` MQ handlers feed `onMoveOut` for
+  cross-cell navigation; `Shift+Arrow` extends selection in MQ and never
+  fires those handlers.
 
 ## Testing notes
 
-- E2e cell-focus changes must use `focus()` + a settle wait (see
-  `focusCell` in `e2e/cells.spec.ts`): MathLive's ~60ms deferred internal
-  refocus steals focus back when switching cells too fast, so `click()`
-  alone is racy.
+- Shared e2e probes live in `e2e/helpers.ts` (`cell`, `cellValue`,
+  `waitFocusedIndex`, `focusCell`, `caretInfo`). `caretInfo` reads the
+  rendered `.mq-cursor` element; `leftText` (rendered text left of the
+  caret) replaces MathLive's `model.position`.
 - The palette stays mounted: assert `.palette` hidden via
   `not.toBeVisible()`, not `toHaveCount(0)`.
-- Known bug, pinned as expected-fail in `e2e/limits.spec.ts`: Tab from the
-  lower placeholder lands back on it (the lower-placeholder fix re-fires
-  after Tab's navigation), so Tab cannot reach the upper bound.
-- `caretInfo.where` in `e2e/limits.spec.ts` only works for msubsup limits
-  (`\int`); `\sum` renders over/under — assert via what typing fills instead.
-- `\sum`/`\int` templates serialize placeholders as `\placeholder{}`;
-  multi-line cells serialize as `\displaylines{a\\ b}` (note the space);
-  the `derivative` shortcut serializes as `\frac{d\placeholder{}}{dx}`.
+- Serialization deltas vs MathLive pinned in tests: `\\` has no trailing
+  space, `\frac{1}{2}` always braced, `x^{2}` braced, empty bounds `{ }`,
+  no `\placeholder{}`, no `\differentialD` (`df/dx` → `\frac{df}{dx}`).
 
 ## Codegraph
 
 This worktree has no `.codegraph/` index of its own (the main checkout has
-one). Run `codegraph init` here if you want one. MathLive can be indexed as
-a **separate project** at `node_modules/mathlive/.codegraph` (query it via
-`projectPath`) — `mathlive.mjs` exceeds the 1 MB file limit, so only
-`types/*.d.ts` is indexed via `node_modules/mathlive/codegraph.json`
-excludes. `npm install` wipes it; recreate with:
-
-```
-cat > node_modules/mathlive/codegraph.json <<'EOF'
-{
-  "exclude": ["mathlive.mjs", "mathlive.js", "mathlive.min.mjs",
-              "mathlive.min.js", "mathlive-ssr.min.mjs", "vue-mathlive.mjs",
-              "fonts/", "sounds/"]
-}
-EOF
-codegraph init node_modules/mathlive
-```
+one). Run `codegraph init` here if you want one.

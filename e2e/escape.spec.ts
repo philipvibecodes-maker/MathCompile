@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { waitFocusedIndex } from './helpers';
 
 // Escape-must-close contract for the command palette, exercised across every
 // focus/timing state the palette can be open in. The handler is a window-level
@@ -37,9 +38,7 @@ test('baseline: open via Ctrl+K, Escape closes and refocuses the cell', async ({
   await mf(page).focus();
   await openPalette(page);
   await escapeCloses(page);
-  await page.waitForFunction(
-    () => document.activeElement?.tagName === 'MATH-FIELD',
-  );
+  await waitFocusedIndex(page, 0);
 });
 
 test('open via the header button', async ({ page }) => {
@@ -77,35 +76,23 @@ test('after arrow-key navigation', async ({ page }) => {
   await escapeCloses(page);
 });
 
-test('opened inside MathLive’s deferred-refocus window', async ({ page }) => {
+test('opened immediately after the cell gained focus', async ({ page }) => {
   await mf(page).click();
   await mf(page).focus();
   await mf(page).pressSequentially('x', { delay: 30 });
-  // Palette opened ~ms after the field gained focus; the ~60ms MathLive
-  // refocus steal may still be pending when Escape arrives.
+  // MathQuill has no deferred-refocus timer, but the palette must still
+  // close cleanly when opened ~ms after the field gained focus.
   await openPalette(page);
   await escapeCloses(page);
 });
 
-test('opened while the cell’s suggestion popover was visible', async ({
+test('opened while a \\command was mid-typing in the cell', async ({
   page,
 }) => {
   await mf(page).click();
   await mf(page).focus();
-  await mf(page).pressSequentially('\\sq', { delay: 80 });
-  await expect(page.locator('#mathlive-suggestion-popover')).toHaveClass(
-    /is-visible/,
-  );
-  await openPalette(page);
-  await escapeCloses(page);
-});
-
-test('with a cell in latex mode', async ({ page }) => {
-  await mf(page).click();
-  await mf(page).focus();
-  await mf(page).evaluate((el) => {
-    (el as unknown as { mode: string }).mode = 'latex';
-  });
+  // MathQuill's pending-latex state replaces MathLive's suggestion popover.
+  await mf(page).pressSequentially('\\sq', { delay: 60 });
   await openPalette(page);
   await escapeCloses(page);
 });
@@ -116,10 +103,10 @@ test('when focus has drifted back to a math-field while open', async ({
   await mf(page).click();
   await mf(page).focus();
   await openPalette(page);
-  // Simulate the focus steal winning over the palette's focus trap.
+  // Simulate an external focus steal (browser chrome, IME, shell) moving
+  // focus back to a cell while the palette is open.
   await mf(page).focus();
   await page.waitForTimeout(100);
-  // The trap re-asserts input focus; Escape must work either way.
   await escapeCloses(page);
 });
 
@@ -134,17 +121,12 @@ test('when focus is programmatically moved out of the input', async ({
   await escapeCloses(page);
 });
 
-test('with the virtual keyboard visible', async ({ page }) => {
+test('with focus outside the cell before opening', async ({ page }) => {
   await mf(page).click();
   await mf(page).focus();
-  await page.evaluate(() =>
-    (
-      window as unknown as {
-        mathVirtualKeyboard?: { show(): void };
-      }
-    ).mathVirtualKeyboard?.show(),
-  );
-  await page.waitForTimeout(150);
+  // MathQuill has no virtual keyboard; the state worth pinning is simply
+  // "cell was focused, then something else took focus before Ctrl+K".
+  await page.locator('.add-expr').focus();
   await openPalette(page);
   await escapeCloses(page);
 });
@@ -167,9 +149,7 @@ test('a second Escape after closing does not reopen or wedge the app', async ({
   await escapeCloses(page);
   await page.keyboard.press('Escape');
   await expect(page.locator('.palette')).not.toBeVisible();
-  await page.waitForFunction(
-    () => document.activeElement?.tagName === 'MATH-FIELD',
-  );
+  await waitFocusedIndex(page, 0);
 });
 
 test('with text selected in the palette input', async ({ page }) => {

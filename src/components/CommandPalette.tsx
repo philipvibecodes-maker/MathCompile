@@ -10,7 +10,6 @@ export default function CommandPalette(props: { commands: Command[] }) {
   const [index, setIndex] = createSignal(0);
   let inputRef!: HTMLInputElement;
   let listRef!: HTMLUListElement;
-  let rootRef!: HTMLDivElement;
 
   const matches = createMemo(() => {
     const scored: { c: Command; s: number }[] = [];
@@ -25,21 +24,14 @@ export default function CommandPalette(props: { commands: Command[] }) {
   const sel = () => Math.min(index(), matches().length - 1);
   const close = () => appStore.setPaletteOpen(false);
 
-  // On open: reset state and focus the input. The field is already laid
-  // out (always mounted), so focus() is cheap — but MathLive re-asserts
-  // cell focus on a ~60ms timer after a field was focused, so re-assert
-  // once just past that window.
+  // On open: reset state and focus the input. MathQuill keeps no deferred
+  // refocus timer (that ~60ms steal was a MathLive quirk), so a plain
+  // focus() is all we need.
   createEffect(() => {
     if (!appStore.paletteOpen()) return;
     setQuery('');
     setIndex(0);
     inputRef.focus();
-    const t = setTimeout(() => {
-      // The palette may have closed within the window — a stale refocus on
-      // the still-mounted input would steal focus back from the cell.
-      if (appStore.paletteOpen()) inputRef.focus();
-    }, 70);
-    onCleanup(() => clearTimeout(t));
   });
 
   // Escape must close even if focus has drifted out of the input.
@@ -61,22 +53,6 @@ export default function CommandPalette(props: { commands: Command[] }) {
       .querySelector('.cmd-item.selected')
       ?.scrollIntoView({ block: 'nearest' });
   });
-
-  // Keep focus inside while the palette is open: MathLive's deferred
-  // refocus can steal it when the palette opened right after editing.
-  // Re-check openness inside the timeout — commands close the palette while
-  // focus is already moving to a cell, and the mounted input must not take
-  // it back.
-  const onFocusOut = (e: FocusEvent) => {
-    if (
-      appStore.paletteOpen() &&
-      rootRef &&
-      !rootRef.contains(e.relatedTarget as Node)
-    )
-      setTimeout(() => {
-        if (appStore.paletteOpen()) inputRef.focus();
-      }, 0);
-  };
 
   const pick = (c: Command) => {
     c.run();
@@ -105,13 +81,11 @@ export default function CommandPalette(props: { commands: Command[] }) {
       onClick={close}
     >
       <div
-        ref={(el) => (rootRef = el)}
         class="palette"
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
         onClick={(e) => e.stopPropagation()}
-        onFocusOut={onFocusOut}
       >
         <input
           ref={(el) => (inputRef = el)}

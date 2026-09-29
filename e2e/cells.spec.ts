@@ -1,38 +1,16 @@
 import { expect, test } from '@playwright/test';
-import type { Locator, Page } from '@playwright/test';
+import {
+  cell,
+  cellValue,
+  expectCellFocused,
+  focusedIndex,
+  focusCell,
+  waitFocusedIndex,
+} from './helpers';
 
 // Cell-level behavior: the expression list is the app's core document model.
 // These tests pin DOM-visible behavior only — no framework internals — so
 // they survive a rewrite in another framework.
-
-const cell = (page: Page, i: number): Locator =>
-  page.locator('math-field').nth(i);
-
-const cellValue = (mf: Locator): Promise<string> =>
-  mf.evaluate((el) => (el as unknown as { getValue(): string }).getValue());
-
-const focusedIndex = (page: Page): Promise<number> =>
-  page.evaluate(() =>
-    [...document.querySelectorAll('math-field')].indexOf(
-      document.activeElement as Element,
-    ),
-  );
-
-const waitFocusedIndex = (page: Page, i: number) =>
-  page.waitForFunction(
-    (idx) =>
-      document.activeElement === document.querySelectorAll('math-field')[idx],
-    i,
-  );
-
-// Focus cell i and prove it stuck. MathLive re-focuses a field's internal
-// span ~60ms after the field gains focus; switching cells inside that window
-// gets the focus stolen back to the previous field. Drain the window first.
-const focusCell = async (page: Page, i: number) => {
-  await page.waitForTimeout(120);
-  await cell(page, i).focus();
-  await waitFocusedIndex(page, i);
-};
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -41,7 +19,7 @@ test.beforeEach(async ({ page }) => {
 
 test('starts with a single focused empty cell', async ({ page }) => {
   await expect(page.locator('math-field')).toHaveCount(1);
-  await expect(cell(page, 0)).toBeFocused();
+  await expectCellFocused(cell(page, 0));
   expect(await cellValue(cell(page, 0))).toBe('');
 });
 
@@ -113,8 +91,9 @@ test('Enter splits the cell into multiple lines', async ({ page }) => {
   await page.keyboard.press('Enter');
   await cell(page, 0).pressSequentially('y', { delay: 40 });
   // No new cell; the field holds a \displaylines environment.
+  // MathQuill serializes the row separator as \\ with no trailing space.
   await expect(page.locator('math-field')).toHaveCount(1);
-  expect(await cellValue(cell(page, 0))).toBe('\\displaylines{x\\\\ y}');
+  expect(await cellValue(cell(page, 0))).toBe('\\displaylines{x\\\\y}');
 });
 
 test('Enter inside a nested atom splits the row, keeping the atom whole', async ({
@@ -122,25 +101,26 @@ test('Enter inside a nested atom splits the row, keeping the atom whole', async 
 }) => {
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('1/2', { delay: 40 });
-  expect(await cellValue(cell(page, 0))).toBe('\\frac12');
+  // MathQuill always emits braced fraction args (no \frac12 shorthand).
+  expect(await cellValue(cell(page, 0))).toBe('\\frac{1}{2}');
   await page.keyboard.press('Enter');
   await cell(page, 0).pressSequentially('z', { delay: 40 });
   expect(await cellValue(cell(page, 0))).toBe(
-    '\\displaylines{\\frac12\\\\ z}',
+    '\\displaylines{\\frac{1}{2}\\\\z}',
   );
 });
 
-test('Enter accepts an open autocomplete suggestion instead of line-breaking', async ({
+test('Enter completes a pending \\latex command instead of line-breaking', async ({
   page,
 }) => {
   await cell(page, 0).click();
-  await cell(page, 0).pressSequentially('\\sq', { delay: 80 });
-  await expect(
-    page.locator('#mathlive-suggestion-popover'),
-  ).toHaveClass(/is-visible/);
+  // Typing "\sqrt" enters MathQuill's pending-latex state; Enter commits it
+  // (MathLive instead opened a suggestion popover — MQ has none; the
+  // autoCommands list converts plain `sqrt` as you type).
+  await cell(page, 0).pressSequentially('\\sqrt', { delay: 60 });
   await page.keyboard.press('Enter');
   const v = await cellValue(cell(page, 0));
-  expect(v).toBe('\\sqrt');
+  expect(v).toBe('\\sqrt{ }');
   expect(v).not.toContain('displaylines');
 });
 
@@ -233,14 +213,11 @@ test('focusing a cell makes it the target for subsequent commands', async ({
   expect(await cellValue(cell(page, 2))).toBe('b');
 });
 
-test('clicking another cell transfers focus once MathLive has settled', async ({
-  page,
-}) => {
+test('clicking another cell transfers focus', async ({ page }) => {
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('a', { delay: 40 });
   await page.locator('.add-expr').click();
   await cell(page, 1).pressSequentially('b', { delay: 40 });
-  await page.waitForTimeout(150); // past the deferred-refocus window
   await cell(page, 0).click();
   await waitFocusedIndex(page, 0);
 });

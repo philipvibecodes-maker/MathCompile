@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { waitFocusedIndex } from './helpers';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -15,10 +16,7 @@ test('Ctrl+K opens the palette and Esc refocuses the cell', async ({
   await expect(page.locator('.palette-input')).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.locator('.palette')).not.toBeVisible();
-  // Refocus happens in a post-commit effect; wait for it rather than racing.
-  await page.waitForFunction(
-    () => document.activeElement?.tagName === 'MATH-FIELD',
-  );
+  await waitFocusedIndex(page, 0);
 });
 
 test('running a command by fuzzy match changes the target', async ({
@@ -36,10 +34,7 @@ test('insert expression below adds a focused cell', async ({ page }) => {
   await page.locator('.palette-input').pressSequentially('insert below');
   await page.keyboard.press('Enter');
   await expect(page.locator('math-field')).toHaveCount(2);
-  await page.waitForFunction(
-    () =>
-      document.activeElement === document.querySelectorAll('math-field')[1],
-  );
+  await waitFocusedIndex(page, 1);
 });
 
 test('arrow keys navigate and smart mode toggles', async ({ page }) => {
@@ -62,9 +57,7 @@ test('Ctrl+K closes an open palette', async ({ page }) => {
   await expect(page.locator('.palette')).toBeVisible();
   await page.keyboard.press('Control+k');
   await expect(page.locator('.palette')).not.toBeVisible();
-  await page.waitForFunction(
-    () => document.activeElement?.tagName === 'MATH-FIELD',
-  );
+  await waitFocusedIndex(page, 0);
 });
 
 test('clicking the backdrop closes the palette', async ({ page }) => {
@@ -151,10 +144,7 @@ test('go-to-expression focuses that cell', async ({ page }) => {
   await page.keyboard.press('Control+k');
   await page.locator('.palette-input').pressSequentially('go to expression 2');
   await page.keyboard.press('Enter');
-  await page.waitForFunction(
-    () =>
-      document.activeElement === document.querySelectorAll('math-field')[1],
-  );
+  await waitFocusedIndex(page, 1);
 });
 
 test('duplicate copies the focused cell below it', async ({ page }) => {
@@ -188,9 +178,7 @@ test('delete current expression removes it and focuses a neighbor', async ({
   expect(
     await mf.evaluate((el) => (el as unknown as { getValue(): string }).getValue()),
   ).toBe('a');
-  await page.waitForFunction(
-    () => document.activeElement === document.querySelector('math-field'),
-  );
+  await waitFocusedIndex(page, 0);
 });
 
 test('clear all expressions leaves a single empty focused cell', async ({
@@ -206,9 +194,7 @@ test('clear all expressions leaves a single empty focused cell', async ({
   expect(
     await mf.evaluate((el) => (el as unknown as { getValue(): string }).getValue()),
   ).toBe('');
-  await page.waitForFunction(
-    () => document.activeElement === document.querySelector('math-field'),
-  );
+  await waitFocusedIndex(page, 0);
 });
 
 test('d/dx means derivative command toggles the option', async ({ page }) => {
@@ -220,17 +206,17 @@ test('d/dx means derivative command toggles the option', async ({ page }) => {
   await expect(box).not.toBeChecked();
 });
 
-test('palette input keeps focus after MathLive’s deferred refocus', async ({
+test('palette input keeps focus after opening over an edited cell', async ({
   page,
 }) => {
-  // MathLive re-asserts cell focus on a ~60ms timer after the field was
-  // focused; opening the palette right after editing must not lose focus.
+  // MathQuill has no deferred-refocus timer, so the palette keeps input
+  // focus trivially — pin that no regression reintroduces a steal.
   const mf = page.locator('math-field').first();
   await mf.click();
   await mf.pressSequentially('x', { delay: 40 });
   await page.keyboard.press('Control+k');
   await expect(page.locator('.palette-input')).toBeFocused();
-  await page.waitForTimeout(200); // past the ~60ms steal window
+  await page.waitForTimeout(200);
   await expect(page.locator('.palette-input')).toBeFocused();
 });
 

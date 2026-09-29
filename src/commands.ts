@@ -49,8 +49,7 @@ export const createCommands = (store: AppStore) =>
         title: 'Insert derivative',
         keywords: 'differentiate fraction',
         run: () =>
-          focusId != null &&
-          store.fields.get(focusId)?.insert('\\frac{d#?}{dx}'),
+          focusId != null && store.fields.get(focusId)?.insert('\\derivative'),
       },
       {
         id: 'toggle-derivative',

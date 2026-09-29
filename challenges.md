@@ -269,6 +269,43 @@ timing windows.
 
 ---
 
+## How the MathQuill rewrite resolved these
+
+This worktree (`rewrite/solidjs-mathquill`) is that rewrite: SolidJS +
+vendored Desmos MathQuill (`vendor/mathquill`, desmos fork @ `bb9974ab`
+plus a ported Learnosity matrix/environment implementation). What happened
+to each challenge:
+
+- **§1 limits traversal** — MathQuill's SupSub traverses in written order:
+  `int a Right b` fills lower then upper natively. `limitNavigation.ts`
+  and its suppression flags are **deleted**; `e2e/limits.spec.ts` now pins
+  rendered-caret positions via `.mq-cursor`, not `model.position`.
+- **§2 private internals** — everything engine-specific sits in
+  `src/editor/adapter.ts`. The only semi-private touch is
+  `__controller.cursor` for post-insert caret placement.
+- **§3 two event clocks** — MQ's `edit` handler is synchronous; there is
+  one channel. The `selection-change` fix listener is gone.
+- **§4 focus steal** — no deferred refocus timer exists in MQ. The palette
+  focusout trap and the 70ms re-assert are deleted; `focusCell()` is the
+  single owner.
+- **§5 Enter** — ours end-to-end: matrix cell → add row, top level →
+  `mq.insertRowBreak()` (displaylines split), Shift+Enter → new app cell.
+- **§6 macro atoms** — `derivative`/`insert('\\derivative')` expand to
+  real `\frac{d}{dx}` atoms at insertion time. Nothing write-only.
+- **§7 prop channels** — `focusNonce` is gone; commands call
+  `store.fields.get(id).method()`.
+- **§9/§10 serialization & probes** — still presentation-influenced
+  (`{ }` for empty blocks, `\\` without a space), but stable; e2e pins the
+  new strings.
+- **§11** — `smartMode` is a live `mq.config` toggle
+  (`autoSubscriptNumerals` + `sumStartsWithNEquals`); the vendored source
+  is TypeScript, so nothing needs indexing as a separate project.
+- New capability: `\begin{matrix|pmatrix|bmatrix|Bmatrix|vmatrix|Vmatrix}`
+  and `\displaylines` environments (parse, render as `.mq-matrix` tables,
+  cell navigation, Enter=row, Shift+Space=column, empty-env collapse).
+- Dropped: latex mode, virtual keyboard, suggestion popover — none exist
+  in MQ. Known-bug status flipped: Tab lower→upper **works** in MQ.
+
 ## What a ground-up rewrite looks like
 
 The individual "Ground-up" notes converge on one design:
