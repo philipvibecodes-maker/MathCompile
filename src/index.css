@@ -51,6 +51,23 @@ body {
   color: var(--accent);
 }
 
+.stack {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+  font-size: 12px;
+  color: #777;
+}
+
+.svelte-mark {
+  height: 15px;
+  width: auto;
+  display: block;
+}
+
 .main {
   flex: 1;
   display: flex;
