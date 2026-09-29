@@ -83,7 +83,6 @@ cells are MathLive `<math-field>` elements.
   multi-line cells serialize as `\displaylines{a\\ b}` (note the space).
 
 ## Codegraph
-
 The project has a `.codegraph/` index. MathLive is indexed as a **separate
 project** at `node_modules/mathlive/.codegraph` (query it via `projectPath`).
 `codegraph.json` `include` cannot revive `node_modules`, and `mathlive.mjs`
@@ -102,3 +101,4 @@ cat > node_modules/mathlive/codegraph.json <<'EOF'
 EOF
 codegraph init node_modules/mathlive
 ```
+Make sure to prioritize the codegraph index for Mathlive over cat, grep, ls, etc when it makes sense to do so.
