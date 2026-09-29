@@ -10,6 +10,7 @@ export default function CommandPalette(props: { commands: Command[] }) {
   const [index, setIndex] = createSignal(0);
   let inputRef!: HTMLInputElement;
   let listRef!: HTMLUListElement;
+  let rootRef!: HTMLDivElement;
 
   const matches = createMemo(() => {
     const scored: { c: Command; s: number }[] = [];
@@ -54,6 +55,23 @@ export default function CommandPalette(props: { commands: Command[] }) {
       ?.scrollIntoView({ block: 'nearest' });
   });
 
+  // Keyboard extensions (e.g. Vimium) unfocus the input on Escape while
+  // suppressing the keydown itself — the unfocus is the only part of the
+  // keypress the page sees, so a blur that leaves focus on <body> is a
+  // dismiss signal. A focus move to a real element is not.
+  const onFocusOut = (e: FocusEvent) => {
+    if (
+      appStore.paletteOpen() &&
+      rootRef &&
+      !rootRef.contains(e.relatedTarget as Node)
+    )
+      setTimeout(() => {
+        if (!appStore.paletteOpen()) return;
+        if (document.activeElement === document.body) close();
+        else inputRef.focus();
+      }, 0);
+  };
+
   const pick = (c: Command) => {
     c.run();
     close();
@@ -81,11 +99,18 @@ export default function CommandPalette(props: { commands: Command[] }) {
       onClick={close}
     >
       <div
+        ref={(el) => (rootRef = el)}
         class="palette"
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
         onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => {
+          // Inner clicks keep focus in the input; the input itself keeps
+          // default behavior so the caret can be placed by mouse.
+          if (e.target !== inputRef) e.preventDefault();
+        }}
+        onFocusOut={onFocusOut}
       >
         <input
           ref={(el) => (inputRef = el)}
