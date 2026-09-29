@@ -68,6 +68,20 @@ cells are MathLive `<math-field>` elements.
   Beware: `latex-expanded` also canonicalizes (`x + 1` -> `x+1`), so only use
   it when a macro is actually present.
 
+## Testing notes
+
+- E2e cell-focus changes must use `focus()` + a settle wait (see
+  `focusCell` in `e2e/cells.spec.ts`): MathLive's ~60ms deferred internal
+  refocus steals focus back when switching cells too fast, so `click()`
+  alone is racy.
+- Known bug, pinned as expected-fail in `e2e/limits.spec.ts`: Tab from the
+  lower placeholder lands back on it (the lower-placeholder fix re-fires
+  after Tab's navigation), so Tab cannot reach the upper bound.
+- `caretInfo.where` in `e2e/limits.spec.ts` only works for msubsup limits
+  (`\int`); `\sum` renders over/under — assert via what typing fills instead.
+- `\sum`/`\int` templates serialize placeholders as `\placeholder{}`;
+  multi-line cells serialize as `\displaylines{a\\ b}` (note the space).
+
 ## Codegraph
 
 The project has a `.codegraph/` index. MathLive is indexed as a **separate
