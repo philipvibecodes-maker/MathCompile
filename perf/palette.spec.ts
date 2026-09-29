@@ -87,7 +87,7 @@ test('Ctrl+K warm open -> paint, Escape -> cell refocused', async ({
                 const el = document.querySelector(sel);
                 return (
                   (!el || getComputedStyle(el).visibility === 'hidden') &&
-                  document.activeElement?.tagName === 'MATH-FIELD'
+                  document.activeElement?.closest('math-field') != null
                 );
               },
               SEL.palette,

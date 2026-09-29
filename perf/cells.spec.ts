@@ -108,12 +108,13 @@ test('Enter -> line split painted', async ({ page }) => {
     const { ms } = await timed(page, () => page.keyboard.press('Enter'), {
       until: () =>
         page.waitForFunction(
-          (n) =>
-            (
-              document.querySelector('math-field') as unknown as {
-                getValue(): string;
-              }
-            ).getValue().length > n,
+          (n) => {
+            const e = document.querySelector('math-field') as unknown as {
+              getValue?(): string;
+              value: string;
+            };
+            return (e.getValue?.() ?? e.value).length > n;
+          },
           before,
         ),
     });
