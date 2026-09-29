@@ -181,15 +181,18 @@ src/App.svelte, Cell.svelte, CommandPalette.svelte, OutputPanel.svelte
 
 ## Verification
 
-- [ ] Worktree `../MathCompile-svelte-mathquill` on branch
+- [x] Worktree `../MathCompile-svelte-mathquill` on branch
       `rewrite/svelte-mathquill`; port 5573 verified free via `ss -tln` and
       honored by `strictPort`
-- [ ] Spike gates every later phase: all Phase-0 checks pass first
-- [ ] `npm test` (vitest) green; `svelte-check` (or `tsc -b`) clean
-- [ ] `npm run lint`, `npm run build` clean
-- [ ] `npm run test:e2e` green — including the un-pinned Tab test and the
-      multi-line/limits suites against the new serialization
-- [ ] In-page input→paint latency for palette open no worse than current
+- [x] Spike gates every later phase: all Phase-0 checks pass first
+      (`e2e/spike.spec.ts`, 15 checks incl. adapter contract)
+- [x] `npm test` (vitest) green (40 tests); `svelte-check` clean
+- [x] `npm run lint`, `npm run build` clean
+- [x] `npm run test:e2e` green (96 tests) — the formerly expected-fail Tab
+      test now runs unpinned in `e2e/limits.spec.ts`; the multi-line/limits
+      suites run against MQ serialization (`^{ }`, `\displaylines`)
+- [x] In-page input→paint latency for palette open measured ~7–26ms
+      (class flip + 2 rAFs), at or below the old warm baseline
 
 ## Risks / decisions
 

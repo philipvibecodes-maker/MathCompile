@@ -232,3 +232,19 @@ test('Backspace at the start of the field hops over a bounds-carrying atom', asy
   const info = await caretInfo(mf);
   expect(info.value).toBe('\\int_{a}^{b}');
 });
+
+// Pinned as expected-fail under MathLive (its selection-change fix re-fired
+// after Tab's own navigation and yanked the caret back to the lower bound).
+// Under MathQuill there is one caret owner, so Tab just reaches the upper
+// bound — runs as a normal test now.
+test('Tab from the lower bound reaches the upper bound', async ({ page }) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\int', { delay: 60 });
+  await page.keyboard.press('Enter');
+  await mf.pressSequentially('a', { delay: 60 });
+  await page.keyboard.press('Tab');
+  await settle(page);
+  expect(await caretInfo(mf)).toMatchObject({ where: 'upper' });
+  await mf.pressSequentially('b', { delay: 60 });
+  expect((await caretInfo(mf)).value).toBe('\\int_{a}^{b}');
+});

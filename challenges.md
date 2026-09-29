@@ -12,6 +12,48 @@ suppression flags, private APIs, and timing races it costs.
 
 ---
 
+## Status: resolved by the Svelte + MathQuill rewrite
+
+This worktree (`rewrite/svelte-mathquill`) replaced React + MathLive with
+Svelte 5 + a vendored Desmos-fork MathQuill behind a framework-free
+`<math-field>` custom element (`src/editor/math-field.ts`). Per section:
+
+- **§1 (limits order) — gone.** MathQuill serializes `\int_{a}^{b}`
+  sub-then-sup and lands the caret in the lower bound in written order;
+  `limitNavigation.ts` does not exist here.
+- **§2 (private internals) — gone.** The v3 API
+  (`write`/`cmd`/`keystroke`/`latex`, handler callbacks, `config`) covers
+  every need; nothing reaches into MQ internals outside `src/editor/`.
+- **§3 (deferred input) — gone.** MQ's `edit` handler fires synchronously
+  inside the keystroke.
+- **§4 (deferred focus steal) — gone.** MQ has no ~60ms internal refocus;
+  the palette has no focus trap. (`<math-field>` does forward host focus
+  into MQ's hidden textarea so `element.focus()` works.)
+- **§5 (macro atoms / serialization) — gone.** `\derivative` expands to
+  real `\frac`/`D()` atoms at insertion; `.latex()` always reflects the
+  document.
+- **§6 (derivative semantics) — deferred, by design.** `dIsDerivative` is
+  now a semantic option consumed by future IR lowering; it never rewrites
+  cell content.
+- **§7 (props as commands / focusNonce) — gone.** `appState.svelte.ts`
+  owns a field registry + `focusCell()`; commands call handles directly.
+- **§8 (palette cold open) — shipped.** Always-mounted backdrop,
+  `visibility` flip, `contain: layout style paint`.
+- **§9 (displaylines) — gone.** `insertLineBreak()` in the vendor patch
+  wraps/splits rows and snaps a nested caret out to the row ancestor.
+- **§10 (e2e rituals) — gone.** No settle waits; light-DOM `.mq-cursor`
+  assertions; `locator.focus()` works.
+- **§11 (smartMode / indexing) — gone-ish.** Smart mode is a per-field
+  `autoCommands` config (vendor-patched so `''` disables it); the vendor
+  is plain TS in-tree, so no indexing gymnastics.
+
+New costs the rewrite took on instead: a ~600-line vendored environments
+patch to maintain, `Home`/`End` being block-local (field edges need
+`Ctrl+Home`/`Ctrl+End`), and empty blocks serializing as `{ }`.
+
+---
+
+
 ## 1. MathLive traverses limits in model order, not reading order
 
 **Challenge.** `\int_{a}^{b}` is written lower-limit-then-upper-limit, but
