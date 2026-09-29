@@ -17,9 +17,9 @@ Phases 0–2 — is identical in both; only the app shell differs.)
   checkout. The SolidJS rewrite lives in `../MathCompile-solid-mathquill`.
 - **Port**: the app hardcodes dev-server port 5173 (`playwright.config.ts` +
   vite default), and up to three checkouts may serve at once (main, Solid,
-  this one). Probe before choosing: `ss -tln | grep -E ':(5173|5273|5473)'`.
-  This plan reserves **5473** (Solid plan reserves 5273; main keeps 5173) —
-  verify it's actually free, then set `server: { port: 5473, strictPort: true }`
+  this one). Probe before choosing: `ss -tln | grep -E ':(5173|5273|5573)'`.
+  This plan reserves **5573** (Solid plan reserves 5273; main keeps 5173) —
+  verify it's actually free, then set `server: { port: 5573, strictPort: true }`
   in `vite.config.ts` and matching `baseURL`/`webServer.url` in
   `playwright.config.ts`. `strictPort` keeps a collision loud.
 
@@ -77,7 +77,7 @@ src/App.svelte, Cell.svelte, CommandPalette.svelte, OutputPanel.svelte
 ## Implementation steps
 
 ### Phase 0 — Workspace + spike (prove the foundation before rewriting)
-1. Create the worktree and claim port 5473 (see Workspace setup).
+1. Create the worktree and claim port 5573 (see Workspace setup).
 2. Vendor `desmosinc/mathquill` into `vendor/mathquill/` (record pinned
    commit in `vendor/README.md`), `make js css font`.
 2. `src/editor/mathquill.ts` shim: `import '../../vendor/mathquill/build/mathquill.js'`
@@ -123,7 +123,7 @@ src/App.svelte, Cell.svelte, CommandPalette.svelte, OutputPanel.svelte
 ### Phase 3 — Svelte 5 app
 9. Deps: `npm rm react react-dom @types/react @types/react-dom @vitejs/plugin-react`;
    `npm i svelte`; `npm i -D @sveltejs/vite-plugin-svelte`; update
-   `vite.config.ts` (plugin + `server.port: 5473`/`strictPort`),
+   `vite.config.ts` (plugin + `server.port: 5573`/`strictPort`),
    `playwright.config.ts` (`baseURL`, `webServer.url`), `tsconfig*.json`
    (`moduleResolution: bundler`, types for `.svelte` imports — use
    `svelte-check` for typecheck or keep `tsc -b` with the svelte tsconfig
@@ -182,7 +182,7 @@ src/App.svelte, Cell.svelte, CommandPalette.svelte, OutputPanel.svelte
 ## Verification
 
 - [ ] Worktree `../MathCompile-svelte-mathquill` on branch
-      `rewrite/svelte-mathquill`; port 5473 verified free via `ss -tln` and
+      `rewrite/svelte-mathquill`; port 5573 verified free via `ss -tln` and
       honored by `strictPort`
 - [ ] Spike gates every later phase: all Phase-0 checks pass first
 - [ ] `npm test` (vitest) green; `svelte-check` (or `tsc -b`) clean
