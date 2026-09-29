@@ -73,7 +73,13 @@
       !rootRef.contains(e.relatedTarget as Node)
     )
       setTimeout(() => {
-        if (appStore.paletteOpen) inputRef?.focus();
+        if (!appStore.paletteOpen) return;
+        // A blur that leaves focus on <body> is a dismiss signal: keyboard
+        // extensions unfocus the input on Escape while suppressing the
+        // keydown itself, so the unfocus is the only part the page sees. A
+        // focus move to a real element is not.
+        if (document.activeElement === document.body) close();
+        else inputRef?.focus();
       }, 0);
   };
 
@@ -114,6 +120,11 @@
     aria-modal="true"
     aria-label="Command palette"
     onclick={(e) => e.stopPropagation()}
+    onmousedown={(e) => {
+      // Inner clicks keep focus in the input; the input itself keeps
+      // default behavior so the caret can be placed by mouse.
+      if (e.target !== inputRef) e.preventDefault();
+    }}
     onfocusout={onFocusOut}
   >
     <input
