@@ -1,0 +1,200 @@
+/********************************************************
+ * Deals with mouse events for clicking, drag-to-select
+ *******************************************************/
+const ignoreNextMouseDownNoop = (_el: MouseEvent) => {
+  return false;
+};
+Options.prototype.ignoreNextMousedown = ignoreNextMouseDownNoop;
+
+const askIfShouldIgnoreMousemoveNoop = (_evt: MouseEvent, _el: HTMLElement) => {
+  return false;
+};
+Options.prototype.askIfShouldIgnoreMousemove = askIfShouldIgnoreMousemoveNoop;
+
+// Whenever edits to the tree occur, in-progress selection events
+// must be invalidated and selection changes must not be applied to
+// the edited tree. cancelSelectionOnEdit takes care of this.
+var cancelSelectionOnEdit:
+  | undefined
+  | {
+      cb: () => void;
+      cursor: Cursor;
+    };
+
+(function () {
+  ControllerBase.onNotify(function (cursor, e) {
+    if (e === 'edit' || e === 'replace') {
+      // this will be called any time ANY mathquill is edited. We only want
+      // to cancel selection if the selection is happening within the mathquill
+      // that dispatched the notify. Otherwise you won't be able to select any
+      // mathquills while a slider is playing.
+      if (cancelSelectionOnEdit && cancelSelectionOnEdit.cursor === cursor) {
+        cancelSelectionOnEdit.cb();
+      }
+    }
+  });
+})();
+
+class Controller_mouse extends Controller_latex {
+  private handleMouseDown = (e: MouseEvent) => {
+    const rootElement = closest(
+      e.target as HTMLElement | null,
+      '.mq-root-block'
+    ) as HTMLElement | null;
+
+    var root = ((rootElement && NodeBase.getNodeOfElement(rootElement)) ||
+      NodeBase.getNodeOfElement(
+        this.root.domFrag().oneElement()
+      )) as ControllerRoot;
+
+    const ownerDocument = root.domFrag().firstNode().ownerDocument;
+
+    var ctrlr = root.controller,
+      cursor = ctrlr.cursor,
+      blink = cursor.blink;
+    var textarea = ctrlr.getTextarea();
+
+    e.preventDefault(); // doesn't work in IE≤8, but it's a one-line fix:
+    (e.target as any).unselectable = true; // http://jsbin.com/yagekiji/1 // TODO - no idea what this unselectable property is
+
+    if (cursor.options.ignoreNextMousedown(e)) return;
+
+    // some elements should not act like internal mathquill nodes. Tokens for instance define external
+    // click / hover behaviors. So we have mathquill act like the item was never clicked. This allows
+    // us to click a token without putting focus in the mathquill.
+    if (closest(e.target as HTMLElement | null, '.mq-ignore-mousedown')) {
+      return;
+    }
+
+    var lastMousemoveTarget: HTMLElement | null = null;
+    function mousemove(e: MouseEvent) {
+      if (
+        rootElement &&
+        cursor.options.askIfShouldIgnoreMousemove(e, rootElement)
+      )
+        return;
+      lastMousemoveTarget = e.target as HTMLElement | null;
+    }
+    function onDocumentMouseMove(e: MouseEvent) {
+      if (
+        rootElement &&
+        cursor.options.askIfShouldIgnoreMousemove(e, rootElement)
+      )
+        return;
+
+      if (!cursor.anticursor) {
+        ctrlr.restoreLatexSelection(originalSelection);
+        cursor.startSelection();
+      }
+      ctrlr.seek(lastMousemoveTarget, e.clientX, e.clientY).cursor.select();
+      if (cursor.selection)
+        cursor.controller.aria
+          .clear()
+          .queue(cursor.selection.join('mathspeak') + ' selected')
+          .alert();
+      lastMousemoveTarget = null;
+    }
+    // outside rootElement, the MathQuill node corresponding to the target (if any)
+    // won't be inside this root, so don't mislead Controller::seek with it
+
+    function unbindListeners() {
+      // delete the mouse handlers now that we're not dragging anymore
+      rootElement?.removeEventListener('mousemove', mousemove);
+      ownerDocument?.removeEventListener('mousemove', onDocumentMouseMove);
+      ownerDocument?.removeEventListener('mouseup', onDocumentMouseUp);
+      cancelSelectionOnEdit = undefined;
+      ctrlr.isMouseSelecting = false;
+    }
+
+    function updateCursor() {
+      if (ctrlr.editable) {
+        cursor.show();
+        cursor.controller.aria.queue(cursor.parent).alert();
+      }
+    }
+
+    function onDocumentMouseUp() {
+      cursor.blink = blink;
+      if (!cursor.selection) updateCursor();
+      unbindListeners();
+    }
+
+    var wasEdited;
+    cancelSelectionOnEdit = {
+      cursor: cursor,
+      cb: function () {
+        // If an edit happens while the mouse is down, the existing
+        // selection is no longer valid. Clear it and unbind listeners,
+        // similar to what happens on mouseup.
+        wasEdited = true;
+        cursor.blink = blink;
+        cursor.clearSelection();
+        updateCursor();
+        unbindListeners();
+      }
+    };
+
+    if (ctrlr.blurred) {
+      //for static mathquills, we focus on mousemove
+      if (this.editable) textarea.focus();
+      // focus call may bubble to clients, who may then write to
+      // mathquill, triggering cancelSelectionOnEdit. If that happens, we
+      // don't want to stop the cursor blink or bind listeners,
+      // so return early.
+      if (wasEdited) return;
+    }
+
+    cursor.blink = noop;
+    ctrlr.isMouseSelecting = true;
+    ctrlr
+      .seek(e.target as HTMLElement | null, e.clientX, e.clientY)
+      .cursor.startSelection();
+
+    const originalSelection = ctrlr.exportLatexSelection().selection;
+
+    rootElement?.addEventListener('mousemove', mousemove);
+    ownerDocument?.addEventListener('mousemove', onDocumentMouseMove);
+    ownerDocument?.addEventListener('mouseup', onDocumentMouseUp);
+    // listen on document not just body to not only hear about mousemove and
+    // mouseup on page outside field, but even outside page, except iframes: https://github.com/mathquill/mathquill/commit/8c50028afcffcace655d8ae2049f6e02482346c5#commitcomment-6175800
+  };
+
+  addMouseEventListener() {
+    //drag-to-select event handling
+    this.container.addEventListener('mousedown', this.handleMouseDown);
+  }
+
+  removeMouseEventListener() {
+    this.container.removeEventListener('mousedown', this.handleMouseDown);
+  }
+
+  seek(targetElm: Element | null, clientX: number, _clientY: number) {
+    const cursor = this.notify('select').cursor;
+    let node = this.domNodeToMqNode(targetElm);
+
+    // Could not find any nodes, just use the root
+    if (!node) {
+      node = this.root;
+    }
+
+    // don't clear selection until after getting node from target, in case
+    // target was selection span, otherwise target will have no parent and will
+    // seek from root, which is less accurate (e.g. fraction)
+    cursor.clearSelection().show();
+
+    node.seek(clientX, cursor);
+    this.scrollHoriz(); // before .selectFrom when mouse-selecting, so
+    // always hits no-selection case in scrollHoriz and scrolls slower
+    return this;
+  }
+}
+
+function findControllerRoot(node: NodeBase) {
+  while (node) {
+    if (ControllerBase.isControllerRoot(node)) {
+      return node;
+    }
+    node = node.parent;
+  }
+  return undefined;
+}
