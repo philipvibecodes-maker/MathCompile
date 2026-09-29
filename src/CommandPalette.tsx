@@ -118,10 +118,19 @@ function CommandPalette({ open, commands, onClose }: CommandPaletteProps) {
   const onFocusOut = (e: React.FocusEvent) => {
     if (!open) return;
     const root = rootRef.current;
-    if (root && !root.contains(e.relatedTarget as Node))
-      setTimeout(() => {
-        if (openRef.current) inputRef.current?.focus();
-      }, 0);
+    if (!root || root.contains(e.relatedTarget as Node)) return;
+    setTimeout(() => {
+      if (!openRef.current) return;
+      // A blur that leaves focus on <body> is a dismiss signal: keyboard
+      // extensions unfocus the input on Escape while suppressing the
+      // keydown itself, so the unfocus is the only part the page sees. A
+      // focus move to a real element (e.g. the MathLive steal) is not.
+      if (document.activeElement === document.body) {
+        close();
+      } else {
+        inputRef.current?.focus();
+      }
+    }, 0);
   };
 
   const pick = (c: Command) => {
@@ -159,6 +168,12 @@ function CommandPalette({ open, commands, onClose }: CommandPaletteProps) {
         aria-modal="true"
         aria-label="Command palette"
         onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => {
+          // Clicking inside the palette must not move focus out of the
+          // input; the input itself keeps default behavior for caret
+          // positioning.
+          if (e.target !== inputRef.current) e.preventDefault();
+        }}
         onBlur={onFocusOut}
       >
         <input
