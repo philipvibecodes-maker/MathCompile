@@ -17,13 +17,44 @@ const MATRIX_ROW_DELIM = '\\\\';
 
 const MQEnvironments: { [env: string]: () => Matrix } = {};
 
+// Marks a SupSub whose script blocks were edge-aligned to a matrix sibling
+// so the offset can be cleared when the env goes away.
+const MATRIX_SCRIPTED_CLASS = 'mq-matrix-scripted';
+
+// Shifts el vertically so its outer edge (top for sup, bottom for sub)
+// meets the corresponding edge of mRect. el's rect already includes any
+// previously applied translateY, so the correction composes onto it.
+function mqAlignScriptEdge(
+  el: HTMLElement,
+  mRect: DOMRect,
+  isSup: boolean
+) {
+  const prev = /translateY\((-?[\d.]+)px\)/.exec(el.style.transform);
+  const prevY = prev ? parseFloat(prev[1]) : 0;
+  const edge = isSup
+    ? el.getBoundingClientRect().top
+    : el.getBoundingClientRect().bottom;
+  const target = isSup ? mRect.top : mRect.bottom;
+  const y = prevY + (target - edge);
+  el.style.transform = y ? `translateY(${y}px)` : '';
+}
+
+function matrixParenSym(ch: string): {
+  width: string;
+  html: () => ChildNode;
+} {
+  return (
+    (SVG_SYMBOLS as Record<string, { width: string; html: () => ChildNode }>)[
+      ch
+    ] || {
+      width: '0',
+      html: () => h.text(ch)
+    }
+  );
+}
+
 function matrixParen(ch: string, side: Direction): HTMLElement {
-  const sym = (
-    SVG_SYMBOLS as Record<string, { width: string; html: () => ChildNode }>
-  )[ch] || {
-    width: '0',
-    html: () => h.text(ch)
-  };
+  const sym = matrixParenSym(ch);
   return h(
     'span',
     {
@@ -184,9 +215,21 @@ class Matrix extends MathCommand {
     });
 
     const trs = cells.map((tds) => h('tr', {}, tds) as HTMLElement);
+    // The parens are absolutely positioned against the mq-bracket-container
+    // (left:0/right:0, top:0/bottom:2px — they don't take layout space), so
+    // the table carries matching margins, same as Bracket's middle block.
+    const leftWidth = this.parens.left
+      ? matrixParenSym(this.parens.left).width
+      : '0';
+    const rightWidth = this.parens.right
+      ? matrixParenSym(this.parens.right).width
+      : '0';
     const table = h(
       'table',
-      { class: 'mq-non-leaf' + (trs.length === 1 ? ' mq-rows-1' : '') },
+      {
+        class: 'mq-non-leaf' + (trs.length === 1 ? ' mq-rows-1' : ''),
+        style: `margin-left:${leftWidth};margin-right:${rightWidth}`
+      },
       trs
     ) as HTMLElement;
 
@@ -195,7 +238,11 @@ class Matrix extends MathCommand {
     children.push(table);
     if (this.parens.right) children.push(matrixParen(this.parens.right, R));
 
-    const dom = h('span', { class: 'mq-matrix mq-non-leaf' }, children);
+    const dom = h(
+      'span',
+      { class: 'mq-matrix mq-non-leaf mq-bracket-container' },
+      children
+    );
     this.setDOM(dom);
     NodeBase.linkElementByCmdNode(dom, this);
     return dom;
@@ -221,6 +268,7 @@ class Matrix extends MathCommand {
 
   finalizeTree(_options?: CursorOptions, _dir?: Direction) {
     if (!this.blocks.length) return;
+    this.alignAdjacentScripts();
     const el = this.domFrag().oneElement();
     const table = el && el.querySelector ? el.querySelector('table') : null;
     if (table) {
@@ -396,6 +444,43 @@ class Matrix extends MathCommand {
       removeCells(myColumn);
     }
     this.finalizeTree();
+  }
+
+  // Re-position scripts that sit next to the env: MQ's fixed ±0.5em
+  // vertical-align leaves them floating mid-height on a tall env, so each
+  // script block is translated to the env's top/bottom edge. transform is
+  // layout-neutral — the line box reserves the script's natural slot, the
+  // rendered glyph (and any caret inside it) moves to the env edge.
+  alignAdjacentScripts() {
+    const frag = this.domFrag();
+    const el = frag.isEmpty()
+      ? undefined
+      : (frag.oneElement() as HTMLElement);
+    if (!el || !el.isConnected) return;
+    const mRect = el.getBoundingClientRect();
+    for (const dir of [L, R] as Direction[]) {
+      const sib = this[dir];
+      if (!(sib instanceof SupSub)) continue;
+      const sibEl = sib.domFrag().oneElement() as HTMLElement;
+      sibEl.classList.add(MATRIX_SCRIPTED_CLASS);
+      const sup = sibEl.querySelector('.mq-sup') as HTMLElement | null;
+      const sub = sibEl.querySelector('.mq-sub') as HTMLElement | null;
+      if (sup) mqAlignScriptEdge(sup, mRect, true);
+      if (sub) mqAlignScriptEdge(sub, mRect, false);
+    }
+  }
+
+  // Structural edits (addRow/addColumn/deleteCell) and content edits inside
+  // cells both change the env's height, so re-align on reflow — it bubbles
+  // up through the env on every descendant edit.
+  reflow() {
+    this.alignAdjacentScripts();
+  }
+  siblingCreated(_opts: CursorOptions, _dir: Direction) {
+    this.alignAdjacentScripts();
+  }
+  siblingDeleted(_opts: CursorOptions, _dir: Direction) {
+    this.alignAdjacentScripts();
   }
 
   // Inserts an empty row below `afterCell`'s row; the caret lands on the new
@@ -736,3 +821,26 @@ function mqInsertRowBreak(ctrlr: Controller) {
     return undefined;
   });
 }
+
+// A SupSub keeps its env-edge offsets only while a matrix is adjacent —
+// when the env is deleted the surviving script's DOM would keep the stale
+// translateY, so clear it here (SupSub lives in commands.ts; patched from
+// this file to keep the env logic together).
+const mqSupSubSiblingDeleted = SupSub.prototype.siblingDeleted;
+SupSub.prototype.siblingDeleted = function (
+  this: SupSub,
+  opts: CursorOptions,
+  dir: Direction
+) {
+  mqSupSubSiblingDeleted.call(this, opts, dir);
+  if (this[L] instanceof Matrix || this[R] instanceof Matrix) return;
+  const frag = this.domFrag();
+  if (frag.isEmpty()) return;
+  const el = frag.oneElement() as HTMLElement;
+  if (!el.classList.contains(MATRIX_SCRIPTED_CLASS)) return;
+  el.classList.remove(MATRIX_SCRIPTED_CLASS);
+  const scripts = el.querySelectorAll('.mq-sup, .mq-sub');
+  for (let i = 0; i < scripts.length; i += 1) {
+    (scripts[i] as HTMLElement).style.transform = '';
+  }
+};
