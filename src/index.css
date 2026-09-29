@@ -277,6 +277,14 @@ body {
   align-items: flex-start;
   padding-top: 12vh;
   background: rgba(0, 0, 0, 0.28);
+  /* Permanently mounted: open/close is a visibility flip, not a mount. */
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.palette-backdrop.open {
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .palette {
@@ -288,6 +296,8 @@ body {
   border-radius: 8px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
   overflow: hidden;
+  /* Isolated subtree: opening the palette can't invalidate the app layout. */
+  contain: layout style paint;
 }
 
 .palette-input {
