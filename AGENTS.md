@@ -11,6 +11,10 @@ cells are MathLive `<math-field>` elements.
 - `npm test` — vitest unit tests (`src/*.test.ts`, node environment)
 - `npm run test:e2e` — Playwright tests (`e2e/`, reuses a running dev
   server on :5173 or starts `npm run dev`)
+- `npm run test:perf` — framework-agnostic perf battery (`perf/`); builds and
+  serves the production bundle on :4173. For a rewrite: serve its prod build
+  and run `PERF_BASE_URL=<url> PERF_LABEL=<name> npm run test:perf`;
+  `node perf/compare.mjs <labelA> <labelB>` diffs runs in `perf-results/`.
 
 ## Command palette
 
@@ -70,6 +74,11 @@ cells are MathLive `<math-field>` elements.
 
 ## Testing notes
 
+- The `perf/` suite measures in-page: capture-phase `event.timeStamp` at
+  input -> DOM-outcome `waitForFunction` -> double rAF (`perf/measure.ts`).
+  Selectors live in `perf/contract.ts` — the same DOM contract the e2e suite
+  pins — so results stay comparable across rewrites. Serial runs only
+  (`workers: 1`); never measure against the dev server.
 - E2e cell-focus changes must use `focus()` + a settle wait (see
   `focusCell` in `e2e/cells.spec.ts`): MathLive's ~60ms deferred internal
   refocus steals focus back when switching cells too fast, so `click()`

@@ -23,5 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 test-results/
+test-results-perf/
 playwright-report/
 .playwright-mcp/
+perf-results/
