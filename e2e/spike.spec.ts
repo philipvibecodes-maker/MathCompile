@@ -17,6 +17,18 @@ declare global {
         config(o: { dIsDerivative?: boolean }): void;
         selection(): { latex: string; startIndex: number; endIndex: number };
       };
+      adapter: {
+        value: string;
+        mq?: {
+          latex(): string;
+          typedText(s: string): void;
+          keystroke(k: string): void;
+          moveToLeftEnd(): void;
+          moveToRightEnd(): void;
+        };
+        focus(o?: { edge?: 'start' | 'end' }): void;
+        config(o: Record<string, unknown>): void;
+      };
       el: HTMLElement;
       events: string[];
       watchFocus(): void;
@@ -269,4 +281,69 @@ test('with dIsDerivative off, \\derivative expands to D()', async ({ page }) => 
   });
   expect(r.latex).toBe('D()');
   expect(r.after).toBe('D(f)');
+});
+
+// --- Phase 2: <math-field> adapter element ---
+
+test('<math-field> adapter: value round-trip, input and move-out events', async ({
+  page,
+}) => {
+  const r = await spike(page, () => {
+    const { adapter, events } = window.spike;
+    adapter.value = 'x+1';
+    const initial = adapter.value;
+    const n0 = events.length;
+    adapter.focus({ edge: 'end' });
+    adapter.mq!.typedText('y');
+    const afterType = adapter.value;
+    // left edge -> backward move-out; top edge -> upward
+    adapter.mq!.moveToLeftEnd();
+    adapter.mq!.keystroke('Left');
+    adapter.mq!.keystroke('Up');
+    return { initial, afterType, events: events.slice(n0) };
+  });
+  expect(r.initial).toBe('x+1');
+  expect(r.afterType).toBe('x+1y');
+  expect(r.events).toContain('adapter:input');
+  expect(r.events).toContain('adapter:move-out:backward');
+  expect(r.events).toContain('adapter:move-out:upward');
+});
+
+test('<math-field> adapter: Enter inserts a displaylines break', async ({
+  page,
+}) => {
+  const r = await spike(page, () => {
+    const { adapter } = window.spike;
+    adapter.value = 'x+1';
+    adapter.focus({ edge: 'start' });
+    adapter.mq!.keystroke('Right'); // after 'x'
+    adapter.mq!.typedText('\n'); // keypress path -> handle('enter')
+    return { latex: adapter.value };
+  });
+  expect(r.latex).toBe('\\displaylines{x\\\\ +1}');
+});
+
+test('<math-field> adapter: Shift+Enter fires new-cell, not a line break', async ({
+  page,
+}) => {
+  const events = await spike(page, () => {
+    const { adapter, events } = window.spike;
+    adapter.value = 'x+1';
+    adapter.focus({ edge: 'end' });
+    events.length = 0;
+    // simulate the real key event path end-to-end
+    const ta = adapter.querySelector('textarea')!;
+    ta.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Enter',
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    return { events: [...events], latex: adapter.value };
+  });
+  expect(events.events).toContain('adapter:new-cell');
+  // no displaylines wrap — the keypress was suppressed before MQ saw it
+  expect(events.latex).toBe('x+1');
 });

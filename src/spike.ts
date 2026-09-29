@@ -1,4 +1,5 @@
 import { mq3 } from './editor/mathquill';
+import { defineMathField, type MathFieldElement } from './editor/math-field';
 
 const el = document.getElementById('field')!;
 const logEl = document.getElementById('log')!;
@@ -20,6 +21,19 @@ const mq = mq3.MathField(el, {
     edit: () => log('handler:edit'),
   },
 });
+
+// Adapter element: Phase 2 contract — value round-trip, input/move-out/
+// new-cell events, Enter -> insertLineBreak default.
+defineMathField();
+const adapterEl = document.getElementById('adapter-field') as MathFieldElement;
+adapterEl.options = {
+  autoCommands: 'int sum sqrt prod pi infty theta derivative',
+};
+adapterEl.addEventListener('input', () => log('adapter:input'));
+adapterEl.addEventListener('move-out', (e) =>
+  log(`adapter:move-out:${(e as CustomEvent).detail.direction}`),
+);
+adapterEl.addEventListener('new-cell', () => log('adapter:new-cell'));
 
 // Capture-phase keydown on the field container: sees the event (and its
 // shiftKey) before MQ's hidden textarea handles it — needed so the app can
@@ -61,4 +75,12 @@ declare global {
     spike: unknown;
   }
 }
-window.spike = { mq, el, events, results, watchFocus, getFocusWatch: () => focusWatch };
+window.spike = {
+  mq,
+  el,
+  events,
+  results,
+  watchFocus,
+  getFocusWatch: () => focusWatch,
+  adapter: adapterEl,
+};
