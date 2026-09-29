@@ -706,16 +706,25 @@ function mqInsertRowBreak(ctrlr: Controller) {
   const cell1 = new MatrixCell(1, env);
   env.blocks.push(cell0, cell1);
 
+  // Render the env BEFORE adopting the fragments: h.block paints each
+  // cell's children into its <td>, so a non-empty cell would render fresh
+  // DOM and the moved nodes below would duplicate it.
   const leftDom = leftFrag && leftFrag.domFrag();
   const rightDom = rightFrag && rightFrag.domFrag();
-  if (leftFrag) leftFrag.disown().adopt(cell0, 0, 0);
-  if (rightFrag) rightFrag.disown().adopt(cell1, 0, 0);
+  if (leftFrag) leftFrag.disown();
+  if (rightFrag) rightFrag.disown();
   env.adopt(root, 0, 0);
 
   const rootEl = root.domFrag().oneElement();
   rootEl.appendChild(env.html());
-  if (leftDom) leftDom.appendTo(cell0.domFrag().oneElement());
-  if (rightDom) rightDom.appendTo(cell1.domFrag().oneElement());
+  if (leftFrag) {
+    leftFrag.adopt(cell0, 0, 0);
+    leftDom!.appendTo(cell0.domFrag().oneElement());
+  }
+  if (rightFrag) {
+    rightFrag.adopt(cell1, 0, 0);
+    rightDom!.appendTo(cell1.domFrag().oneElement());
+  }
 
   cell0.blur(cursor);
   cell1.blur(cursor);
