@@ -3,8 +3,9 @@ import type { Page } from '@playwright/test';
 
 // Escape-must-close contract for the command palette, exercised across every
 // focus/timing state the palette can be open in. The handler is a window-level
-// capture listener plus the input's own keydown — this matrix pins both paths
-// and the states where neither may be reachable.
+// capture listener — this matrix pins that path and the states where it may
+// not be reachable. The palette stays mounted between uses, so "closed" means
+// the backdrop is hidden, not detached.
 //
 // NOTE: all of these pass in headless Chromium. If "Escape doesn't close the
 // palette" reproduces in another environment (OS-level IME, autofill popup,
@@ -21,7 +22,7 @@ const openPalette = async (page: Page, via: 'key' | 'button' = 'key') => {
 
 const escapeCloses = async (page: Page) => {
   await page.keyboard.press('Escape');
-  await expect(page.locator('.palette')).toHaveCount(0);
+  await expect(page.locator('.palette')).not.toBeVisible();
 };
 
 test.beforeEach(async ({ page }) => {
@@ -165,7 +166,7 @@ test('a second Escape after closing does not reopen or wedge the app', async ({
   await openPalette(page);
   await escapeCloses(page);
   await page.keyboard.press('Escape');
-  await expect(page.locator('.palette')).toHaveCount(0);
+  await expect(page.locator('.palette')).not.toBeVisible();
   await page.waitForFunction(
     () => document.activeElement?.tagName === 'MATH-FIELD',
   );
@@ -192,7 +193,7 @@ test('immediately after a command ran (close → reopen → Escape)', async ({
     delay: 20,
   });
   await page.keyboard.press('Enter'); // runs command, closes palette
-  await expect(page.locator('.palette')).toHaveCount(0);
+  await expect(page.locator('.palette')).not.toBeVisible();
   await openPalette(page);
   await escapeCloses(page);
 });
@@ -210,5 +211,5 @@ test('during an active IME composition in the input', async ({ page }) => {
   // Whether the browser delivers Escape during a composition is
   // platform-dependent; the palette must close if it arrives.
   await page.keyboard.press('Escape');
-  await expect(page.locator('.palette')).toHaveCount(0);
+  await expect(page.locator('.palette')).not.toBeVisible();
 });

@@ -269,10 +269,8 @@ test('Backspace at the start of the field hops over a bounds-carrying atom', asy
 test('Tab advances the placeholder selection lower -> upper', async ({
   page,
 }) => {
-  // KNOWN BUG: the lower-placeholder selection fix re-fires after Tab's
-  // navigation and pulls the selection back to the lower bound, so typing
-  // fills the lower limit again. Tab cannot reach the upper placeholder.
-  test.fail(true, 'Tab lands back on the lower placeholder');
+  // The intent reducer owns Tab (MathLive's competing binding is
+  // prevented), so the selection can't be yanked back to the lower bound.
   const mf = page.locator('math-field').first();
   await mf.pressSequentially('int', { delay: 60 });
   await settle(page);

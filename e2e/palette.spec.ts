@@ -14,7 +14,7 @@ test('Ctrl+K opens the palette and Esc refocuses the cell', async ({
   await expect(page.locator('.palette')).toBeVisible();
   await expect(page.locator('.palette-input')).toBeFocused();
   await page.keyboard.press('Escape');
-  await expect(page.locator('.palette')).toHaveCount(0);
+  await expect(page.locator('.palette')).not.toBeVisible();
   // Refocus happens in a post-commit effect; wait for it rather than racing.
   await page.waitForFunction(
     () => document.activeElement?.tagName === 'MATH-FIELD',
@@ -27,7 +27,7 @@ test('running a command by fuzzy match changes the target', async ({
   await page.keyboard.press('Control+k');
   await page.locator('.palette-input').pressSequentially('target glsl');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.palette')).toHaveCount(0);
+  await expect(page.locator('.palette')).not.toBeVisible();
   await expect(page.locator('.target-select select')).toHaveValue('glsl');
 });
 
@@ -61,7 +61,7 @@ test('Ctrl+K closes an open palette', async ({ page }) => {
   await page.keyboard.press('Control+k');
   await expect(page.locator('.palette')).toBeVisible();
   await page.keyboard.press('Control+k');
-  await expect(page.locator('.palette')).toHaveCount(0);
+  await expect(page.locator('.palette')).not.toBeVisible();
   await page.waitForFunction(
     () => document.activeElement?.tagName === 'MATH-FIELD',
   );
@@ -71,13 +71,13 @@ test('clicking the backdrop closes the palette', async ({ page }) => {
   await page.keyboard.press('Control+k');
   await expect(page.locator('.palette')).toBeVisible();
   await page.locator('.palette-backdrop').click({ position: { x: 10, y: 10 } });
-  await expect(page.locator('.palette')).toHaveCount(0);
+  await expect(page.locator('.palette')).not.toBeVisible();
 });
 
 test('empty query lists every command', async ({ page }) => {
   await page.keyboard.press('Control+k');
-  // 6 fixed commands + 4 targets + 1 goto per cell (single cell here).
-  await expect(page.locator('.cmd-item')).toHaveCount(11);
+  // 7 fixed commands + 4 targets + 1 goto per cell (single cell here).
+  await expect(page.locator('.cmd-item')).toHaveCount(12);
 });
 
 test('a query matching nothing shows the empty state', async ({ page }) => {
@@ -125,7 +125,7 @@ test('hovering selects an item and clicking runs it', async ({ page }) => {
   await item.hover();
   await expect(item).toHaveClass(/selected/);
   await item.click();
-  await expect(page.locator('.palette')).toHaveCount(0);
+  await expect(page.locator('.palette')).not.toBeVisible();
   await expect(page.locator('.target-select select')).toHaveValue('c');
 });
 

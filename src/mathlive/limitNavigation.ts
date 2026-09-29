@@ -148,6 +148,57 @@ export function lowerPlaceholderSelection(
   return { kind: 'select', anchor: off - 1, extent: off };
 }
 
+// Reading-order rank: equal to the flat offset except inside a bounds
+// carrier, where the subscript block (lower limit) precedes the superscript
+// block (upper limit) — the flat model stores them swapped. Each member's
+// rank is shifted by the sibling block's size, which swaps the two
+// contiguous flat ranges into reading order.
+const readingRank = (model: InternalModel, atom: InternalAtom): number => {
+  let rank = model.offsetOf(atom);
+  let a: InternalAtom | null | undefined = atom;
+  while (a?.parent) {
+    const p: InternalAtom = a.parent;
+    if (a.parentBranch === 'superscript' && p.subscript)
+      rank += p.subscript.length;
+    else if (a.parentBranch === 'subscript' && p.superscript)
+      rank -= p.superscript.length;
+    a = p;
+  }
+  return rank;
+};
+
+// Tab / Shift+Tab: select the next/previous placeholder in reading order.
+// Owning this (instead of letting MathLive's keybinding run) is what makes
+// Tab able to reach the upper limit placeholder — the selection-change
+// lower-placeholder fix can't fight a move it never sees.
+export function nextPlaceholderAction(
+  model: InternalModel,
+  dir: 1 | -1,
+): CaretAction | null {
+  // Placeholders in flat order; atom at offset i occupies caret offset i,
+  // so at() enumerates the whole model.
+  const placeholders: InternalAtom[] = [];
+  for (let i = 0; ; i++) {
+    const a = model.at(i);
+    if (!a) break;
+    if (a.type === 'placeholder' && placeholders.at(-1) !== a)
+      placeholders.push(a);
+  }
+  if (!placeholders.length) return null;
+  const ordered = [...placeholders].sort(
+    (x, y) => readingRank(model, x) - readingRank(model, y),
+  );
+  const cur = model.at(model.position);
+  const curRank = cur ? readingRank(model, cur) : -1;
+  const target =
+    dir === 1
+      ? ordered.find((p) => readingRank(model, p) > curRank)
+      : ordered.findLast((p) => readingRank(model, p) < curRank);
+  if (!target) return null;
+  const off = model.offsetOf(target);
+  return { kind: 'select', anchor: off - 1, extent: off };
+}
+
 // Caret changes must go through the public element API — writing
 // model.position / model.setSelection does not request a re-render.
 export function applyCaret(
