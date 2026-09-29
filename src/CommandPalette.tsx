@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fuzzyScore } from './fuzzy';
 
 export interface Command {
@@ -11,19 +11,23 @@ export interface Command {
 }
 
 interface CommandPaletteProps {
+  open: boolean;
   commands: Command[];
   onClose: () => void;
 }
 
-export default function CommandPalette({
-  commands,
-  onClose,
-}: CommandPaletteProps) {
+// The palette stays mounted while closed: `open` flips the backdrop's
+// visibility, so opening is a style flip + paint instead of a mount plus the
+// overlay subtree's first style/layout (the cold-open cost). The hidden
+// subtree keeps receiving renders so no DOM mutation is owed at open time.
+function CommandPalette({ open, commands, onClose }: CommandPaletteProps) {
   const [query, setQuery] = useState('');
   const [index, setIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  // Queued focus work (the focusout trap's refocus) must not fire after close.
+  const openRef = useRef(open);
 
   const matches = useMemo(() => {
     const scored: { c: Command; s: number }[] = [];
@@ -37,7 +41,21 @@ export default function CommandPalette({
 
   const sel = Math.min(index, matches.length - 1);
 
+  // Every close path goes through close() so state resets in the closing
+  // event, not in an effect — reopening then needs no state update (and none
+  // of the DOM mutation one would cause) on the keydown-to-paint path.
+  const close = useCallback(() => {
+    setQuery('');
+    setIndex(0);
+    onClose();
+  }, [onClose]);
+
   useEffect(() => {
+    openRef.current = open;
+    if (!open) return;
+    // A previous session may have left the list scrolled; scrollTop is a
+    // write, so clearing it doesn't force layout before the open paints.
+    listRef.current?.scrollTo({ top: 0 });
     // Defer focus past first paint: focusing the input blurs the math-field,
     // and MathLive's blur work plus the native focus() layout would otherwise
     // run before the palette's first paint and delay it.
@@ -50,14 +68,16 @@ export default function CommandPalette({
       clearTimeout(t0);
       clearTimeout(t1);
     };
-  }, []);
+  }, [open]);
 
-  // Escape must close even if focus has drifted out of the input.
+  // Escape must close even if focus has drifted out of the input. Attached
+  // only while open so a hidden palette never swallows keys.
   useEffect(() => {
+    if (!open) return;
     const onKeydown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        close();
         return;
       }
       const input = inputRef.current;
@@ -77,33 +97,36 @@ export default function CommandPalette({
     };
     window.addEventListener('keydown', onKeydown, true);
     return () => window.removeEventListener('keydown', onKeydown, true);
-  }, [onClose]);
+  }, [open, close]);
 
-  const didMount = useRef(false);
+  const wasOpen = useRef(false);
   useEffect(() => {
-    // Skip the mount run — scrollIntoView forces a synchronous document
-    // layout, which would sit before the palette's first paint.
-    if (!didMount.current) {
-      didMount.current = true;
-      return;
-    }
+    // Skip the run where the palette just opened — scrollIntoView forces a
+    // synchronous document layout, which would sit between the visibility
+    // flip and the palette's first paint.
+    const justOpened = open && !wasOpen.current;
+    wasOpen.current = open;
+    if (!open || justOpened) return;
     listRef.current
       ?.querySelector('.cmd-item.selected')
       ?.scrollIntoView({ block: 'nearest' });
-  }, [sel]);
+  }, [sel, open]);
 
   // MathLive re-asserts focus on a ~60ms timer after a field is focused,
   // which can steal focus from the palette when it was opened right after
   // editing a cell — so keep focus inside while the palette is open.
   const onFocusOut = (e: React.FocusEvent) => {
+    if (!open) return;
     const root = rootRef.current;
     if (root && !root.contains(e.relatedTarget as Node))
-      setTimeout(() => inputRef.current?.focus(), 0);
+      setTimeout(() => {
+        if (openRef.current) inputRef.current?.focus();
+      }, 0);
   };
 
   const pick = (c: Command) => {
     c.run();
-    onClose();
+    close();
   };
 
   const onKeydown = (e: React.KeyboardEvent) => {
@@ -119,12 +142,16 @@ export default function CommandPalette({
       if (m) pick(m.c);
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      onClose();
+      close();
     }
   };
 
   return (
-    <div className="palette-backdrop" onClick={onClose}>
+    <div
+      className={open ? 'palette-backdrop open' : 'palette-backdrop'}
+      inert={!open}
+      onClick={close}
+    >
       <div
         ref={rootRef}
         className="palette"
@@ -176,3 +203,5 @@ export default function CommandPalette({
     </div>
   );
 }
+
+export default memo(CommandPalette);

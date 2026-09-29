@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MathFieldInput from './MathFieldInput';
 import OutputPanel from './OutputPanel';
 import CommandPalette from './CommandPalette';
@@ -10,10 +10,104 @@ interface Expr {
   latex: string;
 }
 
+interface FocusTarget {
+  id: number;
+  edge?: 'start' | 'end';
+  nonce?: number;
+}
+
 let nextId = 1;
 const createExpr = (latex = ''): Expr => ({ id: nextId++, latex });
 
 const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent);
+
+interface MainContentProps {
+  exprs: Expr[];
+  focus: FocusTarget | null;
+  target: TargetId;
+  dIsDerivative: boolean;
+  smartMode: boolean;
+  onAddExpr: (afterId?: number, latex?: string) => void;
+  onRemoveExpr: (id: number) => void;
+  onUpdateExpr: (id: number, latex: string) => void;
+  onFocusCell: (f: FocusTarget) => void;
+  onTargetChange: (t: TargetId) => void;
+  onDIsDerivativeChange: (v: boolean) => void;
+  onSmartModeChange: (v: boolean) => void;
+}
+
+// Memoized so toggling the palette doesn't reconcile the cell list — every
+// prop is a state value or a stable callback, none change when only
+// paletteOpen flips.
+const MainContent = memo(function MainContent({
+  exprs,
+  focus,
+  target,
+  dIsDerivative,
+  smartMode,
+  onAddExpr,
+  onRemoveExpr,
+  onUpdateExpr,
+  onFocusCell,
+  onTargetChange,
+  onDIsDerivativeChange,
+  onSmartModeChange,
+}: MainContentProps) {
+  return (
+    <div className="main">
+      <section className="expr-panel">
+        <ol className="expr-list">
+          {exprs.map((e, i) => (
+            <li className="expr-row" key={e.id}>
+              <span className="expr-index">{i + 1}</span>
+              <MathFieldInput
+                value={e.latex}
+                dIsDerivative={dIsDerivative}
+                smartMode={smartMode}
+                autoFocus={focus?.id === e.id}
+                focusEdge={focus?.id === e.id ? focus.edge : undefined}
+                focusNonce={focus?.id === e.id ? focus.nonce : undefined}
+                onFocus={() => onFocusCell({ id: e.id })}
+                onChange={(latex) => onUpdateExpr(e.id, latex)}
+                onNewCell={() => onAddExpr(e.id)}
+                onMoveOut={(dir) => {
+                  const next = i + (dir === 'down' ? 1 : -1);
+                  if (next < 0) return;
+                  if (next >= exprs.length) onAddExpr();
+                  else
+                    onFocusCell({
+                      id: exprs[next].id,
+                      edge: dir === 'down' ? 'start' : 'end',
+                    });
+                }}
+              />
+              <button
+                className="expr-delete"
+                title="Delete expression"
+                aria-label="Delete expression"
+                onClick={() => onRemoveExpr(e.id)}
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ol>
+        <button className="add-expr" onClick={() => onAddExpr()}>
+          + Add expression
+        </button>
+      </section>
+      <OutputPanel
+        exprs={exprs}
+        target={target}
+        onTargetChange={onTargetChange}
+        dIsDerivative={dIsDerivative}
+        onDIsDerivativeChange={onDIsDerivativeChange}
+        smartMode={smartMode}
+        onSmartModeChange={onSmartModeChange}
+      />
+    </div>
+  );
+});
 
 export default function App() {
   const [initialExpr] = useState(createExpr);
@@ -22,11 +116,9 @@ export default function App() {
   const [dIsDerivative, setDIsDerivative] = useState(true);
   const [smartMode, setSmartMode] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [focus, setFocus] = useState<{
-    id: number;
-    edge?: 'start' | 'end';
-    nonce?: number;
-  } | null>({ id: initialExpr.id });
+  const [focus, setFocus] = useState<FocusTarget | null>({
+    id: initialExpr.id,
+  });
 
   // Capture phase so Ctrl+K is seen even inside a <math-field>, which may
   // swallow keydown events at the target.
@@ -57,10 +149,13 @@ export default function App() {
     wasPaletteOpen.current = paletteOpen;
   }, [paletteOpen]);
 
-  const updateExpr = (id: number, latex: string) =>
-    setExprs((es) => es.map((e) => (e.id === id ? { ...e, latex } : e)));
+  const updateExpr = useCallback(
+    (id: number, latex: string) =>
+      setExprs((es) => es.map((e) => (e.id === id ? { ...e, latex } : e))),
+    [],
+  );
 
-  const addExpr = (afterId?: number, latex = '') => {
+  const addExpr = useCallback((afterId?: number, latex = '') => {
     const e = createExpr(latex);
     setExprs((es) => {
       const idx = afterId == null ? es.length : es.findIndex((x) => x.id === afterId) + 1;
@@ -69,84 +164,92 @@ export default function App() {
       return copy;
     });
     setFocus({ id: e.id });
-  };
+  }, []);
 
-  const removeExpr = (id: number) =>
-    setExprs((es) =>
-      es.length > 1
-        ? es.filter((e) => e.id !== id)
-        : es.map((e) => (e.id === id ? { ...e, latex: '' } : e)),
-    );
+  const removeExpr = useCallback(
+    (id: number) =>
+      setExprs((es) =>
+        es.length > 1
+          ? es.filter((e) => e.id !== id)
+          : es.map((e) => (e.id === id ? { ...e, latex: '' } : e)),
+      ),
+    [],
+  );
+
+  const closePalette = useCallback(() => setPaletteOpen(false), []);
 
   const focusId = focus?.id;
-  const commands: Command[] = [
-    {
-      id: 'insert-below',
-      title: 'Insert expression below',
-      keywords: 'new add cell row',
-      hint: 'Shift+Enter',
-      run: () => addExpr(focusId),
-    },
-    {
-      id: 'duplicate',
-      title: 'Duplicate current expression',
-      keywords: 'copy clone cell',
-      run: () => {
-        const cur = exprs.find((e) => e.id === focusId);
-        if (cur) addExpr(cur.id, cur.latex);
+  const commands = useMemo<Command[]>(
+    () => [
+      {
+        id: 'insert-below',
+        title: 'Insert expression below',
+        keywords: 'new add cell row',
+        hint: 'Shift+Enter',
+        run: () => addExpr(focusId),
       },
-    },
-    {
-      id: 'delete-current',
-      title: 'Delete current expression',
-      keywords: 'remove cell',
-      run: () => {
-        const idx = exprs.findIndex((e) => e.id === focusId);
-        if (idx < 0) return;
-        const next = exprs[idx + 1] ?? exprs[idx - 1];
-        removeExpr(exprs[idx].id);
-        if (next && next.id !== exprs[idx].id) setFocus({ id: next.id });
+      {
+        id: 'duplicate',
+        title: 'Duplicate current expression',
+        keywords: 'copy clone cell',
+        run: () => {
+          const cur = exprs.find((e) => e.id === focusId);
+          if (cur) addExpr(cur.id, cur.latex);
+        },
       },
-    },
-    {
-      id: 'clear-all',
-      title: 'Clear all expressions',
-      keywords: 'reset delete remove',
-      run: () => {
-        const e = createExpr();
-        setExprs([e]);
-        setFocus({ id: e.id });
+      {
+        id: 'delete-current',
+        title: 'Delete current expression',
+        keywords: 'remove cell',
+        run: () => {
+          const idx = exprs.findIndex((e) => e.id === focusId);
+          if (idx < 0) return;
+          const next = exprs[idx + 1] ?? exprs[idx - 1];
+          removeExpr(exprs[idx].id);
+          if (next && next.id !== exprs[idx].id) setFocus({ id: next.id });
+        },
       },
-    },
-    {
-      id: 'toggle-derivative',
-      title: 'd/dx means derivative',
-      keywords: 'toggle option fraction',
-      current: dIsDerivative,
-      run: () => setDIsDerivative((v) => !v),
-    },
-    {
-      id: 'toggle-smart',
-      title: 'Smart mode',
-      keywords: 'toggle option autocomplete',
-      hint: 'Alt+S',
-      current: smartMode,
-      run: () => setSmartMode((v) => !v),
-    },
-    ...TARGETS.map((t) => ({
-      id: `target-${t.id}`,
-      title: `Target: ${t.label}`,
-      keywords: 'set compile codegen language output',
-      current: t.id === target,
-      run: () => setTarget(t.id),
-    })),
-    ...exprs.map((e, i) => ({
-      id: `goto-${e.id}`,
-      title: `Go to expression ${i + 1}: ${e.latex.trim() || '(empty)'}`,
-      keywords: 'focus jump cell',
-      run: () => setFocus({ id: e.id, edge: 'end' as const }),
-    })),
-  ];
+      {
+        id: 'clear-all',
+        title: 'Clear all expressions',
+        keywords: 'reset delete remove',
+        run: () => {
+          const e = createExpr();
+          setExprs([e]);
+          setFocus({ id: e.id });
+        },
+      },
+      {
+        id: 'toggle-derivative',
+        title: 'd/dx means derivative',
+        keywords: 'toggle option fraction',
+        current: dIsDerivative,
+        run: () => setDIsDerivative((v) => !v),
+      },
+      {
+        id: 'toggle-smart',
+        title: 'Smart mode',
+        keywords: 'toggle option autocomplete',
+        hint: 'Alt+S',
+        current: smartMode,
+        run: () => setSmartMode((v) => !v),
+      },
+      ...TARGETS.map((t) => ({
+        id: `target-${t.id}`,
+        title: `Target: ${t.label}`,
+        keywords: 'set compile codegen language output',
+        current: t.id === target,
+        run: () => setTarget(t.id),
+      })),
+      ...exprs.map((e, i) => ({
+        id: `goto-${e.id}`,
+        title: `Go to expression ${i + 1}: ${e.latex.trim() || '(empty)'}`,
+        keywords: 'focus jump cell',
+        run: () => setFocus({ id: e.id, edge: 'end' as const }),
+      })),
+    ],
+    [exprs, focusId, dIsDerivative, smartMode, target, addExpr, removeExpr],
+  );
 
   return (
     <div className="app">
@@ -159,64 +262,25 @@ export default function App() {
           <kbd>{isMac ? '⌘' : 'Ctrl'} K</kbd>
         </button>
       </header>
-      <div className="main">
-        <section className="expr-panel">
-          <ol className="expr-list">
-            {exprs.map((e, i) => (
-              <li className="expr-row" key={e.id}>
-                <span className="expr-index">{i + 1}</span>
-                <MathFieldInput
-                  value={e.latex}
-                  dIsDerivative={dIsDerivative}
-                  smartMode={smartMode}
-                  autoFocus={focus?.id === e.id}
-                  focusEdge={focus?.id === e.id ? focus.edge : undefined}
-                  focusNonce={focus?.id === e.id ? focus.nonce : undefined}
-                  onFocus={() => setFocus({ id: e.id })}
-                  onChange={(latex) => updateExpr(e.id, latex)}
-                  onNewCell={() => addExpr(e.id)}
-                  onMoveOut={(dir) => {
-                    const next = i + (dir === 'down' ? 1 : -1);
-                    if (next < 0) return;
-                    if (next >= exprs.length) addExpr();
-                    else
-                      setFocus({
-                        id: exprs[next].id,
-                        edge: dir === 'down' ? 'start' : 'end',
-                      });
-                  }}
-                />
-                <button
-                  className="expr-delete"
-                  title="Delete expression"
-                  aria-label="Delete expression"
-                  onClick={() => removeExpr(e.id)}
-                >
-                  ×
-                </button>
-              </li>
-            ))}
-          </ol>
-          <button className="add-expr" onClick={() => addExpr()}>
-            + Add expression
-          </button>
-        </section>
-        <OutputPanel
-          exprs={exprs}
-          target={target}
-          onTargetChange={setTarget}
-          dIsDerivative={dIsDerivative}
-          onDIsDerivativeChange={setDIsDerivative}
-          smartMode={smartMode}
-          onSmartModeChange={setSmartMode}
-        />
-      </div>
-      {paletteOpen && (
-        <CommandPalette
-          commands={commands}
-          onClose={() => setPaletteOpen(false)}
-        />
-      )}
+      <MainContent
+        exprs={exprs}
+        focus={focus}
+        target={target}
+        dIsDerivative={dIsDerivative}
+        smartMode={smartMode}
+        onAddExpr={addExpr}
+        onRemoveExpr={removeExpr}
+        onUpdateExpr={updateExpr}
+        onFocusCell={setFocus}
+        onTargetChange={setTarget}
+        onDIsDerivativeChange={setDIsDerivative}
+        onSmartModeChange={setSmartMode}
+      />
+      <CommandPalette
+        open={paletteOpen}
+        commands={commands}
+        onClose={closePalette}
+      />
     </div>
   );
 }

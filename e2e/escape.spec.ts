@@ -21,7 +21,7 @@ const openPalette = async (page: Page, via: 'key' | 'button' = 'key') => {
 
 const escapeCloses = async (page: Page) => {
   await page.keyboard.press('Escape');
-  await expect(page.locator('.palette')).toHaveCount(0);
+  await expect(page.locator('.palette')).toBeHidden();
 };
 
 test.beforeEach(async ({ page }) => {
@@ -165,7 +165,7 @@ test('a second Escape after closing does not reopen or wedge the app', async ({
   await openPalette(page);
   await escapeCloses(page);
   await page.keyboard.press('Escape');
-  await expect(page.locator('.palette')).toHaveCount(0);
+  await expect(page.locator('.palette')).toBeHidden();
   await page.waitForFunction(
     () => document.activeElement?.tagName === 'MATH-FIELD',
   );
@@ -192,7 +192,7 @@ test('immediately after a command ran (close → reopen → Escape)', async ({
     delay: 20,
   });
   await page.keyboard.press('Enter'); // runs command, closes palette
-  await expect(page.locator('.palette')).toHaveCount(0);
+  await expect(page.locator('.palette')).toBeHidden();
   await openPalette(page);
   await escapeCloses(page);
 });
@@ -210,5 +210,5 @@ test('during an active IME composition in the input', async ({ page }) => {
   // Whether the browser delivers Escape during a composition is
   // platform-dependent; the palette must close if it arrives.
   await page.keyboard.press('Escape');
-  await expect(page.locator('.palette')).toHaveCount(0);
+  await expect(page.locator('.palette')).toBeHidden();
 });

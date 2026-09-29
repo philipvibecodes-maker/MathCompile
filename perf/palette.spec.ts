@@ -83,9 +83,13 @@ test('Ctrl+K warm open -> paint, Escape -> cell refocused', async ({
         {
           until: () =>
             page.waitForFunction(
-              (sel) =>
-                !document.querySelector(sel) &&
-                document.activeElement?.tagName === 'MATH-FIELD',
+              (sel) => {
+                const el = document.querySelector(sel);
+                return (
+                  (!el || getComputedStyle(el).visibility === 'hidden') &&
+                  document.activeElement?.tagName === 'MATH-FIELD'
+                );
+              },
               SEL.palette,
             ),
         },
@@ -93,7 +97,7 @@ test('Ctrl+K warm open -> paint, Escape -> cell refocused', async ({
       record('palette.close-refocus', close.ms);
     } else {
       await page.keyboard.press('Escape');
-      await page.waitForSelector(SEL.palette, { state: 'detached' });
+      await page.waitForSelector(SEL.palette, { state: 'hidden' });
     }
     await page.waitForTimeout(80); // clear of the focus-steal window
   }

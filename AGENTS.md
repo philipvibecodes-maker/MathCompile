@@ -23,19 +23,23 @@ cells are MathLive `<math-field>` elements.
   is registered in capture phase so it works inside `<math-field>`.
 - Closing the palette refocuses the active cell by bumping `focus.nonce` →
   `MathFieldInput`'s `focusNonce` prop re-runs its autofocus effect.
+- The palette is **always mounted**: `open` toggles `.open` on
+  `.palette-backdrop` (`visibility:hidden` ↔ `visible`), so opening is a
+  style flip, not a mount. Tests must assert hidden/not-visible, never
+  detached — `.palette` persists in the DOM while closed. The closed subtree
+  is `inert`; query/selection reset on close so reopening needs no state
+  update on the paint path.
 
 ### Performance notes (input → paint latency)
 
 - React flushes `useEffect` **synchronously before paint** for discrete
-  input events (keydown/click), so mount effects that force layout —
-  `focus()`, `scrollIntoView`, geometry reads — delay the palette's first
-  paint. Defer them past paint (`setTimeout(0)`) or skip the mount run.
-- Cold open is far slower than warm (~50–90ms vs ~10–25ms at 1× CPU):
-  first open pays V8/JIT + first style/layout of the overlay subtree. If
-  perceived latency still matters, the next steps are: keep the palette
-  mounted with `visibility:hidden` (open becomes a style flip), isolate the
-  open render so `App`/math-fields don't reconcile, and
-  `contain: layout style paint` on `.palette`.
+  input events (keydown/click), so effects that force layout — `focus()`,
+  `scrollIntoView`, geometry reads — delay the palette's first paint.
+  Defer them past paint (`setTimeout(0)`), skip the just-opened run, or
+  prefer writes that don't need layout (`scrollTop = 0`).
+- The keep-mounted fixes are in: `visibility` flip on `.palette-backdrop`,
+  `contain: layout style paint` on `.palette`, and `MainContent` is
+  `memo`'d so toggling `paletteOpen` doesn't reconcile the cell list.
 - Measure in-page: `performance.now()` at keydown (capture listener) →
   `IntersectionObserver` on `.palette`. Screen-recording measurement adds
   compositor + frame-quantization overhead (~40–80ms floor). Dev-mode React
