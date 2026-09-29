@@ -104,6 +104,9 @@ interface MathFieldInputProps {
   onFocus?: () => void;
   autoFocus?: boolean;
   focusEdge?: 'start' | 'end';
+  // Bumping this re-runs the autofocus effect — used to restore focus to the
+  // active cell after a modal (e.g. the command palette) closes.
+  focusNonce?: number;
   dIsDerivative: boolean;
   smartMode: boolean;
 }
@@ -116,6 +119,7 @@ export default function MathFieldInput({
   onFocus,
   autoFocus,
   focusEdge,
+  focusNonce,
   dIsDerivative,
   smartMode,
 }: MathFieldInputProps) {
@@ -312,7 +316,7 @@ export default function MathFieldInput({
     mf.focus();
     if (focusEdge === 'start') mf.executeCommand('moveToMathfieldStart');
     else if (focusEdge === 'end') mf.executeCommand('moveToMathfieldEnd');
-  }, [autoFocus, focusEdge]);
+  }, [autoFocus, focusEdge, focusNonce]);
 
   return <math-field ref={ref} />;
 }

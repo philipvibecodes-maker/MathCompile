@@ -239,3 +239,127 @@ body {
   border-radius: 6px;
   white-space: pre-wrap;
 }
+
+/* ── Command palette ────────────────────────────────── */
+
+.palette-button {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #666;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.palette-button:hover {
+  border-color: #bbb;
+  color: var(--text);
+}
+
+.palette-button kbd {
+  font-family: inherit;
+  font-size: 11px;
+  color: #999;
+}
+
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.palette {
+  width: min(560px, 92vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.palette-input {
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--panel-bg);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  outline: none;
+}
+
+.palette-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.cmd-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.cmd-item.selected {
+  background: #eef4fa;
+}
+
+.cmd-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmd-current {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.cmd-hint {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  color: #888;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.cmd-empty {
+  padding: 18px 10px;
+  font-size: 13px;
+  color: #999;
+  text-align: center;
+}
+
+.palette-footer {
+  padding: 7px 12px;
+  font-size: 11px;
+  color: #999;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+}
