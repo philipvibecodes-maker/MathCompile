@@ -51,6 +51,28 @@ body {
   color: var(--accent);
 }
 
+/* "built with" credit right of the wordmark: Solid mark + mathlive */
+.stack-credit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 14px;
+  padding-left: 14px;
+  border-left: 1px solid var(--border);
+  font-size: 13px;
+  color: #777;
+}
+
+.solid-logo {
+  height: 15px;
+  width: 15px;
+  fill: #2c4f7c; /* solid brand blue */
+}
+
+.mathlive-word {
+  font-style: italic;
+}
+
 .main {
   flex: 1;
   display: flex;
