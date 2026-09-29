@@ -74,7 +74,13 @@ export default function CommandPalette(props: { commands: Command[] }) {
       !rootRef.contains(e.relatedTarget as Node)
     )
       setTimeout(() => {
-        if (appStore.paletteOpen()) inputRef.focus();
+        if (!appStore.paletteOpen()) return;
+        // A blur that leaves focus on <body> is a dismiss signal: keyboard
+        // extensions unfocus the input on Escape while suppressing the
+        // keydown itself, so the unfocus is the only part the page sees. A
+        // focus move to a real element (e.g. the MathLive steal) is not.
+        if (document.activeElement === document.body) close();
+        else inputRef.focus();
       }, 0);
   };
 
@@ -111,6 +117,11 @@ export default function CommandPalette(props: { commands: Command[] }) {
         aria-modal="true"
         aria-label="Command palette"
         onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => {
+          // Inner clicks keep focus in the input; the input itself keeps
+          // default behavior so the caret can be placed by mouse.
+          if (e.target !== inputRef) e.preventDefault();
+        }}
         onFocusOut={onFocusOut}
       >
         <input
