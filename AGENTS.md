@@ -142,6 +142,26 @@ src/
   pins — so results stay comparable across rewrites. Serial runs only
   (`workers: 1`); never measure against the dev server.
 
+## Persistence
+
+- `src/persistence.ts` owns all `localStorage` access: `mathcompile-theme`
+  (read pre-paint by `index.html`), `mathcompile-cells` (the worksheet),
+  `mathcompile-prefs` (smartMode + target + guideOpen). Everything is node-guarded so
+  the store stays importable in vitest.
+- Writes are **debounced ~300ms** (`persistCells`) and flushed on
+  `pagehide`/`visibilitychange:hidden` — the keystroke path never calls
+  `setItem` synchronously. The store triggers writes from its mutating
+  methods (`setLatex`, `addCell`, `removeCell`, `clearAll`), not an
+  `$effect`.
+- Hydration is synchronous in the `AppStore` field initializers:
+  `initCells()` restores cells and bumps `nextId` past `maxId`;
+  `MathField.svelte`'s existing mount-time `setValue(cell.latex)` does
+  the field hydration for free. Corrupt/missing data falls back to the
+  seeded example cell.
+- E2e caveat: a mid-test `localStorage.clear()` is undone by the
+  pagehide flush if a write is still pending — wait for
+  `mathcompile-cells` to land first (see `e2e/cells.spec.ts`).
+
 ## Rebuilding the vendor bundle
 
 ```

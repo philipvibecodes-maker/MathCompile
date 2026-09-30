@@ -17,7 +17,7 @@
   ];
 </script>
 
-<details class="howto" open>
+<details class="howto" bind:open={appStore.guideOpen}>
   <summary>How do I&hellip;</summary>
   <dl class="howto-list">
     {#each entries as e (e.goal)}

@@ -45,7 +45,14 @@ test.beforeEach(async ({ page }) => {
 test('starts with a single focused cell seeded with the default expression', async ({
   page,
 }) => {
-  // beforeEach cleared the field; reload to observe the boot state.
+  // beforeEach cleared the field. Wait for that debounced write to land
+  // (which drains the pending buffer), then clear storage so the reload
+  // observes the empty-storage boot state — the seeded cell — rather
+  // than the persisted edit.
+  await page.waitForFunction(() =>
+    localStorage.getItem('mathcompile-cells')?.includes('""'),
+  );
+  await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.waitForSelector('math-field');
   await expect(page.locator('math-field')).toHaveCount(1);
