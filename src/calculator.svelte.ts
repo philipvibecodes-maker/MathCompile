@@ -75,12 +75,15 @@ function ensureWorker(): Worker {
     if (!p) return;
     pending.delete(m.id);
     if (m.ok) {
-      // Debug: echo the SymPy python() source produced for each row.
+      // Debug: echo the SymPy python() source produced for each row, or
+      // the parse/eval error when a row failed.
       for (const r of m.rows ?? []) {
         if (r.ok && r.code) console.log('[calc]', r.code);
+        else if (!r.ok) console.log('[calc] error:', r.error);
       }
       p.resolve(m.rows ?? []);
     } else {
+      console.log('[calc] error:', m.error ?? 'evaluation failed');
       p.reject(new Error(m.error ?? 'evaluation failed'));
     }
   };
