@@ -11,6 +11,17 @@ export type Edge = 'start' | 'end';
 let nextId = 1;
 const createCell = (latex = ''): Cell => ({ id: nextId++, latex });
 
+export const THEME_STORAGE_KEY = 'mathcompile-theme';
+
+// Saved preference > prefers-color-scheme > light. Window access is
+// guarded so the store stays importable in node (vitest).
+function initDarkMode(): boolean {
+  if (typeof window === 'undefined') return false;
+  const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+  if (saved === 'dark' || saved === 'light') return saved === 'dark';
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+}
+
 // App state + the field registry/focus service (challenges.md §4/§7: one
 // focus owner; commands reach fields through `fields.get(id)?.method()`,
 // never through prop deltas like the old focusNonce). Cell ops are DOM-free
@@ -23,6 +34,7 @@ export class AppStore {
   target = $state<TargetId>('latex');
   smartMode = $state(true);
   paletteOpen = $state(false);
+  darkMode = $state(initDarkMode());
 
   // Mounted math-field handles, keyed by cell id.
   readonly fields = new Map<number, FieldHandle>();

@@ -4,7 +4,7 @@
   import { TARGETS } from './targets';
   import type { TargetId } from './targets';
   import CommandPalette from './components/CommandPalette.svelte';
-  import { appStore } from './appState.svelte.ts';
+  import { appStore, THEME_STORAGE_KEY } from './appState.svelte.ts';
   import { buildCommands } from './commands.ts';
   import { installGlobalKeymap } from './editor/keymap';
 
@@ -29,6 +29,14 @@
       isPaletteOpen: () => appStore.paletteOpen,
     }),
   );
+
+  // data-theme drives the CSS var swap; the inline script in index.html
+  // sets it pre-paint, this keeps it synced with the store afterward.
+  $effect(() => {
+    const theme = appStore.darkMode ? 'dark' : 'light';
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  });
 </script>
 
 <div class="app">
@@ -64,6 +72,42 @@
         </label>
         <span class="option-shortcut">alt+s</span>
       </div>
+      <button
+        class="theme-toggle"
+        title={appStore.darkMode
+          ? 'Switch to light mode'
+          : 'Switch to dark mode'}
+        aria-label="Toggle dark mode"
+        aria-pressed={appStore.darkMode}
+        onclick={() => (appStore.darkMode = !appStore.darkMode)}
+      >
+        {#if appStore.darkMode}
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="4" />
+            <path
+              d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"
+            />
+          </svg>
+        {:else}
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+          </svg>
+        {/if}
+      </button>
     </div>
     <button class="palette-button" onclick={() => appStore.openPalette()}>
       Commands

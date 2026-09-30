@@ -1,9 +1,35 @@
 :root {
   --accent: #2d70b3;
+  --accent-text: #1f5c99;
   --border: #d4d4d4;
   --bg: #f5f5f5;
   --panel-bg: #ffffff;
   --text: #333;
+  --muted: #5f6672;
+  --faint: #8f959e;
+  --selected-bg: #eef4fa;
+  --dashed-border: #b8c8d8;
+  --danger: #c00;
+  --backdrop: rgba(0, 0, 0, 0.28);
+  --shadow: rgba(0, 0, 0, 0.25);
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --accent: #6ea6e8;
+  --accent-text: #8ab8ef;
+  --border: #3b4048;
+  --bg: #191c21;
+  --panel-bg: #23262d;
+  --text: #e6e8ee;
+  --muted: #9aa2ae;
+  --faint: #69707c;
+  --selected-bg: #2b3b50;
+  --dashed-border: #46566c;
+  --danger: #e07b7b;
+  --backdrop: rgba(0, 0, 0, 0.55);
+  --shadow: rgba(0, 0, 0, 0.55);
+  color-scheme: dark;
 }
 
 * {
@@ -57,7 +83,7 @@ body {
   gap: 5px;
   margin-left: 12px;
   font-size: 11px;
-  color: #999;
+  color: var(--muted);
 }
 
 .svelte-mark {
@@ -126,7 +152,7 @@ body {
   align-items: center;
   justify-content: center;
   font-size: 12px;
-  color: #999;
+  color: var(--muted);
   user-select: none;
 }
 
@@ -191,7 +217,7 @@ body {
 
 .cell-latex:empty::before {
   content: '…';
-  color: #bbb;
+  color: var(--faint);
 }
 
 .cell-copy {
@@ -199,7 +225,7 @@ body {
   padding: 3px 8px;
   font-size: 11px;
   font-family: inherit;
-  color: var(--accent);
+  color: var(--accent-text);
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -211,7 +237,7 @@ body {
 }
 
 .cell-copy:disabled {
-  color: #bbb;
+  color: var(--faint);
   cursor: default;
 }
 
@@ -220,7 +246,7 @@ body {
   margin-left: 4px;
   border: none;
   background: transparent;
-  color: #aaa;
+  color: var(--faint);
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
@@ -228,22 +254,22 @@ body {
 }
 
 .expr-delete:hover {
-  color: #c00;
+  color: var(--danger);
 }
 
 .add-expr {
   margin: 8px 0 0 32px;
   padding: 8px 14px;
   font-size: 13px;
-  color: var(--accent);
+  color: var(--accent-text);
   background: transparent;
-  border: 1px dashed #b8c8d8;
+  border: 1px dashed var(--dashed-border);
   border-radius: 4px;
   cursor: pointer;
 }
 
 .add-expr:hover {
-  background: #eef4fa;
+  background: var(--selected-bg);
 }
 
 /* ── Header controls ────────────────────────────────── */
@@ -253,7 +279,7 @@ body {
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: #555;
+  color: var(--muted);
 }
 
 .option {
@@ -274,7 +300,7 @@ body {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: #555;
+  color: var(--muted);
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
@@ -282,7 +308,7 @@ body {
 
 .option-shortcut {
   font-size: 10px;
-  color: #999;
+  color: var(--muted);
 }
 
 .option-checkbox input {
@@ -300,7 +326,7 @@ body {
 }
 
 .target-select option:disabled {
-  color: #bbb;
+  color: var(--faint);
 }
 
 /* ── Command palette ────────────────────────────────── */
@@ -313,7 +339,7 @@ body {
   padding: 5px 10px;
   font-size: 13px;
   font-family: inherit;
-  color: #666;
+  color: var(--muted);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -321,14 +347,40 @@ body {
 }
 
 .palette-button:hover {
-  border-color: #bbb;
+  border-color: var(--faint);
   color: var(--text);
 }
 
 .palette-button kbd {
   font-family: inherit;
   font-size: 11px;
-  color: #999;
+  color: var(--muted);
+}
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-family: inherit;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.theme-toggle:hover {
+  border-color: var(--faint);
+  color: var(--text);
+}
+
+.theme-toggle svg {
+  width: 15px;
+  height: 15px;
+  display: block;
 }
 
 /* The palette is permanently mounted: hidden keeps it laid out (and out of
@@ -341,7 +393,7 @@ body {
   justify-content: center;
   align-items: flex-start;
   padding-top: 12vh;
-  background: rgba(0, 0, 0, 0.28);
+  background: var(--backdrop);
   visibility: hidden;
   pointer-events: none;
 }
@@ -358,7 +410,7 @@ body {
   background: var(--panel-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 12px 40px var(--shadow);
   overflow: hidden;
   contain: layout style paint;
 }
@@ -394,7 +446,7 @@ body {
 }
 
 .cmd-item.selected {
-  background: #eef4fa;
+  background: var(--selected-bg);
 }
 
 .cmd-title {
@@ -408,7 +460,7 @@ body {
 .cmd-current {
   flex: 0 0 auto;
   font-size: 12px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .cmd-hint {
@@ -416,7 +468,7 @@ body {
   padding: 1px 6px;
   font-size: 11px;
   font-family: inherit;
-  color: #888;
+  color: var(--muted);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -425,14 +477,64 @@ body {
 .cmd-empty {
   padding: 18px 10px;
   font-size: 13px;
-  color: #999;
+  color: var(--muted);
   text-align: center;
 }
 
 .palette-footer {
   padding: 7px 12px;
   font-size: 11px;
-  color: #999;
+  color: var(--muted);
   background: var(--bg);
   border-top: 1px solid var(--border);
+}
+
+/* ── Dark mode: vendored MathQuill overrides ────────── */
+
+/* mathquill.css hardcodes `border-color: black` on every math element
+   (fraction bars, sqrt vincula, etc.) — remap to the field's text color. */
+:root[data-theme='dark'] .mq-math-mode * {
+  border-color: currentColor;
+}
+
+:root[data-theme='dark'] .mq-math-mode .mq-empty {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+:root[data-theme='dark'] .mq-math-mode .mq-empty.mq-root-block,
+:root[data-theme='dark'] .mq-math-mode .mq-empty.mq-quiet-delimiter,
+:root[data-theme='dark'] .mq-math-mode.mq-empty {
+  background: transparent;
+}
+
+:root[data-theme='dark'] .expr-row math-field .mq-editable-field {
+  border-color: var(--border);
+}
+
+:root[data-theme='dark'] .mq-editable-field .mq-latex-command-input {
+  border-color: var(--border);
+}
+
+:root[data-theme='dark'] .mq-math-mode .mq-text-mode.mq-hasCursor {
+  box-shadow: inset #888 0 0.1em 0.2em;
+}
+
+:root[data-theme='dark'] .mq-math-mode .mq-selection,
+:root[data-theme='dark'] .mq-editable-field .mq-selection,
+:root[data-theme='dark'] .mq-math-mode .mq-selection .mq-non-leaf,
+:root[data-theme='dark'] .mq-editable-field .mq-selection .mq-non-leaf,
+:root[data-theme='dark'] .mq-math-mode .mq-selection .mq-scaled,
+:root[data-theme='dark'] .mq-editable-field .mq-selection .mq-scaled {
+  background: #2e4a73 !important;
+}
+
+:root[data-theme='dark'] .mq-math-mode .mq-selection.mq-blur,
+:root[data-theme='dark'] .mq-editable-field .mq-selection.mq-blur,
+:root[data-theme='dark'] .mq-math-mode .mq-selection.mq-blur .mq-non-leaf,
+:root[data-theme='dark'] .mq-editable-field .mq-selection.mq-blur .mq-non-leaf,
+:root[data-theme='dark'] .mq-math-mode .mq-selection.mq-blur .mq-scaled,
+:root[data-theme='dark'] .mq-editable-field .mq-selection.mq-blur .mq-scaled {
+  background: #474d57 !important;
+  color: var(--text);
+  border-color: var(--text);
 }

@@ -88,8 +88,8 @@ test('clicking the backdrop closes the palette', async ({ page }) => {
 
 test('empty query lists every command', async ({ page }) => {
   await page.keyboard.press('Control+k');
-  // 6 fixed commands + 5 targets + 1 goto per cell (single cell here).
-  await expect(page.locator('.cmd-item')).toHaveCount(12);
+  // 7 fixed commands + 5 targets + 1 goto per cell (single cell here).
+  await expect(page.locator('.cmd-item')).toHaveCount(13);
 });
 
 test('a query matching nothing shows the empty state', async ({ page }) => {

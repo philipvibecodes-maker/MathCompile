@@ -55,6 +55,13 @@ export const buildCommands = (store: AppStore): Command[] => {
       current: store.smartMode,
       run: () => (store.smartMode = !store.smartMode),
     },
+    {
+      id: 'toggle-dark',
+      title: 'Dark mode',
+      keywords: 'toggle theme appearance light night',
+      current: store.darkMode,
+      run: () => (store.darkMode = !store.darkMode),
+    },
     ...TARGETS.map((t) => ({
       id: `target-${t.id}`,
       title: `Target: ${t.label}`,
