@@ -12,11 +12,15 @@ const cell = (page: Page, i = 0): Locator =>
 const cellValue = (mf: Locator): Promise<string> =>
   mf.evaluate((el) => (el as unknown as { value: string }).value);
 
-const dIsDerivative = (mf: Locator): Promise<boolean> =>
+// There's no UI for the vendored dIsDerivative option; flip it through the
+// element's config passthrough.
+const setDIsDerivative = (mf: Locator, v: boolean) =>
   mf.evaluate(
-    (el) =>
-      (el as unknown as { options: { dIsDerivative?: boolean } }).options
-        .dIsDerivative ?? false,
+    (el, val) =>
+      (el as unknown as { config(o: { dIsDerivative: boolean }): void }).config(
+        { dIsDerivative: val },
+      ),
+    v,
   );
 
 test.beforeEach(async ({ page }) => {
@@ -52,27 +56,17 @@ test('the expanded fraction stays editable like ordinary content', async ({
   expect(await cellValue(mf)).toBe('\\frac{gd}{d}');
 });
 
-test('with d/dx-as-derivative off, \\derivative expands to D() with the caret inside', async ({
+test('with dIsDerivative off, \\derivative expands to D() with the caret inside', async ({
   page,
 }) => {
-  await page.locator('.option-checkbox input').first().click();
   const mf = cell(page);
-  await mf.click(); // the checkbox stole focus; give it back to the field
+  await setDIsDerivative(mf, false);
   await mf.pressSequentially('\\derivative', { delay: 60 });
   await page.keyboard.press('Enter');
   expect(await cellValue(mf)).toBe('D()');
   // Caret lands inside the parens: typing fills D(f).
   await mf.pressSequentially('f', { delay: 60 });
   expect(await cellValue(mf)).toBe('D(f)');
-});
-
-test('the option toggle updates existing fields', async ({ page }) => {
-  const mf = cell(page);
-  expect(await dIsDerivative(mf)).toBe(true);
-  await page.locator('.option-checkbox input').first().click();
-  expect(await dIsDerivative(mf)).toBe(false);
-  await page.locator('.option-checkbox input').first().click();
-  expect(await dIsDerivative(mf)).toBe(true);
 });
 
 test('the insert-derivative palette command writes the expansion at the caret', async ({

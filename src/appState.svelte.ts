@@ -21,7 +21,6 @@ export class AppStore {
   focusedId = $state<number>(this.cells[0].id);
   focusEdge = $state<Edge | undefined>(undefined);
   target = $state<TargetId>('latex');
-  dIsDerivative = $state(true);
   smartMode = $state(true);
   paletteOpen = $state(false);
 

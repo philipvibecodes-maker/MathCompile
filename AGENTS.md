@@ -48,7 +48,7 @@ src/
 
 - All MathQuill contact lives in `src/editor/` — components only see the
   `FieldHandle` contract (`focus(edge)`, `getValue`, `setValue`,
-  `insertDerivative`, `setSmartMode`, `setDIsDerivative`, `dispose`).
+  `insertDerivative`, `setSmartMode`, `dispose`).
 - Commands reach fields via `fields.get(id)?.method()` — never via prop
   deltas. `focusCell(id, edge)` replaces the old React `focusNonce` prop.
 - `{#each cells (c.id)}` keeps row identity — keys must stay stable so

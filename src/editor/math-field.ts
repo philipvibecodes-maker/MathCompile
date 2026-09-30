@@ -188,7 +188,6 @@ export interface FieldHandle {
   insertDerivative: () => void;
   // Smart mode = MQ autoCommands + autoSubscriptNumerals.
   setSmartMode: (v: boolean) => void;
-  setDIsDerivative: (v: boolean) => void;
   dispose: () => void;
 }
 
@@ -230,7 +229,6 @@ export function attachField(
         autoCommands: v ? SMART_AUTO_COMMANDS : '',
         autoSubscriptNumerals: v,
       }),
-    setDIsDerivative: (v) => el.config({ dIsDerivative: v }),
     dispose() {
       el.removeEventListener('input', handleInput);
       el.removeEventListener('focusin', handleFocusIn);

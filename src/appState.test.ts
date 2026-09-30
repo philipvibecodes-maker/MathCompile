@@ -122,8 +122,6 @@ describe('app store', () => {
     const s = new AppStore();
     s.target = 'glsl';
     expect(s.target).toBe('glsl');
-    s.dIsDerivative = false;
-    expect(s.dIsDerivative).toBe(false);
     s.smartMode = true;
     expect(s.smartMode).toBe(true);
     s.openPalette();

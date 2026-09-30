@@ -27,7 +27,7 @@ test.beforeEach(async ({ page }) => {
   await page.waitForSelector('math-field');
   // Smart mode defaults on; these specs measure raw keystroke->paint, and
   // autoSubscriptNumerals/autoCommands would rewrite the literal input.
-  await page.locator('.option-checkbox input').nth(1).click();
+  await page.locator('.option-checkbox input').click();
   await cell(page).click();
   await settleFocus(page);
 });

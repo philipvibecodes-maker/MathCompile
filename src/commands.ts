@@ -48,13 +48,6 @@ export const buildCommands = (store: AppStore): Command[] => {
       run: () => store.fields.get(focusId)?.insertDerivative(),
     },
     {
-      id: 'toggle-derivative',
-      title: 'd/dx means derivative',
-      keywords: 'toggle option fraction',
-      current: store.dIsDerivative,
-      run: () => (store.dIsDerivative = !store.dIsDerivative),
-    },
-    {
       id: 'toggle-smart',
       title: 'Smart mode',
       keywords: 'toggle option autocomplete',

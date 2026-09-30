@@ -57,7 +57,7 @@ test('insert expression below adds a focused cell', async ({ page }) => {
 });
 
 test('arrow keys navigate and smart mode toggles', async ({ page }) => {
-  const checkbox = page.locator('.option-checkbox input').nth(1);
+  const checkbox = page.locator('.option-checkbox input');
   await expect(checkbox).toBeChecked();
   await page.keyboard.press('Control+k');
   await page.locator('.palette-input').pressSequentially('smart');
@@ -88,8 +88,8 @@ test('clicking the backdrop closes the palette', async ({ page }) => {
 
 test('empty query lists every command', async ({ page }) => {
   await page.keyboard.press('Control+k');
-  // 7 fixed commands + 5 targets + 1 goto per cell (single cell here).
-  await expect(page.locator('.cmd-item')).toHaveCount(13);
+  // 6 fixed commands + 5 targets + 1 goto per cell (single cell here).
+  await expect(page.locator('.cmd-item')).toHaveCount(12);
 });
 
 test('a query matching nothing shows the empty state', async ({ page }) => {
@@ -210,15 +210,6 @@ test('clear all expressions leaves a single empty focused cell', async ({
   await cellFocused(page);
 });
 
-test('d/dx means derivative command toggles the option', async ({ page }) => {
-  const box = page.locator('.option-checkbox input').first();
-  await expect(box).toBeChecked();
-  await page.keyboard.press('Control+k');
-  await page.locator('.palette-input').pressSequentially('d/dx');
-  await page.keyboard.press('Enter');
-  await expect(box).not.toBeChecked();
-});
-
 test('palette input keeps focus after opening right after an edit', async ({
   page,
 }) => {
@@ -237,7 +228,7 @@ test('Alt+S is ignored while the palette is open', async ({ page }) => {
   await page.keyboard.press('Control+k');
   await page.keyboard.press('Alt+s');
   // Smart mode defaults on; a swallowed Alt+S must leave it unchanged.
-  await expect(page.locator('.option-checkbox input').nth(1)).toBeChecked();
+  await expect(page.locator('.option-checkbox input')).toBeChecked();
 });
 
 test('exposes dialog/listbox semantics for assistive tech', async ({ page }) => {

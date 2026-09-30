@@ -32,11 +32,11 @@ const setTarget = (page: Page, value: string) =>
     s.dispatchEvent(new Event('change', { bubbles: true }));
   }, value);
 
-test('header shows the option checkboxes and commands button', async ({
+test('header shows the option checkbox and commands button', async ({
   page,
 }) => {
   const header = page.locator('.app-header');
-  await expect(header.locator('.option-checkbox input')).toHaveCount(2);
+  await expect(header.locator('.option-checkbox input')).toHaveCount(1);
   await expect(header.locator('.palette-button')).toBeVisible();
 });
 
@@ -71,19 +71,10 @@ test('target select offers all codegen targets, non-latex disabled', async ({
   ]);
 });
 
-test('d/dx-means-derivative checkbox toggles the option', async ({ page }) => {
-  const box = page.locator('.option-checkbox input').first();
-  await expect(box).toBeChecked();
-  await box.click();
-  await expect(box).not.toBeChecked();
-  await box.click();
-  await expect(box).toBeChecked();
-});
-
 test('smart mode checkbox drives the math-field autoCommands option', async ({
   page,
 }) => {
-  const box = page.locator('.option-checkbox input').nth(1);
+  const box = page.locator('.option-checkbox input');
   await expect(box).toBeChecked();
   expect(await smartModeOn(page)).toBe(true);
   await box.click();
@@ -97,7 +88,7 @@ test('Alt+S toggles smart mode', async ({ page }) => {
   await cell(page, 0).click(); // shortcut must work with a cell focused
   await page.keyboard.press('Alt+s');
   await expect(
-    page.locator('.option-checkbox input').nth(1),
+    page.locator('.option-checkbox input'),
   ).not.toBeChecked();
   expect(await smartModeOn(page)).toBe(false);
   await page.keyboard.press('Alt+s');

@@ -50,17 +50,6 @@
       ><span class="stack-name">mathquill</span>
     </span>
     <div class="output-options">
-      <label
-        class="option-checkbox"
-        title="Interpret a plain d/dx as the derivative operator"
-      >
-        <input
-          type="checkbox"
-          checked={appStore.dIsDerivative}
-          onchange={(e) => (appStore.dIsDerivative = e.currentTarget.checked)}
-        />
-        d/dx means derivative
-      </label>
       <div class="option">
         <label
           class="option-checkbox"

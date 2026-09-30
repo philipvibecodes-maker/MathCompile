@@ -27,7 +27,6 @@
     // Duplicated cells mount with content already in the store.
     if (cell.latex) h.setValue(cell.latex);
     h.setSmartMode(appStore.smartMode);
-    h.setDIsDerivative(appStore.dIsDerivative);
     appStore.registerField(id, h);
     return () => {
       appStore.unregisterField(id);
@@ -43,7 +42,6 @@
   });
 
   $effect(() => handle?.setSmartMode(appStore.smartMode));
-  $effect(() => handle?.setDIsDerivative(appStore.dIsDerivative));
 </script>
 
 <math-field bind:this={mf}></math-field>
