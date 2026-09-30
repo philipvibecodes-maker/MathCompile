@@ -1,4 +1,5 @@
 import { outputLatex } from './latex';
+import { toNerdamerInput } from './nerdamer-latex';
 
 export interface CalcRowOk {
   ok: true;
@@ -125,11 +126,11 @@ export function prewarm(): void {
 let nerdamerP: Promise<typeof import('nerdamer/all')> | undefined;
 
 // Instant best-effort result while the SymPy engine boots (~4s cold):
-// nerdamer is a small JS lib that parses the same latex, so a dimmed
-// answer can show immediately. It throws on unsupported commands
-// (\int, \sum, \binom, …) — those cells just stay empty until the
-// real engine lands. Dynamically imported so its ~1.8MB never enters
-// the main bundle.
+// nerdamer evaluates the translated latex in ~ms, so a dimmed answer
+// shows immediately — including calculus (integrate/defint/diff/sum/
+// product/limit via the nerdamer-latex translator). Commands that
+// still don't translate just stay empty until the real engine lands.
+// Dynamically imported so its ~1.8MB never enters the main bundle.
 export async function interimEvaluate(latex: string): Promise<CalcRow[]> {
   const src = outputLatex(latex).trim();
   if (src === '') return [];
@@ -139,7 +140,12 @@ export async function interimEvaluate(latex: string): Promise<CalcRow[]> {
       .split(/\\\\/)
       .map((s) => s.trim())
       .filter((s) => s !== '')
-      .map((p) => nerdamer.convertFromLaTeX(p).toTeX());
+      // MathQuill doesn't need \limits — bounds render under/over anyway.
+      .map((p) =>
+        nerdamer(toNerdamerInput(p, nerdamer))
+          .toTeX()
+          .replace(/\\limits/g, ''),
+      );
     return [
       {
         ok: true,
