@@ -49,7 +49,7 @@ test('calculator renders an approximate value for irrationals', async ({
   });
 });
 
-test('calculator shows per-line results for multi-line cells', async ({
+test('calculator consolidates a multi-line cell into one result', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -61,10 +61,11 @@ test('calculator shows per-line results for multi-line cells', async ({
   await page.keyboard.press('Enter');
   await mf.pressSequentially('2+3', { delay: 40 });
 
+  // The two \\ rows fold into a single Tuple expression: (2, 5).
   const rows = page.locator('.calc-row');
-  await expect(rows).toHaveCount(2, { timeout: 90_000 });
-  await expect(rows.nth(0)).toContainText('2');
-  await expect(rows.nth(1)).toContainText('5');
+  await expect(rows).toHaveCount(1, { timeout: 90_000 });
+  await expect(rows.first()).toContainText('2');
+  await expect(rows.first()).toContainText('5');
 });
 
 test('show code toggle reveals highlighted SymPy code under the result', async ({

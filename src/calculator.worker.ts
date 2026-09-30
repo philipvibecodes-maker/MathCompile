@@ -41,8 +41,21 @@ import sympy as sp
 from sympy.parsing.latex import parse_latex
 from sympy.printing.python import python as _pycode
 
+def _mc_parse(src):
+    try:
+        return parse_latex(src)
+    except Exception:
+        # Multi-line (\\displaylines) cells aren't a single latex
+        # expression — \\ doesn't parse — so consolidate their rows
+        # into one Tuple instead of evaluating each independently.
+        parts = [p.strip() for p in src.split(r'\\\\') if p.strip()]
+        if not parts:
+            raise
+        exprs = [parse_latex(p) for p in parts]
+        return exprs[0] if len(exprs) == 1 else sp.Tuple(*exprs)
+
 def _mc_calc_one(src):
-    expr = parse_latex(src)
+    expr = _mc_parse(src)
     try:
         val = expr.doit()
     except Exception:

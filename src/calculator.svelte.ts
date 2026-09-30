@@ -22,9 +22,9 @@ export const calcEngine = $state<{ status: EngineStatus; error: string }>({
   error: '',
 });
 
-// A cell's latex maps to independently-evaluated rows: \displaylines{}
-// is an editing artifact (unwrapped by outputLatex), and each \\ row
-// gets its own result.
+// A cell's rows (one per \\ inside \displaylines) — used only to tell
+// whether a cell has content; the evaluator consolidates them into a
+// single expression rather than evaluating each line independently.
 export function splitRows(latex: string): string[] {
   return outputLatex(latex)
     .split(/\\\\/)
@@ -96,15 +96,16 @@ function ensureWorker(): Worker {
   return w;
 }
 
-// Evaluates a cell's latex through SymPy. Rows resolve in input order;
-// an individual row may still carry ok:false with a parse/eval error.
+// Evaluates a cell's latex through SymPy as a single expression — the
+// whole cell goes in one request; the worker folds multi-line
+// (\displaylines) content into a Tuple when \ doesn't parse alone.
 export function evaluate(latex: string): Promise<CalcRow[]> {
-  const rows = splitRows(latex);
-  if (rows.length === 0) return Promise.resolve([]);
+  const src = outputLatex(latex);
+  if (src.trim() === '') return Promise.resolve([]);
   const w = ensureWorker();
   const id = nextId++;
   return new Promise<CalcRow[]>((resolve, reject) => {
     pending.set(id, { resolve, reject });
-    w.postMessage({ id, rows });
+    w.postMessage({ id, rows: [src] });
   });
 }

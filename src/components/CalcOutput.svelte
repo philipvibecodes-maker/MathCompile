@@ -10,8 +10,9 @@
   import { appStore, type Cell } from '../appState.svelte.ts';
 
   // Per-cell SymPy output for the calculator target. Edits are debounced,
-  // then each cell row is evaluated once; stale responses are dropped via
-  // the seq guard. Mounted only while target === 'calculator'.
+  // then the whole cell is evaluated as one expression (multi-line cells
+  // fold into a Tuple); stale responses are dropped via the seq guard.
+  // Mounted only while target === 'calculator'.
   let { cell }: { cell: Cell } = $props();
 
   let rows = $state<CalcRow[]>([]);
