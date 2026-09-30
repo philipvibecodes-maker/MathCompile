@@ -259,8 +259,10 @@ production build.
 **Ground-up.** Keep the palette permanently mounted and toggle
 `visibility` — open becomes a style flip, not a mount. Isolate its render so
 `App` and the math-fields don't reconcile, and add
-`contain: layout style paint`. These were identified as next steps; a rewrite
-just designs the overlay for cold-open from day one.
+`contain: layout style paint`. These are now implemented on `main` too
+(backdrop `visibility` flip, `memo`'d `MainContent`, `inert` when closed) —
+a rewrite still wins by designing the overlay for cold-open from day one
+rather than retrofitting a conditional mount.
 
 ## 9. Serialization is presentation-influenced
 

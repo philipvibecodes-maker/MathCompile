@@ -10,7 +10,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:perf": "playwright test -c playwright.perf.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

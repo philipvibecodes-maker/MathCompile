@@ -22,6 +22,10 @@ the `rewrite/svelte-mathquill` worktree branch per
   server on :5573 or starts `npm run dev`). Includes `spike.spec.ts`
   (MathQuill API + adapter checks via `spike.html`) and `vendor.spec.ts`
   (the upstream mocha suite run headlessly through the dev server).
+- `npm run test:perf` — framework-agnostic perf battery (`perf/`); builds and
+  serves the production bundle on :4173. For a rewrite: serve its prod build
+  and run `PERF_BASE_URL=<url> PERF_LABEL=<name> npm run test:perf`;
+  `node perf/compare.mjs <labelA> <labelB>` diffs runs in `perf-results/`.
 
 ## Architecture
 
@@ -55,6 +59,7 @@ src/
 - `appState.svelte.ts` uses runes — importing it requires the svelte
   compiler; in vitest that's wired via the svelte plugin in
   `vitest.config.ts`.
+
 
 ## Command palette
 
@@ -124,6 +129,11 @@ src/
 - Vendor internals are verified by `e2e/spike.spec.ts` (via
   `/spike.html`'s `window.spike` handles) and `e2e/vendor.spec.ts`
   (headless mocha suite, includes `test/unit/environments.test.js`).
+- The `perf/` suite measures in-page: capture-phase `event.timeStamp` at
+  input -> DOM-outcome `waitForFunction` -> double rAF (`perf/measure.ts`).
+  Selectors live in `perf/contract.ts` — the same DOM contract the e2e suite
+  pins — so results stay comparable across rewrites. Serial runs only
+  (`workers: 1`); never measure against the dev server.
 
 ## Rebuilding the vendor bundle
 

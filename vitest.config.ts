@@ -7,6 +7,6 @@ export default defineConfig({
   plugins: [svelte()],
   test: {
     environment: 'node',
-    exclude: ['e2e/**', 'node_modules/**', 'dist/**', 'vendor/**'],
+    exclude: ['e2e/**', 'perf/**', 'node_modules/**', 'dist/**', 'vendor/**'],
   },
 });
