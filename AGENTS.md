@@ -101,6 +101,13 @@ src/
   — `click()` alone is reliable in e2e; no settle window needed.
 - `Home`/`End` move within the *current block*; field edges need
   `Ctrl+Home`/`Ctrl+End` (or `mq.moveToLeftEnd()`).
+- Theming: `data-theme` on `<html>` (`light`|`dark`) swaps the CSS vars
+  in `index.css` (`--muted`, `--faint`, `--accent-text`, `--selected-bg`,
+  …) — never hardcode colors, and scope vendored-MathQuill fixes under
+  `:root[data-theme='dark']`. The choice persists in
+  `localStorage['mathcompile-theme']`; `index.html` sets `data-theme`
+  pre-paint, `App.svelte`'s `$effect` keeps it synced with
+  `appStore.darkMode`.
 - Smart mode maps to `autoCommands` + `autoSubscriptNumerals` config.
   The vendored patch extends `autoCommands` to accept `''` = off
   (upstream's processor throws on empty strings — no way to disable).
@@ -142,6 +149,14 @@ cd vendor/mathquill
 npm install   # devDeps only (less, typescript, uglify-js, mocha)
 make dev      # font + css + js -> build/ (committed)
 ```
+
+## Deployment
+
+GitHub Pages via `.github/workflows/deploy.yml` (push to `main` → build →
+`actions/deploy-pages`). The workflow sets `BASE_PATH=/<repo-name>/` so the
+bundle is emitted under the Pages subpath; `vite.config.ts` defaults `base`
+to `/` when `BASE_PATH` is unset, so dev/e2e/perf are unaffected. Requires
+repo Settings → Pages → Source = "GitHub Actions".
 
 ## Codegraph
 
