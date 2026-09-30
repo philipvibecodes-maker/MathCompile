@@ -1,7 +1,7 @@
-// Option fan-out: toggling "d/dx means derivative" re-parses every populated
-// cell (the setValue('') + setValue(v) trick in MathFieldInput), and switching
-// the codegen target rewrites the output panel. These are the O(document)
-// operations a rewrite should either make cheap or stop needing entirely.
+// Option fan-out: toggling "d/dx means derivative" re-pushes the option to
+// every mounted field, and switching the codegen target adds/removes the
+// per-cell .cell-latex outputs. These are the O(document) operations a
+// rewrite should either make cheap or stop needing entirely.
 
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
@@ -10,14 +10,13 @@ import { flush, installInputClock, record, timed } from './measure';
 
 const ddxBox = (page: Page) => page.locator(SEL.optionCheckbox).first();
 
-// Wait for the committed output text — the last DOM-visible effect of the
-// toggle, so the measured window covers the per-cell re-parse too.
+// Wait for the checkbox state — the DOM-visible effect of the toggle, so the
+// measured window covers the per-field option push too.
 const optionInOutput = (page: Page, want: boolean) => () =>
   page.waitForFunction(
     (w) =>
-      document
-        .querySelector('.output-body')
-        ?.textContent?.includes(`d/dx means derivative: ${w}`),
+      (document.querySelector('.option-checkbox input') as HTMLInputElement)
+        .checked === w,
     want,
   );
 
@@ -64,21 +63,23 @@ test('target switch -> output repaint', async ({ page }) => {
   await cell(page).click();
   await cell(page).pressSequentially('x');
   const select = page.locator(SEL.targetSelect);
-  const order = [
-    ['javascript', 'JavaScript'],
-    ['glsl', 'GLSL'],
-    ['c', 'C'],
-    ['python', 'Python'],
-  ] as const;
-  for (const [value, label] of order) {
-    const { ms } = await timed(page, () => select.selectOption(value), {
+  // Each switch toggles the per-cell .cell-output elements: present under
+  // the latex target, absent under the rest. Non-latex <option>s are
+  // disabled, so dispatch the change like the control's onchange would.
+  const setTarget = (value: string) =>
+    select.evaluate((s, v) => {
+      (s as HTMLSelectElement).value = v;
+      s.dispatchEvent(new Event('change', { bubbles: true }));
+    }, value);
+  const order = ['python', 'latex', 'javascript', 'latex', 'c'] as const;
+  for (const value of order) {
+    const want = value === 'latex';
+    const { ms } = await timed(page, () => setTarget(value), {
       until: () =>
         page.waitForFunction(
-          (l) =>
-            document
-              .querySelector('.output-body')
-              ?.textContent?.includes(`Codegen (${l})`),
-          label,
+          (w) =>
+            document.querySelectorAll('.cell-output').length > 0 === w,
+          want,
         ),
     });
     record('options.target-switch-paint', ms);

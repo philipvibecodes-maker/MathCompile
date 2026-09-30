@@ -26,7 +26,7 @@ export const SEL = {
   paletteBackdrop: '.palette-backdrop',
   paletteInput: '.palette-input',
   cmdItem: '.cmd-item',
-  outputBody: '.output-body',
+  cellLatex: '.cell-latex',
   optionCheckbox: '.option-checkbox input',
   targetSelect: '.target-select select',
 } as const;
@@ -96,11 +96,11 @@ export const waitFocusedIndex = (page: Page, i: number) =>
     i,
   );
 
-// Resolves once .output-body contains cell i's *current* getValue() — i.e.
-// the app committed the latest edit. Used instead of a length predicate:
-// serialized LaTeX is not monotonic under editing (inline shortcuts like
-// xx -> \times collapse it, and the "(no expressions yet)" empty state is
-// longer than a filled line), so "length grows" can deadlock.
+// Resolves once cell i's .cell-latex output shows its *current* getValue() —
+// i.e. the app committed the latest edit. Used instead of a length
+// predicate: serialized LaTeX is not monotonic under editing (inline
+// shortcuts like xx -> \times collapse it), so "length grows" can deadlock.
+// Requires the latex target (the default) — other targets hide .cell-latex.
 export const committedToOutput =
   (page: Page, i = 0) => async () => {
     const v = await page.evaluate(
@@ -112,11 +112,11 @@ export const committedToOutput =
     );
     if (!v) return;
     await page.waitForFunction(
-      (latex) =>
+      ([latex, idx]) =>
         document
-          .querySelector('.output-body')
-          ?.textContent?.includes(latex),
-      v,
+          .querySelectorAll('.cell-latex')
+          [idx as number]?.textContent?.includes(latex as string),
+      [v, i] as const,
     );
   };
 

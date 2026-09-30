@@ -58,11 +58,11 @@ test('insert expression below adds a focused cell', async ({ page }) => {
 
 test('arrow keys navigate and smart mode toggles', async ({ page }) => {
   const checkbox = page.locator('.option-checkbox input').nth(1);
-  await expect(checkbox).not.toBeChecked();
+  await expect(checkbox).toBeChecked();
   await page.keyboard.press('Control+k');
   await page.locator('.palette-input').pressSequentially('smart');
   await page.keyboard.press('Enter');
-  await expect(checkbox).toBeChecked();
+  await expect(checkbox).not.toBeChecked();
 });
 
 test('header button opens the palette', async ({ page }) => {
@@ -88,8 +88,8 @@ test('clicking the backdrop closes the palette', async ({ page }) => {
 
 test('empty query lists every command', async ({ page }) => {
   await page.keyboard.press('Control+k');
-  // 7 fixed commands + 4 targets + 1 goto per cell (single cell here).
-  await expect(page.locator('.cmd-item')).toHaveCount(12);
+  // 7 fixed commands + 5 targets + 1 goto per cell (single cell here).
+  await expect(page.locator('.cmd-item')).toHaveCount(13);
 });
 
 test('a query matching nothing shows the empty state', async ({ page }) => {
@@ -143,10 +143,10 @@ test('hovering selects an item and clicking runs it', async ({ page }) => {
 
 test('the active option is marked current', async ({ page }) => {
   await page.keyboard.press('Control+k');
-  await page.locator('.palette-input').pressSequentially('target python');
+  await page.locator('.palette-input').pressSequentially('target latex');
   await expect(
     page
-      .locator('.cmd-item', { hasText: 'Target: Python' })
+      .locator('.cmd-item', { hasText: 'Target: LaTeX' })
       .locator('.cmd-current'),
   ).toHaveText('✓');
   await expect(
@@ -236,7 +236,8 @@ test('palette input keeps focus after opening right after an edit', async ({
 test('Alt+S is ignored while the palette is open', async ({ page }) => {
   await page.keyboard.press('Control+k');
   await page.keyboard.press('Alt+s');
-  await expect(page.locator('.option-checkbox input').nth(1)).not.toBeChecked();
+  // Smart mode defaults on; a swallowed Alt+S must leave it unchanged.
+  await expect(page.locator('.option-checkbox input').nth(1)).toBeChecked();
 });
 
 test('exposes dialog/listbox semantics for assistive tech', async ({ page }) => {

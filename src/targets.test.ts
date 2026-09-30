@@ -21,6 +21,7 @@ describe('targets', () => {
   it('pins the current target list', () => {
     // Characterization test: a rewrite should offer the same codegen targets.
     expect(TARGETS.map((t) => t.id)).toEqual([
+      'latex',
       'python',
       'javascript',
       'glsl',

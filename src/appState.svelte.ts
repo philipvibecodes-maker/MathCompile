@@ -20,9 +20,9 @@ export class AppStore {
   cells = $state<Cell[]>([createCell()]);
   focusedId = $state<number>(this.cells[0].id);
   focusEdge = $state<Edge | undefined>(undefined);
-  target = $state<TargetId>('python');
+  target = $state<TargetId>('latex');
   dIsDerivative = $state(true);
-  smartMode = $state(false);
+  smartMode = $state(true);
   paletteOpen = $state(false);
 
   // Mounted math-field handles, keyed by cell id.

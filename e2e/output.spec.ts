@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
-// The output panel is a pure function of app state: expressions, target,
-// and the two option toggles. Pins its rendered text and the wiring of the
-// controls to the underlying math-field element properties.
+// The header holds the option toggles and the target select. With the
+// latex target (the default), each cell shows its LaTeX and a copy button
+// to the right of the input.
 
 const cell = (page: Page, i: number) => page.locator('math-field').nth(i);
 
@@ -20,90 +20,109 @@ test.beforeEach(async ({ page }) => {
   await page.waitForSelector('math-field');
 });
 
-test('shows the empty-state hint initially', async ({ page }) => {
-  await expect(page.locator('.output-body')).toContainText(
-    '(no expressions yet)',
-  );
+test('there is no output panel', async ({ page }) => {
+  await expect(page.locator('.output-panel')).toHaveCount(0);
 });
 
-test('captures cell LaTeX numbered, with the target comment prefix', async ({
+// Disabled <option>s can't be picked via selectOption; dispatch a change
+// the way the control's onchange would see it.
+const setTarget = (page: Page, value: string) =>
+  page.locator('.target-select select').evaluate((s, v) => {
+    (s as HTMLSelectElement).value = v;
+    s.dispatchEvent(new Event('change', { bubbles: true }));
+  }, value);
+
+test('header shows the option checkboxes and commands button', async ({
   page,
 }) => {
-  await cell(page, 0).click();
-  await cell(page, 0).pressSequentially('x+y', { delay: 40 });
-  await expect(page.locator('.output-body')).toContainText('#   1: x+y');
+  const header = page.locator('.app-header');
+  await expect(header.locator('.option-checkbox input')).toHaveCount(2);
+  await expect(header.locator('.palette-button')).toBeVisible();
 });
 
-test('skips empty cells when numbering captured input', async ({ page }) => {
-  await cell(page, 0).click();
-  await cell(page, 0).pressSequentially('a', { delay: 40 });
-  await page.locator('.add-expr').click(); // cell 1 stays empty
-  await page.locator('.add-expr').click(); // cell 2
-  await cell(page, 2).pressSequentially('b', { delay: 40 });
-  const body = await page.locator('.output-body').textContent();
-  expect(body).toContain('1: a');
-  expect(body).toContain('2: b');
-  expect(body).not.toContain('3:');
+test('output select sits above the output column', async ({ page }) => {
+  const colHead = page.locator('.col-output-head');
+  await expect(colHead.locator('.target-select select')).toBeVisible();
+  await expect(colHead).toContainText('Output');
 });
 
-test('switching target changes comment prefix and codegen label', async ({
+test('target select offers all codegen targets, non-latex disabled', async ({
   page,
 }) => {
-  await cell(page, 0).click();
-  await cell(page, 0).pressSequentially('x', { delay: 40 });
-  const select = page.locator('.target-select select');
-  await select.selectOption('javascript');
-  await expect(page.locator('.output-body')).toContainText('//   1: x');
-  await expect(page.locator('.output-body')).toContainText(
-    'Codegen (JavaScript)',
-  );
-  await select.selectOption('python');
-  await expect(page.locator('.output-body')).toContainText('#   1: x');
-  await expect(page.locator('.output-body')).toContainText('Codegen (Python)');
-});
-
-test('target select offers all codegen targets', async ({ page }) => {
   await expect(page.locator('.target-select option')).toHaveText([
+    'LaTeX',
     'Python',
     'JavaScript',
     'GLSL',
     'C',
   ]);
-  await expect(page.locator('.target-select select')).toHaveValue('python');
+  await expect(page.locator('.target-select select')).toHaveValue('latex');
+  const disabled = await page
+    .locator('.target-select option')
+    .evaluateAll((opts) =>
+      opts.map((o) => [(o as HTMLOptionElement).value, o.disabled] as const),
+    );
+  expect(disabled).toEqual([
+    ['latex', false],
+    ['python', true],
+    ['javascript', true],
+    ['glsl', true],
+    ['c', true],
+  ]);
 });
 
-test('d/dx-means-derivative checkbox reflects in the options block', async ({
-  page,
-}) => {
+test('d/dx-means-derivative checkbox toggles the option', async ({ page }) => {
   const box = page.locator('.option-checkbox input').first();
   await expect(box).toBeChecked();
-  await expect(page.locator('.output-body')).toContainText(
-    'd/dx means derivative: true',
-  );
   await box.click();
-  await expect(page.locator('.output-body')).toContainText(
-    'd/dx means derivative: false',
-  );
+  await expect(box).not.toBeChecked();
+  await box.click();
+  await expect(box).toBeChecked();
 });
 
 test('smart mode checkbox drives the math-field autoCommands option', async ({
   page,
 }) => {
   const box = page.locator('.option-checkbox input').nth(1);
-  await expect(box).not.toBeChecked();
-  expect(await smartModeOn(page)).toBe(false);
-  await box.click();
   await expect(box).toBeChecked();
   expect(await smartModeOn(page)).toBe(true);
   await box.click();
+  await expect(box).not.toBeChecked();
   expect(await smartModeOn(page)).toBe(false);
+  await box.click();
+  expect(await smartModeOn(page)).toBe(true);
 });
 
 test('Alt+S toggles smart mode', async ({ page }) => {
   await cell(page, 0).click(); // shortcut must work with a cell focused
   await page.keyboard.press('Alt+s');
-  await expect(page.locator('.option-checkbox input').nth(1)).toBeChecked();
-  expect(await smartModeOn(page)).toBe(true);
-  await page.keyboard.press('Alt+s');
+  await expect(
+    page.locator('.option-checkbox input').nth(1),
+  ).not.toBeChecked();
   expect(await smartModeOn(page)).toBe(false);
+  await page.keyboard.press('Alt+s');
+  expect(await smartModeOn(page)).toBe(true);
+});
+
+test('latex target shows per-cell output with a copy button', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const output = page.locator('.cell-output').first();
+  const copy = page.locator('.cell-copy').first();
+  await expect(output).toBeVisible();
+  await expect(copy).toBeDisabled();
+
+  await cell(page, 0).click();
+  await cell(page, 0).pressSequentially('x+1', { delay: 40 });
+  await expect(page.locator('.cell-latex').first()).toHaveText('x+1');
+
+  await copy.click();
+  await expect(copy).toHaveText('Copied');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('x+1');
+
+  // Other targets hide the per-cell output.
+  await setTarget(page, 'python');
+  await expect(page.locator('.cell-output')).toHaveCount(0);
 });

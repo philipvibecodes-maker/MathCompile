@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import MathField from './components/MathField.svelte';
-  import OutputPanel from './components/OutputPanel.svelte';
+  import { TARGETS } from './targets';
+  import type { TargetId } from './targets';
   import CommandPalette from './components/CommandPalette.svelte';
   import { appStore } from './appState.svelte.ts';
   import { buildCommands } from './commands.ts';
@@ -9,6 +10,15 @@
 
   const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent);
   let commands = $derived(buildCommands(appStore));
+
+  let copiedId = $state<number | null>(null);
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+  function copyLatex(cell: { id: number; latex: string }) {
+    navigator.clipboard.writeText(cell.latex);
+    copiedId = cell.id;
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (copiedId = null), 1200);
+  }
 
   // Capture phase so Ctrl+K is seen even inside a <math-field>, which may
   // swallow keydown events at the target.
@@ -27,18 +37,45 @@
     <span class="stack" title="Built with Svelte + MathQuill">
       <svg
         class="svelte-mark"
-        viewBox="0 0 98.1 118"
+        viewBox="0 0 107 128"
         role="img"
         aria-label="Svelte"
         ><path
           fill="#FF3E00"
-          d="M91.8 15.6C80.9-.1 59.2-4.7 43.6 5.2L16.1 23.8a30.2 30.2 0 0 0-6.7 7.9 29.8 29.8 0 0 0-3.1 20.9 30 30 0 0 0 .8 4.5 30.4 30.4 0 0 0-4 10.9 29.8 29.8 0 0 0 3.1 20.9c10.9 15.7 32.6 20.3 48.2 10.4l27.5-18.6a30.2 30.2 0 0 0 6.7-7.9 29.8 29.8 0 0 0 3.1-20.9 30 30 0 0 0-.8-4.5 30.4 30.4 0 0 0-4-10.9 29.8 29.8 0 0 0-3.1-20.9z"
+          d="M94.1566,22.8189c-10.4-14.8851-30.94-19.2971-45.7914-9.8348L22.2825,29.6078A29.9234,29.9234,0,0,0,8.7639,49.6506a31.5136,31.5136,0,0,0,3.1076,20.2318A30.0061,30.0061,0,0,0,7.3953,81.0653a31.8886,31.8886,0,0,0,5.4473,24.1157c10.4022,14.8865,30.9423,19.2966,45.7914,9.8348L84.7167,98.3921A29.9177,29.9177,0,0,0,98.2353,78.3493,31.5263,31.5263,0,0,0,95.13,58.117a30,30,0,0,0,4.4743-11.1824,31.88,31.88,0,0,0-5.4473-24.1157"
         /><path
           fill="#FFF"
-          d="M40.9 103.9a20.3 20.3 0 0 1-23.7-8.7 18.6 18.6 0 0 1-2.3-14.9 18.8 18.8 0 0 1 .6-2.4l.7-1.4 1.6 1a20.9 20.9 0 0 0 6.6 2.5l.6.1-.1.6a6.3 6.3 0 0 0 1.2 4.6 6.9 6.9 0 0 0 8 2.9 7 7 0 0 0 2.1-1.2l27.5-18.6a6.7 6.7 0 0 0 3.1-5.6 6.8 6.8 0 0 0-1.1-4.5 6.9 6.9 0 0 0-8-2.9 7 7 0 0 0-2.1 1.2l-10.8 7.3a19.8 19.8 0 0 1-6.4 2.6 20.3 20.3 0 0 1-23.7-8.7 18.6 18.6 0 0 1-2.3-14.9 20 20 0 0 1 4.6-8.4l27.5-18.6a19.4 19.4 0 0 1 4.9-2.9 20.3 20.3 0 0 1 23.7 8.7 18.6 18.6 0 0 1 2.3 14.9 18.8 18.8 0 0 1-.6 2.4l-.7 1.4-1.6-1a20.9 20.9 0 0 0-6.6-2.5l-.6-.1.1-.6a6.3 6.3 0 0 0-1.2-4.6 6.9 6.9 0 0 0-8-2.9 7 7 0 0 0-2.1 1.2L35.1 49.3a6.7 6.7 0 0 0-3.1 5.6 6.8 6.8 0 0 0 1.1 4.5 6.9 6.9 0 0 0 8 2.9 7 7 0 0 0-2.1 1.2l10.8-7.3a19.8 19.8 0 0 1-6.4 2.6 20.3 20.3 0 0 1 23.7 8.7 18.6 18.6 0 0 1 2.3 14.9 18.8 18.8 0 0 1-.6 2.4l-.7 1.4-1.6-1a20.9 20.9 0 0 0 6.6 2.5l-.6-.1.1-.6a6.3 6.3 0 0 0-1.2-4.6 6.9 6.9 0 0 0-8-2.9 7 7 0 0 0-2.1 1.2L35.1 49.3a6.7 6.7 0 0 0-3.1 5.6 6.8 6.8 0 0 0 1.1 4.5 6.9 6.9 0 0 0 8 2.9 7 7 0 0 0-2.1 1.2l10.8-7.3a19.8 19.8 0 0 1-6.4 2.6 20.3 20.3 0 0 1 23.7 8.7 18.6 18.6 0 0 1 2.3 14.9 18.8 18.8 0 0 1-.6 2.4l-.7 1.4-1.6-1a20.9 20.9 0 0 0 6.6 2.5l-.6-.1.1-.6a6.3 6.3 0 0 0-1.2-4.6 6.9 6.9 0 0 0-8-2.9 7 7 0 0 0-2.1 1.2L35.1 49.3a6.7 6.7 0 0 0-3.1 5.6 6.8 6.8 0 0 0 1.1 4.5 6.9 6.9 0 0 0 8 2.9 7 7 0 0 0-2.1 1.2l10.8-7.3a19.8 19.8 0 0 1-6.4 2.6 20.3 20.3 0 0 1 23.7 8.7 18.6 18.6 0 0 1 2.3 14.9 18.8 18.8 0 0 1-.6 2.4l-.7 1.4-1.6-1a20.9 20.9 0 0 0-6.6-2.5l-.6-.1.1-.6a6.3 6.3 0 0 0-1.2-4.6 6.9 6.9 0 0 0-8-2.9 7 7 0 0 0-2.1 1.2L52.3 101.8a19.4 19.4 0 0 1-4.9 2.9 20 20 0 0 1-6.5.8z"
+          d="M45.8171,106.5815A20.7182,20.7182,0,0,1,23.58,98.3389a19.1739,19.1739,0,0,1-3.2766-14.5025,18.1886,18.1886,0,0,1,.6233-2.4357l.4912-1.4978,1.3363.9815a33.6443,33.6443,0,0,0,10.203,5.0978l.9694.2941-.0893.9675a5.8474,5.8474,0,0,0,1.052,3.8781,6.2389,6.2389,0,0,0,6.6952,2.485,5.7449,5.7449,0,0,0,1.6021-.7041L69.27,76.281a5.4306,5.4306,0,0,0,2.4506-3.631,5.7948,5.7948,0,0,0-.9875-4.3712,6.2436,6.2436,0,0,0-6.6978-2.4864,5.7427,5.7427,0,0,0-1.6.7036l-9.9532,6.3449a19.0329,19.0329,0,0,1-5.2965,2.3259,20.7181,20.7181,0,0,1-22.2368-8.2427,19.1725,19.1725,0,0,1-3.2766-14.5024,17.9885,17.9885,0,0,1,8.13-12.0513L55.8833,23.7472a19.0038,19.0038,0,0,1,5.3-2.3287A20.7182,20.7182,0,0,1,83.42,29.6611a19.1739,19.1739,0,0,1,3.2766,14.5025,18.4,18.4,0,0,1-.6233,2.4357l-.4912,1.4978-1.3356-.98a33.6175,33.6175,0,0,0-10.2037-5.1l-.9694-.2942.0893-.9675a5.8588,5.8588,0,0,0-1.052-3.878,6.2389,6.2389,0,0,0-6.6952-2.485,5.7449,5.7449,0,0,0-1.6021.7041L37.73,51.719a5.4218,5.4218,0,0,0-2.4487,3.63,5.7862,5.7862,0,0,0,.9856,4.3717,6.2437,6.2437,0,0,0,6.6978,2.4864,5.7652,5.7652,0,0,0,1.602-.7041l9.9519-6.3425a18.978,18.978,0,0,1,5.2959-2.3278,20.7181,20.7181,0,0,1,22.2368,8.2427,19.1725,19.1725,0,0,1,3.2766,14.5024,17.9977,17.9977,0,0,1-8.13,12.0532L51.1167,104.2528a19.0038,19.0038,0,0,1-5.3,2.3287"
         /></svg
       ><span class="stack-name">mathquill</span>
     </span>
+    <div class="output-options">
+      <label
+        class="option-checkbox"
+        title="Interpret a plain d/dx as the derivative operator"
+      >
+        <input
+          type="checkbox"
+          checked={appStore.dIsDerivative}
+          onchange={(e) => (appStore.dIsDerivative = e.currentTarget.checked)}
+        />
+        d/dx means derivative
+      </label>
+      <div class="option">
+        <label
+          class="option-checkbox"
+          title="Auto-convert typed text like 'sqrt' or 'pi' into math"
+        >
+          <input
+            type="checkbox"
+            checked={appStore.smartMode}
+            onchange={(e) => (appStore.smartMode = e.currentTarget.checked)}
+          />
+          Smart mode
+        </label>
+        <span class="option-shortcut">alt+s</span>
+      </div>
+    </div>
     <button class="palette-button" onclick={() => appStore.openPalette()}>
       Commands
       <kbd>{isMac ? '⌘' : 'Ctrl'} K</kbd>
@@ -46,11 +83,44 @@
   </header>
   <div class="main">
     <section class="expr-panel">
+      <div class="col-headers">
+        <span class="col-index"></span>
+        <span class="col-field"></span>
+        <div class="col-output-head">
+          <label class="target-select">
+            Output
+            <select
+              value={appStore.target}
+              onchange={(e) =>
+                (appStore.target = e.currentTarget.value as TargetId)}
+            >
+              {#each TARGETS as t (t.id)}
+                <option value={t.id} disabled={t.id !== 'latex'}>
+                  {t.label}
+                </option>
+              {/each}
+            </select>
+          </label>
+        </div>
+        <span class="col-delete"></span>
+      </div>
       <ol class="expr-list">
         {#each appStore.cells as cell, i (cell.id)}
           <li class="expr-row">
             <span class="expr-index">{i + 1}</span>
             <MathField {cell} />
+            {#if appStore.target === 'latex'}
+              <div class="cell-output">
+                <code class="cell-latex">{cell.latex}</code>
+                <button
+                  class="cell-copy"
+                  title="Copy LaTeX"
+                  disabled={cell.latex.trim() === ''}
+                  onclick={() => copyLatex(cell)}
+                  >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
+                >
+              </div>
+            {/if}
             <button
               class="expr-delete"
               title="Delete expression"
@@ -64,7 +134,6 @@
         + Add expression
       </button>
     </section>
-    <OutputPanel />
   </div>
   <CommandPalette {commands} />
 </div>
