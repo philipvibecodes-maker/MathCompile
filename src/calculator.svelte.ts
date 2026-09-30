@@ -74,8 +74,15 @@ function ensureWorker(): Worker {
     const p = pending.get(m.id);
     if (!p) return;
     pending.delete(m.id);
-    if (m.ok) p.resolve(m.rows ?? []);
-    else p.reject(new Error(m.error ?? 'evaluation failed'));
+    if (m.ok) {
+      // Debug: echo the SymPy python() source produced for each row.
+      for (const r of m.rows ?? []) {
+        if (r.ok && r.code) console.log('[calc]', r.code);
+      }
+      p.resolve(m.rows ?? []);
+    } else {
+      p.reject(new Error(m.error ?? 'evaluation failed'));
+    }
   };
   w.onerror = (e) => {
     calcEngine.status = 'error';
