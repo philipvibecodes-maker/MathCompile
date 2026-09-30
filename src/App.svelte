@@ -6,6 +6,7 @@
   import CommandPalette from './components/CommandPalette.svelte';
   import HowToGuide from './components/HowToGuide.svelte';
   import { appStore, THEME_STORAGE_KEY } from './appState.svelte.ts';
+  import { displayLatex, outputLatex } from './latex';
   import { buildCommands } from './commands.ts';
   import { installGlobalKeymap } from './editor/keymap';
 
@@ -15,7 +16,7 @@
   let copiedId = $state<number | null>(null);
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
   function copyLatex(cell: { id: number; latex: string }) {
-    navigator.clipboard.writeText(cell.latex);
+    navigator.clipboard.writeText(outputLatex(cell.latex));
     copiedId = cell.id;
     clearTimeout(copiedTimer);
     copiedTimer = setTimeout(() => (copiedId = null), 1200);
@@ -167,7 +168,7 @@
             <MathField {cell} />
             {#if appStore.target === 'latex'}
               <div class="cell-output">
-                <code class="cell-latex">{cell.latex}</code>
+                <code class="cell-latex">{displayLatex(cell.latex)}</code>
                 <button
                   class="cell-copy"
                   title="Copy LaTeX"

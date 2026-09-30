@@ -119,3 +119,24 @@ test('latex target shows per-cell output with a copy button', async ({
   await setTarget(page, 'python');
   await expect(page.locator('.cell-output')).toHaveCount(0);
 });
+
+test('latex output shows multi-line cells as separate lines', async ({
+  page,
+}) => {
+  const mf = cell(page, 0);
+  await mf.click();
+  await mf.pressSequentially('x', { delay: 40 });
+  await page.keyboard.press('Enter');
+  await mf.pressSequentially('y', { delay: 40 });
+  // The field serializes multi-line content as \displaylines{...}; the
+  // output shows the rows unwrapped, one per line (toHaveText would
+  // normalize the newline away, so read textContent).
+  expect(await mf.evaluate((el) => (el as { value: string }).value)).toBe(
+    '\\displaylines{x\\\\ y}',
+  );
+  const text = await page
+    .locator('.cell-latex')
+    .first()
+    .evaluate((el) => el.textContent);
+  expect(text).toBe('x\n y');
+});
