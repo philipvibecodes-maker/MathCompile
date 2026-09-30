@@ -547,6 +547,70 @@ body {
   border-top: 1px solid var(--border);
 }
 
+/* ── How-to guide ───────────────────────────────────── */
+
+.howto {
+  margin: 16px 0 0 32px;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.howto summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  margin-left: -8px;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.howto summary::before {
+  content: '▸';
+  font-size: 11px;
+  transition: transform 0.12s ease;
+}
+
+.howto[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.howto summary:hover {
+  color: var(--text);
+}
+
+.howto-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.howto-item {
+  display: contents;
+}
+
+.howto-item dt {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.howto-item dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.howto-item code {
+  font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
+  font-size: 14px;
+}
+
 /* ── Dark mode: vendored MathQuill overrides ────────── */
 
 /* mathquill.css hardcodes `border-color: black` on every math element

@@ -4,6 +4,7 @@
   import { TARGETS } from './targets';
   import type { TargetId } from './targets';
   import CommandPalette from './components/CommandPalette.svelte';
+  import HowToGuide from './components/HowToGuide.svelte';
   import { appStore, THEME_STORAGE_KEY } from './appState.svelte.ts';
   import { buildCommands } from './commands.ts';
   import { installGlobalKeymap } from './editor/keymap';
@@ -187,6 +188,7 @@
       <button class="add-expr" onclick={() => appStore.addCell()}>
         + Add expression
       </button>
+      <HowToGuide />
     </section>
   </div>
   <CommandPalette {commands} />
