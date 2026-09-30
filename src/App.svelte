@@ -9,6 +9,7 @@
   import { appStore, THEME_STORAGE_KEY } from './appState.svelte.ts';
   import { savePrefs } from './persistence';
   import { displayLatex, outputLatex } from './latex';
+  import { prewarm } from './calculator.svelte.ts';
   import { buildCommands } from './commands.ts';
   import { installGlobalKeymap } from './editor/keymap';
 
@@ -26,13 +27,19 @@
 
   // Capture phase so Ctrl+K is seen even inside a <math-field>, which may
   // swallow keydown events at the target.
-  onMount(() =>
-    installGlobalKeymap({
+  onMount(() => {
+    // Cache-first SW for the pyodide CDN assets — warms repeat visits.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker
+        .register(`${import.meta.env.BASE_URL}pyodide-sw.js`)
+        .catch(() => {});
+    }
+    return installGlobalKeymap({
       onPaletteToggle: () => appStore.togglePalette(),
       onSmartModeToggle: () => (appStore.smartMode = !appStore.smartMode),
       isPaletteOpen: () => appStore.paletteOpen,
-    }),
-  );
+    });
+  });
 
   // data-theme drives the CSS var swap; the inline script in index.html
   // sets it pre-paint, this keeps it synced with the store afterward.
@@ -171,6 +178,8 @@
               value={appStore.target}
               onchange={(e) =>
                 (appStore.target = e.currentTarget.value as TargetId)}
+              onpointerdown={prewarm}
+              onfocus={prewarm}
             >
               {#each TARGETS as t (t.id)}
                 <option value={t.id} disabled={!t.enabled}>

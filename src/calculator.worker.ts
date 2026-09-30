@@ -14,12 +14,18 @@ declare function loadPyodide(opts: {
 interface PyodideLike {
   loadPackage(pkgs: string | string[]): Promise<void>;
   runPythonAsync(code: string): Promise<unknown>;
+  unpackArchive(
+    buffer: ArrayBuffer,
+    format: string,
+    options?: { extractDir?: string },
+  ): void;
   globals: { set(name: string, value: unknown): void };
 }
 
 interface EvalRequest {
   id: number;
   rows: string[];
+  baseUrl?: string;
 }
 
 type WorkerMessage =
@@ -34,9 +40,17 @@ const scope = self as unknown as {
 };
 
 const PYODIDE_BASE = 'https://cdn.jsdelivr.net/pyodide/v0.29.0/full/';
+const ANTLR_WHL = 'antlr4_python3_runtime-4.11.1-py3-none-any.whl';
+const ANTLR_DIR = '/deps/antlr4';
+
+// App base path, sent by the main thread so the wheel URL resolves
+// under the deployed subpath (e.g. /MathCompile/ on Pages).
+let baseUrl = '/';
 
 const SETUP_PY = `
 import json
+import sys
+sys.path.insert(0, '${ANTLR_DIR}')
 import sympy as sp
 from sympy.parsing.latex import parse_latex
 from sympy.printing.python import python as _pycode
@@ -99,15 +113,19 @@ def mc_calc(rows_json):
 
 let boot: Promise<PyodideLike> | undefined;
 
+async function installAntlr(py: PyodideLike): Promise<void> {
+  // Vendored same-origin wheel: a fetch + zip unpack replaces the old
+  // micropip/PyPI install (which also had to pull micropip + packaging).
+  const buf = await (await fetch(`${baseUrl}${ANTLR_WHL}`)).arrayBuffer();
+  py.unpackArchive(buf, 'zip', { extractDir: ANTLR_DIR });
+}
+
 async function bootEngine(): Promise<PyodideLike> {
   importScripts(`${PYODIDE_BASE}pyodide.js`);
   const py = await loadPyodide({ indexURL: PYODIDE_BASE });
-  await py.loadPackage(['sympy', 'micropip']);
-  // sympy's ANTLR latex parser is pinned to the 4.11 runtime, which
-  // pyodide doesn't ship; micropip pulls the pure-python wheel from PyPI.
-  await py.runPythonAsync(
-    `import micropip\nawait micropip.install('antlr4-python3-runtime==4.11.1')`,
-  );
+  // sympy ships in pyodide's own index; antlr4 (pinned by sympy's latex
+  // parser, not shipped by pyodide) installs alongside it in parallel.
+  await Promise.all([py.loadPackage(['sympy']), installAntlr(py)]);
   await py.runPythonAsync(SETUP_PY);
   return py;
 }
@@ -132,7 +150,8 @@ function ensureEngine(): Promise<PyodideLike> {
 }
 
 scope.onmessage = (e) => {
-  const { id, rows } = e.data;
+  const { id, rows, baseUrl: b } = e.data;
+  if (b) baseUrl = b;
   void ensureEngine()
     .then(async (py) => {
       py.globals.set('__mc_rows', JSON.stringify(rows));

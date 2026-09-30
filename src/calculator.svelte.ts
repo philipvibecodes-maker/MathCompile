@@ -106,6 +106,18 @@ export function evaluate(latex: string): Promise<CalcRow[]> {
   const id = nextId++;
   return new Promise<CalcRow[]>((resolve, reject) => {
     pending.set(id, { resolve, reject });
-    w.postMessage({ id, rows: [src] });
+    w.postMessage({ id, rows: [src], baseUrl: import.meta.env.BASE_URL });
+  });
+}
+
+// Kicks the engine boot (~5s cold) before an expression is actually
+// evaluated — the Output dropdown's pointerdown/focus hooks call this
+// so the wasm+wheels download overlaps the user's menu interaction.
+// Rows are empty, so the reply (id 0, unmatched in pending) is dropped.
+export function prewarm(): void {
+  ensureWorker().postMessage({
+    id: 0,
+    rows: [],
+    baseUrl: import.meta.env.BASE_URL,
   });
 }
