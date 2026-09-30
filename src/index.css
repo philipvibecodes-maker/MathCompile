@@ -77,6 +77,12 @@ body {
   color: var(--accent);
 }
 
+.tagline {
+  margin-left: 12px;
+  font-size: 12px;
+  color: var(--faint);
+}
+
 .stack {
   display: flex;
   align-items: center;

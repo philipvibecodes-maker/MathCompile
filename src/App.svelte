@@ -43,6 +43,7 @@
 <div class="app">
   <header class="app-header">
     <span class="logo">Math<em>Compile</em></span>
+    <span class="tagline">Write math, get latex + code.</span>
     <span class="stack" title="Built with Svelte + MathQuill">
       <svg
         class="svelte-mark"
