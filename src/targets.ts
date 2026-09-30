@@ -1,5 +1,6 @@
 export const TARGETS = [
   { id: 'latex', label: 'LaTeX', enabled: true },
+  { id: 'calculator', label: 'Calculator', enabled: true },
   { id: 'python', label: 'Python', enabled: false },
   { id: 'javascript', label: 'JavaScript', enabled: false },
   { id: 'glsl', label: 'GLSL', enabled: false },
@@ -10,6 +11,7 @@ export type TargetId = (typeof TARGETS)[number]['id'];
 
 export const COMMENT_PREFIX: Record<TargetId, string> = {
   latex: '%',
+  calculator: '#',
   python: '#',
   javascript: '//',
   glsl: '//',

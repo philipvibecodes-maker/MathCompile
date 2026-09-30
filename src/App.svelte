@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import MathField from './components/MathField.svelte';
+  import CalcOutput from './components/CalcOutput.svelte';
   import { TARGETS } from './targets';
   import type { TargetId } from './targets';
   import CommandPalette from './components/CommandPalette.svelte';
@@ -177,6 +178,8 @@
                   >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
                 >
               </div>
+            {:else if appStore.target === 'calculator'}
+              <CalcOutput {cell} />
             {/if}
             <button
               class="expr-delete"
