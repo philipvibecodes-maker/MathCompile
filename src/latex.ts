@@ -18,7 +18,7 @@ export function outputLatex(latex: string): string {
 }
 
 // Display form for the output column: unwrapped like outputLatex, with
-// row separators (\\) shown as real line breaks.
+// each \\ row separator kept and followed by a real line break.
 export function displayLatex(latex: string): string {
-  return outputLatex(latex).replaceAll('\\\\', '\n');
+  return outputLatex(latex).replaceAll('\\\\', '\\\\\n');
 }

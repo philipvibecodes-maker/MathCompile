@@ -129,8 +129,8 @@ test('latex output shows multi-line cells as separate lines', async ({
   await page.keyboard.press('Enter');
   await mf.pressSequentially('y', { delay: 40 });
   // The field serializes multi-line content as \displaylines{...}; the
-  // output shows the rows unwrapped, one per line (toHaveText would
-  // normalize the newline away, so read textContent).
+  // output shows the rows unwrapped, one per line with the \\ kept
+  // (toHaveText would normalize the newline away, so read textContent).
   expect(await mf.evaluate((el) => (el as { value: string }).value)).toBe(
     '\\displaylines{x\\\\ y}',
   );
@@ -138,5 +138,5 @@ test('latex output shows multi-line cells as separate lines', async ({
     .locator('.cell-latex')
     .first()
     .evaluate((el) => el.textContent);
-  expect(text).toBe('x\n y');
+  expect(text).toBe('x\\\\\n y');
 });

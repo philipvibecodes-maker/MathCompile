@@ -25,10 +25,10 @@ describe('outputLatex', () => {
 });
 
 describe('displayLatex', () => {
-  it('renders row separators as newlines', () => {
-    expect(displayLatex('\\displaylines{x\\\\ y}')).toBe('x\n y');
+  it('keeps \\ separators and puts each row on its own line', () => {
+    expect(displayLatex('\\displaylines{x\\\\ y}')).toBe('x\\\\\n y');
     expect(displayLatex('\\pmatrix{a&b\\\\c&d}')).toBe(
-      '\\pmatrix{a&b\nc&d}',
+      '\\pmatrix{a&b\\\\\nc&d}',
     );
   });
 
