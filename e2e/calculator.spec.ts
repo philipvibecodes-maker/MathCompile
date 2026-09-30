@@ -68,6 +68,27 @@ test('calculator consolidates a multi-line cell into one result', async ({
   await expect(rows.first()).toContainText('5');
 });
 
+test('calculator shows an instant nerdamer result while SymPy boots', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await setTarget(page, 'calculator');
+
+  const mf = cell(page, 0);
+  await mf.click();
+  await mf.pressSequentially('2+2', { delay: 40 });
+
+  // The nerdamer interim row lands long before the ~4s engine boot and
+  // stays dimmed (.pending) until the real SymPy result replaces it.
+  const rows = page.locator('.calc-rows');
+  await expect(rows.first()).toContainText('4', { timeout: 10_000 });
+  await expect(rows.first()).toHaveClass(/pending/);
+  await expect(rows.first()).not.toHaveClass(/pending/, {
+    timeout: 90_000,
+  });
+  await expect(page.locator('.calc-row').first()).toContainText('4');
+});
+
 test('show code toggle reveals highlighted SymPy code under the result', async ({
   page,
 }) => {

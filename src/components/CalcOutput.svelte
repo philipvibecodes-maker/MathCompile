@@ -2,6 +2,7 @@
   import {
     calcEngine,
     evaluate,
+    interimEvaluate,
     splitRows,
     type CalcRow,
   } from '../calculator.svelte.ts';
@@ -40,6 +41,13 @@
     pending = true;
     const timer = setTimeout(() => {
       if (mine !== seq) return;
+      // While the engine boots, show nerdamer's instant best-effort
+      // result — rendered dimmed since the real eval is still pending.
+      if (calcEngine.status !== 'ready') {
+        interimEvaluate(latex).then((r) => {
+          if (mine === seq && r.length > 0) rows = r;
+        });
+      }
       evaluate(latex).then(
         (r) => {
           if (mine !== seq) return;

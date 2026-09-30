@@ -121,3 +121,33 @@ export function prewarm(): void {
     baseUrl: import.meta.env.BASE_URL,
   });
 }
+
+let nerdamerP: Promise<typeof import('nerdamer/all')> | undefined;
+
+// Instant best-effort result while the SymPy engine boots (~4s cold):
+// nerdamer is a small JS lib that parses the same latex, so a dimmed
+// answer can show immediately. It throws on unsupported commands
+// (\int, \sum, \binom, …) — those cells just stay empty until the
+// real engine lands. Dynamically imported so its ~1.8MB never enters
+// the main bundle.
+export async function interimEvaluate(latex: string): Promise<CalcRow[]> {
+  const src = outputLatex(latex).trim();
+  if (src === '') return [];
+  try {
+    const nerdamer = (await (nerdamerP ??= import('nerdamer/all'))).default;
+    const texs = src
+      .split(/\\\\/)
+      .map((s) => s.trim())
+      .filter((s) => s !== '')
+      .map((p) => nerdamer.convertFromLaTeX(p).toTeX());
+    return [
+      {
+        ok: true,
+        latex:
+          texs.length === 1 ? texs[0] : `\\left(${texs.join(',\\ ')}\\right)`,
+      },
+    ];
+  } catch {
+    return [];
+  }
+}
