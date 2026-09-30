@@ -1,0 +1,28 @@
+{
+  "name": "mathquill",
+  "description": "Easily type math in your webapp",
+  "version": "0.10.1",
+  "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mathquill/mathquill.git"
+  },
+  "files": [
+    "build/mathquill.{css,js,min.js}",
+    "build/fonts/Symbola.*",
+    "quickstart.html"
+  ],
+  "devDependencies": {
+    "@types/mocha": ">=5.2.7",
+    "husky": ">=9.0",
+    "less": ">=4.0",
+    "lint-staged": ">=12.3.1",
+    "mocha": ">=2.4.1",
+    "prettier": "~3.2.0",
+    "typescript": "~5.4",
+    "uglify-js": "2.x"
+  },
+  "lint-staged": {
+    "*.{ts,js,css,html}": "prettier --write"
+  }
+}

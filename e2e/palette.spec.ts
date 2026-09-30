@@ -1,4 +1,24 @@
 import { expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
+
+// The palette stays mounted (`.open` toggles visibility), so the closed
+// assertion is not.toBeVisible(), not toHaveCount(0). Focus inside a
+// math-field lands on MQ's hidden textarea — assert via contains().
+
+const cellFocused = (page: Page, i = 0) =>
+  page.waitForFunction(
+    (idx) =>
+      document
+        .querySelectorAll('math-field')
+        [idx]?.contains(document.activeElement),
+    i,
+  );
+
+const cellValue = (page: Page, i = 0): Promise<string> =>
+  page
+    .locator('math-field')
+    .nth(i)
+    .evaluate((el) => (el as unknown as { value: string }).value);
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -14,11 +34,8 @@ test('Ctrl+K opens the palette and Esc refocuses the cell', async ({
   await expect(page.locator('.palette')).toBeVisible();
   await expect(page.locator('.palette-input')).toBeFocused();
   await page.keyboard.press('Escape');
-  await expect(page.locator('.palette')).toBeHidden();
-  // Refocus happens in a post-commit effect; wait for it rather than racing.
-  await page.waitForFunction(
-    () => document.activeElement?.tagName === 'MATH-FIELD',
-  );
+  await expect(page.locator('.palette')).not.toBeVisible();
+  await cellFocused(page);
 });
 
 test('running a command by fuzzy match changes the target', async ({
@@ -27,7 +44,7 @@ test('running a command by fuzzy match changes the target', async ({
   await page.keyboard.press('Control+k');
   await page.locator('.palette-input').pressSequentially('target glsl');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.palette')).toBeHidden();
+  await expect(page.locator('.palette')).not.toBeVisible();
   await expect(page.locator('.target-select select')).toHaveValue('glsl');
 });
 
@@ -36,10 +53,7 @@ test('insert expression below adds a focused cell', async ({ page }) => {
   await page.locator('.palette-input').pressSequentially('insert below');
   await page.keyboard.press('Enter');
   await expect(page.locator('math-field')).toHaveCount(2);
-  await page.waitForFunction(
-    () =>
-      document.activeElement === document.querySelectorAll('math-field')[1],
-  );
+  await cellFocused(page, 1);
 });
 
 test('arrow keys navigate and smart mode toggles', async ({ page }) => {
@@ -61,23 +75,21 @@ test('Ctrl+K closes an open palette', async ({ page }) => {
   await page.keyboard.press('Control+k');
   await expect(page.locator('.palette')).toBeVisible();
   await page.keyboard.press('Control+k');
-  await expect(page.locator('.palette')).toBeHidden();
-  await page.waitForFunction(
-    () => document.activeElement?.tagName === 'MATH-FIELD',
-  );
+  await expect(page.locator('.palette')).not.toBeVisible();
+  await cellFocused(page);
 });
 
 test('clicking the backdrop closes the palette', async ({ page }) => {
   await page.keyboard.press('Control+k');
   await expect(page.locator('.palette')).toBeVisible();
   await page.locator('.palette-backdrop').click({ position: { x: 10, y: 10 } });
-  await expect(page.locator('.palette')).toBeHidden();
+  await expect(page.locator('.palette')).not.toBeVisible();
 });
 
 test('empty query lists every command', async ({ page }) => {
   await page.keyboard.press('Control+k');
-  // 6 fixed commands + 4 targets + 1 goto per cell (single cell here).
-  await expect(page.locator('.cmd-item')).toHaveCount(11);
+  // 7 fixed commands + 4 targets + 1 goto per cell (single cell here).
+  await expect(page.locator('.cmd-item')).toHaveCount(12);
 });
 
 test('a query matching nothing shows the empty state', async ({ page }) => {
@@ -125,7 +137,7 @@ test('hovering selects an item and clicking runs it', async ({ page }) => {
   await item.hover();
   await expect(item).toHaveClass(/selected/);
   await item.click();
-  await expect(page.locator('.palette')).toBeHidden();
+  await expect(page.locator('.palette')).not.toBeVisible();
   await expect(page.locator('.target-select select')).toHaveValue('c');
 });
 
@@ -133,10 +145,14 @@ test('the active option is marked current', async ({ page }) => {
   await page.keyboard.press('Control+k');
   await page.locator('.palette-input').pressSequentially('target python');
   await expect(
-    page.locator('.cmd-item', { hasText: 'Target: Python' }).locator('.cmd-current'),
+    page
+      .locator('.cmd-item', { hasText: 'Target: Python' })
+      .locator('.cmd-current'),
   ).toHaveText('✓');
   await expect(
-    page.locator('.cmd-item', { hasText: 'Target: GLSL' }).locator('.cmd-current'),
+    page
+      .locator('.cmd-item', { hasText: 'Target: GLSL' })
+      .locator('.cmd-current'),
   ).toHaveCount(0);
 });
 
@@ -151,10 +167,7 @@ test('go-to-expression focuses that cell', async ({ page }) => {
   await page.keyboard.press('Control+k');
   await page.locator('.palette-input').pressSequentially('go to expression 2');
   await page.keyboard.press('Enter');
-  await page.waitForFunction(
-    () =>
-      document.activeElement === document.querySelectorAll('math-field')[1],
-  );
+  await cellFocused(page, 1);
 });
 
 test('duplicate copies the focused cell below it', async ({ page }) => {
@@ -164,13 +177,7 @@ test('duplicate copies the focused cell below it', async ({ page }) => {
   await page.locator('.palette-input').pressSequentially('duplicate');
   await page.keyboard.press('Enter');
   await expect(page.locator('math-field')).toHaveCount(2);
-  for (const i of [0, 1])
-    expect(
-      await page
-        .locator('math-field')
-        .nth(i)
-        .evaluate((el) => (el as unknown as { getValue(): string }).getValue()),
-    ).toBe('x+1');
+  for (const i of [0, 1]) expect(await cellValue(page, i)).toBe('x+1');
 });
 
 test('delete current expression removes it and focuses a neighbor', async ({
@@ -185,12 +192,8 @@ test('delete current expression removes it and focuses a neighbor', async ({
   await page.locator('.palette-input').pressSequentially('delete current');
   await page.keyboard.press('Enter');
   await expect(page.locator('math-field')).toHaveCount(1);
-  expect(
-    await mf.evaluate((el) => (el as unknown as { getValue(): string }).getValue()),
-  ).toBe('a');
-  await page.waitForFunction(
-    () => document.activeElement === document.querySelector('math-field'),
-  );
+  expect(await cellValue(page, 0)).toBe('a');
+  await cellFocused(page);
 });
 
 test('clear all expressions leaves a single empty focused cell', async ({
@@ -203,12 +206,8 @@ test('clear all expressions leaves a single empty focused cell', async ({
   await page.locator('.palette-input').pressSequentially('clear all');
   await page.keyboard.press('Enter');
   await expect(page.locator('math-field')).toHaveCount(1);
-  expect(
-    await mf.evaluate((el) => (el as unknown as { getValue(): string }).getValue()),
-  ).toBe('');
-  await page.waitForFunction(
-    () => document.activeElement === document.querySelector('math-field'),
-  );
+  expect(await cellValue(page, 0)).toBe('');
+  await cellFocused(page);
 });
 
 test('d/dx means derivative command toggles the option', async ({ page }) => {
@@ -220,17 +219,17 @@ test('d/dx means derivative command toggles the option', async ({ page }) => {
   await expect(box).not.toBeChecked();
 });
 
-test('palette input keeps focus after MathLive’s deferred refocus', async ({
+test('palette input keeps focus after opening right after an edit', async ({
   page,
 }) => {
-  // MathLive re-asserts cell focus on a ~60ms timer after the field was
-  // focused; opening the palette right after editing must not lose focus.
+  // No deferred refocus exists under MathQuill, but the guarded re-assert
+  // must still keep the input focused and never steal it back later.
   const mf = page.locator('math-field').first();
   await mf.click();
   await mf.pressSequentially('x', { delay: 40 });
   await page.keyboard.press('Control+k');
   await expect(page.locator('.palette-input')).toBeFocused();
-  await page.waitForTimeout(200); // past the ~60ms steal window
+  await page.waitForTimeout(200);
   await expect(page.locator('.palette-input')).toBeFocused();
 });
 

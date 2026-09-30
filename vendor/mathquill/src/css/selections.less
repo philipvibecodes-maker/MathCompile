@@ -1,0 +1,47 @@
+// All these !important's are unfortunately necessary, because
+// pages using MathQuill who change the background color have to
+// have rules setting the background color of .mq-matrixed and
+// .mq-matrixed-container, and we need to guarantee that our rules
+// setting the background color of matrixed/containers inside
+// selections have higher specificity.
+
+// See http://github.com/laughinghan/mathquill/wiki/Transforms
+// for more details.
+
+.mq-math-mode,
+.mq-editable-field {
+  .mq-selection {
+    &,
+    & .mq-non-leaf,
+    & .mq-scaled {
+      background: #b4d5fe !important;
+    }
+
+    &.mq-blur {
+      &,
+      & .mq-non-leaf,
+      & .mq-scaled {
+        background: #d4d4d4 !important;
+        color: black;
+        border-color: black;
+      }
+    }
+  }
+}
+
+html body {
+  // adding  'html body' for specificity
+  .mq-math-mode,
+  .mq-editable-field {
+    .mq-selection {
+      // do not show a background inside any of the
+      // children of nthroot. We draw a background on
+      // the nthroot itself. We don't want the index
+      // to be covered up by the background of the
+      // radical.
+      .mq-nthroot-container * {
+        background: transparent !important;
+      }
+    }
+  }
+}

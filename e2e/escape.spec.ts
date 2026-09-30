@@ -6,12 +6,19 @@ import type { Page } from '@playwright/test';
 // capture listener plus the input's own keydown — this matrix pins both paths
 // and the states where neither may be reachable.
 //
-// NOTE: all of these pass in headless Chromium. If "Escape doesn't close the
-// palette" reproduces in another environment (OS-level IME, autofill popup,
-// real virtual keyboard, browser shell consuming the key), the matching row
-// of this matrix is where it should show up.
+// The palette stays mounted (`.open` toggles visibility), so the closed
+// assertion is not.toBeVisible(), not toHaveCount(0).
 
 const mf = (page: Page, i = 0) => page.locator('math-field').nth(i);
+
+const cellFocused = (page: Page, i = 0) =>
+  page.waitForFunction(
+    (idx) =>
+      document
+        .querySelectorAll('math-field')
+        [idx]?.contains(document.activeElement),
+    i,
+  );
 
 const openPalette = async (page: Page, via: 'key' | 'button' = 'key') => {
   if (via === 'key') await page.keyboard.press('Control+k');
@@ -21,7 +28,7 @@ const openPalette = async (page: Page, via: 'key' | 'button' = 'key') => {
 
 const escapeCloses = async (page: Page) => {
   await page.keyboard.press('Escape');
-  await expect(page.locator('.palette')).toBeHidden();
+  await expect(page.locator('.palette')).not.toBeVisible();
 };
 
 test.beforeEach(async ({ page }) => {
@@ -36,9 +43,7 @@ test('baseline: open via Ctrl+K, Escape closes and refocuses the cell', async ({
   await mf(page).focus();
   await openPalette(page);
   await escapeCloses(page);
-  await page.waitForFunction(
-    () => document.activeElement?.tagName === 'MATH-FIELD',
-  );
+  await cellFocused(page);
 });
 
 test('open via the header button', async ({ page }) => {
@@ -48,7 +53,6 @@ test('open via the header button', async ({ page }) => {
 
 test('with a query typed in the input', async ({ page }) => {
   await mf(page).click();
-  await mf(page).focus();
   await openPalette(page);
   await page.locator('.palette-input').pressSequentially('smart', {
     delay: 30,
@@ -58,7 +62,6 @@ test('with a query typed in the input', async ({ page }) => {
 
 test('with a query producing no matches', async ({ page }) => {
   await mf(page).click();
-  await mf(page).focus();
   await openPalette(page);
   await page.locator('.palette-input').pressSequentially('zzzz', {
     delay: 30,
@@ -69,42 +72,24 @@ test('with a query producing no matches', async ({ page }) => {
 
 test('after arrow-key navigation', async ({ page }) => {
   await mf(page).click();
-  await mf(page).focus();
   await openPalette(page);
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowDown');
   await escapeCloses(page);
 });
 
-test('opened inside MathLive’s deferred-refocus window', async ({ page }) => {
+test('opened immediately after editing a cell', async ({ page }) => {
   await mf(page).click();
-  await mf(page).focus();
   await mf(page).pressSequentially('x', { delay: 30 });
-  // Palette opened ~ms after the field gained focus; the ~60ms MathLive
-  // refocus steal may still be pending when Escape arrives.
   await openPalette(page);
   await escapeCloses(page);
 });
 
-test('opened while the cell’s suggestion popover was visible', async ({
+test('opened while a latex command input is open in the cell', async ({
   page,
 }) => {
   await mf(page).click();
-  await mf(page).focus();
-  await mf(page).pressSequentially('\\sq', { delay: 80 });
-  await expect(page.locator('#mathlive-suggestion-popover')).toHaveClass(
-    /is-visible/,
-  );
-  await openPalette(page);
-  await escapeCloses(page);
-});
-
-test('with a cell in latex mode', async ({ page }) => {
-  await mf(page).click();
-  await mf(page).focus();
-  await mf(page).evaluate((el) => {
-    (el as unknown as { mode: string }).mode = 'latex';
-  });
+  await mf(page).pressSequentially('\\sq', { delay: 60 });
   await openPalette(page);
   await escapeCloses(page);
 });
@@ -113,9 +98,8 @@ test('when focus has drifted back to a math-field while open', async ({
   page,
 }) => {
   await mf(page).click();
-  await mf(page).focus();
   await openPalette(page);
-  // Simulate the focus steal winning over the palette's focus trap.
+  // Simulate a focus steal winning over the palette's focus trap.
   await mf(page).focus();
   await page.waitForTimeout(100);
   // The trap re-asserts input focus; Escape must work either way.
@@ -126,7 +110,6 @@ test('a blur-to-nowhere closes the palette (keyboard-extension Escape)', async (
   page,
 }) => {
   await mf(page).click();
-  await mf(page).focus();
   await openPalette(page);
   await expect(page.locator('.palette-input')).toBeFocused();
   // Vimium & co. handle Escape in insert mode by blurring the input and
@@ -135,24 +118,8 @@ test('a blur-to-nowhere closes the palette (keyboard-extension Escape)', async (
   await expect(page.locator('.palette')).toBeHidden();
 });
 
-test('with the virtual keyboard visible', async ({ page }) => {
-  await mf(page).click();
-  await mf(page).focus();
-  await page.evaluate(() =>
-    (
-      window as unknown as {
-        mathVirtualKeyboard?: { show(): void };
-      }
-    ).mathVirtualKeyboard?.show(),
-  );
-  await page.waitForTimeout(150);
-  await openPalette(page);
-  await escapeCloses(page);
-});
-
 test('reopened palette still closes on Escape', async ({ page }) => {
   await mf(page).click();
-  await mf(page).focus();
   await openPalette(page);
   await escapeCloses(page);
   await openPalette(page);
@@ -163,19 +130,15 @@ test('a second Escape after closing does not reopen or wedge the app', async ({
   page,
 }) => {
   await mf(page).click();
-  await mf(page).focus();
   await openPalette(page);
   await escapeCloses(page);
   await page.keyboard.press('Escape');
-  await expect(page.locator('.palette')).toBeHidden();
-  await page.waitForFunction(
-    () => document.activeElement?.tagName === 'MATH-FIELD',
-  );
+  await expect(page.locator('.palette')).not.toBeVisible();
+  await cellFocused(page);
 });
 
 test('with text selected in the palette input', async ({ page }) => {
   await mf(page).click();
-  await mf(page).focus();
   await openPalette(page);
   const input = page.locator('.palette-input');
   await input.pressSequentially('target', { delay: 30 });
@@ -188,20 +151,18 @@ test('immediately after a command ran (close → reopen → Escape)', async ({
   page,
 }) => {
   await mf(page).click();
-  await mf(page).focus();
   await openPalette(page);
   await page.locator('.palette-input').pressSequentially('insert below', {
     delay: 20,
   });
   await page.keyboard.press('Enter'); // runs command, closes palette
-  await expect(page.locator('.palette')).toBeHidden();
+  await expect(page.locator('.palette')).not.toBeVisible();
   await openPalette(page);
   await escapeCloses(page);
 });
 
 test('during an active IME composition in the input', async ({ page }) => {
   await mf(page).click();
-  await mf(page).focus();
   await openPalette(page);
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Input.imeSetComposition', {
@@ -212,5 +173,5 @@ test('during an active IME composition in the input', async ({ page }) => {
   // Whether the browser delivers Escape during a composition is
   // platform-dependent; the palette must close if it arrives.
   await page.keyboard.press('Escape');
-  await expect(page.locator('.palette')).toBeHidden();
+  await expect(page.locator('.palette')).not.toBeVisible();
 });

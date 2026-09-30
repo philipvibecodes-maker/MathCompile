@@ -1,117 +1,149 @@
 # MathCompile
 
-Desmos-style multi-cell math expression editor. React + TypeScript + Vite,
-cells are MathLive `<math-field>` elements.
+Desmos-style multi-cell math expression editor. **Svelte 5 (runes)** +
+TypeScript + Vite, cells are `<math-field>` custom elements backed by a
+**vendored Desmos-fork MathQuill** (`vendor/mathquill`, see
+`vendor/README.md` for the patch list). Rewritten from React + MathLive on
+the `rewrite/svelte-mathquill` worktree branch per
+`MathQuil_Svelte_Rewrite_Plan.md`.
 
 ## Commands
 
-- `npm run dev` — dev server (vite)
-- `npm run build` — `tsc -b` + vite build
-- `npm run lint` — oxlint
-- `npm test` — vitest unit tests (`src/*.test.ts`, node environment)
+- `npm run dev` — dev server (vite) on **:5573** (strict; chosen so this
+  worktree can run alongside the main checkout's :5173, the Solid
+  sibling's :5273, and the Svelte sibling's :5373)
+- `npm run check` — `svelte-check --tsconfig ./tsconfig.app.json`
+- `npm run build` — svelte-check + vite build
+- `npm run lint` — oxlint (vendor/ is excluded in `.oxlintrc.json`)
+- `npm test` — vitest unit tests (`src/*.test.ts`, node environment;
+  `vitest.config.ts` loads the svelte plugin so `.svelte.ts` rune files
+  compile in tests)
 - `npm run test:e2e` — Playwright tests (`e2e/`, reuses a running dev
-  server on :5173 or starts `npm run dev`)
+  server on :5573 or starts `npm run dev`). Includes `spike.spec.ts`
+  (MathQuill API + adapter checks via `spike.html`) and `vendor.spec.ts`
+  (the upstream mocha suite run headlessly through the dev server).
 - `npm run test:perf` — framework-agnostic perf battery (`perf/`); builds and
   serves the production bundle on :4173. For a rewrite: serve its prod build
   and run `PERF_BASE_URL=<url> PERF_LABEL=<name> npm run test:perf`;
   `node perf/compare.mjs <labelA> <labelB>` diffs runs in `perf-results/`.
 
+## Architecture
+
+```
+src/
+  appState.svelte.ts  $state app store + field registry + focusCell() —
+                      the single focus owner
+  commands.ts         Command type + command list factory
+  editor/
+    mathquill.ts      imports the vendored build + CSS; exports mq3 + types
+    math-field.ts     <math-field> custom element + attachField() ->
+                      FieldHandle; the ONLY module that touches MQ
+    keymap.ts         capture-phase global keys (Ctrl+K, Alt+S)
+  components/
+    MathField.svelte    <math-field> bind:this -> attachField; registers
+                        its handle in the store on mount
+    CommandPalette.svelte  always mounted, .open class toggles visibility
+    OutputPanel.svelte    pure render of store state
+```
+
+- All MathQuill contact lives in `src/editor/` — components only see the
+  `FieldHandle` contract (`focus(edge)`, `getValue`, `setValue`,
+  `insertDerivative`, `setSmartMode`, `setDIsDerivative`, `dispose`).
+- Commands reach fields via `fields.get(id)?.method()` — never via prop
+  deltas. `focusCell(id, edge)` replaces the old React `focusNonce` prop.
+- `{#each cells (c.id)}` keeps row identity — keys must stay stable so
+  typing doesn't remount the field and lose the caret.
+- `MathField.svelte` self-focuses on mount when `focusedId === id`
+  (Svelte batches the DOM insert, so `focusCell` can't reach a field that
+  isn't mounted yet — the mount-self-focus pattern covers that window).
+- `appState.svelte.ts` uses runes — importing it requires the svelte
+  compiler; in vitest that's wired via the svelte plugin in
+  `vitest.config.ts`.
+
+
 ## Command palette
 
-- Ctrl/Cmd+K (or the header button) opens `src/CommandPalette.tsx`; commands
-  are defined in `App.tsx` and fuzzy-matched via `src/fuzzy.ts`. The hotkey
-  is registered in capture phase so it works inside `<math-field>`.
-- Closing the palette refocuses the active cell by bumping `focus.nonce` →
-  `MathFieldInput`'s `focusNonce` prop re-runs its autofocus effect.
-- The palette is **always mounted**: `open` toggles `.open` on
-  `.palette-backdrop` (`visibility:hidden` ↔ `visible`), so opening is a
-  style flip, not a mount. Tests must assert hidden/not-visible, never
-  detached — `.palette` persists in the DOM while closed. The closed subtree
-  is `inert`; query/selection reset on close so reopening needs no state
-  update on the paint path.
+- Ctrl/Cmd+K (or the header button) toggles `paletteOpen`; commands come
+  from `src/commands.ts` and fuzzy-match via `src/fuzzy.ts`. The hotkey is
+  registered in capture phase so it works inside `<math-field>`.
+- The palette is **always mounted** (`.palette-backdrop.open` flips
+  `visibility` + `pointer-events`; `.palette` has
+  `contain: layout style paint`). Open cost is a class flip + `focus()`.
+- Any deferred focus call must re-check `paletteOpen` inside the timeout:
+  with the palette mounted, a stale `focus()` after close would steal
+  focus back from a cell (the `focusout` trap and the 70ms re-assert both
+  do this).
+- Closing the palette refocuses the active cell via
+  `focusCell(focusedId)`.
 
-### Performance notes (input → paint latency)
+## MathQuill notes
 
-- React flushes `useEffect` **synchronously before paint** for discrete
-  input events (keydown/click), so effects that force layout — `focus()`,
-  `scrollIntoView`, geometry reads — delay the palette's first paint.
-  Defer them past paint (`setTimeout(0)`), skip the just-opened run, or
-  prefer writes that don't need layout (`scrollTop = 0`).
-- The keep-mounted fixes are in: `visibility` flip on `.palette-backdrop`,
-  `contain: layout style paint` on `.palette`, and `MainContent` is
-  `memo`'d so toggling `paletteOpen` doesn't reconcile the cell list.
-- Measure in-page: `performance.now()` at keydown (capture listener) →
-  `IntersectionObserver` on `.palette`. Screen-recording measurement adds
-  compositor + frame-quantization overhead (~40–80ms floor). Dev-mode React
-  is slower than `vite preview`; measure prod for real numbers.
-
-## MathLive notes
-
-- Multi-line cells use the `\displaylines{...}` ("lines") environment:
-  `mf.executeCommand('addRowAfter')` wraps top-level content in it
-  automatically and splits the row at the caret. A single-row `lines` env
-  serializes without the `\displaylines{}` wrapper, so one-line cells keep
-  clean LaTeX.
-- `addRowAfter` silently no-ops when the caret is nested inside an atom
-  (`\frac{1}{|2}`); `MathFieldInput.insertLineBreak` snaps the caret to the
-  row-level ancestor first.
-- Internal `model.position`/`model.setSelection` writes don't re-render;
-  move the caret through `mf.position`/`mf.selection` (see
-  `src/limitNavigation.ts` `applyCaret`). Reading via `model.at`,
-  `model.offsetOf`, etc. is fine.
-- `input` is dispatched deferred (`setTimeout`); `selection-change` fires
-  synchronously — use it for fixes that must land before the next
-  keystroke.
-- ~60ms after a field is focused, MathLive's `onFocus` re-focuses its
-  internal span via a deferred `keyboardDelegate.focus()` — it can steal
-  focus from a modal opened right after editing a cell. `CommandPalette`
-  works around this with a focus trap (focusout → refocus the input).
-- At top/bottom row dead ends MathLive emits a cancelable `move-out`
-  CustomEvent (`detail.direction`: `upward`/`downward`/`forward`/`backward`)
-  on the `<math-field>` host — used for cross-cell navigation.
-- Custom `mf.macros` (e.g. `\derivative`) parse into a `macro` atom that
-  serializes verbatim (`\derivative{..}{..}`); edits inside the expansion
-  never reach `mf.value`. `MathFieldInput`'s `input` handler detects `macro`
-  atoms and bakes them into real atoms via `setValue(getValue('latex-expanded'))`.
-  Beware: `latex-expanded` also canonicalizes (`x + 1` -> `x+1`), so only use
-  it when a macro is actually present.
+- Multi-line cells use `\displaylines{...}` from the vendored
+  environments patch: `mq.insertLineBreak()` wraps top-level content
+  automatically and splits the row at the row-level ancestor (a nested
+  `\frac{1}{|2}` stays whole — the caret snaps out to the atom first).
+- Enter semantics live in the adapter: a real Enter arrives via
+  `typedText('\n')` → MQ's `enter` handler → `insertLineBreak()`; inside
+  an open `LatexCommandInput` (`\frac…`), Enter is consumed by MQ's
+  keystroke dispatch and *accepts* the command instead. Shift+Enter never
+  reaches MQ — the element's capture-phase keydown cancels it and emits
+  `new-cell`.
+- `move-out` events (`upward`/`downward`/`forward`/`backward`,
+  `detail.selecting`) come from MQ's `upOutOf`/`downOutOf`/`moveOutOf`/
+  `selectOutOf`; `attachField` only hops cells on vertical edges and
+  ignores selection extensions.
+- `<math-field>` carries `tabindex="-1"` and forwards host `focus` events
+  into MQ's hidden textarea — plain `element.focus()`/`locator.focus()`
+  work, and `document.activeElement` inside a field is the textarea
+  (assert focus with `el.contains(document.activeElement)` or
+  `.mq-focused`, not `activeElement === el`).
+- MQ has **no deferred internal refocus** (unlike MathLive's ~60ms steal)
+  — `click()` alone is reliable in e2e; no settle window needed.
+- `Home`/`End` move within the *current block*; field edges need
+  `Ctrl+Home`/`Ctrl+End` (or `mq.moveToLeftEnd()`).
+- Smart mode maps to `autoCommands` + `autoSubscriptNumerals` config.
+  The vendored patch extends `autoCommands` to accept `''` = off
+  (upstream's processor throws on empty strings — no way to disable).
+- `\derivative` (typed via the latex command input, or `mq.cmd`) expands
+  at insertion time to real `\frac{d }{d }` atoms — or `D( )` when
+  `dIsDerivative` is off — with the caret in the denominator/parens.
+  There is no macro atom and no bake/canonicalize pass.
+- Matrices: `\begin{matrix|pmatrix|…}` environments + bare
+  `\pmatrix{a&b\\c&d}`. Inside a matrix cell, Enter adds a row and
+  Shift+Space adds a column; arrows move cell-to-cell without leaving
+  the field.
+- Serializations to pin in tests: empty blocks are `{ }` (with a space);
+  `\int_{ }^{ }` writes sub before sup and lands the caret in the lower
+  bound; `x^2` serializes `x^{2}`; `\displaylines{x\\ y}` puts a space
+  after `\\` before binary operators like `+`.
 
 ## Testing notes
 
+- `caretInfo` in `e2e/limits.spec.ts` reads `.mq-cursor` ancestors:
+  `\int` uses `.mq-sub`/`.mq-sup`; `\sum` (over/under) uses
+  `.mq-from`/`.mq-to`; `.mq-large-operator`/`.mq-int` is the atom.
+- Focus assertions use `el.contains(document.activeElement)` (MQ's
+  hidden textarea), not `activeElement === el`.
+- The palette stays mounted: assert `.palette` hidden via
+  `not.toBeVisible()`, not `toHaveCount(0)`.
+- Vendor internals are verified by `e2e/spike.spec.ts` (via
+  `/spike.html`'s `window.spike` handles) and `e2e/vendor.spec.ts`
+  (headless mocha suite, includes `test/unit/environments.test.js`).
 - The `perf/` suite measures in-page: capture-phase `event.timeStamp` at
   input -> DOM-outcome `waitForFunction` -> double rAF (`perf/measure.ts`).
   Selectors live in `perf/contract.ts` — the same DOM contract the e2e suite
   pins — so results stay comparable across rewrites. Serial runs only
   (`workers: 1`); never measure against the dev server.
-- E2e cell-focus changes must use `focus()` + a settle wait (see
-  `focusCell` in `e2e/cells.spec.ts`): MathLive's ~60ms deferred internal
-  refocus steals focus back when switching cells too fast, so `click()`
-  alone is racy.
-- Known bug, pinned as expected-fail in `e2e/limits.spec.ts`: Tab from the
-  lower placeholder lands back on it (the lower-placeholder fix re-fires
-  after Tab's navigation), so Tab cannot reach the upper bound.
-- `caretInfo.where` in `e2e/limits.spec.ts` only works for msubsup limits
-  (`\int`); `\sum` renders over/under — assert via what typing fills instead.
-- `\sum`/`\int` templates serialize placeholders as `\placeholder{}`;
-  multi-line cells serialize as `\displaylines{a\\ b}` (note the space).
+
+## Rebuilding the vendor bundle
+
+```
+cd vendor/mathquill
+npm install   # devDeps only (less, typescript, uglify-js, mocha)
+make dev      # font + css + js -> build/ (committed)
+```
 
 ## Codegraph
-The project has a `.codegraph/` index. MathLive is indexed as a **separate
-project** at `node_modules/mathlive/.codegraph` (query it via `projectPath`).
-`codegraph.json` `include` cannot revive `node_modules`, and `mathlive.mjs`
-exceeds the 1 MB file limit, so only `types/*.d.ts` is indexed — the minified
-bundles are excluded via `node_modules/mathlive/codegraph.json`.
 
-To recreate after `npm install` wipes node_modules:
-
-```
-cat > node_modules/mathlive/codegraph.json <<'EOF'
-{
-  "exclude": ["mathlive.mjs", "mathlive.js", "mathlive.min.mjs",
-              "mathlive.min.js", "mathlive-ssr.min.mjs", "vue-mathlive.mjs",
-              "fonts/", "sounds/"]
-}
-EOF
-codegraph init node_modules/mathlive
-```
-Make sure to prioritize the codegraph index for Mathlive over cat, grep, ls, etc when it makes sense to do so.
+This worktree has no `.codegraph/` index of its own (the main checkout
+has one). Run `codegraph init` here if you want one.

@@ -7,9 +7,12 @@ import type { Page } from '@playwright/test';
 
 const cell = (page: Page, i: number) => page.locator('math-field').nth(i);
 
+// Smart mode maps to MQ autoCommands (non-empty list = on).
 const smartModeOn = (page: Page, i = 0): Promise<boolean> =>
   cell(page, i).evaluate(
-    (el) => (el as unknown as { smartMode: boolean }).smartMode,
+    (el) =>
+      ((el as unknown as { options: { autoCommands?: string } }).options
+        .autoCommands ?? '') !== '',
   );
 
 test.beforeEach(async ({ page }) => {
@@ -83,7 +86,7 @@ test('d/dx-means-derivative checkbox reflects in the options block', async ({
   );
 });
 
-test('smart mode checkbox drives the math-field smartMode property', async ({
+test('smart mode checkbox drives the math-field autoCommands option', async ({
   page,
 }) => {
   const box = page.locator('.option-checkbox input').nth(1);
