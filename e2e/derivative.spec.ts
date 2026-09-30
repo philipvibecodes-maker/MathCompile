@@ -68,17 +68,3 @@ test('with dIsDerivative off, \\derivative expands to D() with the caret inside'
   await mf.pressSequentially('f', { delay: 60 });
   expect(await cellValue(mf)).toBe('D(f)');
 });
-
-test('the insert-derivative palette command writes the expansion at the caret', async ({
-  page,
-}) => {
-  const mf = cell(page);
-  await mf.pressSequentially('x', { delay: 60 });
-  await page.keyboard.press('Control+k');
-  await page.locator('.palette-input').pressSequentially('insert derivative');
-  await page.keyboard.press('Enter');
-  await expect(page.locator('.palette')).not.toBeVisible();
-  expect(await cellValue(mf)).toBe('x\\frac{d}{d}');
-  await mf.pressSequentially('f', { delay: 60 });
-  expect(await cellValue(mf)).toBe('x\\frac{d}{df}');
-});

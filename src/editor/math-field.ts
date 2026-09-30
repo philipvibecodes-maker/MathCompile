@@ -182,10 +182,6 @@ export interface FieldHandle {
   focus: (edge?: 'start' | 'end') => void;
   getValue: () => string;
   setValue: (latex: string) => void;
-  // `\derivative` at the caret — expands to real \frac{d}{d} atoms (or
-  // D()) with the caret in the denominator/parens, matching the typed
-  // path. Used by the palette's "insert derivative" command.
-  insertDerivative: () => void;
   // Smart mode = MQ autoCommands + autoSubscriptNumerals.
   setSmartMode: (v: boolean) => void;
   dispose: () => void;
@@ -223,7 +219,6 @@ export function attachField(
     setValue: (latex) => {
       el.value = latex;
     },
-    insertDerivative: () => el.mq?.cmd('\\derivative'),
     setSmartMode: (v) =>
       el.config({
         autoCommands: v ? SMART_AUTO_COMMANDS : '',

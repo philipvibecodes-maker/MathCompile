@@ -59,17 +59,38 @@
     </span>
     <div class="output-options">
       <div class="option">
-        <label
-          class="option-checkbox"
-          title="Auto-convert typed text like 'sqrt' or 'pi' into math"
-        >
-          <input
-            type="checkbox"
-            checked={appStore.smartMode}
-            onchange={(e) => (appStore.smartMode = e.currentTarget.checked)}
-          />
-          Smart mode
-        </label>
+        <div class="option-label-row">
+          <label class="option-checkbox">
+            <input
+              type="checkbox"
+              checked={appStore.smartMode}
+              onchange={(e) => (appStore.smartMode = e.currentTarget.checked)}
+            />
+            Smart mode
+          </label>
+          <button
+            type="button"
+            class="info-icon"
+            aria-label="Smart mode auto-converts typed text like 'sqrt' or 'int' into math symbols, and a digit after a letter (x2) into a subscript."
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="9" />
+              <line x1="12" y1="11" x2="12" y2="16.5" />
+              <circle cx="12" cy="7.5" r="0.75" fill="currentColor" />
+            </svg>
+            <span class="info-tip" role="tooltip" aria-hidden="true">
+              Auto-converts typed text like "sqrt" or "int" into math
+              symbols, and a digit after a letter (x2) into a subscript.
+            </span>
+          </button>
+        </div>
         <span class="option-shortcut">alt+s</span>
       </div>
       <button
@@ -128,7 +149,7 @@
                 (appStore.target = e.currentTarget.value as TargetId)}
             >
               {#each TARGETS as t (t.id)}
-                <option value={t.id} disabled={t.id !== 'latex'}>
+                <option value={t.id} disabled={!t.enabled}>
                   {t.label}
                 </option>
               {/each}

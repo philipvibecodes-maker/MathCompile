@@ -42,12 +42,6 @@ export const buildCommands = (store: AppStore): Command[] => {
       run: () => store.clearAll(),
     },
     {
-      id: 'insert-derivative',
-      title: 'Insert derivative',
-      keywords: 'differentiate fraction',
-      run: () => store.fields.get(focusId)?.insertDerivative(),
-    },
-    {
       id: 'toggle-smart',
       title: 'Smart mode',
       keywords: 'toggle option autocomplete',
@@ -62,7 +56,7 @@ export const buildCommands = (store: AppStore): Command[] => {
       current: store.darkMode,
       run: () => (store.darkMode = !store.darkMode),
     },
-    ...TARGETS.map((t) => ({
+    ...TARGETS.filter((t) => t.enabled).map((t) => ({
       id: `target-${t.id}`,
       title: `Target: ${t.label}`,
       keywords: 'set compile codegen language output',

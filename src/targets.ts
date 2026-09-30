@@ -1,9 +1,9 @@
 export const TARGETS = [
-  { id: 'latex', label: 'LaTeX' },
-  { id: 'python', label: 'Python' },
-  { id: 'javascript', label: 'JavaScript' },
-  { id: 'glsl', label: 'GLSL' },
-  { id: 'c', label: 'C' },
+  { id: 'latex', label: 'LaTeX', enabled: true },
+  { id: 'python', label: 'Python', enabled: false },
+  { id: 'javascript', label: 'JavaScript', enabled: false },
+  { id: 'glsl', label: 'GLSL', enabled: false },
+  { id: 'c', label: 'C', enabled: false },
 ] as const;
 
 export type TargetId = (typeof TARGETS)[number]['id'];

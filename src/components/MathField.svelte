@@ -7,7 +7,7 @@
 
   // Thin wrapper: the element is created here but every editor
   // interaction goes through the adapter handle. Imperative actions
-  // (focus, setValue, insertDerivative) are methods on the handle
+  // (focus, setValue) are methods on the handle
   // registered in the store — no prop-delta channels like focusNonce.
   let { cell }: { cell: Cell } = $props();
 
