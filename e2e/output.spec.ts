@@ -138,5 +138,5 @@ test('latex output shows multi-line cells as separate lines', async ({
     .locator('.cell-latex')
     .first()
     .evaluate((el) => el.textContent);
-  expect(text).toBe('x\\\\\n y');
+  expect(text).toBe('x\\\\\ny');
 });

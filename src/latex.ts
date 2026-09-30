@@ -18,7 +18,8 @@ export function outputLatex(latex: string): string {
 }
 
 // Display form for the output column: unwrapped like outputLatex, with
-// each \\ row separator kept and followed by a real line break.
+// each \\ row separator kept and followed by a real line break. The space
+// MQ writes after \\ is dropped so the next row starts flush left.
 export function displayLatex(latex: string): string {
-  return outputLatex(latex).replaceAll('\\\\', '\\\\\n');
+  return outputLatex(latex).replaceAll(/\\\\ */g, '\\\\\n');
 }

@@ -26,7 +26,7 @@ describe('outputLatex', () => {
 
 describe('displayLatex', () => {
   it('keeps \\ separators and puts each row on its own line', () => {
-    expect(displayLatex('\\displaylines{x\\\\ y}')).toBe('x\\\\\n y');
+    expect(displayLatex('\\displaylines{x\\\\ y}')).toBe('x\\\\\ny');
     expect(displayLatex('\\pmatrix{a&b\\\\c&d}')).toBe(
       '\\pmatrix{a&b\\\\\nc&d}',
     );
