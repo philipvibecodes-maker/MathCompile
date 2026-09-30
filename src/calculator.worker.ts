@@ -39,6 +39,7 @@ const SETUP_PY = `
 import json
 import sympy as sp
 from sympy.parsing.latex import parse_latex
+from sympy.printing.python import python as _pycode
 
 def _mc_calc_one(src):
     expr = parse_latex(src)
@@ -59,6 +60,13 @@ def _mc_calc_one(src):
             out['approx'] = str(sp.N(val, 12))
     except Exception:
         pass
+    try:
+        out['code'] = _pycode(val)
+    except Exception:
+        try:
+            out['code'] = sp.sstr(val)
+        except Exception:
+            pass
     return out
 
 def mc_calc(rows_json):

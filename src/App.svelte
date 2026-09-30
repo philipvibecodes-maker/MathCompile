@@ -97,6 +97,16 @@
         </div>
         <span class="option-shortcut">alt+s</span>
       </div>
+      {#if appStore.target === 'calculator'}
+        <label class="option-checkbox">
+          <input
+            type="checkbox"
+            checked={appStore.showCode}
+            onchange={(e) => (appStore.showCode = e.currentTarget.checked)}
+          />
+          Show code
+        </label>
+      {/if}
       <button
         class="theme-toggle"
         title={appStore.darkMode

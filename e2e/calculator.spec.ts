@@ -66,3 +66,34 @@ test('calculator shows per-line results for multi-line cells', async ({
   await expect(rows.nth(0)).toContainText('2');
   await expect(rows.nth(1)).toContainText('5');
 });
+
+test('show code toggle reveals highlighted SymPy code under the result', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await setTarget(page, 'calculator');
+
+  const mf = cell(page, 0);
+  await mf.click();
+  await mf.pressSequentially('x+1', { delay: 40 });
+
+  await expect(
+    page.locator('.calc-row .calc-math').first(),
+  ).toContainText('x', { timeout: 90_000 });
+  await expect(page.locator('.calc-code')).toHaveCount(0);
+
+  const toggle = page.getByLabel('Show code');
+  await expect(toggle).toBeVisible();
+  await toggle.check();
+
+  // python(x + 1) emits the symbol decl then the expression assignment.
+  const code = page.locator('.calc-code').first();
+  await expect(code).toBeVisible();
+  await expect(code).toContainText("Symbol('x')");
+  await expect(code).toContainText('e = x + 1');
+  await expect(code.locator('.tok-call').first()).toBeAttached();
+  await expect(code.locator('.tok-str').first()).toBeAttached();
+
+  await toggle.uncheck();
+  await expect(page.locator('.calc-code')).toHaveCount(0);
+});

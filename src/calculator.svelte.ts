@@ -5,6 +5,7 @@ export interface CalcRowOk {
   latex?: string;
   text?: string;
   approx?: string;
+  code?: string;
 }
 export interface CalcRowErr {
   ok: false;

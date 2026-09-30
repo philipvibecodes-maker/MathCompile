@@ -33,6 +33,7 @@ export class AppStore {
   focusEdge = $state<Edge | undefined>(undefined);
   target = $state<TargetId>('latex');
   smartMode = $state(true);
+  showCode = $state(false);
   paletteOpen = $state(false);
   darkMode = $state(initDarkMode());
 

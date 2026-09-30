@@ -6,7 +6,8 @@
     type CalcRow,
   } from '../calculator.svelte.ts';
   import { mountStaticMath } from '../editor/static-math';
-  import type { Cell } from '../appState.svelte.ts';
+  import { highlightPython } from '../python-highlight';
+  import { appStore, type Cell } from '../appState.svelte.ts';
 
   // Per-cell SymPy output for the calculator target. Edits are debounced,
   // then each cell row is evaluated once; stale responses are dropped via
@@ -70,13 +71,24 @@
       {#each rows as row, i (i)}
         <div class="calc-row">
           {#if row.ok}
-            {#if row.latex !== undefined && row.latex !== ''}
-              <span class="calc-math" use:staticMath={row.latex ?? ''}></span>
-            {:else}
-              <code class="calc-text">{row.text ?? ''}</code>
-            {/if}
-            {#if row.approx !== undefined}
-              <span class="calc-approx">≈ {row.approx}</span>
+            <div class="calc-result">
+              {#if row.latex !== undefined && row.latex !== ''}
+                <span class="calc-math" use:staticMath={row.latex ?? ''}></span>
+              {:else}
+                <code class="calc-text">{row.text ?? ''}</code>
+              {/if}
+              {#if row.approx !== undefined}
+                <span class="calc-approx">≈ {row.approx}</span>
+              {/if}
+            </div>
+            {#if appStore.showCode && row.code}
+              {@const toks = highlightPython(row.code)}
+              <pre class="calc-code"><code
+                  >{#each toks as tok, j (j)}<span
+                      class={tok.cls ? `tok-${tok.cls}` : undefined}
+                      >{tok.text}</span
+                    >{/each}</code
+                ></pre>
             {/if}
           {:else}
             <code class="calc-error" title={row.error}>{row.error}</code>
