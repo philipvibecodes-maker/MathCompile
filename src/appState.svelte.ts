@@ -28,7 +28,7 @@ function initDarkMode(): boolean {
 // except focusCell, which no-ops when no field is registered for the id —
 // so this is fully unit-testable in node.
 export class AppStore {
-  cells = $state<Cell[]>([createCell()]);
+  cells = $state<Cell[]>([createCell('2^n = \\sum_{i=0}^n\\binom{i}{n}')]);
   focusedId = $state<number>(this.cells[0].id);
   focusEdge = $state<Edge | undefined>(undefined);
   target = $state<TargetId>('latex');

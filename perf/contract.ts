@@ -130,6 +130,15 @@ export const focusCell = async (page: Page, i: number) => {
   await waitFocusedIndex(page, i);
 };
 
+// The app boots with a seeded first cell; specs that measure or assert on
+// cell 0 content start from a cleared field via real input (select-all +
+// backspace), so the app's state stays in sync.
+export const clearFirstCell = async (page: Page) => {
+  await cell(page).focus();
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.press('Backspace');
+};
+
 // Adds cells by driving the real UI (click + typing) until `count` exist.
 // Seeding via setValue() would bypass the app's state — MathLive silences
 // notifications for programmatic setValue, and a rewrite may sync state on

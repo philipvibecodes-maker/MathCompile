@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { clearFirstCell } from './helpers';
 
 // The palette stays mounted (`.open` toggles visibility), so the closed
 // assertion is not.toBeVisible(), not toHaveCount(0). Focus inside a
@@ -25,6 +26,7 @@ test.beforeEach(async ({ page }) => {
   const mf = page.locator('math-field').first();
   await mf.click();
   await mf.focus();
+  await clearFirstCell(page);
 });
 
 test('Ctrl+K opens the palette and Esc refocuses the cell', async ({

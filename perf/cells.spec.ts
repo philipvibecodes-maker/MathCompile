@@ -9,6 +9,7 @@ import {
   cell,
   cellCount,
   cellValue,
+  clearFirstCell,
   focusCell,
   seedCells,
   settleFocus,
@@ -23,6 +24,7 @@ test.beforeEach(async ({ page }) => {
   await page.waitForSelector(SEL.cell);
   await cell(page).click();
   await settleFocus(page);
+  await clearFirstCell(page);
 });
 
 test.afterAll(() => flush('cells'));

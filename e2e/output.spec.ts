@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { clearFirstCell } from './helpers';
 
 // The header holds the option toggles and the target select. With the
 // latex target (the default), each cell shows its LaTeX and a copy button
@@ -18,6 +19,7 @@ const smartModeOn = (page: Page, i = 0): Promise<boolean> =>
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await page.waitForSelector('math-field');
+  await clearFirstCell(page);
 });
 
 test('there is no output panel', async ({ page }) => {

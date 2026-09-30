@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
+import { clearFirstCell } from './helpers';
 
 // \derivative is the app's one custom command: the vendored MathQuill patch
 // expands it to real \frac{d}{d} atoms (or D() when the option is off) at
@@ -28,6 +29,7 @@ test.beforeEach(async ({ page }) => {
   const mf = cell(page);
   await mf.click();
   await mf.focus();
+  await clearFirstCell(page);
 });
 
 test('\\derivative expands to a real fraction with the caret in the denominator', async ({

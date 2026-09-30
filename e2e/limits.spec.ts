@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
+import { clearFirstCell } from './helpers';
 
 type CaretInfo = {
   value: string;
@@ -39,6 +40,7 @@ test.beforeEach(async ({ page }) => {
   const mf = page.locator('math-field').first();
   await mf.click();
   await mf.focus();
+  await clearFirstCell(page);
 });
 
 // `\int` through the latex command input: Enter accepts it and lands the

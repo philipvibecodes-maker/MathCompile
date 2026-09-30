@@ -8,6 +8,7 @@ import { expect, test } from '@playwright/test';
 import {
   cell,
   cellValue,
+  clearFirstCell,
   committedToOutput,
   focusCell,
   lenGrows,
@@ -30,6 +31,7 @@ test.beforeEach(async ({ page }) => {
   await page.locator('.option-checkbox input').click();
   await cell(page).click();
   await settleFocus(page);
+  await clearFirstCell(page);
 });
 
 test.afterAll(() => flush('typing'));

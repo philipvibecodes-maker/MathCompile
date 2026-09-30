@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
+import { clearFirstCell } from './helpers';
 
 // App-level matrix contract: the vendored environments patch is exercised
 // through real keystrokes in a cell.
@@ -28,6 +29,7 @@ test.beforeEach(async ({ page }) => {
   await mf.waitFor();
   await mf.click();
   await mf.focus();
+  await clearFirstCell(page);
 });
 
 test('\\begin{matrix} renders as a table inside the cell', async ({ page }) => {

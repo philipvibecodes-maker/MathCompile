@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
+import { clearFirstCell, SEEDED_LATEX } from './helpers';
 
 // Cell-level behavior: the expression list is the app's core document model.
 // These tests pin DOM-visible behavior only — no framework internals — so
@@ -38,12 +39,18 @@ const focusCell = async (page: Page, i: number) => {
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await page.waitForSelector('math-field');
+  await clearFirstCell(page);
 });
 
-test('starts with a single focused empty cell', async ({ page }) => {
+test('starts with a single focused cell seeded with the default expression', async ({
+  page,
+}) => {
+  // beforeEach cleared the field; reload to observe the boot state.
+  await page.reload();
+  await page.waitForSelector('math-field');
   await expect(page.locator('math-field')).toHaveCount(1);
   await waitFocusedIndex(page, 0);
-  expect(await cellValue(cell(page, 0))).toBe('');
+  expect(await cellValue(cell(page, 0))).toBe(SEEDED_LATEX);
 });
 
 test('add-expression button appends a focused empty cell', async ({ page }) => {
