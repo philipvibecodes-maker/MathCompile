@@ -7,6 +7,7 @@
   import CommandPalette from './components/CommandPalette.svelte';
   import HowToGuide from './components/HowToGuide.svelte';
   import { appStore, THEME_STORAGE_KEY } from './appState.svelte.ts';
+  import { savePrefs } from './persistence';
   import { displayLatex, outputLatex } from './latex';
   import { buildCommands } from './commands.ts';
   import { installGlobalKeymap } from './editor/keymap';
@@ -40,6 +41,15 @@
     document.documentElement.dataset.theme = theme;
     localStorage.setItem(THEME_STORAGE_KEY, theme);
   });
+
+  $effect(() =>
+    savePrefs({
+      smartMode: appStore.smartMode,
+      target: appStore.target,
+      guideOpen: appStore.guideOpen,
+      showCode: appStore.showCode,
+    }),
+  );
 </script>
 
 <div class="app">

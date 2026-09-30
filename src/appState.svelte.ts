@@ -1,5 +1,11 @@
 import type { FieldHandle } from './editor/math-field';
 import type { TargetId } from './targets';
+import {
+  installFlushOnHide,
+  loadCells,
+  loadPrefs,
+  persistCells,
+} from './persistence';
 
 export interface Cell {
   id: number;
@@ -10,6 +16,17 @@ export type Edge = 'start' | 'end';
 
 let nextId = 1;
 const createCell = (latex = ''): Cell => ({ id: nextId++, latex });
+
+const SEED_LATEX = '2^n = \\sum_{i=0}^n\\binom{i}{n}';
+
+// Hydrate from localStorage; fall back to the seeded example cell.
+// Restored ids push nextId forward so later cells never collide.
+function initCells(): Cell[] {
+  const saved = loadCells();
+  if (!saved) return [createCell(SEED_LATEX)];
+  nextId = saved.maxId + 1;
+  return saved.cells;
+}
 
 export const THEME_STORAGE_KEY = 'mathcompile-theme';
 
@@ -28,17 +45,28 @@ function initDarkMode(): boolean {
 // except focusCell, which no-ops when no field is registered for the id —
 // so this is fully unit-testable in node.
 export class AppStore {
-  cells = $state<Cell[]>([createCell('2^n = \\sum_{i=0}^n\\binom{i}{n}')]);
+  cells = $state<Cell[]>(initCells());
   focusedId = $state<number>(this.cells[0].id);
   focusEdge = $state<Edge | undefined>(undefined);
-  target = $state<TargetId>('latex');
-  smartMode = $state(true);
-  showCode = $state(false);
+  target = $state<TargetId>(loadPrefs().target ?? 'latex');
+  smartMode = $state(loadPrefs().smartMode ?? true);
+  showCode = $state(loadPrefs().showCode ?? false);
+  guideOpen = $state(loadPrefs().guideOpen ?? true);
   paletteOpen = $state(false);
   darkMode = $state(initDarkMode());
 
   // Mounted math-field handles, keyed by cell id.
   readonly fields = new Map<number, FieldHandle>();
+
+  constructor() {
+    installFlushOnHide();
+  }
+
+  // Debounced snapshot of the worksheet; storage.ts coalesces the
+  // writes so the keystroke path never touches setItem directly.
+  private persist() {
+    persistCells(this.cells);
+  }
 
   focusCell(id: number, edge?: Edge) {
     this.focusedId = id;
@@ -70,7 +98,10 @@ export class AppStore {
     const c = this.cells.find((e) => e.id === id);
     // In-place mutation keeps {#each} row identity — replacing the cell
     // object would remount the field and lose the caret every keystroke.
-    if (c) c.latex = latex;
+    if (c) {
+      c.latex = latex;
+      this.persist();
+    }
   }
 
   addCell(afterId?: number, latex = ''): number {
@@ -80,6 +111,7 @@ export class AppStore {
         ? this.cells.length
         : Math.max(this.cells.findIndex((x) => x.id === afterId) + 1, 0);
     this.cells.splice(at, 0, cell);
+    this.persist();
     this.focusCell(cell.id);
     return cell.id;
   }
@@ -87,6 +119,7 @@ export class AppStore {
   removeCell(id: number) {
     if (this.cells.length > 1) this.cells = this.cells.filter((e) => e.id !== id);
     else if (this.cells[0]?.id === id) this.cells[0].latex = '';
+    this.persist();
   }
 
   duplicateCell(id: number) {
@@ -106,6 +139,7 @@ export class AppStore {
   clearAll() {
     const cell = createCell();
     this.cells = [cell];
+    this.persist();
     this.focusCell(cell.id);
   }
 
