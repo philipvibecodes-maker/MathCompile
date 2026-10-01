@@ -259,6 +259,20 @@
 .mq-math-mode .mq-int > .mq-supsub > .mq-sub {
   margin-left: -0.35em;
 }
+.mq-math-mode .mq-int + .mq-supsub,
+.mq-math-mode .mq-int + .mq-cursor + .mq-supsub {
+  font-size: 80%;
+  vertical-align: -1.1em;
+  padding-right: 0.2em;
+}
+.mq-math-mode .mq-int + .mq-supsub > .mq-sup,
+.mq-math-mode .mq-int + .mq-cursor + .mq-supsub > .mq-sup {
+  margin-bottom: 0.4em;
+}
+.mq-math-mode .mq-int + .mq-supsub > .mq-sub,
+.mq-math-mode .mq-int + .mq-cursor + .mq-supsub > .mq-sub {
+  margin-left: -0.35em;
+}
 .mq-math-mode .mq-roman {
   font-style: normal;
 }

@@ -133,6 +133,9 @@ interface Scope {
   cellIssues: Issue[][];
   /** 1-based cell label for codegen-time issues; 0 = program level. */
   cell: number;
+  /** Errors flagged during this cell's emission — a statement that bumps
+   * it is dropped instead of emitting `sp.Error(...)`/`None` fragments. */
+  errorCount: number;
   flag(severity: Issue['severity'], message: string): void;
 }
 
@@ -222,6 +225,12 @@ class Emitter {
   emit(node: MathJson | undefined, minPrec = PREC_LOW): string {
     if (node === undefined || node === null) {
       this.scope.flag('error', 'malformed node cannot be emitted');
+      return 'None';
+    }
+    // Error nodes carry a normalizer diagnostic — flag so the enclosing
+    // statement is dropped instead of emitting `sp.Error(...)` noise.
+    if (isHead(node, 'Error')) {
+      this.scope.flag('error', 'unparseable input — statement skipped');
       return 'None';
     }
     const [text, prec] = this.inner(node);
@@ -418,14 +427,41 @@ class Emitter {
       case 'Integrate': {
         const { body, params } = unwrapLambda(args[0]);
         const limits = isHead(args[1], 'Limits') ? args[1].slice(1) : null;
-        const v = limits?.[0] ?? params[0];
+        const missing = (n: MathJson | undefined): boolean =>
+          n === undefined || n === 'Nothing' || isHead(n, 'Error');
+        let v = limits?.[0] ?? params[0];
         const lo = limits?.[1];
         const hi = limits?.[2];
-        if (v === undefined)
-          return [`${this.sp}integrate(${this.emit(body)})`, PREC_ATOM];
-        if (isStr(lo) && isStr(hi) && lo === 'Nothing' && hi === 'Nothing')
+        if (missing(v)) {
+          // No `dx` — infer the variable from the body's free symbols
+          // (`\int x^2` -> x). Ambiguous bodies can't be emitted — SymPy
+          // would just raise a ValueError, so flag and let the statement
+          // drop instead.
+          const free = freeNames(body);
+          if (free.length === 1) {
+            v = free[0];
+            this.scope.flag(
+              'note',
+              `no differential — integrating w.r.t. ${v}`,
+            );
+          } else {
+            this.scope.flag(
+              'error',
+              "can't infer the integration variable — add a differential like dx",
+            );
+            return [`${this.sp}integrate(${this.emit(body)})`, PREC_ATOM];
+          }
+        }
+        const hasLo = !missing(lo);
+        const hasHi = !missing(hi);
+        if (hasLo !== hasHi) {
+          this.scope.flag(
+            'error',
+            `${hasLo ? 'upper' : 'lower'} bound is empty — fill it in or delete it`,
+          );
           return [`${this.sp}integrate(${this.emit(body)}, ${this.emit(v)})`, PREC_ATOM];
-        if (limits && !(isStr(lo) && lo === 'Nothing'))
+        }
+        if (hasLo)
           return [
             `${this.sp}integrate(${this.emit(body)}, (${this.emit(v)}, ${this.emit(lo)}, ${this.emit(hi)}))`,
             PREC_ATOM,
@@ -554,6 +590,30 @@ interface CellBody {
   newNames: Set<string>;
 }
 
+// Free symbol names inside an expression — used to infer the variable of
+// an integral written without a differential. Constants, the CE 'Nothing'
+// marker, and callee names (f in f(t), call heads) don't count.
+function freeNames(node: MathJson, acc = new Set<string>()): string[] {
+  if (isStr(node)) {
+    if (!CONSTANTS[node] && node !== 'Nothing' && !node.startsWith("'"))
+      acc.add(node);
+    return [...acc];
+  }
+  if (!isArr(node)) return [...acc];
+  const h = headOf(node);
+  if (h === 'Function') {
+    // Lambda: body names minus the bound params.
+    freeNames(node[1], acc);
+    for (const p of node.slice(2)) if (isStr(p)) acc.delete(p);
+    return [...acc];
+  }
+  // The variable slot of Limits and the callee of Apply/call are names,
+  // not free symbols.
+  const skip = h === 'Limits' || h === 'Apply' || h === 'call' ? 1 : 0;
+  for (const child of node.slice(1 + skip)) freeNames(child, acc);
+  return [...acc];
+}
+
 // Emit one normalized cell IR into defs + per-statement lines. Cells are
 // independent: the scope's defined/symbols/functions sets are fresh per
 // cell, so every free name the cell uses gets its def line at the top of
@@ -604,16 +664,27 @@ function cellStatements(ir: MathJson | undefined, scope: Scope): string[] {
   return [...defs, ...stmts];
 }
 
+// Emit a single expression statement, dropping it when emission flagged
+// an error — a broken statement produces `sp.Error(...)`/`None` fragments
+// that just repeat what the issues list already says.
+function emitExprStatement(node: MathJson, emitter: Emitter): string[] {
+  const before = emitter.scope.errorCount;
+  const line = emitter.emit(node);
+  return emitter.scope.errorCount === before ? [line] : [];
+}
+
 function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
   const sp = emitter.scope.qualified ? 'sp.' : '';
-  if (!isArr(node)) return { lines: [emitter.emit(node)] };
+  if (!isArr(node)) return { lines: emitExprStatement(node, emitter) };
   const h = headOf(node);
   if (h === 'Assign') {
     // RHS emits first so `x = x + 1` collects x as a symbol; the Assign
     // then marks `x` bound for later statements/cells.
+    const before = emitter.scope.errorCount;
     const rhs = emitter.emit(node[2]);
     const name = isStr(node[1]) ? node[1] : 'result';
     if (isStr(node[1])) emitter.scope.defined.add(name);
+    if (emitter.scope.errorCount > before) return { lines: [] };
     return {
       lines: [`${pyIdent(name)} = ${rhs}`],
       // The display expression uses a fresh Symbol for the target so the
@@ -627,9 +698,11 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       isHead(node[2], 'List') ? node[2].slice(1).filter(isStr) : [];
     const saved = emitter.scope.bound;
     emitter.scope.bound = new Set(params);
+    const before = emitter.scope.errorCount;
     const body = emitter.emit(node[3]);
     emitter.scope.bound = saved;
     emitter.scope.defined.add(name);
+    if (emitter.scope.errorCount > before) return { lines: [] };
     const idents = params.map(pyIdent).join(', ');
     // `f(x) = body` rendered via an undefined function — the def'd python
     // function would just evaluate back to body. The lambda binds the
@@ -650,7 +723,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     return {
       lines: node.slice(1).flatMap((s) => emitStatement(s, emitter).lines),
     };
-  return { lines: [emitter.emit(node)] };
+  return { lines: emitExprStatement(node, emitter) };
 }
 
 // Walk normalized IR for heads that only lower to Python.
@@ -793,7 +866,9 @@ function buildScope(
     issues,
     cellIssues,
     cell,
+    errorCount: 0,
     flag(severity, message) {
+      if (severity === 'error') this.errorCount += 1;
       this.issues.push({
         severity,
         message: this.cell > 0 ? `cell ${this.cell}: ${message}` : message,
@@ -833,9 +908,13 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
   collectDeclared(ir, declared);
   const scope = buildScope(true, declared, issues, [[]], 0);
   const { defs, parts } = cellBody(ir, scope);
-  const statements = parts.map(({ out }) => ({
-    code: out.lines.join('\n'),
-    display: out.display,
-  }));
+  // Statements dropped by an emission error (lines: []) produce no row —
+  // the compile issue already reports the problem.
+  const statements = parts
+    .filter(({ out }) => out.lines.length > 0)
+    .map(({ out }) => ({
+      code: out.lines.join('\n'),
+      display: out.display,
+    }));
   return { prelude: ['import sympy as sp', ...defs], statements, issues };
 }

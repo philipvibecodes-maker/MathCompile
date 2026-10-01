@@ -91,7 +91,11 @@ export function parseCellLatex(latex: string): MathJson | undefined {
     try {
       // `form: 'raw'` skips CE canonicalization so the user's term order
       // survives to codegen (a * 2 stays Multiply(a, 2), not sorted).
-      return ce().parse(s, { form: 'raw' }).json as MathJson;
+      // \antid is MathQuill's insertion alias for a boundless \int — map
+      // it to \int so CE parses an ordinary Integrate node.
+      return ce()
+        .parse(s.replaceAll(/\\antid(?![a-zA-Z])/g, '\\int'), { form: 'raw' })
+        .json as MathJson;
     } catch {
       return ['Error', `'parse-failed'`] as MathJson;
     }
@@ -131,8 +135,51 @@ const KNOWN_HEADS = new Set([
 // inner name so it can be treated as a symbol with a note.
 const TEXT_LITERAL = /^'(.*)'$/;
 
+// CE marks unparseable atoms as the *quoted* symbol 'unexpected-command'
+// (a string literal), e.g. `['Power', "'unexpected-command'", LatexString]
+// for a bare `\int_{ }^{ }`.
+const UNEXPECTED_COMMAND = /^'unexpected-command'$/;
+const isUnexpectedCommand = (v: MathJson): boolean =>
+  isString(v) && UNEXPECTED_COMMAND.test(v);
+
 function issue(severity: Issue['severity'], message: string): Issue {
   return { severity, message };
+}
+
+// CE reports parse problems as ['Error', "'<code>'", ['LatexString', "'<src>'"]]
+// — translate the code to a plain-language message, quoting the offending
+// fragment when CE carried one. `parse-failed` is our own catch-all for a
+// thrown parse.
+function describeError(node: MathJson[]): string {
+  const code = (isString(node[1]) ? node[1] : 'error').replace(/^'|'$/g, '');
+  let src = '';
+  for (const arg of node.slice(2)) {
+    if (isArray(arg) && head(arg) === 'LatexString' && isString(arg[1])) {
+      src = arg[1].replace(/^'(.*)'$/s, '$1').trim();
+      break;
+    }
+  }
+  const hint = src ? ` "${src}"` : '';
+  switch (code) {
+    case 'missing':
+      return 'empty slot — fill it in or delete it';
+    case 'unexpected-command':
+      return src === '\\int'
+        ? 'integral sign with no integrand — type the integrand after ∫'
+        : `incomplete or unsupported command${hint}`;
+    case 'unexpected-operator':
+      return `stray operator${hint} — delete it or finish the expression`;
+    case 'unexpected-delimiter':
+      return `stray ${src || 'delimiter'} — unmatched delimiter`;
+    case 'unbalanced-environment':
+      return 'unclosed \\begin{...} — missing \\end{...}';
+    case 'expected-closing-delimiter':
+      return `missing closing brace${hint ? ` near${hint}` : ''}`;
+    case 'parse-failed':
+      return "couldn't parse this — check for a typo";
+    default:
+      return `unparseable input (${code})`;
+  }
 }
 
 // Flatten a subscript position to symbol-name text: a_{n+1} -> 'a_{n+1}'.
@@ -242,6 +289,13 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       // (assignment targets, def params, integral variables) rather than a
       // value — no constant or literal mapping applies there.
       if (asName) return node;
+      if (UNEXPECTED_COMMAND.test(node)) {
+        // Bare marker outside a Power/Subscript pair (the quoted source is
+        // recovered there) — flag generically and keep it an Error node so
+        // codegen drops the statement.
+        issues.push(issue('error', 'incomplete or unsupported command'));
+        return ['Error', "'unexpected-command'"];
+      }
       const text = TEXT_LITERAL.exec(node);
       if (text) {
         issues.push(
@@ -254,7 +308,7 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
         // means an indefinite operator (\int f dx) — legitimate input, not
         // a hole — so it is only an error elsewhere.
         if (!allowNothing)
-          issues.push(issue('error', 'missing argument in expression'));
+          issues.push(issue('error', 'empty slot — fill it in or delete it'));
         return node;
       }
       // Non-canonical parse leaves `e` as a bare symbol; it is always
@@ -284,10 +338,36 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     }
 
     if (h === 'Error') {
-      issues.push(
-        issue('error', `unparseable input (${isString(node[1]) ? node[1] : 'error'})`),
-      );
+      issues.push(issue('error', describeError(node)));
       return node;
+    }
+
+    // `\int_{a}^{b}` (or empty-bounds `\int_{ }^{ }`) with nothing after it:
+    // CE can't make an Integrate node and instead leaves the 'unexpected-
+    // command' marker symbol holding bounds, with the source in a sibling
+    // LatexString (`['Power', 'unexpected-command', ['LatexString', …]]`).
+    if (node.length >= 3 && isUnexpectedCommand(node[1])) {
+      const src =
+        isArray(node[2]) && head(node[2]) === 'LatexString' && isString(node[2][1])
+          ? node[2][1].replace(/^'(.*)'$/s, '$1').trim()
+          : '';
+      issues.push(
+        issue(
+          'error',
+          src === '\\int'
+            ? 'integral sign with no integrand — type the integrand after ∫'
+            : `incomplete or unsupported command${src ? ` "${src}"` : ''}`,
+        ),
+      );
+      return ['Error', "'unexpected-command'"];
+    }
+
+    // A LatexString rides inside CE error shapes as the quoted source
+    // fragment — anything reaching normal normalization is a fragment of
+    // a broken expression; flag rather than emit a LatexString symbol.
+    if (h === 'LatexString') {
+      issues.push(issue('error', 'incomplete or unsupported command'));
+      return ['Error', "'unexpected-command'"];
     }
 
     if (h === 'Block') {
@@ -358,9 +438,12 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
           body,
           [
             'Limits',
-            normalize(lim[1], false, false, true),
-            normalize(lim[2], false, true),
-            normalize(lim[3], false, true),
+            // Shorter tuples leave slots absent rather than 'Nothing'
+            // (e.g. `\sum_{i=1}^{ }` -> Tuple(i, 1)) — fill them so codegen
+            // sees a uniform 3-slot Limits.
+            normalize(lim[1] ?? 'Nothing', false, false, true),
+            normalize(lim[2] ?? 'Nothing', false, true),
+            normalize(lim[3] ?? 'Nothing', false, true),
           ],
         ];
       }

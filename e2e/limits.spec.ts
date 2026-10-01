@@ -19,12 +19,17 @@ const caretInfo = (mf: Locator): Promise<CaretInfo> =>
     const op =
       el.querySelector('.mq-int') ?? el.querySelector('.mq-large-operator');
     if (!cursor || !op) return { value, where: 'none' };
-    // msubsup ops use .mq-sub/.mq-sup; over/under ops (\sum, \prod) use
-    // .mq-from/.mq-to.
-    if (op.querySelector('.mq-sub, .mq-from')?.contains(cursor))
-      return { value, where: 'lower' };
-    if (op.querySelector('.mq-sup, .mq-to')?.contains(cursor))
-      return { value, where: 'upper' };
+    // Bounds may be child blocks of the atom (bounded \int / \sum) or an
+    // on-demand sibling .mq-supsub (boundless \iint / \antid): check the
+    // whole field for the bound block that contains the caret.
+    const bound =
+      el.querySelector('.mq-supsub .mq-sub') ??
+      el.querySelector('.mq-sub, .mq-from');
+    if (bound?.contains(cursor)) return { value, where: 'lower' };
+    const upper =
+      el.querySelector('.mq-supsub .mq-sup') ??
+      el.querySelector('.mq-sup, .mq-to');
+    if (upper?.contains(cursor)) return { value, where: 'upper' };
     const rel = op.compareDocumentPosition(cursor);
     if (rel & Node.DOCUMENT_POSITION_FOLLOWING)
       return { value, where: 'right' };
@@ -249,4 +254,95 @@ test('Tab from the lower bound reaches the upper bound', async ({ page }) => {
   expect(await caretInfo(mf)).toMatchObject({ where: 'upper' });
   await mf.pressSequentially('b', { delay: 60 });
   expect((await caretInfo(mf)).value).toBe('\\int_{a}^{b}');
+});
+
+// Boundless integral signs for indefinite integrals: \iint renders the
+// double sign ∬, \antid the single sign ∫ — neither carries blocks, so
+// the integrand types linearly right of the sign and `_`/`^` grow an
+// ordinary sibling SupSub on demand. `iint`/`antid` work via autoCommands
+// (smart mode is on by default) and via the latex command input.
+test('iint inserts a boundless double integral, typed linearly', async ({
+  page,
+}) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('iint', { delay: 60 });
+  await settle(page);
+  expect(await caretInfo(mf)).toMatchObject({
+    value: '\\iint',
+    where: 'right',
+  });
+  await mf.pressSequentially('xdxdy', { delay: 60 });
+  expect((await caretInfo(mf)).value).toBe('\\iint xdxdy');
+});
+
+test('antid inserts a boundless integral sign', async ({ page }) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('antid', { delay: 60 });
+  await settle(page);
+  expect(await caretInfo(mf)).toMatchObject({
+    value: '\\antid',
+    where: 'right',
+  });
+  // Space stays inside an open exponent, so Right first to reach baseline.
+  await mf.pressSequentially('x^2', { delay: 60 });
+  await page.keyboard.press('ArrowRight');
+  await mf.pressSequentially('dx', { delay: 60 });
+  expect((await caretInfo(mf)).value).toBe('\\antid x^{2}dx');
+});
+
+test('\\antid through the latex command input is boundless too', async ({
+  page,
+}) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\antid', { delay: 60 });
+  await page.keyboard.press('Enter');
+  await settle(page);
+  expect(await caretInfo(mf)).toMatchObject({
+    value: '\\antid',
+    where: 'right',
+  });
+  await mf.pressSequentially('xdx', { delay: 60 });
+  expect((await caretInfo(mf)).value).toBe('\\antid xdx');
+});
+
+// `_`/`^` still produce a definite integral on the boundless signs: a
+// sibling SupSub welds onto the atom (same tree `\iint_{a}^{b}` parses to).
+test('\\iint _a Right ^b Right xdx produces \\iint_{a}^{b}xdx', async ({
+  page,
+}) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('iint', { delay: 60 });
+  await mf.pressSequentially('_a', { delay: 60 });
+  await settle(page);
+  expect(await caretInfo(mf)).toMatchObject({
+    value: '\\iint_{a}',
+    where: 'lower',
+  });
+  await page.keyboard.press('ArrowRight');
+  await mf.pressSequentially('^b', { delay: 60 });
+  await settle(page);
+  expect(await caretInfo(mf)).toMatchObject({
+    value: '\\iint_{a}^{b}',
+    where: 'upper',
+  });
+  await page.keyboard.press('ArrowRight');
+  await mf.pressSequentially('xdx', { delay: 60 });
+  expect((await caretInfo(mf)).value).toBe('\\iint_{a}^{b}xdx');
+});
+
+// With smart mode's autoSubscriptNumerals a sub-only bound is
+// arrow-skippable at baseline — after `\antid_{1}` ArrowRight lands to
+// the RIGHT of the bound (same semantics as `x_1`), and the next letter
+// types at baseline.
+test('\\antid with a lone sub bound keeps baseline typing', async ({
+  page,
+}) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('antid', { delay: 60 });
+  await mf.pressSequentially('_1', { delay: 60 });
+  await settle(page);
+  expect((await caretInfo(mf)).value).toBe('\\antid_{1}');
+  await page.keyboard.press('ArrowRight');
+  await mf.pressSequentially('xdx', { delay: 60 });
+  expect((await caretInfo(mf)).value).toBe('\\antid_{1}xdx');
 });

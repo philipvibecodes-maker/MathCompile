@@ -63,6 +63,32 @@ const FIXTURES: {
     expectedPython: ['x = sp.Symbol("x")', 'sp.integrate(x**2, x)'],
   },
   {
+    latex: '\\antid x^2 dx',
+    // \antid is the boundless insertion alias for \int — ir.ts maps it
+    // before ce.parse, so it compiles to the same Integrate node.
+    expectedIR: [
+      'Integrate',
+      ['Power', 'x', 2],
+      ['Limits', 'x', 'Nothing', 'Nothing'],
+    ],
+    expectedPython: ['x = sp.Symbol("x")', 'sp.integrate(x**2, x)'],
+  },
+  {
+    latex: '\\iint x^2 dx',
+    // CE parses \iint natively to Integrate.
+    expectedIR: [
+      'Integrate',
+      ['Power', 'x', 2],
+      ['Limits', 'x', 'Nothing', 'Nothing'],
+    ],
+    expectedPython: ['x = sp.Symbol("x")', 'sp.integrate(x**2, x)'],
+  },
+  {
+    latex: '\\iint_{a}^{b} x\\,dx',
+    expectedIR: ['Integrate', 'x', ['Limits', 'x', 'a', 'b']],
+    expectedPython: ["x, a, b = sp.symbols('x a b')", 'sp.integrate(x, (x, a, b))'],
+  },
+  {
     // Term order is preserved: Multiply(a, 2), not canonical Multiply(2, a).
     latex: 'a \\cdot 2',
     expectedIR: ['Multiply', 'a', 2],
@@ -311,6 +337,105 @@ describe('SymPy codegen fixtures', () => {
         ).toBe(true);
     });
   }
+});
+
+describe('error messages + resilient emission', () => {
+  // Compile one cell; return its emitted lines + unprefixed issue strings.
+  const compile = (latex: string) => {
+    const out = compileWorksheet([{ json: parseCellLatex(latex) }], 'python', {
+      importAll: false,
+    });
+    return {
+      lines: out.cellLines[0],
+      issues: out.cellIssues[0].map((i) => i.message).join('\n'),
+      ok: out.ok,
+    };
+  };
+
+  it('a bare \\int hints at the missing integrand, not a cryptic code', () => {
+    const { lines, issues, ok } = compile('\\int');
+    expect(ok).toBe(false);
+    expect(issues).toContain('integral sign with no integrand');
+    expect(lines).toEqual([]);
+  });
+
+  it('\\int_{ }^{ } and \\int_{a}^{b} with no body report the same', () => {
+    for (const latex of ['\\int_{ }^{ }', '\\int_{a}^{b}']) {
+      const { issues } = compile(latex);
+      expect(issues).toContain('integral sign with no integrand');
+      // No `unexpected_command`/`LatexString` symbol garbage in the output.
+      expect(issues).not.toContain('text literal');
+      expect(issues).not.toContain('unknown head');
+    }
+  });
+
+  it('a trailing operator is a stray operator, not unparseable input', () => {
+    const { lines, issues } = compile('x +');
+    expect(issues).toContain('stray operator "+"');
+    // The broken statement is dropped; the symbol def stays (the cell
+    // still runs and names what the user wrote).
+    expect(lines).toEqual(['import sympy as sp', 'x = sp.Symbol("x")']);
+  });
+
+  it('an empty argument slot says so in plain words', () => {
+    for (const latex of ['x =', '\\frac{1}']) {
+      const { issues } = compile(latex);
+      expect(issues).toContain('empty slot — fill it in or delete it');
+    }
+  });
+
+  it('an unclosed \\begin names the missing \\end', () => {
+    const { issues } = compile('\\begin{pmatrix} a &');
+    expect(issues).toContain('unclosed \\begin{...}');
+  });
+
+  it('an unmatched paren is a stray delimiter', () => {
+    const { issues } = compile('\\sin(');
+    expect(issues).toContain('stray (');
+  });
+
+  it('\\int x^2 with no dx infers the single free symbol', () => {
+    const { lines, issues, ok } = compile('\\int x^2');
+    expect(ok).toBe(true);
+    expect(lines).toEqual([
+      'import sympy as sp',
+      'x = sp.Symbol("x")',
+      'sp.integrate(x**2, x)',
+    ]);
+    expect(issues).toContain('no differential — integrating w.r.t. x');
+  });
+
+  it('\\int_{a}^{b} x with no dx infers the variable too', () => {
+    const { lines, issues } = compile('\\int_{a}^{b} x');
+    expect(lines).toEqual([
+      'import sympy as sp',
+      "x, a, b = sp.symbols('x a b')",
+      'sp.integrate(x, (x, a, b))',
+    ]);
+    expect(issues).toContain('no differential — integrating w.r.t. x');
+  });
+
+  it('an ambiguous no-dx integral asks for a differential instead of emitting None', () => {
+    const { issues, ok } = compile('\\int_{a}^{b} x y');
+    expect(ok).toBe(false);
+    expect(issues).toContain("can't infer the integration variable");
+    expect(issues).toContain('dx');
+  });
+
+  it('a half-empty bound pair names the empty side', () => {
+    expect(compile('\\int_{a}^{ } x\\,dx').issues).toContain(
+      'upper bound is empty — fill it in or delete it',
+    );
+    expect(compile('\\int^{b} x\\,dx').issues).toContain(
+      'lower bound is empty — fill it in or delete it',
+    );
+  });
+
+  it('broken statements are skipped rather than emitted as sp.Error/None', () => {
+    const { lines } = compile('x +');
+    expect(lines.join('\n')).not.toContain('Error');
+    expect(lines.join('\n')).not.toContain('None');
+  });
 });
 
 describe('worksheet program', () => {

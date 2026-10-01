@@ -82,6 +82,16 @@ suite('autoOperatorNames', function () {
     assertLatex('int allows operatorname', '\\int_{\\sin}^{ }');
   });
 
+  test('\\iint grows bounds from typed _ and ^', function () {
+    mq.cmd('\\iint');
+    mq.typedText('_a');
+    mq.keystroke('Right');
+    mq.typedText('^b');
+    mq.keystroke('Right');
+    mq.typedText('xdx');
+    assertLatex('definite integral via _ and ^', '\\iint_{a}^{b}xdx');
+  });
+
   test('works in subscript after log, based on "except" option', function () {
     // log subscript without config option
     mq.config(subscriptConfig);

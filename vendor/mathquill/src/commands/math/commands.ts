@@ -884,6 +884,32 @@ LatexCmds['∫'] =
         MathCommand.prototype.createLeftOf.call(this, cursor);
       }
     };
+
+// Boundless integral signs for indefinite integrals: `\iint` and
+// `\antid` render a bare ∫ — neither carries blocks, so the integrand
+// types linearly (`\antid x dx`, `\iint f dx dy`) and `_`/`^` may still
+// grow an ordinary sibling SupSub for bounds. `\antid` is a MathCompile
+// insertion alias: the app maps it to `\int` at compile time; `\iint`
+// parses to Integrate in the compute engine on its own.
+const boundlessIntegral = (ctrlSeq: string, glyph: string, speak: string) => {
+  return () =>
+    new MQSymbol(
+      ctrlSeq,
+      h('span', { class: 'mq-int' }, [
+        h('big', {}, [h.text(glyph)])
+      ]) as HTMLElement,
+      undefined,
+      speak
+    );
+};
+
+LatexCmds['∬'] = LatexCmds.iint = boundlessIntegral(
+  '\\iint ',
+  U_INTEGRAL,
+  'indefinite integral'
+);
+LatexCmds.antid = boundlessIntegral('\\antid ', U_INTEGRAL, 'antiderivative');
+
 var Fraction =
   (LatexCmds.frac =
   LatexCmds.dfrac =

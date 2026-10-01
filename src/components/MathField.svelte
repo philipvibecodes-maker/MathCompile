@@ -21,6 +21,7 @@
       onChange: (latex) => appStore.setLatex(id, latex),
       onNewCell: () => appStore.addCell(id),
       onMoveOut: (dir) => appStore.moveOut(id, dir),
+      onDeleteOut: () => appStore.deleteFocused(),
       onFocus: () => appStore.noteFocus(id),
     });
     handle = h;

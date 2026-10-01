@@ -133,6 +133,11 @@ test('show code toggle reveals highlighted SymPy code under the result', async (
   await expect(
     page.locator('.calc-row .calc-math').first(),
   ).toContainText('x', { timeout: 90_000 });
+  // Wait for the real SymPy row — the nerdamer interim satisfies the
+  // text check while the engine boots but carries no `code` block.
+  const calcRows = page.locator('.calc-rows').first();
+  await expect(calcRows).toBeAttached({ timeout: 90_000 });
+  await expect(calcRows).not.toHaveClass(/pending/, { timeout: 90_000 });
   await expect(page.locator('.calc-code')).toHaveCount(0);
 
   const toggle = page.getByLabel('Show code');

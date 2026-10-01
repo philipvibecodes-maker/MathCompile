@@ -144,6 +144,11 @@ and empty blocks serialize as `{ }`.
   `detail.selecting`) come from MQ's `upOutOf`/`downOutOf`/`moveOutOf`/
   `selectOutOf`; `attachField` only hops cells on vertical edges and
   ignores selection extensions.
+- Backspace/Delete in a cell holding only a blank line (`''` or a lone
+  `\displaylines{ }` row) is intercepted in `attachField`'s
+  capture-phase keydown and deletes the cell via `deleteFocused()` —
+  MQ never sees the keypress. Ctrl/Cmd/Alt-modified deletes pass
+  through to MQ.
 - `<math-field>` carries `tabindex="-1"` and forwards host `focus` events
   into MQ's hidden textarea — plain `element.focus()`/`locator.focus()`
   work, and `document.activeElement` inside a field is the textarea
@@ -173,14 +178,24 @@ and empty blocks serialize as `{ }`.
   the field.
 - Serializations to pin in tests: empty blocks are `{ }` (with a space);
   `\int_{ }^{ }` writes sub before sup and lands the caret in the lower
-  bound; `x^2` serializes `x^{2}`; `\displaylines{x\\ y}` puts a space
-  after `\\` before binary operators like `+`.
+  bound (definite form); `\iint`/`\antid` are boundless leaves —
+  `iint`/`antid` insert just the sign (indefinite) with the caret at
+  baseline right of it, and typed `_`/`^` grow an ordinary SupSub
+  sibling (`\iint_{a}^{b}`), which autoSubscriptNumerals treats like
+  `x_1` (a lone `_{a}` is arrow-skippable at baseline, and Backspace
+  deletes a bound wholesale before descending); `\antid` is an
+  insertion alias — `src/compile/ir.ts` maps it to `\int` before
+  `ce.parse` (CE has no `\antid`); `x^2` serializes `x^{2}`;
+  `\displaylines{x\\ y}` puts a space after `\\` before binary
+  operators like `+`.
 
 ## Testing notes
 
 - `caretInfo` in `e2e/limits.spec.ts` reads `.mq-cursor` ancestors:
   `\int` uses `.mq-sub`/`.mq-sup`; `\sum` (over/under) uses
-  `.mq-from`/`.mq-to`; `.mq-large-operator`/`.mq-int` is the atom.
+  `.mq-from`/`.mq-to`; `.mq-large-operator`/`.mq-int` is the atom; on
+  boundless signs (`\iint`/`\antid`) the bounds are a sibling
+  `.mq-supsub` in the field, not children of the atom.
 - Focus assertions use `el.contains(document.activeElement)` (MQ's
   hidden textarea), not `activeElement === el`.
 - The palette stays mounted: assert `.palette` hidden via
