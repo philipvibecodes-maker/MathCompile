@@ -533,6 +533,36 @@ const FIXTURES: {
     latex: '\\underbrace{x+1}_{n}',
     expectedPython: ['x = sp.Symbol("x")', 'x + 1'],
   },
+  {
+    // \mathbb{...} number sets emit the S.* set objects, not bare
+    // symbol names that raise NameError at eval time.
+    latex: '\\mathbb{R}',
+    expectedPython: ['sp.S.Reals'],
+  },
+  {
+    // \in maps to sp.Contains only when the operand is provably a Set —
+    // a bare symbol S keeps the flagged Element(...) stub because
+    // sp.Contains raises TypeError on it.
+    latex: 'x \\in \\mathbb{R}',
+    expectedPython: ['x = sp.Symbol("x")', 'sp.Contains(x, sp.S.Reals)'],
+  },
+  {
+    latex: 'x \\in S',
+    expectedPython: [
+      "x, S = sp.symbols('x S')",
+      'Element = sp.Function("Element")',
+      'Element(x, S)',
+    ],
+    issues: ['unknown head "Element"'],
+  },
+  {
+    latex: '\\emptyset \\cup \\mathbb{Z}',
+    expectedPython: ['sp.Union(sp.EmptySet, sp.S.Integers)'],
+  },
+  {
+    latex: 'A^{\\dagger}',
+    expectedPython: ['A = sp.Symbol("A")', 'sp.Adjoint(A)'],
+  },
 ];
 
 describe('latexToStatementStrings', () => {

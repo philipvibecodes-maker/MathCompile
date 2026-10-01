@@ -122,12 +122,17 @@ const KNOWN_HEADS = new Set([
   'D', 'Derivative', 'Apply', 'Integrate', 'Sum', 'Product', 'Limit',
   'InverseFunction', 'EvaluateAt',
   // linear algebra
-  'Matrix', 'Determinant', 'Transpose', 'Inverse',
+  'Matrix', 'Determinant', 'Transpose', 'ConjugateTranspose', 'Inverse',
   // relations / logic / piecewise
   'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
   'NotLess', 'NotGreater', 'NotLessEqual', 'NotGreaterEqual', 'NotDivides',
   'Implies', 'Equivalent', 'IdenticallyEqual', 'Degrees',
   'Minimum', 'Maximum', 'Interval', 'Open',
+  // set operators — codegen emits real SymPy when operands are set-like,
+  // and the same flagged Function stub as before otherwise.
+  'Element', 'NotElement', 'Union', 'Intersection', 'SetMinus',
+  'Subset', 'SubsetEqual', 'Superset', 'SupersetEqual',
+  'NotSubset', 'NotSubsetNotEqual', 'NotSuperset', 'NotSupersetNotEqual',
   'And', 'Or', 'Not', 'Which', 'Piecewise',
   // statement-level IR
   'Assign', 'Def', 'Block', 'Function',

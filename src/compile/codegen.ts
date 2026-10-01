@@ -81,6 +81,13 @@ const CONSTANTS: Record<string, string> = {
   CatalansConstant: 'Catalan',
   GoldenRatio: 'GoldenRatio',
   EmptySet: 'EmptySet',
+  // \mathbb{...} number sets — CE symbol names -> the S.* set objects.
+  RealNumbers: 'S.Reals',
+  ComplexNumbers: 'S.Complexes',
+  RationalNumbers: 'S.Rationals',
+  Integers: 'S.Integers',
+  NonNegativeIntegers: 'S.Naturals0',
+  Primes: 'S.Primes',
   True: 'True',
   False: 'False',
 };
@@ -152,6 +159,17 @@ const SP_FUNC_MIN_ARGS: Record<string, number> = {
   Min: 1,
   Max: 1,
 };
+
+// Nodes that provably emit a SymPy Set — used to gate Element/Union/
+// Complement emission (those raise TypeError on plain Symbols).
+const SETISH_SYMBOLS = new Set([
+  'EmptySet', 'RealNumbers', 'ComplexNumbers', 'RationalNumbers',
+  'Integers', 'NonNegativeIntegers', 'Primes',
+]);
+const SETISH_HEADS = new Set([
+  'Interval', 'Set', 'FiniteSet', 'Union', 'Intersection', 'SetMinus',
+  'Complement', 'Subset', 'SubsetEqual', 'Superset', 'SupersetEqual',
+]);
 
 // CE head names that exist in SymPy under a different spelling —
 // `call` resolves these to `sp.<mapped>` rather than a declared
@@ -288,6 +306,27 @@ class Emitter {
     if (typeof node === 'object' && node !== null && 'num' in node)
       return String((node as { num: unknown }).num).startsWith('-');
     return false;
+  }
+
+  /** Is this node guaranteed to emit a SymPy Set? Gates Contains/Union/
+   * Complement emission — those raise TypeError on plain Symbols. */
+  private isSetish(n: MathJson | undefined): boolean {
+    if (isStr(n)) return SETISH_SYMBOLS.has(n);
+    if (!isArr(n)) return false;
+    // \{1,2\} arrives call-wrapped as ['call', 'Set', ...] since Set
+    // isn't a KNOWN_HEAD — check the callee name too.
+    if (isHead(n, 'call')) return isStr(n[1]) && SETISH_HEADS.has(n[1]);
+    return SETISH_HEADS.has(headOf(n) ?? '');
+  }
+
+  /** Emit a `call`-tier Function stub for a head we know but can't map —
+   * same flag + output shape normalizeIR's unknown-head path produces. */
+  private unknownCall(h: string, args: MathJson[]): [string, number] {
+    this.scope.flag('note', `unknown head "${h}" — emitted as ${h}(...)`);
+    return [
+      `${this.fn(h)}(${args.map((a) => this.emit(a)).join(', ')})`,
+      PREC_ATOM,
+    ];
   }
 
   /** Emit `node`, wrapping in parens when its precedence is below minPrec. */
@@ -491,6 +530,71 @@ class Emitter {
       case 'Open':
         // Open marks an interval endpoint — a stray one is meaningless.
         return [this.emit(args[0]), PREC_ATOM];
+      case 'Element': {
+        // x \in S — sp.Contains requires a real Set (a bare Symbol raises
+        // TypeError), so map only when the operand is provably set-like;
+        // otherwise keep the readable Element(...) stub + flag.
+        if (!this.isSetish(args[1])) return this.unknownCall(h, args);
+        return [
+          `${this.sp}Contains(${this.emit(args[0])}, ${this.emit(args[1])})`,
+          PREC_ATOM,
+        ];
+      }
+      case 'NotElement': {
+        if (!this.isSetish(args[1])) return this.unknownCall(h, args);
+        return [
+          `${this.sp}Not(${this.sp}Contains(${this.emit(args[0])}, ${this.emit(args[1])}))`,
+          PREC_ATOM,
+        ];
+      }
+      case 'Union':
+      case 'Intersection':
+      case 'SetMinus': {
+        // Same caveat as Element: Union/Intersection/Complement raise on
+        // non-Set operands, so plain symbols keep the flagged stub.
+        if (!args.every((a) => this.isSetish(a)))
+          return this.unknownCall(h, args);
+        const fn =
+          h === 'Union'
+            ? 'Union'
+            : h === 'Intersection'
+              ? 'Intersection'
+              : 'Complement';
+        return [
+          `${this.sp}${fn}(${args.map((a) => this.emit(a)).join(', ')})`,
+          PREC_ATOM,
+        ];
+      }
+      case 'Subset':
+      case 'SubsetEqual': {
+        if (!args.every((a) => this.isSetish(a)))
+          return this.unknownCall(h, args);
+        return [
+          `(${this.emit(args[0], PREC_ATOM)}).is_subset(${this.emit(args[1])})`,
+          PREC_ATOM,
+        ];
+      }
+      case 'Superset':
+      case 'SupersetEqual': {
+        if (!args.every((a) => this.isSetish(a)))
+          return this.unknownCall(h, args);
+        return [
+          `(${this.emit(args[1], PREC_ATOM)}).is_subset(${this.emit(args[0])})`,
+          PREC_ATOM,
+        ];
+      }
+      case 'NotSubset':
+      case 'NotSubsetNotEqual':
+      case 'NotSuperset':
+      case 'NotSupersetNotEqual': {
+        if (!args.every((a) => this.isSetish(a)))
+          return this.unknownCall(h, args);
+        const [l, r] = h.startsWith('NotSub') ? [0, 1] : [1, 0];
+        return [
+          `${this.sp}Not((${this.emit(args[l], PREC_ATOM)}).is_subset(${this.emit(args[r])}))`,
+          PREC_ATOM,
+        ];
+      }
       case 'And':
         return [`${this.sp}And(${args.map((a) => this.emit(a)).join(', ')})`, PREC_ATOM];
       case 'Or':
@@ -731,6 +835,9 @@ class Emitter {
         return isHead(args[0], 'Matrix')
           ? [`${this.emit(args[0], PREC_ATOM)}.T`, PREC_ATOM]
           : [`${this.sp}Transpose(${this.emit(args[0])})`, PREC_ATOM];
+      case 'ConjugateTranspose':
+        // A^{\dagger} — Adjoint evaluates on both matrices and scalars.
+        return [`${this.sp}Adjoint(${this.emit(args[0])})`, PREC_ATOM];
       case 'EvaluateAt': {
         // \left.f\right|_{lo}^{hi} -> f.subs(v, hi) - f.subs(v, lo).
         const body = args[0];
