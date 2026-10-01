@@ -46,21 +46,38 @@
   // pre-effect: hides the overlay before the render that a keystroke
   // triggers — a normal $effect runs post-render and the panel would
   // mount for a frame, fade out, then re-fade in after the debounce.
+  // Once shown it stays latched until the cell has no issues left.
   $effect.pre(() => {
     appStore.cells.forEach((c, i) => {
       if (prevLatex[c.id] === c.latex) return;
       prevLatex[c.id] = c.latex;
       clearTimeout(issueTimers[c.id]);
-      issuesVisible[c.id] = (compiled?.cellIssues[i]?.length ?? 0) === 0;
-      if (!issuesVisible[c.id]) {
+      const hasIssues = (compiled?.cellIssues[i]?.length ?? 0) > 0;
+      if (hasIssues && !issuesVisible[c.id]) {
         const id = c.id;
         issueTimers[id] = setTimeout(
           () => (issuesVisible[id] = true),
           debounceMs,
         );
+      } else if (!hasIssues) {
+        issuesVisible[c.id] = false;
       }
     });
   });
+
+  // codegen flags a whole dropped statement with this message; it's
+  // rendered as an error icon in the overlay instead of text. Multiple
+  // dropped statements collapse to one icon.
+  const UNPARSEABLE_MSG = 'unparseable input — statement skipped';
+  const shownIssues = (i: number) => {
+    let seenParse = false;
+    return (compiled?.cellIssues[i] ?? []).filter((iss) => {
+      if (iss.message !== UNPARSEABLE_MSG) return true;
+      if (seenParse) return false;
+      seenParse = true;
+      return true;
+    });
+  };
 
   let copiedId = $state<number | null>(null);
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
@@ -355,8 +372,15 @@
                     in:fade={{ duration: fadeInMs }}
                     out:fade={{ duration: fadeOutMs }}
                   >
-                    {#each compiled?.cellIssues[i] ?? [] as iss, j (j)}
-                      <li class="issue-{iss.severity}">{iss.message}</li>
+                    {#each shownIssues(i) as iss, j (j)}
+                      <li class="issue-{iss.severity}">
+                        {#if iss.message === UNPARSEABLE_MSG}
+                          <span
+                            class="parse-error-icon"
+                            title={UNPARSEABLE_MSG}>!</span
+                          >
+                        {:else}{iss.message}{/if}
+                      </li>
                     {/each}
                   </ul>
                 {/if}

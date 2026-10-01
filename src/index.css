@@ -255,9 +255,29 @@ body {
   cursor: default;
 }
 
+/* Error cue for a dropped statement (replaces an overlay text line). */
+.parse-error-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--accent-text);
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--accent-text);
+  cursor: default;
+  flex: 0 0 auto;
+}
+
 /* Generated code in the per-cell output column (target = python). */
 .cell-python {
   flex: 1;
+  /* Top-anchor so the import line never shifts when body lines mount
+     below it (align-items: center on the row would center a 1-line
+     block against the taller Copy button, moving it ~3px up). */
+  align-self: flex-start;
   min-width: 0;
   overflow-x: auto;
   white-space: pre-wrap;
