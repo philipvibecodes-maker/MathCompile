@@ -135,8 +135,9 @@ body {
   flex: 0 0 34%;
   margin-left: 6px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
   min-width: 0;
 }
 

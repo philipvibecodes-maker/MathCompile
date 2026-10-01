@@ -18,10 +18,14 @@
   const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent);
   let commands = $derived(buildCommands(appStore));
 
-  // Prototype knob: duration of every output fade (issue list, badge,
-  // per-line mounts/unmounts). Also exported as --fade-ms for CSS
-  // mount animations.
+  // Prototype knobs: fadeMs drives code-line mount/unmount fades (also
+  // exported as --fade-ms for CSS mount animations). debounceMs delays
+  // the issue overlay until the user stops typing (cursor moves don't
+  // reset it); fadeInMs/fadeOutMs are the overlay's transition times.
   let fadeMs = $state(150);
+  let debounceMs = $state(600);
+  let fadeInMs = $state(150);
+  let fadeOutMs = $state(150);
 
   // The latex target bypasses the compile pipeline (per-cell displayLatex);
   // every codegen target compiles the whole worksheet.
@@ -32,6 +36,28 @@
         })
       : null,
   );
+
+  // Re-arm a cell's issue debounce on every latex change. The overlay
+  // only mounts once typing has paused for debounceMs; if the input is
+  // error-free when the timer fires the issues>0 check keeps it hidden.
+  let issuesVisible = $state<Record<number, boolean>>({});
+  const issueTimers: Record<number, ReturnType<typeof setTimeout>> = {};
+  const prevLatex: Record<number, string> = {};
+  $effect(() => {
+    appStore.cells.forEach((c, i) => {
+      if (prevLatex[c.id] === c.latex) return;
+      prevLatex[c.id] = c.latex;
+      clearTimeout(issueTimers[c.id]);
+      issuesVisible[c.id] = (compiled?.cellIssues[i]?.length ?? 0) === 0;
+      if (!issuesVisible[c.id]) {
+        const id = c.id;
+        issueTimers[id] = setTimeout(
+          () => (issuesVisible[id] = true),
+          debounceMs,
+        );
+      }
+    });
+  });
 
   let copiedId = $state<number | null>(null);
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
@@ -237,7 +263,7 @@
               onclick={copyScript}
               >{copiedScript ? 'Copied' : 'Copy script'}</button
             >
-            <label class="fade-slider" title="Prototype: output fade duration">
+            <label class="fade-slider" title="Prototype: code-line fade duration">
               fade
               <input
                 type="range"
@@ -247,6 +273,39 @@
                 bind:value={fadeMs}
               />
               <span class="fade-ms">{fadeMs}ms</span>
+            </label>
+            <label class="fade-slider" title="Prototype: debounce before issues appear after typing stops">
+              debounce
+              <input
+                type="range"
+                min="0"
+                max="2000"
+                step="100"
+                bind:value={debounceMs}
+              />
+              <span class="fade-ms">{debounceMs}ms</span>
+            </label>
+            <label class="fade-slider" title="Prototype: issue overlay fade in">
+              in
+              <input
+                type="range"
+                min="0"
+                max="800"
+                step="50"
+                bind:value={fadeInMs}
+              />
+              <span class="fade-ms">{fadeInMs}ms</span>
+            </label>
+            <label class="fade-slider" title="Prototype: issue overlay fade out">
+              out
+              <input
+                type="range"
+                min="0"
+                max="800"
+                step="50"
+                bind:value={fadeOutMs}
+              />
+              <span class="fade-ms">{fadeOutMs}ms</span>
             </label>
           {/if}
         </div>
@@ -287,8 +346,12 @@
                     >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
                   >
                 </div>
-                {#if (compiled?.cellIssues[i]?.length ?? 0) > 0}
-                  <ul class="cell-issues" transition:fade={{ duration: fadeMs }}>
+                {#if (compiled?.cellIssues[i]?.length ?? 0) > 0 && issuesVisible[cell.id]}
+                  <ul
+                    class="cell-issues"
+                    in:fade={{ duration: fadeInMs }}
+                    out:fade={{ duration: fadeOutMs }}
+                  >
                     {#each compiled?.cellIssues[i] ?? [] as iss, j (j)}
                       <li class="issue-{iss.severity}">{iss.message}</li>
                     {/each}
