@@ -8,7 +8,7 @@
   import CommandPalette from './components/CommandPalette.svelte';
   import HowToGuide from './components/HowToGuide.svelte';
   import { appStore, THEME_STORAGE_KEY } from './state/store.svelte';
-  import { savePrefs } from './state/persistence';
+  import { loadPrefs, savePrefs } from './state/persistence';
   import { displayLatex, outputLatex } from './compile/latex';
   import { prewarm } from './calc/calculator.svelte.ts';
   import { buildCommands } from './commands';
@@ -18,14 +18,17 @@
   const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent);
   let commands = $derived(buildCommands(appStore));
 
-  // Prototype knobs: fadeMs drives code-line mount/unmount fades (also
-  // exported as --fade-ms for CSS mount animations). debounceMs delays
-  // the issue overlay until the user stops typing (cursor moves don't
-  // reset it); fadeInMs/fadeOutMs are the overlay's transition times.
-  let fadeMs = $state(150);
-  let debounceMs = $state(600);
-  let fadeInMs = $state(150);
-  let fadeOutMs = $state(150);
+  // Animation knobs (persisted prefs): fadeMs drives code-line
+  // mount/unmount fades (also exported as --fade-ms for CSS mount
+  // animations). debounceMs delays the issue overlay until the user
+  // stops typing (cursor moves don't reset it); fadeInMs/fadeOutMs are
+  // the overlay's transition times.
+  const animPrefs = loadPrefs();
+  let fadeMs = $state(animPrefs.fadeMs ?? 150);
+  let debounceMs = $state(animPrefs.debounceMs ?? 600);
+  let fadeInMs = $state(animPrefs.fadeInMs ?? 150);
+  let fadeOutMs = $state(animPrefs.fadeOutMs ?? 150);
+  let settingsOpen = $state(false);
 
   // The latex target bypasses the compile pipeline (per-cell displayLatex);
   // every codegen target compiles the whole worksheet.
@@ -65,6 +68,23 @@
     });
   });
 
+  // Freeze a cell's code lines while it has issues — the overlay
+  // explains the error, so churning (invalid) code underneath is just
+  // noise. The cache refreshes whenever the cell compiles clean.
+  let frozenLines = $state<Record<number, string[]>>({});
+  $effect.pre(() => {
+    appStore.cells.forEach((c, i) => {
+      if ((compiled?.cellIssues[i]?.length ?? 0) === 0) {
+        frozenLines[c.id] = compiled?.cellLines[i] ?? [];
+      }
+    });
+  });
+  const shownLines = (cell: { id: number }, i: number) => {
+    if ((compiled?.cellIssues[i]?.length ?? 0) === 0)
+      return compiled?.cellLines[i] ?? [];
+    return frozenLines[cell.id] ?? compiled?.cellLines[i] ?? [];
+  };
+
   // codegen flags a whole dropped statement with this message; it
   // renders as an error icon leading the first overlay line instead of
   // its own text entry.
@@ -88,7 +108,7 @@
   }
 
   function copyCode(cell: { id: number }, i: number) {
-    navigator.clipboard.writeText(compiled?.cellLines[i]?.join('\n') ?? '');
+    navigator.clipboard.writeText(shownLines(cell, i).join('\n'));
     copiedId = cell.id;
     clearTimeout(copiedTimer);
     copiedTimer = setTimeout(() => (copiedId = null), 1200);
@@ -132,6 +152,10 @@
       guideOpen: appStore.guideOpen,
       showCode: appStore.showCode,
       importAll: appStore.importAll,
+      fadeMs,
+      debounceMs,
+      fadeInMs,
+      fadeOutMs,
     }),
   );
 </script>
@@ -282,50 +306,70 @@
               onclick={copyScript}
               >{copiedScript ? 'Copied' : 'Copy script'}</button
             >
-            <label class="fade-slider" title="Prototype: code-line fade duration">
-              fade
-              <input
-                type="range"
-                min="0"
-                max="800"
-                step="50"
-                bind:value={fadeMs}
-              />
-              <span class="fade-ms">{fadeMs}ms</span>
-            </label>
-            <label class="fade-slider" title="Prototype: debounce before issues appear after typing stops">
-              debounce
-              <input
-                type="range"
-                min="0"
-                max="2000"
-                step="100"
-                bind:value={debounceMs}
-              />
-              <span class="fade-ms">{debounceMs}ms</span>
-            </label>
-            <label class="fade-slider" title="Prototype: issue overlay fade in">
-              in
-              <input
-                type="range"
-                min="0"
-                max="800"
-                step="50"
-                bind:value={fadeInMs}
-              />
-              <span class="fade-ms">{fadeInMs}ms</span>
-            </label>
-            <label class="fade-slider" title="Prototype: issue overlay fade out">
-              out
-              <input
-                type="range"
-                min="0"
-                max="800"
-                step="50"
-                bind:value={fadeOutMs}
-              />
-              <span class="fade-ms">{fadeOutMs}ms</span>
-            </label>
+            <button
+              class="settings-btn"
+              title="Settings"
+              onclick={() => (settingsOpen = !settingsOpen)}
+              >Settings</button
+            >
+            {#if settingsOpen}
+              <button
+                class="settings-backdrop"
+                aria-label="Close settings"
+                onclick={() => (settingsOpen = false)}
+              ></button>
+              <div class="settings-menu">
+                <div class="settings-tabs">
+                  <span class="settings-tab active">animations</span>
+                </div>
+                <div class="settings-body">
+                  <label class="fade-slider" title="Code-line fade duration">
+                    fade
+                    <input
+                      type="range"
+                      min="0"
+                      max="800"
+                      step="50"
+                      bind:value={fadeMs}
+                    />
+                    <span class="fade-ms">{fadeMs}ms</span>
+                  </label>
+                  <label class="fade-slider" title="Debounce before issues appear after typing stops">
+                    debounce
+                    <input
+                      type="range"
+                      min="0"
+                      max="2000"
+                      step="100"
+                      bind:value={debounceMs}
+                    />
+                    <span class="fade-ms">{debounceMs}ms</span>
+                  </label>
+                  <label class="fade-slider" title="Issue overlay fade in">
+                    in
+                    <input
+                      type="range"
+                      min="0"
+                      max="800"
+                      step="50"
+                      bind:value={fadeInMs}
+                    />
+                    <span class="fade-ms">{fadeInMs}ms</span>
+                  </label>
+                  <label class="fade-slider" title="Issue overlay fade out">
+                    out
+                    <input
+                      type="range"
+                      min="0"
+                      max="800"
+                      step="50"
+                      bind:value={fadeOutMs}
+                    />
+                    <span class="fade-ms">{fadeOutMs}ms</span>
+                  </label>
+                </div>
+              </div>
+            {/if}
           {/if}
         </div>
         <span class="col-delete"></span>
@@ -352,7 +396,7 @@
               <div class="cell-output cell-code">
                 <div class="cell-code-body">
                   <code class="cell-python"
-                    >{compiled?.importLine}{#each (compiled?.cellLines[i] ?? []).slice(1) as line, k (k)}<span
+                    >{compiled?.importLine}{#each shownLines(cell, i).slice(1) as line, k (k)}<span
                         class="cell-line"
                         transition:fade={{ duration: fadeMs }}>{'\n'}{line}</span
                       >{/each}</code
