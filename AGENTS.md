@@ -157,25 +157,23 @@ and empty blocks serialize as `{ }`.
   Shift+Space adds a column; arrows move cell-to-cell without leaving
   the field.
 - Serializations to pin in tests: empty blocks are `{ }` (with a space);
-  `\int_{ }^{ }` writes sub before sup and lands the caret in the lower
-  bound; `\iint`/`\antid` are boundless leaves — `iint`/`∬`/`antid`
-  insert just the sign (double or single integral glyph) with the caret
-  at baseline right of it, and typed `_`/`^` grow an ordinary SupSub
-  sibling (`\iint_{a}^{b}`), which autoSubscriptNumerals treats like
-  `x_1` (a lone `_{a}` is arrow-skippable at baseline, and Backspace
-  deletes a bound wholesale before descending); `\antid` is an
-  insertion alias — `src/compile/ir.ts` maps it to `\int` before
-  `ce.parse` (CE has no `\antid`); `x^2` serializes `x^{2}`;
-  `\displaylines{x\\ y}` puts a space after `\\` before binary
-  operators like `+`.
+  `\int`/`\iint`/`\antid` are boundless leaves — `int`/`∫`/`iint`/`∬`/`antid`
+  insert just the sign with the caret at baseline right of it, and typed
+  `_`/`^` grow an ordinary SupSub sibling (`\int_{a}^{b}`), which
+  autoSubscriptNumerals treats like `x_1` (a lone `_{a}` is
+  arrow-skippable at baseline, and Backspace deletes a bound wholesale
+  before descending); `\antid` is an insertion alias —
+  `src/compile/ir.ts` maps it to `\int` before `ce.parse` (CE has no
+  `\antid`); `x^2` serializes `x^{2}`; `\displaylines{x\\ y}` puts a
+  space after `\\` before binary operators like `+`.
 
 ## Testing notes
 
 - `caretInfo` in `e2e/limits.spec.ts` reads `.mq-cursor` ancestors:
   `\int` uses `.mq-sub`/`.mq-sup`; `\sum` (over/under) uses
   `.mq-from`/`.mq-to`; `.mq-large-operator`/`.mq-int` is the atom; on
-  boundless signs (`\iint`/`\antid`) the bounds are a sibling `.mq-supsub`
-  in the field, not children of the atom.
+  boundless signs (`\int`/`\iint`/`\antid`) the bounds are a sibling
+  `.mq-supsub` in the field, not children of the atom.
 - Focus assertions use `el.contains(document.activeElement)` (MQ's
   hidden textarea), not `activeElement === el`.
 - The palette stays mounted: assert `.palette` hidden via
