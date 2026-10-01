@@ -54,6 +54,14 @@ var latexMathParser = (function () {
       string('\\').then(
         regex(/^[a-z]+/i)
           .or(regex(/^\s+/).result(' '))
+          // `\{` `\}` `\_` `\#` `\|` (and `\,` `\;` `\:` `\!`) — keep
+          // the backslash in ctrlSeq so escaped characters don't
+          // collide with the bare characters' own meanings
+          .or(
+            regex(/^[,;:!{}_#|]/).map(function (c) {
+              return '\\' + c;
+            })
+          )
           .or(any)
       )
     )

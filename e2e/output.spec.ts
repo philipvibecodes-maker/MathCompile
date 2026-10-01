@@ -202,6 +202,22 @@ test('latex output shows \\antid and \\iint as \\int', async ({ page }) => {
   );
 });
 
+// Escaped delimiters and standalone angle/norm delimiters parse
+// (previously each wiped the whole field to a blank cell).
+test('latex output round-trips escaped delimiters and set literals', async ({
+  page,
+}) => {
+  const mf = cell(page, 0);
+  await mf.evaluate(
+    (el) =>
+      ((el as { value: string }).value =
+        '\\{x\\in\\mathbb{R}:\\lVert x\\rVert\\ge0\\}'),
+  );
+  await expect(page.locator('.cell-latex').first()).toHaveText(
+    '\\{x\\in\\mathbb{R}:\\lVert x\\rVert\\ge0\\}',
+  );
+});
+
 test('latex output shows multi-line cells as separate lines', async ({
   page,
 }) => {
