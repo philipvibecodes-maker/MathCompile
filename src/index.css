@@ -299,6 +299,19 @@ body {
   font-size: 11.5px;
 }
 
+/* Mount animation shared by every issue rendering (li items, code
+   comments, badges). List containers fade via Svelte transitions. */
+@keyframes issue-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+.cell-issues li {
+  animation: issue-in 0.18s ease-out;
+}
+
 .issue-error {
   color: var(--accent-text);
 }

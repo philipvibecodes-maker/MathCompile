@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { fade } from 'svelte/transition';
   import MathField from './components/MathField.svelte';
   import CalcOutput from './components/CalcOutput.svelte';
   import { TARGETS } from './compile/targets';
@@ -257,7 +258,8 @@
               <div class="cell-output cell-code">
                 <div class="cell-code-body">
                   <code class="cell-python"
-                    >{compiled?.cellLines[i]?.join('\n') ?? ''}</code
+                    >{compiled?.cellLines[i]?.join('\n') ||
+                      (compiled?.importLine ?? '')}</code
                   >
                   <button
                     class="cell-copy"
@@ -268,7 +270,7 @@
                   >
                 </div>
                 {#if (compiled?.cellIssues[i]?.length ?? 0) > 0}
-                  <ul class="cell-issues">
+                  <ul class="cell-issues" transition:fade={{ duration: 150 }}>
                     {#each compiled?.cellIssues[i] ?? [] as iss, j (j)}
                       <li class="issue-{iss.severity}">{iss.message}</li>
                     {/each}
