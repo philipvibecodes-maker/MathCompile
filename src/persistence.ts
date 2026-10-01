@@ -20,6 +20,7 @@ export interface Prefs {
   smartMode?: boolean;
   target?: TargetId;
   guideOpen?: boolean;
+  importAll?: boolean;
 }
 
 export function loadPrefs(): Prefs {
@@ -35,6 +36,8 @@ export function loadPrefs(): Prefs {
         ? (p.target as TargetId)
         : undefined,
       guideOpen: typeof p.guideOpen === 'boolean' ? p.guideOpen : undefined,
+      importAll:
+        typeof p.importAll === 'boolean' ? p.importAll : undefined,
     };
   } catch {
     return {};

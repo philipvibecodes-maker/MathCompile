@@ -109,13 +109,19 @@ describe('persistCells', () => {
 });
 
 describe('prefs', () => {
-  it('round-trips smartMode, target, and guideOpen', () => {
+  it('round-trips smartMode, target, guideOpen, and importAll', () => {
     stubStorage();
-    savePrefs({ smartMode: false, target: 'latex', guideOpen: false });
+    savePrefs({
+      smartMode: false,
+      target: 'latex',
+      guideOpen: false,
+      importAll: false,
+    });
     expect(loadPrefs()).toEqual({
       smartMode: false,
       target: 'latex',
       guideOpen: false,
+      importAll: false,
     });
   });
 
@@ -131,6 +137,7 @@ describe('prefs', () => {
       smartMode: undefined,
       target: undefined,
       guideOpen: undefined,
+      importAll: undefined,
     });
   });
 

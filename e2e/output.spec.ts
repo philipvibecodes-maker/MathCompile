@@ -22,8 +22,8 @@ test.beforeEach(async ({ page }) => {
   await clearFirstCell(page);
 });
 
-test('there is no output panel', async ({ page }) => {
-  await expect(page.locator('.output-panel')).toHaveCount(0);
+test('latex target hides the python import controls', async ({ page }) => {
+  await expect(page.locator('.output-import-all')).toHaveCount(0);
 });
 
 // Disabled <option>s can't be picked via selectOption; dispatch a change
@@ -48,7 +48,7 @@ test('output select sits above the output column', async ({ page }) => {
   await expect(colHead).toContainText('Output');
 });
 
-test('target select offers all codegen targets, non-latex disabled', async ({
+test('target select offers all codegen targets, python enabled', async ({
   page,
 }) => {
   await expect(page.locator('.target-select option')).toHaveText([
@@ -66,7 +66,7 @@ test('target select offers all codegen targets, non-latex disabled', async ({
     );
   expect(disabled).toEqual([
     ['latex', false],
-    ['python', true],
+    ['python', false],
     ['javascript', true],
     ['glsl', true],
     ['c', true],
@@ -115,9 +115,67 @@ test('latex target shows per-cell output with a copy button', async ({
   await expect(copy).toHaveText('Copied');
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('x+1');
 
-  // Other targets hide the per-cell output.
+  // The python target swaps the per-cell output for generated code
+  // (symbol defs included — x is defined in this cell).
   await setTarget(page, 'python');
-  await expect(page.locator('.cell-output')).toHaveCount(0);
+  await expect(page.locator('.cell-latex')).toHaveCount(0);
+  await expect(page.locator('.cell-python').first()).toContainText('x + 1');
+});
+
+test('python target shows standalone per-cell scripts', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await cell(page, 0).click();
+  await cell(page, 0).pressSequentially('a=x+1', { delay: 40 });
+  await setTarget(page, 'python');
+
+  // Each cell's output is a standalone script: the import line, then the
+  // Symbol definition for names the cell uses, then the statement. The
+  // default `from sympy import *` mode emits unqualified names.
+  const first = page.locator('.cell-python').first();
+  await expect(first).toContainText('from sympy import *');
+  await expect(first).toContainText('x = Symbol("x")');
+  await expect(first).toContainText('a = x + 1');
+
+  // The head Copy script button copies the whole worksheet as one
+  // script — the import once, then each cell's body.
+  await page.locator('.col-output-head .cell-copy').click();
+  const script = await page.evaluate(() => navigator.clipboard.readText());
+  expect(script).toBe(
+    'from sympy import *\n\n# cell 1\nx = Symbol("x")\na = x + 1',
+  );
+
+  // Switching back to latex removes the code output and the controls.
+  await setTarget(page, 'latex');
+  await expect(page.locator('.cell-python')).toHaveCount(0);
+  await expect(page.locator('.output-import-all')).toHaveCount(0);
+});
+
+test('import-all checkbox switches between import * and sp. qualifiers', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await cell(page, 0).click();
+  await cell(page, 0).pressSequentially('a=x+1', { delay: 40 });
+  await setTarget(page, 'python');
+
+  const toggle = page.locator('.output-import-all input');
+  const first = page.locator('.cell-python').first();
+
+  // Default: checked — each cell's script starts with `from sympy import *`
+  // and emits unqualified names.
+  await expect(toggle).toBeChecked();
+  await expect(first).toContainText('from sympy import *');
+  await expect(first).toContainText('x = Symbol("x")');
+
+  // Unchecked: `import sympy as sp` and sp.-qualified output.
+  await toggle.click();
+  await expect(toggle).not.toBeChecked();
+  await expect(first).toContainText('import sympy as sp');
+  await expect(first).toContainText('x = sp.Symbol("x")');
 });
 
 test('latex output shows multi-line cells as separate lines', async ({
