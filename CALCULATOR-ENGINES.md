@@ -70,6 +70,9 @@ SymPy emitter) now does the input→SymPy translation in TypeScript, so:
   The letter is the first capital not used by the cell or worksheet —
   `C`, else `D`, `E`, …; each boundless `Integrate` takes the next free
   one. The nerdamer interim matches (`integrate(f, v) + C`).
+- After `simplify()`, `_mc_order` rewrites each `Add` (and `Eq` sides)
+  with terms in decreasing degree, constants of integration last — so a
+  result displays `x^2/2 + x + C`, not SymPy's canonical `C + x^2/2`.
 
 ## Pyodide/SymPy — what it costs
 

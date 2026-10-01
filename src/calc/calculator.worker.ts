@@ -58,6 +58,27 @@ def _mc_eval_stmt(stmt, ns):
     exec(stmt['code'], ns)
     return eval(disp, ns)
 
+def _mc_deg(term, gens):
+    # Bare capital letters are constants of integration — they go last.
+    if term.is_Symbol and len(term.name) == 1 and term.name.isupper():
+        return -1
+    if getattr(term, 'is_number', False):
+        return 0
+    try:
+        return int(sp.Poly(term, *gens).total_degree())
+    except Exception:
+        return 0
+
+def _mc_order(val):
+    # Write sums with terms in decreasing degree (constants last).
+    if val.is_Add:
+        gens = sorted(val.free_symbols, key=lambda s: s.name)
+        terms = sorted(val.args, key=lambda t: -_mc_deg(t, gens))
+        return sp.Add(*terms, evaluate=False)
+    if val.is_Relational:
+        return val.func(*[_mc_order(a) for a in val.args])
+    return val
+
 def _mc_row(val):
     try:
         val = val.doit()
@@ -68,19 +89,23 @@ def _mc_row(val):
     except Exception:
         pass
     try:
-        out = {'latex': sp.latex(val)}
+        val = _mc_order(val)
     except Exception:
-        out = {'text': sp.sstr(val)}
+        pass
+    try:
+        out = {'latex': sp.latex(val, order='none')}
+    except Exception:
+        out = {'text': sp.sstr(val, order='none')}
     try:
         if getattr(val, 'is_number', False) and not val.is_Integer:
             out['approx'] = str(sp.N(val, 12))
     except Exception:
         pass
     try:
-        out['code'] = _pycode(val)
+        out['code'] = _pycode(val, order='none')
     except Exception:
         try:
-            out['code'] = sp.sstr(val)
+            out['code'] = sp.sstr(val, order='none')
         except Exception:
             pass
     return out

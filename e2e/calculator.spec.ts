@@ -68,7 +68,7 @@ test('calculator evaluates each statement row of a multi-line cell', async ({
   await expect(rows.nth(1)).toContainText('5');
 });
 
-test('indefinite integral shows the constant of integration', async ({
+test('indefinite integral shows the constant of integration last', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -79,14 +79,16 @@ test('indefinite integral shows the constant of integration', async ({
   // \antid is the boundless (indefinite) integral sign.
   await mf.pressSequentially('\\antid', { delay: 40 });
   await page.keyboard.press('Enter');
-  await mf.pressSequentially('xdx', { delay: 40 });
+  await mf.pressSequentially('x+1dx', { delay: 40 });
 
   const rows = page.locator('.calc-rows').first();
   await expect(rows).toBeAttached({ timeout: 90_000 });
   await expect(rows).not.toHaveClass(/pending/, { timeout: 90_000 });
   const row = page.locator('.calc-row').first();
-  await expect(row).toContainText('x');
-  await expect(row).toContainText('C');
+  // x**2/2 + x + C — decreasing degree, the constant written last.
+  const text = (await row.textContent()) ?? '';
+  expect(text.replace(/\s/g, '')).toMatch(/x.*x.*C$/);
+  expect(text.trim().endsWith('C')).toBe(true);
 });
 
 test('calculator shows an instant nerdamer result while SymPy boots', async ({
