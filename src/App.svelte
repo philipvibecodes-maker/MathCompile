@@ -264,13 +264,13 @@
                     >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
                   >
                 </div>
-                {#if (compiled?.cellIssues[i]?.length ?? 0) > 0}
-                  <ul class="cell-issues" transition:fade={{ duration: fadeMs }}>
-                    {#each compiled?.cellIssues[i] ?? [] as iss, j (j)}
-                      <li class="issue-{iss.severity}">{iss.message}</li>
-                    {/each}
-                  </ul>
-                {/if}
+                <ul class="cell-issues">
+                  {#each compiled?.cellIssues[i] ?? [] as iss, j (j)}
+                    <li class="issue-{iss.severity}" transition:fade={{ duration: fadeMs }}>{iss.message}</li>
+                  {:else}
+                    <li class="issue-none" transition:fade={{ duration: fadeMs }}>·</li>
+                  {/each}
+                </ul>
               </div>
             {/if}
             <button

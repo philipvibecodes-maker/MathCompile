@@ -291,12 +291,22 @@ body {
   min-width: 0;
 }
 
+/* The issue slot is always rendered — one reserved line when clean
+   (a faint '·'), so error text popping in/out never changes row height.
+   Longer lists cap at ~3 lines and scroll. */
 .cell-issues {
   margin: 4px 0 0;
   padding: 0;
   list-style: none;
   font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
   font-size: 11.5px;
+  min-height: 1.4em;
+  max-height: 4.4em;
+  overflow-y: auto;
+}
+
+.issue-none {
+  color: var(--faint);
 }
 
 /* Mount animation shared by every issue rendering (li items, code
