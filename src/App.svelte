@@ -43,7 +43,10 @@
   let issuesVisible = $state<Record<number, boolean>>({});
   const issueTimers: Record<number, ReturnType<typeof setTimeout>> = {};
   const prevLatex: Record<number, string> = {};
-  $effect(() => {
+  // pre-effect: hides the overlay before the render that a keystroke
+  // triggers — a normal $effect runs post-render and the panel would
+  // mount for a frame, fade out, then re-fade in after the debounce.
+  $effect.pre(() => {
     appStore.cells.forEach((c, i) => {
       if (prevLatex[c.id] === c.latex) return;
       prevLatex[c.id] = c.latex;
