@@ -21,6 +21,7 @@ export interface Prefs {
   target?: TargetId;
   guideOpen?: boolean;
   showCode?: boolean;
+  importAll?: boolean;
 }
 
 export function loadPrefs(): Prefs {
@@ -37,6 +38,8 @@ export function loadPrefs(): Prefs {
         : undefined,
       guideOpen: typeof p.guideOpen === 'boolean' ? p.guideOpen : undefined,
       showCode: typeof p.showCode === 'boolean' ? p.showCode : undefined,
+      importAll:
+        typeof p.importAll === 'boolean' ? p.importAll : undefined,
     };
   } catch {
     return {};

@@ -92,8 +92,9 @@ test('clicking the backdrop closes the palette', async ({ page }) => {
 
 test('empty query lists every command', async ({ page }) => {
   await page.keyboard.press('Control+k');
-  // 6 fixed commands + 2 enabled targets + 1 goto per cell (one cell here).
-  await expect(page.locator('.cmd-item')).toHaveCount(9);
+  // 6 fixed commands + 3 enabled targets + 1 goto per cell (single cell
+  // here).
+  await expect(page.locator('.cmd-item')).toHaveCount(10);
 });
 
 test('a query matching nothing shows the empty state', async ({ page }) => {
@@ -124,16 +125,14 @@ test('arrow keys move the selection and Enter runs the highlighted command', asy
   await page.keyboard.press('Control+k');
   await page.locator('.palette-input').pressSequentially('target');
   // 'target' scores identically per command; the shorter-text tiebreak
-  // puts LaTeX before Calculator (only enabled targets get commands).
+  // wins, so the (enabled-targets-only) order is LaTeX, Python, Calculator.
   const titles = page.locator('.cmd-item .cmd-title');
   await expect(titles.first()).toHaveText('Target: LaTeX');
   await page.keyboard.press('ArrowDown');
   await expect(page.locator('.cmd-item').nth(1)).toHaveClass(/selected/);
-  await expect(titles.nth(1)).toHaveText('Target: Calculator');
+  await expect(titles.nth(1)).toHaveText('Target: Python');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.target-select select')).toHaveValue(
-    'calculator',
-  );
+  await expect(page.locator('.target-select select')).toHaveValue('python');
 });
 
 test('hovering selects an item and clicking runs it', async ({ page }) => {

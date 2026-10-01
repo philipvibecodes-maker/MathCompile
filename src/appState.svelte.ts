@@ -1,5 +1,6 @@
 import type { FieldHandle } from './editor/math-field';
 import type { TargetId } from './targets';
+import { parseCellLatex, type MathJson } from './ir';
 import {
   installFlushOnHide,
   loadCells,
@@ -10,12 +11,19 @@ import {
 export interface Cell {
   id: number;
   latex: string;
+  // Parsed MathJSON for the compile pipeline; undefined while unparseable
+  // or empty. Kept in sync by setLatex/createCell.
+  json?: MathJson;
 }
 
 export type Edge = 'start' | 'end';
 
 let nextId = 1;
-const createCell = (latex = ''): Cell => ({ id: nextId++, latex });
+const createCell = (latex = ''): Cell => ({
+  id: nextId++,
+  latex,
+  json: parseCellLatex(latex),
+});
 
 const SEED_LATEX = '2^n = \\sum_{i=0}^n\\binom{i}{n}';
 
@@ -25,7 +33,8 @@ function initCells(): Cell[] {
   const saved = loadCells();
   if (!saved) return [createCell(SEED_LATEX)];
   nextId = saved.maxId + 1;
-  return saved.cells;
+  // Persisted cells carry no json — recompute it on hydrate.
+  return saved.cells.map((c) => ({ ...c, json: parseCellLatex(c.latex) }));
 }
 
 export const THEME_STORAGE_KEY = 'mathcompile-theme';
@@ -52,6 +61,9 @@ export class AppStore {
   smartMode = $state(loadPrefs().smartMode ?? true);
   showCode = $state(loadPrefs().showCode ?? false);
   guideOpen = $state(loadPrefs().guideOpen ?? true);
+  // Python output mode: `from sympy import *` (default, bare names) vs
+  // `import sympy as sp` (sp.-qualified).
+  importAll = $state(loadPrefs().importAll ?? true);
   paletteOpen = $state(false);
   darkMode = $state(initDarkMode());
 
@@ -100,6 +112,7 @@ export class AppStore {
     // object would remount the field and lose the caret every keystroke.
     if (c) {
       c.latex = latex;
+      c.json = parseCellLatex(latex);
       this.persist();
     }
   }

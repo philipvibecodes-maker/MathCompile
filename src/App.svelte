@@ -12,9 +12,20 @@
   import { prewarm } from './calculator.svelte.ts';
   import { buildCommands } from './commands.ts';
   import { installGlobalKeymap } from './editor/keymap';
+  import { compileWorksheet } from './codegen.ts';
 
   const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent);
   let commands = $derived(buildCommands(appStore));
+
+  // The latex target bypasses the compile pipeline (per-cell displayLatex);
+  // every codegen target compiles the whole worksheet.
+  let compiled = $derived(
+    appStore.target === 'python'
+      ? compileWorksheet(appStore.cells, appStore.target, {
+          importAll: appStore.importAll,
+        })
+      : null,
+  );
 
   let copiedId = $state<number | null>(null);
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
@@ -23,6 +34,20 @@
     copiedId = cell.id;
     clearTimeout(copiedTimer);
     copiedTimer = setTimeout(() => (copiedId = null), 1200);
+  }
+
+  function copyCode(cell: { id: number }, i: number) {
+    navigator.clipboard.writeText(compiled?.cellLines[i]?.join('\n') ?? '');
+    copiedId = cell.id;
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (copiedId = null), 1200);
+  }
+
+  let copiedScript = $state(false);
+  function copyScript() {
+    navigator.clipboard.writeText(compiled?.program ?? '');
+    copiedScript = true;
+    setTimeout(() => (copiedScript = false), 1200);
   }
 
   // Capture phase so Ctrl+K is seen even inside a <math-field>, which may
@@ -55,6 +80,7 @@
       target: appStore.target,
       guideOpen: appStore.guideOpen,
       showCode: appStore.showCode,
+      importAll: appStore.importAll,
     }),
   );
 </script>
@@ -188,6 +214,24 @@
               {/each}
             </select>
           </label>
+          {#if compiled && appStore.target === 'python'}
+            <label class="option-checkbox output-import-all">
+              <input
+                type="checkbox"
+                checked={appStore.importAll}
+                onchange={(e) =>
+                  (appStore.importAll = e.currentTarget.checked)}
+              />
+              import *
+            </label>
+            <button
+              class="cell-copy"
+              title="Copy the entire output as one script"
+              disabled={compiled.program.trim() === ''}
+              onclick={copyScript}
+              >{copiedScript ? 'Copied' : 'Copy script'}</button
+            >
+          {/if}
         </div>
         <span class="col-delete"></span>
       </div>
@@ -209,6 +253,28 @@
               </div>
             {:else if appStore.target === 'calculator'}
               <CalcOutput {cell} />
+            {:else if appStore.target === 'python'}
+              <div class="cell-output cell-code">
+                <div class="cell-code-body">
+                  <code class="cell-python"
+                    >{compiled?.cellLines[i]?.join('\n') ?? ''}</code
+                  >
+                  <button
+                    class="cell-copy"
+                    title="Copy code"
+                    disabled={!compiled?.cellLines[i]?.length}
+                    onclick={() => copyCode(cell, i)}
+                    >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
+                  >
+                </div>
+                {#if (compiled?.cellIssues[i]?.length ?? 0) > 0}
+                  <ul class="cell-issues">
+                    {#each compiled?.cellIssues[i] ?? [] as iss, j (j)}
+                      <li class="issue-{iss.severity}">{iss.message}</li>
+                    {/each}
+                  </ul>
+                {/if}
+              </div>
             {/if}
             <button
               class="expr-delete"
