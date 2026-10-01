@@ -43,7 +43,6 @@ src/
     MathField.svelte    <math-field> bind:this -> attachField; registers
                         its handle in the store on mount
     CommandPalette.svelte  always mounted, .open class toggles visibility
-    OutputPanel.svelte    pure render of store state
 ```
 
 - All MathQuill contact lives in `src/editor/` — components only see the

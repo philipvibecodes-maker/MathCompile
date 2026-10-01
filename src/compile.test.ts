@@ -3,10 +3,9 @@ import { parseCellLatex, normalizeIR, latexToStatementStrings } from './ir';
 import { compileWorksheet } from './codegen';
 
 // Fixture triples per the IR spec: latex -> normalized IR -> generated
-// SymPy. `expectedPython` is the *cell's* full statement lines in the
-// `import sympy as sp` (qualified) mode, including the `= sp.Symbol`/
-// `sp.Function` definitions for names first needed in that cell — a
-// symbol is defined in the cell that defines it. The default
+// SymPy. `expectedPython` is the *cell's* def + statement lines in the
+// `import sympy as sp` (qualified) mode — the emitted cellLines prepend
+// the import line (cells are standalone scripts). The default
 // `from sympy import *` mode emits the same lines without `sp.` — see
 // the importAll describe block.
 const FIXTURES: {
@@ -302,7 +301,10 @@ describe('SymPy codegen fixtures', () => {
       const out = compileWorksheet([{ json }], 'python', {
         importAll: false,
       });
-      expect(out.cellLines[0]).toEqual(fx.expectedPython);
+      expect(out.cellLines[0]).toEqual([
+        'import sympy as sp',
+        ...fx.expectedPython,
+      ]);
       for (const frag of fx.issues ?? [])
         expect(
           out.issues.some((i) => i.message.includes(frag)),
@@ -312,7 +314,7 @@ describe('SymPy codegen fixtures', () => {
 });
 
 describe('worksheet program', () => {
-  it('emits import + per-cell definitions + one statement per cell', () => {
+  it('cells are independent scripts; the program joins their bodies', () => {
     const cells = [
       { json: parseCellLatex('a = x + 1') },
       { json: parseCellLatex('a * y') },
@@ -328,27 +330,34 @@ describe('worksheet program', () => {
         'a = x + 1',
         '',
         '# cell 2',
-        'y = sp.Symbol("y")',
+        "a, y = sp.symbols('a y')",
         'a * y',
         '',
         '# cell 3',
         'b = 5',
       ].join('\n'),
     );
-    // `a` is bound by the cell-1 Assign before cell 2 uses it — so it never
-    // gets a Symbol def, and `b` is only ever an Assign target.
-    expect(out.program).not.toContain('a = sp.Symbol');
-    expect(out.program).not.toContain('b = sp.Symbol');
+    // Cells are independent: cell 2 defines `a` itself even though cell 1
+    // assigned it. Per-cell output includes its own import line.
+    expect(out.cellLines[1]).toEqual([
+      'import sympy as sp',
+      "a, y = sp.symbols('a y')",
+      'a * y',
+    ]);
   });
 
-  it('a name used before its Assign gets a Symbol def in the using cell', () => {
+  it('a cell using a name defines it even when another cell assigns it', () => {
     const cells = [
       { json: parseCellLatex('a + 1') },
       { json: parseCellLatex('a = 2') },
     ];
     const out = compileWorksheet(cells, 'python', { importAll: false });
-    expect(out.cellLines[0]).toEqual(['a = sp.Symbol("a")', 'a + 1']);
-    expect(out.cellLines[1]).toEqual(['a = 2']);
+    expect(out.cellLines[0]).toEqual([
+      'import sympy as sp',
+      'a = sp.Symbol("a")',
+      'a + 1',
+    ]);
+    expect(out.cellLines[1]).toEqual(['import sympy as sp', 'a = 2']);
   });
 
   it('non-identifier symbol names get sp.Symbol lines', () => {
@@ -374,21 +383,14 @@ describe('worksheet program', () => {
       { json: parseCellLatex('f(3)') },
     ];
     const out = compileWorksheet(cells, 'python', { importAll: false });
-    // f is bound by the def in cell 1 — the cell-2 call needs no defs.
-    expect(out.cellLines[1]).toEqual(['f(3)']);
+    // Standalone cell 2 declares f with an sp.Function def, then calls it.
+    expect(out.cellLines[1]).toEqual([
+      'import sympy as sp',
+      'f = sp.Function("f")',
+      'f(3)',
+    ]);
     expect(out.program).toContain('f(3)');
     expect(out.program).not.toContain('sp.f(3)');
-    expect(out.program).not.toContain('sp.Function');
-  });
-
-  it('a call before its Def gets an sp.Function def in the calling cell', () => {
-    const cells = [
-      { json: parseCellLatex('f(3)') },
-      { json: parseCellLatex('f(x) = x^2') },
-    ];
-    const out = compileWorksheet(cells, 'python', { importAll: false });
-    expect(out.cellLines[0]).toEqual(['f = sp.Function("f")', 'f(3)']);
-    expect(out.cellLines[1]).toEqual(['def f(x):', '    return x**2']);
   });
 
   it('the seed cell compiles to an equation', () => {
@@ -410,6 +412,13 @@ describe('from sympy import * (default)', () => {
     ];
     const out = compileWorksheet(cells, 'python');
     expect(out.importLine).toBe('from sympy import *');
+    // Each cell is standalone: cell 2 re-defines x even though cell 1
+    // used it too.
+    expect(out.cellLines[1]).toEqual([
+      'from sympy import *',
+      'x = Symbol("x")',
+      'integrate(x, (x, 0, 1))',
+    ]);
     expect(out.program).toBe(
       [
         'from sympy import *',
@@ -419,6 +428,7 @@ describe('from sympy import * (default)', () => {
         'a = x + 1',
         '',
         '# cell 2',
+        'x = Symbol("x")',
         'integrate(x, (x, 0, 1))',
       ].join('\n'),
     );

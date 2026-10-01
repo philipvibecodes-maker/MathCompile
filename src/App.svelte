@@ -5,7 +5,6 @@
   import type { TargetId } from './targets';
   import CommandPalette from './components/CommandPalette.svelte';
   import HowToGuide from './components/HowToGuide.svelte';
-  import OutputPanel from './components/OutputPanel.svelte';
   import { appStore, THEME_STORAGE_KEY } from './appState.svelte.ts';
   import { savePrefs } from './persistence';
   import { displayLatex, outputLatex } from './latex';
@@ -40,6 +39,20 @@
     copiedId = cell.id;
     clearTimeout(copiedTimer);
     copiedTimer = setTimeout(() => (copiedId = null), 1200);
+  }
+
+  let copiedImport = $state(false);
+  function copyImport() {
+    navigator.clipboard.writeText(compiled?.importLine ?? '');
+    copiedImport = true;
+    setTimeout(() => (copiedImport = false), 1200);
+  }
+
+  let copiedScript = $state(false);
+  function copyScript() {
+    navigator.clipboard.writeText(compiled?.program ?? '');
+    copiedScript = true;
+    setTimeout(() => (copiedScript = false), 1200);
   }
 
   // Capture phase so Ctrl+K is seen even inside a <math-field>, which may
@@ -187,6 +200,31 @@
               {/each}
             </select>
           </label>
+          {#if compiled && appStore.target === 'python'}
+            <label class="option-checkbox output-import-all">
+              <input
+                type="checkbox"
+                checked={appStore.importAll}
+                onchange={(e) =>
+                  (appStore.importAll = e.currentTarget.checked)}
+              />
+              import *
+            </label>
+            <button
+              type="button"
+              class="output-import"
+              title="Copy import line"
+              onclick={copyImport}
+              >{copiedImport ? 'Copied' : compiled.importLine}</button
+            >
+            <button
+              class="cell-copy"
+              title="Copy the entire output as one script"
+              disabled={compiled.program.trim() === ''}
+              onclick={copyScript}
+              >{copiedScript ? 'Copied' : 'Copy script'}</button
+            >
+          {/if}
         </div>
         <span class="col-delete"></span>
       </div>
@@ -208,16 +246,25 @@
               </div>
             {:else if appStore.target === 'python'}
               <div class="cell-output cell-code">
-                <code class="cell-python"
-                  >{compiled?.cellLines[i]?.join('\n') ?? ''}</code
-                >
-                <button
-                  class="cell-copy"
-                  title="Copy code"
-                  disabled={!compiled?.cellLines[i]?.length}
-                  onclick={() => copyCode(cell, i)}
-                  >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
-                >
+                <div class="cell-code-body">
+                  <code class="cell-python"
+                    >{compiled?.cellLines[i]?.join('\n') ?? ''}</code
+                  >
+                  <button
+                    class="cell-copy"
+                    title="Copy code"
+                    disabled={!compiled?.cellLines[i]?.length}
+                    onclick={() => copyCode(cell, i)}
+                    >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
+                  >
+                </div>
+                {#if (compiled?.cellIssues[i]?.length ?? 0) > 0}
+                  <ul class="cell-issues">
+                    {#each compiled?.cellIssues[i] ?? [] as iss, j (j)}
+                      <li class="issue-{iss.severity}">{iss.message}</li>
+                    {/each}
+                  </ul>
+                {/if}
               </div>
             {/if}
             <button
@@ -232,15 +279,6 @@
       <button class="add-expr" onclick={() => appStore.addCell()}>
         + Add expression
       </button>
-      {#if compiled}
-        <OutputPanel
-          result={compiled}
-          cells={appStore.cells}
-          label="Python (SymPy)"
-          importAll={appStore.importAll}
-          onToggleImportAll={(v) => (appStore.importAll = v)}
-        />
-      {/if}
       <HowToGuide />
     </section>
   </div>

@@ -1,12 +1,14 @@
 // Normalized IR -> target codegen.
 //
-// The `python` target emits executable SymPy: `from sympy import *`
-// (default; `import sympy as sp` + `sp.` qualifiers when `importAll` is
-// off), then one statement per cell — Assign/Def thread state across
-// cells, and each cell emits `x = Symbol('x')`/`f = Function('f')` def
-// lines for the names first bound there. Any head the mapping table
-// doesn't cover falls through to the escape hatch `<head>(args)` so users
-// are never blocked by vocabulary gaps.
+// The `python` target emits executable SymPy. Cells are compiled
+// independently: each cell's output is a standalone script — the import
+// line (`from sympy import *` by default, or `import sympy as sp` with
+// `sp.` qualifiers when `importAll` is off), `x = Symbol('x')`/
+// `f = Function('f')` def lines for every free name the cell uses, then
+// its statements. `program` joins all cell bodies under one import for
+// the copy-everything button. Any head the mapping table doesn't cover
+// falls through to the escape hatch `<head>(args)` so users are never
+// blocked by vocabulary gaps.
 //
 // Statement-level heads (Assign, Def, Block, Solve, Piecewise/Which) are
 // Python-only: for the javascript/glsl/c targets the compiler returns an
@@ -22,14 +24,18 @@ export interface CellInput {
 
 export interface CompileResult {
   ok: boolean;
-  /** Full worksheet program — imports + symbols preamble + per-cell code. */
+  /** The whole worksheet as one script — the import line once, then
+   * each cell's body (defs + statements) under a `# cell N` comment. */
   program: string;
   /** The program's import statement — `from sympy import *` (default) or
    * `import sympy as sp` when `importAll` is off. */
   importLine: string;
-  /** Emitted statement lines per cell (parallel to the input cells). */
+  /** Standalone script lines per cell — the import line, then that
+   * cell's def + statement lines (parallel to the input cells). */
   cellLines: string[][];
-  /** Normalized IR per cell — the OutputPanel debug view renders this. */
+  /** Normalization + codegen issues per cell (parallel to the inputs). */
+  cellIssues: Issue[][];
+  /** Normalized IR per cell. */
   normalized: NormResult[];
   issues: Issue[];
 }
@@ -123,6 +129,8 @@ interface Scope {
   /** Names used as functions (f'(x), Apply callees) -> sp.Function lines. */
   functions: Map<string, string>;
   issues: Issue[];
+  /** Unprefixed issues bucketed per cell (parallel to the inputs). */
+  cellIssues: Issue[][];
   /** 1-based cell label for codegen-time issues; 0 = program level. */
   cell: number;
   flag(severity: Issue['severity'], message: string): void;
@@ -528,11 +536,11 @@ function unwrapLambda(node: MathJson): { body: MathJson; params: string[] } {
   return { body: node, params: [] };
 }
 
-// Emit one normalized cell IR as python statement lines. Names first
-// needed in this cell get their definition line at the top of the cell
-// (`a = Symbol("a")` / `f = Function("f")`, `sp.`-qualified when the
-// `import sympy as sp` mode is selected) — a symbol is defined in the
-// cell that defines it, so program order stays truthful.
+// Emit one normalized cell IR as python statement lines. Cells are
+// independent: the scope's defined/symbols/functions sets are fresh per
+// cell, so every free name the cell uses gets its def line at the top of
+// the cell (`a = Symbol("a")` / `f = Function("f")`, `sp.`-qualified when
+// `import sympy as sp` mode is selected).
 function cellStatements(ir: MathJson | undefined, scope: Scope): string[] {
   if (ir === undefined) return [];
   const emitter = new Emitter(scope);
@@ -649,6 +657,7 @@ export function compileWorksheet(
         program: '',
         importLine,
         cellLines: cells.map(() => []),
+        cellIssues: perCell.map((r) => r.issues),
         normalized: perCell,
         issues: [
           ...issues,
@@ -664,6 +673,7 @@ export function compileWorksheet(
       program: '',
       importLine,
       cellLines: cells.map(() => []),
+      cellIssues: perCell.map((r) => r.issues),
       normalized: perCell,
       issues: [
         ...issues,
@@ -686,7 +696,10 @@ export function compileWorksheet(
     if (r.ir !== undefined) collect(r.ir);
   }
 
-  const scope: Scope = {
+  // Each cell emits with fresh defined/symbols/functions state — cells
+  // are independent, so a name used in a cell is always defined there.
+  const genIssues: Issue[][] = cells.map(() => []);
+  const makeScope = (cell: number): Scope => ({
     qualified,
     declared,
     defined: new Set(),
@@ -694,23 +707,27 @@ export function compileWorksheet(
     symbols: new Map(),
     functions: new Map(),
     issues,
-    cell: 0,
+    cellIssues: genIssues,
+    cell,
     flag(severity, message) {
       this.issues.push({
         severity,
         message: this.cell > 0 ? `cell ${this.cell}: ${message}` : message,
       });
+      if (this.cell > 0) this.cellIssues[this.cell - 1].push({ severity, message });
     },
-  };
-  const cellLines = perCell.map((r, i) => {
-    scope.cell = i + 1;
-    const lines = r.ir === undefined ? [] : cellStatements(r.ir, scope);
-    scope.cell = 0;
-    return lines;
   });
+  const cellBodies = perCell.map((r, i) =>
+    r.ir === undefined ? [] : cellStatements(r.ir, makeScope(i + 1)),
+  );
+  const cellLines = cellBodies.map((body) =>
+    body.length === 0 ? [] : [importLine, ...body],
+  );
 
+  // The one-script copy is the concatenation of the per-cell outputs
+  // with the import emitted once at the top.
   const lines: string[] = [importLine];
-  cellLines.forEach((stmts, i) => {
+  cellBodies.forEach((stmts, i) => {
     if (stmts.length === 0) return;
     lines.push('', `# cell ${i + 1}`, ...stmts);
   });
@@ -720,6 +737,7 @@ export function compileWorksheet(
     program: lines.join('\n'),
     importLine,
     cellLines,
+    cellIssues: perCell.map((r, i) => [...r.issues, ...genIssues[i]]),
     normalized: perCell,
     issues,
   };
