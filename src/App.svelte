@@ -18,6 +18,11 @@
   const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent);
   let commands = $derived(buildCommands(appStore));
 
+  // Prototype knob: duration of every output fade (issue list, badge,
+  // per-line mounts/unmounts). Also exported as --fade-ms for CSS
+  // mount animations.
+  let fadeMs = $state(150);
+
   // The latex target bypasses the compile pipeline (per-cell displayLatex);
   // every codegen target compiles the whole worksheet.
   let compiled = $derived(
@@ -86,7 +91,7 @@
   );
 </script>
 
-<div class="app">
+<div class="app" style:--fade-ms="{fadeMs}ms">
   <header class="app-header">
     <span class="logo">Math<em>Compile</em></span>
     <span class="tagline">Write math, get latex + code.</span>
@@ -232,6 +237,17 @@
               onclick={copyScript}
               >{copiedScript ? 'Copied' : 'Copy script'}</button
             >
+            <label class="fade-slider" title="Prototype: output fade duration">
+              fade
+              <input
+                type="range"
+                min="0"
+                max="800"
+                step="50"
+                bind:value={fadeMs}
+              />
+              <span class="fade-ms">{fadeMs}ms</span>
+            </label>
           {/if}
         </div>
         <span class="col-delete"></span>
@@ -258,8 +274,10 @@
               <div class="cell-output cell-code">
                 <div class="cell-code-body">
                   <code class="cell-python"
-                    >{compiled?.cellLines[i]?.join('\n') ||
-                      (compiled?.importLine ?? '')}</code
+                    >{compiled?.importLine}{#each (compiled?.cellLines[i] ?? []).slice(1) as line, k (k)}<span
+                        class="cell-line"
+                        transition:fade={{ duration: fadeMs }}>{'\n'}{line}</span
+                      >{/each}</code
                   >
                   <button
                     class="cell-copy"
@@ -270,7 +288,7 @@
                   >
                 </div>
                 {#if (compiled?.cellIssues[i]?.length ?? 0) > 0}
-                  <ul class="cell-issues" transition:fade={{ duration: 150 }}>
+                  <ul class="cell-issues" transition:fade={{ duration: fadeMs }}>
                     {#each compiled?.cellIssues[i] ?? [] as iss, j (j)}
                       <li class="issue-{iss.severity}">{iss.message}</li>
                     {/each}
