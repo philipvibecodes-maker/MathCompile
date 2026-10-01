@@ -6226,6 +6226,11 @@ var __assign = (this && this.__assign) || function () {
         _maxLength: 0
     };
     baseOptionProcessors.autoCommands = function (cmds) {
+        // '' disables autoCommands entirely (the stock processor had no way to
+        // turn the list back off once set \u2014 needed for the smartMode toggle).
+        if (cmds === '') {
+            return { _maxLength: 0 };
+        }
         if (typeof cmds !== 'string' || !/^[a-z]+(?: [a-z]+)*$/i.test(cmds)) {
             throw '"' + cmds + '" not a space-delimited list of only letters';
         }
@@ -8090,6 +8095,21 @@ var __assign = (this && this.__assign) || function () {
                 };
                 return class_9;
             }(SummationNotation));
+    // Boundless integral signs for indefinite integrals: `\iint` and
+    // `\antid` render a bare \u222b \u2014 neither carries blocks, so the integrand
+    // types linearly (`\antid x dx`, `\iint f dx dy`) and `_`/`^` may still
+    // grow an ordinary sibling SupSub for bounds. `\antid` is a MathCompile
+    // insertion alias: the app maps it to `\int` at compile time; `\iint`
+    // parses to Integrate in the compute engine on its own.
+    var boundlessIntegral = function (ctrlSeq, glyph, speak) {
+        return function () {
+            return new MQSymbol(ctrlSeq, h('span', { class: 'mq-int' }, [
+                h('big', {}, [h.text(glyph)])
+            ]), undefined, speak);
+        };
+    };
+    LatexCmds['\u222c'] = LatexCmds.iint = boundlessIntegral('\\iint ', U_INTEGRAL, 'indefinite integral');
+    LatexCmds.antid = boundlessIntegral('\\antid ', U_INTEGRAL, 'antiderivative');
     var Fraction = (LatexCmds.frac =
         LatexCmds.dfrac =
             LatexCmds.cfrac =

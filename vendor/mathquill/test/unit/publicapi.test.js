@@ -1170,6 +1170,21 @@ suite('Public API', function () {
       mq.cmd('0');
       assert.equal(mq.latex(), '\\int_{0}^{ }', 'cursor in the from block');
     });
+    test('iint and antid insert boundless signs', function () {
+      var mq = MQ.MathField($('<span>').appendTo('#mock')[0]);
+      assert.equal(mq.latex(), '');
+
+      mq.cmd('\\iint');
+      assert.equal(mq.latex(), '\\iint');
+      mq.cmd('x');
+      assert.equal(mq.latex(), '\\iint x', 'caret at the baseline');
+
+      mq.latex('');
+      mq.cmd('\\antid');
+      assert.equal(mq.latex(), '\\antid');
+      mq.write('_{a}');
+      assert.equal(mq.latex(), '\\antid_{a}', 'bounds grow on demand');
+    });
   });
 
   suite('substituteTextarea', function () {

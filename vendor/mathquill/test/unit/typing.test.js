@@ -1613,6 +1613,25 @@ suite('typing with auto-replaces', function () {
       assertLatex('\\int_{n}^{ }');
     });
 
+    test('typing ∬ directly', function () {
+      mq.typedText('∬');
+      assertLatex('\\iint');
+      mq.typedText('n');
+      assertLatex('\\iint n');
+    });
+
+    test('\\iint and \\antid are boundless signs', function () {
+      mq.cmd('\\iint');
+      assertLatex('\\iint');
+      mq.typedText('xdx');
+      assertLatex('\\iint xdx');
+      mq.latex('');
+      mq.cmd('\\antid');
+      assertLatex('\\antid');
+      mq.typedText('x');
+      assertLatex('\\antid x');
+    });
+
     test('typing and backspacing \\to', function () {
       mq.typedText('-');
       assertLatex('-');
