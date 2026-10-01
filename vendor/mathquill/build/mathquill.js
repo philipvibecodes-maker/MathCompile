@@ -10993,6 +10993,11 @@ var __assign = (this && this.__assign) || function () {
         MatrixCell.prototype.keystroke = function (key, e, ctrlr) {
             switch (key) {
                 case 'Shift-Spacebar':
+                    // \displaylines is a single-column grid: adding a column inside a
+                    // multi-line cell corrupts the row layout (and later crashes
+                    // addColumn on non-contiguous row indices). Matrices only.
+                    if (this.parent instanceof DisplayLines)
+                        return;
                     e === null || e === void 0 ? void 0 : e.preventDefault();
                     return this.parent.insert('addColumn', this, ctrlr);
             }

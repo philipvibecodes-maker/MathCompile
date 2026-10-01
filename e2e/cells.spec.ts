@@ -192,6 +192,28 @@ test('Enter splits the cell into multiple lines', async ({ page }) => {
   expect(await cellValue(cell(page, 0))).toBe('\\displaylines{x\\\\ y}');
 });
 
+// Shift+Space adds a column in a real matrix, but \displaylines is a
+// single-column grid — pressing it in a multi-line cell used to insert a
+// bogus side-by-side cell, corrupting row indices (later addColumn calls
+// then crashed on `rows[i]` holes). Now it types an ordinary space.
+test('Shift+Space inside a multi-line cell does not add a column', async ({
+  page,
+}) => {
+  await cell(page, 0).click();
+  await cell(page, 0).pressSequentially('x', { delay: 40 });
+  await page.keyboard.press('Enter');
+  await cell(page, 0).pressSequentially('y', { delay: 40 });
+  expect(await cellValue(cell(page, 0))).toBe('\\displaylines{x\\\\ y}');
+  await page.keyboard.press('Shift+Space');
+  expect(await cellValue(cell(page, 0))).toBe('\\displaylines{x\\\\ y\\ }');
+  // The grid still behaves: Enter splits another row cleanly.
+  await page.keyboard.press('Enter');
+  await cell(page, 0).pressSequentially('z', { delay: 40 });
+  expect(await cellValue(cell(page, 0))).toBe(
+    '\\displaylines{x\\\\ y\\ \\\\ z}',
+  );
+});
+
 test('Enter inside a nested atom splits the row, keeping the atom whole', async ({
   page,
 }) => {

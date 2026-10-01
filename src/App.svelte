@@ -100,15 +100,19 @@
 
   let copiedId = $state<number | null>(null);
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+  // clipboard.writeText rejects when permission is denied — swallow so
+  // a denied copy doesn't surface an unhandled rejection.
+  const copyText = (text: string) =>
+    navigator.clipboard.writeText(text).catch(() => {});
   function copyLatex(cell: { id: number; latex: string }) {
-    navigator.clipboard.writeText(outputLatex(cell.latex));
+    copyText(outputLatex(cell.latex));
     copiedId = cell.id;
     clearTimeout(copiedTimer);
     copiedTimer = setTimeout(() => (copiedId = null), 1200);
   }
 
   function copyCode(cell: { id: number }, i: number) {
-    navigator.clipboard.writeText(shownLines(cell, i).join('\n'));
+    copyText(shownLines(cell, i).join('\n'));
     copiedId = cell.id;
     clearTimeout(copiedTimer);
     copiedTimer = setTimeout(() => (copiedId = null), 1200);
@@ -116,7 +120,7 @@
 
   let copiedScript = $state(false);
   function copyScript() {
-    navigator.clipboard.writeText(compiled?.program ?? '');
+    copyText(compiled?.program ?? '');
     copiedScript = true;
     setTimeout(() => (copiedScript = false), 1200);
   }

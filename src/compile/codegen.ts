@@ -838,8 +838,12 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   for (const raw of newNames) scope.defined.add(raw);
 
   const defs: string[] = [];
-  const simple = newSyms.filter(([raw, ident]) => ident === pyIdent(raw));
-  const fancy = newSyms.filter(([raw, ident]) => ident !== pyIdent(raw));
+  // `simple` names are already valid identifiers — they go in one grouped
+  // `sp.symbols('a b')` call whose string must not contain quotes or
+  // punctuation. Anything needing mangling (a_0', {abc}, ? names) gets an
+  // individual `sp.Symbol("raw name")` def where JSON quoting is safe.
+  const simple = newSyms.filter(([raw, ident]) => raw === ident);
+  const fancy = newSyms.filter(([raw, ident]) => raw !== ident);
   if (simple.length === 1)
     defs.push(`${simple[0][1]} = ${sp}Symbol(${JSON.stringify(simple[0][0])})`);
   else if (simple.length > 1)
