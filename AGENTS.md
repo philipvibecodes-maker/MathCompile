@@ -41,8 +41,16 @@ src/
   compile/            pure-TS pipeline (no DOM): latex -> MathJSON IR -> code
     latex.ts            \displaylines unwrap + output/display helpers
     ir.ts               ce.parse + normalizeIR (MathJSON)
-    codegen.ts          normalized IR -> SymPy Python (compileWorksheet)
+    codegen.ts          normalized IR -> SymPy Python (compileWorksheet,
+                        compileCellForCalc for the calculator target)
     targets.ts          output-target registry
+  calc/               calculator target: SymPy results per cell
+    calculator.svelte.ts  evaluate()/interimEvaluate()/prewarm() +
+                          calcEngine status rune
+    calculator.worker.ts  Pyodide + SymPy in a classic worker; exec/evals
+                          the emitted program (mc_run)
+    nerdamer-latex.ts     latex -> nerdamer calls (interim engine)
+    python-highlight.ts   tiny tokenizer for the Show code block
   editor/
     mathquill.ts      imports the vendored build + CSS; exports mq3 + types
     math-field.ts     <math-field> custom element + attachField() ->
@@ -51,6 +59,7 @@ src/
   components/
     MathField.svelte    <math-field> bind:this -> attachField; registers
                         its handle in the store on mount
+    CalcOutput.svelte   per-cell calculator output (interim -> real rows)
     CommandPalette.svelte  always mounted, .open class toggles visibility
 ```
 
@@ -92,6 +101,17 @@ The architecture's load-bearing choices, distilled:
 Accepted costs: ~600 lines of vendored environments patch to maintain,
 `Home`/`End` are block-local (field edges need `Ctrl+Home`/`Ctrl+End`),
 and empty blocks serialize as `{ }`.
+
+## Calculator target
+
+- `target === 'calculator'` renders `CalcOutput` per cell: nerdamer
+  interim rows (dimmed, no `code`) until the Pyodide/SymPy worker is
+  ready, then one result row per top-level statement.
+- The cell compiles via `compileCellForCalc` — the shared pipeline, not
+  a second parser — so the worker only exec/evals Python. Assignments/
+  defs carry a `display` expression (`a = 5` -> `Eq(a, 5)`).
+- See CALCULATOR-ENGINES.md for the engine protocol, nerdamer coverage,
+  and earned gotchas.
 
 ## Command palette
 

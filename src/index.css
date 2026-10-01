@@ -309,6 +309,109 @@ body {
   cursor: default;
 }
 
+/* Calculator output (target = calculator): one SymPy result per cell row. */
+.calc-output {
+  align-items: flex-start;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.calc-rows {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-x: auto;
+}
+
+.calc-rows.pending {
+  opacity: 0.55;
+}
+
+.calc-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.calc-result {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.calc-math {
+  min-width: 0;
+}
+
+.calc-text,
+.calc-approx,
+.calc-error,
+.calc-status {
+  font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
+  font-size: 13px;
+}
+
+.calc-approx {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.calc-status {
+  color: var(--faint);
+}
+
+.calc-error {
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+/* "Show code" block: the SymPy python() source under each result. */
+.calc-code {
+  margin: 2px 0 4px;
+  padding: 5px 8px;
+  font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.calc-code .tok-kw {
+  color: #a626a4;
+}
+.calc-code .tok-str {
+  color: #50a14f;
+}
+.calc-code .tok-comment {
+  color: var(--faint);
+}
+.calc-code .tok-num {
+  color: #986801;
+}
+.calc-code .tok-call {
+  color: #4078f2;
+}
+
+:root[data-theme='dark'] .calc-code .tok-kw {
+  color: #c678dd;
+}
+:root[data-theme='dark'] .calc-code .tok-str {
+  color: #98c379;
+}
+:root[data-theme='dark'] .calc-code .tok-num {
+  color: #d19a66;
+}
+:root[data-theme='dark'] .calc-code .tok-call {
+  color: #61afef;
+}
+
 .expr-delete {
   flex: 0 0 28px;
   margin-left: 4px;

@@ -48,11 +48,12 @@ test('output select sits above the output column', async ({ page }) => {
   await expect(colHead).toContainText('Output');
 });
 
-test('target select offers all codegen targets, python enabled', async ({
+test('target select offers all codegen targets, calc+python enabled', async ({
   page,
 }) => {
   await expect(page.locator('.target-select option')).toHaveText([
     'LaTeX',
+    'Calculator',
     'Python',
     'JavaScript',
     'GLSL',
@@ -66,6 +67,7 @@ test('target select offers all codegen targets, python enabled', async ({
     );
   expect(disabled).toEqual([
     ['latex', false],
+    ['calculator', false],
     ['python', false],
     ['javascript', true],
     ['glsl', true],
