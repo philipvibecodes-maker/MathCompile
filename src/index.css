@@ -254,7 +254,10 @@ body {
   cursor: default;
 }
 
-/* Generated code in the per-cell output column (target = python). */
+/* Generated code in the per-cell output column (target = python). Issues
+   render as `# comment` lines inside the code block — the same one-line
+   footprint as the statement they replaced, so an error swap doesn't
+   change the row's shape. */
 .cell-python {
   flex: 1;
   min-width: 0;
@@ -265,9 +268,9 @@ body {
   color: var(--text);
 }
 
-.cell-python:empty::before {
-  content: '…';
+.code-issue {
   color: var(--faint);
+  animation: issue-in var(--fade-ms, 150ms) ease-out;
 }
 
 /* ── Output column head controls (codegen targets) ─────────── */

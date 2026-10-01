@@ -254,6 +254,9 @@
                     >{compiled?.importLine}{#each (compiled?.cellLines[i] ?? []).slice(1) as line, k (k)}<span
                         class="cell-line"
                         transition:fade={{ duration: fadeMs }}>{'\n'}{line}</span
+                      >{/each}{#each compiled?.cellIssues[i] ?? [] as iss, j (j)}<span
+                        class="cell-line code-issue issue-{iss.severity}"
+                        transition:fade={{ duration: fadeMs }}>{'\n'}# {iss.message}</span
                       >{/each}</code
                   >
                   <button
@@ -264,13 +267,6 @@
                     >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
                   >
                 </div>
-                {#if (compiled?.cellIssues[i]?.length ?? 0) > 0}
-                  <ul class="cell-issues" transition:fade={{ duration: fadeMs }}>
-                    {#each compiled?.cellIssues[i] ?? [] as iss, j (j)}
-                      <li class="issue-{iss.severity}">{iss.message}</li>
-                    {/each}
-                  </ul>
-                {/if}
               </div>
             {/if}
             <button
