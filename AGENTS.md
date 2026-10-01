@@ -3,37 +3,46 @@
 Desmos-style multi-cell math expression editor. **Svelte 5 (runes)** +
 TypeScript + Vite, cells are `<math-field>` custom elements backed by a
 **vendored Desmos-fork MathQuill** (`vendor/mathquill`, see
-`vendor/README.md` for the patch list). Rewritten from React + MathLive on
-the `rewrite/svelte-mathquill` worktree branch per
-`MathQuil_Svelte_Rewrite_Plan.md`.
+`vendor/README.md` for the patch list). Each cell's LaTeX is compiled
+through a MathJSON IR to LaTeX or SymPy-flavored Python (`src/compile/`).
 
 ## Commands
 
-- `npm run dev` — dev server (vite) on **:5573** (strict; chosen so this
-  worktree can run alongside the main checkout's :5173, the Solid
-  sibling's :5273, and the Svelte sibling's :5373)
+- `npm run dev` — dev server (vite) on **:5573** (strict; non-default so
+  sibling checkouts or other dev servers can run alongside it)
 - `npm run check` — `svelte-check --tsconfig ./tsconfig.app.json`
 - `npm run build` — svelte-check + vite build
 - `npm run lint` — oxlint (vendor/ is excluded in `.oxlintrc.json`)
-- `npm test` — vitest unit tests (`src/*.test.ts`, node environment;
+- `npm test` — vitest unit tests (`src/**/*.test.ts`, node environment;
   `vitest.config.ts` loads the svelte plugin so `.svelte.ts` rune files
   compile in tests)
 - `npm run test:e2e` — Playwright tests (`e2e/`, reuses a running dev
   server on :5573 or starts `npm run dev`). Includes `spike.spec.ts`
-  (MathQuill API + adapter checks via `spike.html`) and `vendor.spec.ts`
-  (the upstream mocha suite run headlessly through the dev server).
+  (MathQuill API + adapter checks via `e2e/spike.html`) and
+  `vendor.spec.ts` (the upstream mocha suite run headlessly through the
+  dev server).
 - `npm run test:perf` — framework-agnostic perf battery (`perf/`); builds and
-  serves the production bundle on :4173. For a rewrite: serve its prod build
-  and run `PERF_BASE_URL=<url> PERF_LABEL=<name> npm run test:perf`;
-  `node perf/compare.mjs <labelA> <labelB>` diffs runs in `perf-results/`.
+  serves the production bundle on :4173. For another implementation: serve
+  its prod build and run `PERF_BASE_URL=<url> PERF_LABEL=<name> npm run
+  test:perf`; `node perf/compare.mjs <labelA> <labelB>` diffs runs in
+  `perf-results/`.
 
 ## Architecture
 
 ```
 src/
-  appState.svelte.ts  $state app store + field registry + focusCell() —
-                      the single focus owner
+  App.svelte          worksheet UI: cell list, output column, header
   commands.ts         Command type + command list factory
+  fuzzy.ts            palette search scoring
+  state/
+    store.svelte.ts   $state app store + field registry + focusCell() —
+                      the single focus owner
+    persistence.ts    all localStorage access, debounced cell writes
+  compile/            pure-TS pipeline (no DOM): latex -> MathJSON IR -> code
+    latex.ts            \displaylines unwrap + output/display helpers
+    ir.ts               ce.parse + normalizeIR (MathJSON)
+    codegen.ts          normalized IR -> SymPy Python (compileWorksheet)
+    targets.ts          output-target registry
   editor/
     mathquill.ts      imports the vendored build + CSS; exports mq3 + types
     math-field.ts     <math-field> custom element + attachField() ->
@@ -48,17 +57,41 @@ src/
 - All MathQuill contact lives in `src/editor/` — components only see the
   `FieldHandle` contract (`focus(edge)`, `getValue`, `setValue`,
   `setSmartMode`, `dispose`).
-- Commands reach fields via `fields.get(id)?.method()` — never via prop
-  deltas. `focusCell(id, edge)` replaces the old React `focusNonce` prop.
+- Commands reach fields via `fields.get(id)?.method()` — never via
+  prop-encoded commands; `focusCell(id, edge)` is invoked directly.
 - `{#each cells (c.id)}` keeps row identity — keys must stay stable so
   typing doesn't remount the field and lose the caret.
 - `MathField.svelte` self-focuses on mount when `focusedId === id`
   (Svelte batches the DOM insert, so `focusCell` can't reach a field that
   isn't mounted yet — the mount-self-focus pattern covers that window).
-- `appState.svelte.ts` uses runes — importing it requires the svelte
+- `state/store.svelte.ts` uses runes — importing it requires the svelte
   compiler; in vitest that's wired via the svelte plugin in
   `vitest.config.ts`.
 
+
+## Design decisions
+
+The architecture's load-bearing choices, distilled:
+
+- **One adapter owns the editor.** All MathQuill contact lives in
+  `src/editor/`; everything else sees only the `FieldHandle` contract,
+  so an upstream bump fails in one file, not across event handlers.
+- **One focus owner.** The store's field registry + `focusCell()` decide
+  what is focused; nothing else calls `.focus()` and no component may
+  steal focus back — deferred focus calls re-check `paletteOpen` first.
+- **Semantics in the compiler, not the editor.** Options like
+  `dIsDerivative` apply at insertion/`src/compile/` lowering; cell
+  content is never rewritten to fit a setting.
+- **Overlays designed for cold-open.** The palette is always mounted
+  (`visibility` flip + `contain`), so opening costs a class flip, not a
+  mount + layout.
+- **The e2e contract is DOM-only.** Specs pin `math-field`/`.cell-latex`/
+  `.palette` DOM behavior, never internals — the framework or editor can
+  be swapped without rewriting the suite.
+
+Accepted costs: ~600 lines of vendored environments patch to maintain,
+`Home`/`End` are block-local (field edges need `Ctrl+Home`/`Ctrl+End`),
+and empty blocks serialize as `{ }`.
 
 ## Command palette
 
@@ -96,8 +129,8 @@ src/
   work, and `document.activeElement` inside a field is the textarea
   (assert focus with `el.contains(document.activeElement)` or
   `.mq-focused`, not `activeElement === el`).
-- MQ has **no deferred internal refocus** (unlike MathLive's ~60ms steal)
-  — `click()` alone is reliable in e2e; no settle window needed.
+- MQ has **no deferred internal refocus** — `click()` alone is reliable
+  in e2e; no settle window needed.
 - `Home`/`End` move within the *current block*; field edges need
   `Ctrl+Home`/`Ctrl+End` (or `mq.moveToLeftEnd()`).
 - Theming: `data-theme` on `<html>` (`light`|`dark`) swaps the CSS vars
@@ -133,7 +166,7 @@ src/
 - The palette stays mounted: assert `.palette` hidden via
   `not.toBeVisible()`, not `toHaveCount(0)`.
 - Vendor internals are verified by `e2e/spike.spec.ts` (via
-  `/spike.html`'s `window.spike` handles) and `e2e/vendor.spec.ts`
+  `/e2e/spike.html`'s `window.spike` handles) and `e2e/vendor.spec.ts`
   (headless mocha suite, includes `test/unit/environments.test.js`).
 - The `perf/` suite measures in-page: capture-phase `event.timeStamp` at
   input -> DOM-outcome `waitForFunction` -> double rAF (`perf/measure.ts`).
@@ -143,7 +176,7 @@ src/
 
 ## Persistence
 
-- `src/persistence.ts` owns all `localStorage` access: `mathcompile-theme`
+- `src/state/persistence.ts` owns all `localStorage` access: `mathcompile-theme`
   (read pre-paint by `index.html`), `mathcompile-cells` (the worksheet),
   `mathcompile-prefs` (smartMode + target + guideOpen). Everything is node-guarded so
   the store stays importable in vitest.
@@ -179,5 +212,5 @@ repo Settings → Pages → Source = "GitHub Actions".
 
 ## Codegraph
 
-This worktree has no `.codegraph/` index of its own (the main checkout
-has one). Run `codegraph init` here if you want one.
+`.codegraph/` is git-ignored and machine-local. Run `codegraph init` to
+build an index for this checkout.

@@ -2,13 +2,13 @@
 //
 //   npm run test:perf                        # this repo: builds + previews
 //   PERF_BASE_URL=http://localhost:3000 \
-//     PERF_LABEL=svelte npm run test:perf    # a rewrite on any stack/port
-//   node perf/compare.mjs react svelte       # diff two labeled runs
+//     PERF_LABEL=candidate npm run test:perf # another impl on any stack/port
+//   node perf/compare.mjs main candidate     # diff two labeled runs
 //
-// Dev-mode numbers are meaningless (dev React, JIT state) — the default
-// webServer builds and serves the production bundle. Point PERF_BASE_URL at
-// a production build of each rewrite for comparable runs; PERF_LABEL names
-// the results directory under perf-results/.
+// Dev-mode numbers are meaningless (unoptimized code, JIT state) — the
+// default webServer builds and serves the production bundle. Point
+// PERF_BASE_URL at a production build of each implementation for comparable
+// runs; PERF_LABEL names the results directory under perf-results/.
 
 import { defineConfig } from '@playwright/test';
 

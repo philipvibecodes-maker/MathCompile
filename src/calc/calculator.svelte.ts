@@ -1,4 +1,4 @@
-import { outputLatex } from './latex';
+import { outputLatex } from '../compile/latex';
 import { toNerdamerInput } from './nerdamer-latex';
 
 export interface CalcRowOk {

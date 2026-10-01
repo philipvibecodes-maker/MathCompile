@@ -1,5 +1,5 @@
-import { TARGETS } from './targets';
-import type { AppStore } from './appState.svelte.ts';
+import { TARGETS } from './compile/targets';
+import type { AppStore } from './state/store.svelte';
 
 export interface Command {
   id: string;

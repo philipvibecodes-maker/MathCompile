@@ -8,8 +8,8 @@ export default defineConfig({
   // BASE_PATH=/MathCompile/. Unset for dev/preview so e2e (:5573) and the
   // perf battery (:4173) keep working at the root.
   base: process.env.BASE_PATH ?? '/',
-  // Dedicated port (not vite's 5173, nor the other worktrees' 5273/5373) so
-  // this checkout can run alongside them; playwright.config.ts targets the
-  // same port. strictPort makes a collision fail loudly.
+  // Non-default port so sibling checkouts or other dev servers can run
+  // alongside; playwright.config.ts targets the same port. strictPort
+  // makes a collision fail loudly.
   server: { port: 5573, strictPort: true },
 });

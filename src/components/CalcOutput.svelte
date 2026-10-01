@@ -5,10 +5,10 @@
     interimEvaluate,
     splitRows,
     type CalcRow,
-  } from '../calculator.svelte.ts';
+  } from '../calc/calculator.svelte.ts';
   import { mountStaticMath } from '../editor/static-math';
-  import { highlightPython } from '../python-highlight';
-  import { appStore, type Cell } from '../appState.svelte.ts';
+  import { highlightPython } from '../calc/python-highlight';
+  import { appStore, type Cell } from '../state/store.svelte';
 
   // Per-cell SymPy output for the calculator target. Edits are debounced,
   // then the whole cell is evaluated as one expression (multi-line cells

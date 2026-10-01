@@ -45,11 +45,12 @@ test('Shift+Enter -> new cell painted + focused', async ({ page }) => {
     );
     record('cells.insert-paint', ms);
     // Same action, second outcome: focus landing on the new cell. (Focus is
-    // async — MathLive defers internally — so this samples the full channel.)
+    // async — the field focuses an internal textarea — so this samples the
+    // full channel.)
     await waitFocusedIndex(page, n);
     record('cells.insert-focus', (await nextPaint(page)) - t0);
     expect(await cellValue(cell(page, n))).toBe('');
-    await page.waitForTimeout(80); // stay clear of the refocus-steal window
+    await page.waitForTimeout(80); // settle margin between iterations
   }
 });
 

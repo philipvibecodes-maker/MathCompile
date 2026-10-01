@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AppStore } from './appState.svelte.ts';
+import { AppStore } from './store.svelte';
 
 // Cell-list operations are DOM-free: focusCell just updates focusedId when
 // no field handle is registered for the id.

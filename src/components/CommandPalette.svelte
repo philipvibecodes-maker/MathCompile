@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { fuzzyScore } from '../fuzzy';
   import type { Command } from '../commands';
-  import { appStore } from '../appState.svelte.ts';
+  import { appStore } from '../state/store.svelte';
 
   // Permanently mounted: opening is a visibility flip + focus(), not a
   // mount — cold-open cost is gone by design.
