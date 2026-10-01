@@ -202,6 +202,18 @@ test('latex output shows \\antid and \\iint as \\int', async ({ page }) => {
   );
 });
 
+// `\,` `\;` `\:` `\!` spacing commands parse (previously `\,` degraded
+// to a literal comma and the rest wiped the field).
+test('latex output round-trips \\, \\; \\: \\! spacing', async ({ page }) => {
+  const mf = cell(page, 0);
+  await mf.evaluate(
+    (el) => ((el as { value: string }).value = '\\int_{a}^{b}x\\,dx'),
+  );
+  await expect(page.locator('.cell-latex').first()).toHaveText(
+    '\\int_{a}^{b}x\\,dx',
+  );
+});
+
 test('latex output shows multi-line cells as separate lines', async ({
   page,
 }) => {

@@ -54,6 +54,13 @@ var latexMathParser = (function () {
       string('\\').then(
         regex(/^[a-z]+/i)
           .or(regex(/^\s+/).result(' '))
+          // `\,` `\;` `\:` `\!` spacing commands — keep the backslash in
+          // ctrlSeq so they don't collide with the bare characters
+          .or(
+            regex(/^[,;:!]/).map(function (c) {
+              return '\\' + c;
+            })
+          )
           .or(any)
       )
     )
