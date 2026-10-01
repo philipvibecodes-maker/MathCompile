@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { fade } from 'svelte/transition';
   import MathField from './components/MathField.svelte';
   import CalcOutput from './components/CalcOutput.svelte';
   import { TARGETS } from './compile/targets';
@@ -7,7 +8,7 @@
   import CommandPalette from './components/CommandPalette.svelte';
   import HowToGuide from './components/HowToGuide.svelte';
   import { appStore, THEME_STORAGE_KEY } from './state/store.svelte';
-  import { savePrefs } from './state/persistence';
+  import { loadPrefs, savePrefs } from './state/persistence';
   import { displayLatex, outputLatex } from './compile/latex';
   import { prewarm } from './calc/calculator.svelte.ts';
   import { buildCommands } from './commands';
@@ -16,6 +17,18 @@
 
   const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent);
   let commands = $derived(buildCommands(appStore));
+
+  // Animation knobs (persisted prefs): fadeMs drives code-line
+  // mount/unmount fades (also exported as --fade-ms for CSS mount
+  // animations). debounceMs delays the issue overlay until the user
+  // stops typing (cursor moves don't reset it); fadeInMs/fadeOutMs are
+  // the overlay's transition times.
+  const animPrefs = loadPrefs();
+  let fadeMs = $state(animPrefs.fadeMs ?? 150);
+  let debounceMs = $state(animPrefs.debounceMs ?? 600);
+  let fadeInMs = $state(animPrefs.fadeInMs ?? 150);
+  let fadeOutMs = $state(animPrefs.fadeOutMs ?? 150);
+  let settingsOpen = $state(false);
 
   // The latex target bypasses the compile pipeline (per-cell displayLatex);
   // every codegen target compiles the whole worksheet.
@@ -27,6 +40,64 @@
       : null,
   );
 
+  // Re-arm a cell's issue debounce on every latex change. The overlay
+  // only mounts once typing has paused for debounceMs; if the input is
+  // error-free when the timer fires the issues>0 check keeps it hidden.
+  let issuesVisible = $state<Record<number, boolean>>({});
+  const issueTimers: Record<number, ReturnType<typeof setTimeout>> = {};
+  const prevLatex: Record<number, string> = {};
+  // pre-effect: hides the overlay before the render that a keystroke
+  // triggers — a normal $effect runs post-render and the panel would
+  // mount for a frame, fade out, then re-fade in after the debounce.
+  // Once shown it stays latched until the cell has no issues left.
+  $effect.pre(() => {
+    appStore.cells.forEach((c, i) => {
+      if (prevLatex[c.id] === c.latex) return;
+      prevLatex[c.id] = c.latex;
+      clearTimeout(issueTimers[c.id]);
+      const hasIssues = (compiled?.cellIssues[i]?.length ?? 0) > 0;
+      if (hasIssues && !issuesVisible[c.id]) {
+        const id = c.id;
+        issueTimers[id] = setTimeout(
+          () => (issuesVisible[id] = true),
+          debounceMs,
+        );
+      } else if (!hasIssues) {
+        issuesVisible[c.id] = false;
+      }
+    });
+  });
+
+  // Freeze a cell's code lines while it has issues — the overlay
+  // explains the error, so churning (invalid) code underneath is just
+  // noise. The cache refreshes whenever the cell compiles clean.
+  let frozenLines = $state<Record<number, string[]>>({});
+  $effect.pre(() => {
+    appStore.cells.forEach((c, i) => {
+      if ((compiled?.cellIssues[i]?.length ?? 0) === 0) {
+        frozenLines[c.id] = compiled?.cellLines[i] ?? [];
+      }
+    });
+  });
+  const shownLines = (cell: { id: number }, i: number) => {
+    if ((compiled?.cellIssues[i]?.length ?? 0) === 0)
+      return compiled?.cellLines[i] ?? [];
+    return frozenLines[cell.id] ?? compiled?.cellLines[i] ?? [];
+  };
+
+  // codegen flags a whole dropped statement with this message; it
+  // renders as an error icon leading the first overlay line instead of
+  // its own text entry.
+  const UNPARSEABLE_MSG = 'unparseable input — statement skipped';
+  const shownIssues = (i: number) =>
+    (compiled?.cellIssues[i] ?? []).filter(
+      (iss) => iss.message !== UNPARSEABLE_MSG,
+    );
+  const hasParseError = (i: number) =>
+    (compiled?.cellIssues[i] ?? []).some(
+      (iss) => iss.message === UNPARSEABLE_MSG,
+    );
+
   let copiedId = $state<number | null>(null);
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
   function copyLatex(cell: { id: number; latex: string }) {
@@ -37,7 +108,7 @@
   }
 
   function copyCode(cell: { id: number }, i: number) {
-    navigator.clipboard.writeText(compiled?.cellLines[i]?.join('\n') ?? '');
+    navigator.clipboard.writeText(shownLines(cell, i).join('\n'));
     copiedId = cell.id;
     clearTimeout(copiedTimer);
     copiedTimer = setTimeout(() => (copiedId = null), 1200);
@@ -81,11 +152,15 @@
       guideOpen: appStore.guideOpen,
       showCode: appStore.showCode,
       importAll: appStore.importAll,
+      fadeMs,
+      debounceMs,
+      fadeInMs,
+      fadeOutMs,
     }),
   );
 </script>
 
-<div class="app">
+<div class="app" style:--fade-ms="{fadeMs}ms">
   <header class="app-header">
     <span class="logo">Math<em>Compile</em></span>
     <span class="tagline">Write math, get latex + code.</span>
@@ -231,6 +306,70 @@
               onclick={copyScript}
               >{copiedScript ? 'Copied' : 'Copy script'}</button
             >
+            <button
+              class="settings-btn"
+              title="Settings"
+              onclick={() => (settingsOpen = !settingsOpen)}
+              >Settings</button
+            >
+            {#if settingsOpen}
+              <button
+                class="settings-backdrop"
+                aria-label="Close settings"
+                onclick={() => (settingsOpen = false)}
+              ></button>
+              <div class="settings-menu">
+                <div class="settings-tabs">
+                  <span class="settings-tab active">animations</span>
+                </div>
+                <div class="settings-body">
+                  <label class="fade-slider" title="Code-line fade duration">
+                    fade
+                    <input
+                      type="range"
+                      min="0"
+                      max="800"
+                      step="50"
+                      bind:value={fadeMs}
+                    />
+                    <span class="fade-ms">{fadeMs}ms</span>
+                  </label>
+                  <label class="fade-slider" title="Debounce before issues appear after typing stops">
+                    debounce
+                    <input
+                      type="range"
+                      min="0"
+                      max="2000"
+                      step="100"
+                      bind:value={debounceMs}
+                    />
+                    <span class="fade-ms">{debounceMs}ms</span>
+                  </label>
+                  <label class="fade-slider" title="Issue overlay fade in">
+                    in
+                    <input
+                      type="range"
+                      min="0"
+                      max="800"
+                      step="50"
+                      bind:value={fadeInMs}
+                    />
+                    <span class="fade-ms">{fadeInMs}ms</span>
+                  </label>
+                  <label class="fade-slider" title="Issue overlay fade out">
+                    out
+                    <input
+                      type="range"
+                      min="0"
+                      max="800"
+                      step="50"
+                      bind:value={fadeOutMs}
+                    />
+                    <span class="fade-ms">{fadeOutMs}ms</span>
+                  </label>
+                </div>
+              </div>
+            {/if}
           {/if}
         </div>
         <span class="col-delete"></span>
@@ -257,7 +396,10 @@
               <div class="cell-output cell-code">
                 <div class="cell-code-body">
                   <code class="cell-python"
-                    >{compiled?.cellLines[i]?.join('\n') ?? ''}</code
+                    >{compiled?.importLine}{#each shownLines(cell, i).slice(1) as line, k (k)}<span
+                        class="cell-line"
+                        transition:fade={{ duration: fadeMs }}>{'\n'}{line}</span
+                      >{/each}</code
                   >
                   <button
                     class="cell-copy"
@@ -267,11 +409,32 @@
                     >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
                   >
                 </div>
-                {#if (compiled?.cellIssues[i]?.length ?? 0) > 0}
-                  <ul class="cell-issues">
-                    {#each compiled?.cellIssues[i] ?? [] as iss, j (j)}
-                      <li class="issue-{iss.severity}">{iss.message}</li>
+                {#if (shownIssues(i).length > 0 || hasParseError(i)) && issuesVisible[cell.id]}
+                  <ul
+                    class="cell-issues"
+                    in:fade={{ duration: fadeInMs }}
+                    out:fade={{ duration: fadeOutMs }}
+                  >
+                    {#each shownIssues(i) as iss, j (j)}
+                      <li class="issue-{iss.severity}">
+                        {#if iss.severity === 'error' || (j === 0 && hasParseError(i))}
+                          <span
+                            class="parse-error-icon"
+                            title={j === 0 && hasParseError(i)
+                              ? UNPARSEABLE_MSG
+                              : iss.message}>!</span
+                          >
+                        {/if}{iss.message}
+                      </li>
                     {/each}
+                    {#if hasParseError(i) && shownIssues(i).length === 0}
+                      <li class="issue-error">
+                        <span
+                          class="parse-error-icon"
+                          title={UNPARSEABLE_MSG}>!</span
+                        >
+                      </li>
+                    {/if}
                   </ul>
                 {/if}
               </div>

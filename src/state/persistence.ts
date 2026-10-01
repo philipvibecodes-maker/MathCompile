@@ -22,6 +22,10 @@ export interface Prefs {
   guideOpen?: boolean;
   showCode?: boolean;
   importAll?: boolean;
+  fadeMs?: number;
+  debounceMs?: number;
+  fadeInMs?: number;
+  fadeOutMs?: number;
 }
 
 export function loadPrefs(): Prefs {
@@ -40,6 +44,10 @@ export function loadPrefs(): Prefs {
       showCode: typeof p.showCode === 'boolean' ? p.showCode : undefined,
       importAll:
         typeof p.importAll === 'boolean' ? p.importAll : undefined,
+      fadeMs: typeof p.fadeMs === 'number' ? p.fadeMs : undefined,
+      debounceMs: typeof p.debounceMs === 'number' ? p.debounceMs : undefined,
+      fadeInMs: typeof p.fadeInMs === 'number' ? p.fadeInMs : undefined,
+      fadeOutMs: typeof p.fadeOutMs === 'number' ? p.fadeOutMs : undefined,
     };
   } catch {
     return {};
