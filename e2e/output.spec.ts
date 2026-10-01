@@ -202,6 +202,20 @@ test('latex output shows \\antid and \\iint as \\int', async ({ page }) => {
   );
 });
 
+// \begin{cases} is a real environment — the field must parse it (not
+// wipe) and the output column keeps the latex verbatim.
+test('latex output round-trips \\begin{cases}', async ({ page }) => {
+  const mf = cell(page, 0);
+  await mf.evaluate(
+    (el) =>
+      ((el as { value: string }).value =
+        '\\begin{cases}x&x>0\\\\-x&x\\le0\\end{cases}'),
+  );
+  await expect(page.locator('.cell-latex').first()).toHaveText(
+    '\\begin{cases}x&x>0\\\\\n-x&x\\le0\\end{cases}',
+  );
+});
+
 test('latex output shows multi-line cells as separate lines', async ({
   page,
 }) => {

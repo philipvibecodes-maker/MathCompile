@@ -31,6 +31,19 @@ suite('environments', function () {
       assert.equal(mq.latex(), '\\begin{matrix}a&b\\\\c&\\end{matrix}');
     });
 
+    test('cases parses, round-trips, and renders a left brace', function () {
+      mq.latex('\\begin{cases}x&x>0\\\\-x&x\\le0\\end{cases}');
+      assert.equal(
+        mq.latex(),
+        '\\begin{cases}x&x>0\\\\-x&x\\le0\\end{cases}'
+      );
+      var root = mq.__controller.root.domFrag().oneElement();
+      // one (left) brace delimiter, 2x2 cells
+      assert.equal(root.querySelectorAll('.mq-bracket-l').length, 1);
+      assert.equal(root.querySelectorAll('td').length, 4);
+      assert.equal(root.querySelectorAll('tr').length, 2);
+    });
+
     test('arrows move cell-to-cell; moveOutOf fires only at the field edge', function () {
       mq.latex('\\begin{matrix}a&b\\\\c&d\\end{matrix}');
       var exits = 0;
