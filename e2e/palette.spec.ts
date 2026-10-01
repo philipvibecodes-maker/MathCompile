@@ -44,10 +44,12 @@ test('running a command by fuzzy match changes the target', async ({
   page,
 }) => {
   await page.keyboard.press('Control+k');
-  await page.locator('.palette-input').pressSequentially('target python');
+  await page.locator('.palette-input').pressSequentially('target calculator');
   await page.keyboard.press('Enter');
   await expect(page.locator('.palette')).not.toBeVisible();
-  await expect(page.locator('.target-select select')).toHaveValue('python');
+  await expect(page.locator('.target-select select')).toHaveValue(
+    'calculator',
+  );
 });
 
 test('insert expression below adds a focused cell', async ({ page }) => {
@@ -90,9 +92,9 @@ test('clicking the backdrop closes the palette', async ({ page }) => {
 
 test('empty query lists every command', async ({ page }) => {
   await page.keyboard.press('Control+k');
-  // 6 fixed commands + 2 enabled targets + 1 goto per cell (single cell
+  // 6 fixed commands + 3 enabled targets + 1 goto per cell (single cell
   // here).
-  await expect(page.locator('.cmd-item')).toHaveCount(9);
+  await expect(page.locator('.cmd-item')).toHaveCount(10);
 });
 
 test('a query matching nothing shows the empty state', async ({ page }) => {
@@ -106,9 +108,9 @@ test('a query matching nothing shows the empty state', async ({ page }) => {
 
 test('fuzzy ordering ranks the documented examples first', async ({ page }) => {
   await page.keyboard.press('Control+k');
-  await page.locator('.palette-input').pressSequentially('tpy');
+  await page.locator('.palette-input').pressSequentially('target c');
   await expect(page.locator('.cmd-item .cmd-title').first()).toHaveText(
-    'Target: Python',
+    'Target: Calculator',
   );
   await page.locator('.palette-input').fill('');
   await page.locator('.palette-input').pressSequentially('clear');
@@ -123,7 +125,7 @@ test('arrow keys move the selection and Enter runs the highlighted command', asy
   await page.keyboard.press('Control+k');
   await page.locator('.palette-input').pressSequentially('target');
   // 'target' scores identically per command; the shorter-text tiebreak
-  // wins, so the (enabled-targets-only) order is LaTeX, Python.
+  // wins, so the (enabled-targets-only) order is LaTeX, Python, Calculator.
   const titles = page.locator('.cmd-item .cmd-title');
   await expect(titles.first()).toHaveText('Target: LaTeX');
   await page.keyboard.press('ArrowDown');
@@ -135,13 +137,15 @@ test('arrow keys move the selection and Enter runs the highlighted command', asy
 
 test('hovering selects an item and clicking runs it', async ({ page }) => {
   await page.keyboard.press('Control+k');
-  await page.locator('.palette-input').pressSequentially('target python');
-  const item = page.locator('.cmd-item', { hasText: 'Target: Python' });
+  await page.locator('.palette-input').pressSequentially('target c');
+  const item = page.locator('.cmd-item', { hasText: 'Target: Calculator' });
   await item.hover();
   await expect(item).toHaveClass(/selected/);
   await item.click();
   await expect(page.locator('.palette')).not.toBeVisible();
-  await expect(page.locator('.target-select select')).toHaveValue('python');
+  await expect(page.locator('.target-select select')).toHaveValue(
+    'calculator',
+  );
 });
 
 test('the active option is marked current', async ({ page }) => {

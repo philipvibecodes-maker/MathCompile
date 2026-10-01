@@ -59,6 +59,7 @@ export class AppStore {
   focusEdge = $state<Edge | undefined>(undefined);
   target = $state<TargetId>(loadPrefs().target ?? 'latex');
   smartMode = $state(loadPrefs().smartMode ?? true);
+  showCode = $state(loadPrefs().showCode ?? false);
   guideOpen = $state(loadPrefs().guideOpen ?? true);
   // Python output mode: `from sympy import *` (default, bare names) vs
   // `import sympy as sp` (sp.-qualified).

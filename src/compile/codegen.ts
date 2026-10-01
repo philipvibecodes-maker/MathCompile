@@ -136,6 +136,10 @@ interface Scope {
   /** Errors flagged during this cell's emission — a statement that bumps
    * it is dropped instead of emitting `sp.Error(...)`/`None` fragments. */
   errorCount: number;
+  /** Names reserved for constants of integration — cellBody seeds it with
+   * every name the cell uses so `C` (then D, E, …) never collides. Each
+   * indefinite integral takes and reserves the next free capital. */
+  constNames: Set<string>;
   flag(severity: Issue['severity'], message: string): void;
 }
 
@@ -466,7 +470,13 @@ class Emitter {
             `${this.sp}integrate(${this.emit(body)}, (${this.emit(v)}, ${this.emit(lo)}, ${this.emit(hi)}))`,
             PREC_ATOM,
           ];
-        return [`${this.sp}integrate(${this.emit(body)}, ${this.emit(v)})`, PREC_ATOM];
+        // Indefinite: append the constant of integration (`+ C`). PREC_ADD
+        // keeps the sum parenthesized when the integral nests inside a
+        // larger term (`(∫x dx)^2` -> `(x**2/2 + C)**2`).
+        return [
+          `${this.sp}integrate(${this.emit(body)}, ${this.emit(v)}) + ${this.sp}Symbol(${JSON.stringify(nextConstName(this.scope))})`,
+          PREC_ADD,
+        ];
       }
       case 'Sum':
       case 'Product': {
@@ -572,6 +582,24 @@ function unwrapLambda(node: MathJson): { body: MathJson; params: string[] } {
   return { body: node, params: [] };
 }
 
+interface StatementOut {
+  lines: string[];
+  /** Expression to eval for the statement's displayed value — set only
+   * for non-expression statements (Assign/Def), whose `lines` exec first
+   * and this evals for the row (e.g. `a = 5` shows `a = 5`). Undefined
+   * means the emitted code itself is the display expression. */
+  display?: string;
+}
+
+interface CellBody {
+  /** Symbol/Function def lines for names first needed by this cell. */
+  defs: string[];
+  /** Emitted top-level statements, in order (pre-collapse). */
+  parts: { stmt: MathJson; out: StatementOut }[];
+  /** Symbol/function names first bound in this cell. */
+  newNames: Set<string>;
+}
+
 // Free symbol names inside an expression — used to infer the variable of
 // an integral written without a differential. Constants, the CE 'Nothing'
 // marker, and callee names (f in f(t), call heads) don't count.
@@ -596,20 +624,47 @@ function freeNames(node: MathJson, acc = new Set<string>()): string[] {
   return [...acc];
 }
 
-// Emit one normalized cell IR as python statement lines. Cells are
+// Every bare name token under the node — cellBody uses it to reserve the
+// cell's names so constants of integration never shadow them.
+function allNames(node: MathJson, acc: Set<string>): void {
+  if (isStr(node)) {
+    acc.add(node);
+    return;
+  }
+  if (isArr(node)) for (const child of node) allNames(child, acc);
+}
+
+// The next constant of integration: first capital letter not used by the
+// cell or bound elsewhere in the worksheet (C, else D, E, …). Exhausted
+// alphabet falls back to reusing C — nothing else is left to give.
+function nextConstName(scope: Scope): string {
+  for (let code = 'C'.charCodeAt(0); code <= 'Z'.charCodeAt(0); code++) {
+    const name = String.fromCharCode(code);
+    if (!scope.constNames.has(name)) {
+      scope.constNames.add(name);
+      return name;
+    }
+  }
+  return 'C';
+}
+
+// Emit one normalized cell IR into defs + per-statement lines. Cells are
 // independent: the scope's defined/symbols/functions sets are fresh per
 // cell, so every free name the cell uses gets its def line at the top of
 // the cell (`a = Symbol("a")` / `f = Function("f")`, `sp.`-qualified when
 // `import sympy as sp` mode is selected).
-function cellStatements(ir: MathJson | undefined, scope: Scope): string[] {
-  if (ir === undefined) return [];
+function cellBody(ir: MathJson, scope: Scope): CellBody {
   const emitter = new Emitter(scope);
   const sp = scope.qualified ? 'sp.' : '';
   const preDefined = new Set(scope.defined);
+  // Reserve the cell's own names (and worksheet Assign/Def targets) so
+  // constants of integration start at the first free capital.
+  allNames(ir, scope.constNames);
+  for (const name of scope.declared) scope.constNames.add(name);
   const nodes = isHead(ir, 'Block') ? ir.slice(1) : [ir];
   const parts = nodes.map((stmt) => ({
     stmt,
-    lines: emitStatement(stmt, emitter),
+    out: emitStatement(stmt, emitter),
   }));
 
   // Names first needed in this cell (not already bound in earlier ones).
@@ -632,10 +687,17 @@ function cellStatements(ir: MathJson | undefined, scope: Scope): string[] {
   for (const [raw, ident] of newFns)
     defs.push(`${ident} = ${sp}Function(${JSON.stringify(raw)})`);
 
+  return { defs, parts, newNames };
+}
+
+function cellStatements(ir: MathJson | undefined, scope: Scope): string[] {
+  if (ir === undefined) return [];
+  const { defs, parts, newNames } = cellBody(ir, scope);
+
   // A bare `a` cell whose symbol is defined here collapses to just the
   // definition line — `a = Symbol("a")` is the cell's output.
-  const stmts = parts.flatMap(({ stmt, lines }) =>
-    isStr(stmt) && newNames.has(stmt) ? [] : lines,
+  const stmts = parts.flatMap(({ stmt, out }) =>
+    isStr(stmt) && newNames.has(stmt) ? [] : out.lines,
   );
   return [...defs, ...stmts];
 }
@@ -649,8 +711,9 @@ function emitExprStatement(node: MathJson, emitter: Emitter): string[] {
   return emitter.scope.errorCount === before ? [line] : [];
 }
 
-function emitStatement(node: MathJson, emitter: Emitter): string[] {
-  if (!isArr(node)) return emitExprStatement(node, emitter);
+function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
+  const sp = emitter.scope.qualified ? 'sp.' : '';
+  if (!isArr(node)) return { lines: emitExprStatement(node, emitter) };
   const h = headOf(node);
   if (h === 'Assign') {
     // RHS emits first so `x = x + 1` collects x as a symbol; the Assign
@@ -659,8 +722,13 @@ function emitStatement(node: MathJson, emitter: Emitter): string[] {
     const rhs = emitter.emit(node[2]);
     const name = isStr(node[1]) ? node[1] : 'result';
     if (isStr(node[1])) emitter.scope.defined.add(name);
-    if (emitter.scope.errorCount > before) return [];
-    return [`${pyIdent(name)} = ${rhs}`];
+    if (emitter.scope.errorCount > before) return { lines: [] };
+    return {
+      lines: [`${pyIdent(name)} = ${rhs}`],
+      // The display expression uses a fresh Symbol for the target so the
+      // row renders the raw name (`x_{1}` shows subscripted, not `x_1`).
+      display: `${sp}Eq(${sp}Symbol(${JSON.stringify(name)}), ${rhs})`,
+    };
   }
   if (h === 'Def') {
     const name = isStr(node[1]) ? node[1] : 'f';
@@ -672,15 +740,28 @@ function emitStatement(node: MathJson, emitter: Emitter): string[] {
     const body = emitter.emit(node[3]);
     emitter.scope.bound = saved;
     emitter.scope.defined.add(name);
-    if (emitter.scope.errorCount > before) return [];
-    return [
-      `def ${pyIdent(name)}(${params.map(pyIdent).join(', ')}):`,
-      `    return ${body}`,
-    ];
+    if (emitter.scope.errorCount > before) return { lines: [] };
+    const idents = params.map(pyIdent).join(', ');
+    // `f(x) = body` rendered via an undefined function — the def'd python
+    // function would just evaluate back to body. The lambda binds the
+    // param idents to fresh Symbols so the display needs no namespace
+    // entries for the (def-local) parameters.
+    const display =
+      params.length === 0
+        ? `${sp}Eq(${sp}Function(${JSON.stringify(name)})(), ${body})`
+        : `(lambda ${idents}: ${sp}Eq(${sp}Function(${JSON.stringify(name)})(${idents}), ${body}))(${params
+            .map((p) => `${sp}Symbol(${JSON.stringify(p)})`)
+            .join(', ')})`;
+    return {
+      lines: [`def ${pyIdent(name)}(${idents}):`, `    return ${body}`],
+      display,
+    };
   }
   if (h === 'Block')
-    return node.slice(1).flatMap((s) => emitStatement(s, emitter));
-  return emitExprStatement(node, emitter);
+    return {
+      lines: node.slice(1).flatMap((s) => emitStatement(s, emitter).lines),
+    };
+  return { lines: emitExprStatement(node, emitter) };
 }
 
 // Walk normalized IR for heads that only lower to Python.
@@ -759,39 +840,14 @@ export function compileWorksheet(
   }
 
   const declared = new Set<string>();
-  for (const r of perCell) {
-    const collect = (n: MathJson) => {
-      if (!isArr(n)) return;
-      const h = headOf(n);
-      if ((h === 'Assign' || h === 'Def') && isStr(n[1])) declared.add(n[1]);
-      if (h === 'Block') n.slice(1).forEach(collect);
-    };
-    if (r.ir !== undefined) collect(r.ir);
-  }
+  for (const r of perCell)
+    if (r.ir !== undefined) collectDeclared(r.ir, declared);
 
   // Each cell emits with fresh defined/symbols/functions state — cells
   // are independent, so a name used in a cell is always defined there.
   const genIssues: Issue[][] = cells.map(() => []);
-  const makeScope = (cell: number): Scope => ({
-    qualified,
-    declared,
-    defined: new Set(),
-    bound: new Set(),
-    symbols: new Map(),
-    functions: new Map(),
-    issues,
-    cellIssues: genIssues,
-    cell,
-    errorCount: 0,
-    flag(severity, message) {
-      if (severity === 'error') this.errorCount += 1;
-      this.issues.push({
-        severity,
-        message: this.cell > 0 ? `cell ${this.cell}: ${message}` : message,
-      });
-      if (this.cell > 0) this.cellIssues[this.cell - 1].push({ severity, message });
-    },
-  });
+  const makeScope = (cell: number): Scope =>
+    buildScope(qualified, declared, issues, genIssues, cell);
   const cellBodies = perCell.map((r, i) =>
     r.ir === undefined ? [] : cellStatements(r.ir, makeScope(i + 1)),
   );
@@ -816,4 +872,88 @@ export function compileWorksheet(
     normalized: perCell,
     issues,
   };
+}
+
+// Names bound by Assign/Def anywhere in the IR (pre-scan). Distinguishes
+// worksheet-declared calls (`f(x)` when `f` is defined here) from the
+// `sp.<head>` escape hatch.
+function collectDeclared(ir: MathJson, declared: Set<string>): void {
+  const collect = (n: MathJson) => {
+    if (!isArr(n)) return;
+    const h = headOf(n);
+    if ((h === 'Assign' || h === 'Def') && isStr(n[1])) declared.add(n[1]);
+    if (h === 'Block') n.slice(1).forEach(collect);
+  };
+  collect(ir);
+}
+
+function buildScope(
+  qualified: boolean,
+  declared: Set<string>,
+  issues: Issue[],
+  cellIssues: Issue[][],
+  cell: number,
+): Scope {
+  return {
+    qualified,
+    declared,
+    defined: new Set(),
+    bound: new Set(),
+    symbols: new Map(),
+    functions: new Map(),
+    issues,
+    cellIssues,
+    cell,
+    errorCount: 0,
+    constNames: new Set(),
+    flag(severity, message) {
+      if (severity === 'error') this.errorCount += 1;
+      this.issues.push({
+        severity,
+        message: this.cell > 0 ? `cell ${this.cell}: ${message}` : message,
+      });
+      if (this.cell > 0) this.cellIssues[this.cell - 1].push({ severity, message });
+    },
+  };
+}
+
+export interface CalcStatement {
+  /** Python source for the statement: exec'd (Assign/Def) or eval'd
+   * (expression) by the calculator worker. */
+  code: string;
+  /** When set, `code` execs first, then this evals for the row's value.
+   * Absent = `code` evals directly for the row. */
+  display?: string;
+}
+
+export interface CalcProgram {
+  /** Script prefix — `import sympy as sp` plus the cell's Symbol/Function
+   * defs. The worker execs it before the statements. */
+  prelude: string[];
+  statements: CalcStatement[];
+  /** Normalization + codegen issues for the cell. */
+  issues: Issue[];
+}
+
+// Compile a single cell for the calculator target: same pipeline as
+// compileWorksheet (always `sp.`-qualified — the worker execs against
+// `import sympy as sp`), but keeps the statement split and display
+// expressions so each top-level statement yields its own result row.
+export function compileCellForCalc(cell: CellInput): CalcProgram {
+  const { ir, issues } = normalizeIR(cell.json);
+  if (ir === undefined) return { prelude: [], statements: [], issues };
+
+  const declared = new Set<string>();
+  collectDeclared(ir, declared);
+  const scope = buildScope(true, declared, issues, [[]], 0);
+  const { defs, parts } = cellBody(ir, scope);
+  // Statements dropped by an emission error (lines: []) produce no row —
+  // the compile issue already reports the problem.
+  const statements = parts
+    .filter(({ out }) => out.lines.length > 0)
+    .map(({ out }) => ({
+      code: out.lines.join('\n'),
+      display: out.display,
+    }));
+  return { prelude: ['import sympy as sp', ...defs], statements, issues };
 }

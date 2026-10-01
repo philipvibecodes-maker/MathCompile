@@ -54,13 +54,17 @@ const FIXTURES: {
   {
     latex: '\\int x^2 dx',
     // Non-canonical indefinite integrals give a bare variable — folded
-    // into Limits with Nothing bounds.
+    // into Limits with Nothing bounds. Indefinite integrals carry the
+    // constant of integration.
     expectedIR: [
       'Integrate',
       ['Power', 'x', 2],
       ['Limits', 'x', 'Nothing', 'Nothing'],
     ],
-    expectedPython: ['x = sp.Symbol("x")', 'sp.integrate(x**2, x)'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.integrate(x**2, x) + sp.Symbol("C")',
+    ],
   },
   {
     latex: '\\antid x^2 dx',
@@ -71,7 +75,10 @@ const FIXTURES: {
       ['Power', 'x', 2],
       ['Limits', 'x', 'Nothing', 'Nothing'],
     ],
-    expectedPython: ['x = sp.Symbol("x")', 'sp.integrate(x**2, x)'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.integrate(x**2, x) + sp.Symbol("C")',
+    ],
   },
   {
     latex: '\\iint x^2 dx',
@@ -81,7 +88,10 @@ const FIXTURES: {
       ['Power', 'x', 2],
       ['Limits', 'x', 'Nothing', 'Nothing'],
     ],
-    expectedPython: ['x = sp.Symbol("x")', 'sp.integrate(x**2, x)'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.integrate(x**2, x) + sp.Symbol("C")',
+    ],
   },
   {
     latex: '\\iint_{a}^{b} x\\,dx',
@@ -400,9 +410,19 @@ describe('error messages + resilient emission', () => {
     expect(lines).toEqual([
       'import sympy as sp',
       'x = sp.Symbol("x")',
-      'sp.integrate(x**2, x)',
+      'sp.integrate(x**2, x) + sp.Symbol("C")',
     ]);
     expect(issues).toContain('no differential — integrating w.r.t. x');
+  });
+
+  it('constant of integration steps past capitals the cell already uses', () => {
+    const { lines } = compile('\\int x\\,dx \\\\ \\int C\\,dx');
+    expect(lines).toEqual([
+      'import sympy as sp',
+      "x, C = sp.symbols('x C')",
+      'sp.integrate(x, x) + sp.Symbol("D")',
+      'sp.integrate(C, x) + sp.Symbol("E")',
+    ]);
   });
 
   it('\\int_{a}^{b} x with no dx infers the variable too', () => {

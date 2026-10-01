@@ -43,6 +43,9 @@
     return () => clearTimeout(t);
   });
 
+  // Items select on mousemove, not mouseenter: a cursor parked over
+  // the list fires mouseenter when the palette renders under it (the
+  // layout hit-test), which would steal the keyboard selection.
   // Escape must close even if focus has drifted out of the input.
   onMount(() => {
     const onKeydown = (e: KeyboardEvent) => {
@@ -147,7 +150,7 @@
           aria-selected={i === sel}
           class="cmd-item"
           class:selected={i === sel}
-          onmouseenter={() => (index = i)}
+          onmousemove={() => (index = i)}
           onclick={() => pick(m.c)}
         >
           <span class="cmd-title">{m.c.title}</span>

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import MathField from './components/MathField.svelte';
+  import CalcOutput from './components/CalcOutput.svelte';
   import { TARGETS } from './compile/targets';
   import type { TargetId } from './compile/targets';
   import CommandPalette from './components/CommandPalette.svelte';
@@ -8,6 +9,7 @@
   import { appStore, THEME_STORAGE_KEY } from './state/store.svelte';
   import { savePrefs } from './state/persistence';
   import { displayLatex, outputLatex } from './compile/latex';
+  import { prewarm } from './calc/calculator.svelte.ts';
   import { buildCommands } from './commands';
   import { installGlobalKeymap } from './editor/keymap';
   import { compileWorksheet } from './compile/codegen';
@@ -18,11 +20,11 @@
   // The latex target bypasses the compile pipeline (per-cell displayLatex);
   // every codegen target compiles the whole worksheet.
   let compiled = $derived(
-    appStore.target === 'latex'
-      ? null
-      : compileWorksheet(appStore.cells, appStore.target, {
+    appStore.target === 'python'
+      ? compileWorksheet(appStore.cells, appStore.target, {
           importAll: appStore.importAll,
-        }),
+        })
+      : null,
   );
 
   let copiedId = $state<number | null>(null);
@@ -50,13 +52,19 @@
 
   // Capture phase so Ctrl+K is seen even inside a <math-field>, which may
   // swallow keydown events at the target.
-  onMount(() =>
-    installGlobalKeymap({
+  onMount(() => {
+    // Cache-first SW for the pyodide CDN assets — warms repeat visits.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker
+        .register(`${import.meta.env.BASE_URL}pyodide-sw.js`)
+        .catch(() => {});
+    }
+    return installGlobalKeymap({
       onPaletteToggle: () => appStore.togglePalette(),
       onSmartModeToggle: () => (appStore.smartMode = !appStore.smartMode),
       isPaletteOpen: () => appStore.paletteOpen,
-    }),
-  );
+    });
+  });
 
   // data-theme drives the CSS var swap; the inline script in index.html
   // sets it pre-paint, this keeps it synced with the store afterward.
@@ -71,6 +79,7 @@
       smartMode: appStore.smartMode,
       target: appStore.target,
       guideOpen: appStore.guideOpen,
+      showCode: appStore.showCode,
       importAll: appStore.importAll,
     }),
   );
@@ -131,6 +140,16 @@
         </div>
         <span class="option-shortcut">alt+s</span>
       </div>
+      {#if appStore.target === 'calculator'}
+        <label class="option-checkbox">
+          <input
+            type="checkbox"
+            checked={appStore.showCode}
+            onchange={(e) => (appStore.showCode = e.currentTarget.checked)}
+          />
+          Show code
+        </label>
+      {/if}
       <button
         class="theme-toggle"
         title={appStore.darkMode
@@ -185,6 +204,8 @@
               value={appStore.target}
               onchange={(e) =>
                 (appStore.target = e.currentTarget.value as TargetId)}
+              onpointerdown={prewarm}
+              onfocus={prewarm}
             >
               {#each TARGETS as t (t.id)}
                 <option value={t.id} disabled={!t.enabled}>
@@ -230,6 +251,8 @@
                   >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
                 >
               </div>
+            {:else if appStore.target === 'calculator'}
+              <CalcOutput {cell} />
             {:else if appStore.target === 'python'}
               <div class="cell-output cell-code">
                 <div class="cell-code-body">
