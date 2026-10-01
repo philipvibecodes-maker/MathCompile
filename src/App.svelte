@@ -65,19 +65,18 @@
     });
   });
 
-  // codegen flags a whole dropped statement with this message; it's
-  // rendered as an error icon in the overlay instead of text. Multiple
-  // dropped statements collapse to one icon.
+  // codegen flags a whole dropped statement with this message; it
+  // renders as an error icon leading the first overlay line instead of
+  // its own text entry.
   const UNPARSEABLE_MSG = 'unparseable input — statement skipped';
-  const shownIssues = (i: number) => {
-    let seenParse = false;
-    return (compiled?.cellIssues[i] ?? []).filter((iss) => {
-      if (iss.message !== UNPARSEABLE_MSG) return true;
-      if (seenParse) return false;
-      seenParse = true;
-      return true;
-    });
-  };
+  const shownIssues = (i: number) =>
+    (compiled?.cellIssues[i] ?? []).filter(
+      (iss) => iss.message !== UNPARSEABLE_MSG,
+    );
+  const hasParseError = (i: number) =>
+    (compiled?.cellIssues[i] ?? []).some(
+      (iss) => iss.message === UNPARSEABLE_MSG,
+    );
 
   let copiedId = $state<number | null>(null);
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
@@ -366,7 +365,7 @@
                     >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
                   >
                 </div>
-                {#if (compiled?.cellIssues[i]?.length ?? 0) > 0 && issuesVisible[cell.id]}
+                {#if (shownIssues(i).length > 0 || hasParseError(i)) && issuesVisible[cell.id]}
                   <ul
                     class="cell-issues"
                     in:fade={{ duration: fadeInMs }}
@@ -374,14 +373,24 @@
                   >
                     {#each shownIssues(i) as iss, j (j)}
                       <li class="issue-{iss.severity}">
-                        {#if iss.message === UNPARSEABLE_MSG}
+                        {#if iss.severity === 'error' || (j === 0 && hasParseError(i))}
                           <span
                             class="parse-error-icon"
-                            title={UNPARSEABLE_MSG}>!</span
+                            title={j === 0 && hasParseError(i)
+                              ? UNPARSEABLE_MSG
+                              : iss.message}>!</span
                           >
-                        {:else}{iss.message}{/if}
+                        {/if}{iss.message}
                       </li>
                     {/each}
+                    {#if hasParseError(i) && shownIssues(i).length === 0}
+                      <li class="issue-error">
+                        <span
+                          class="parse-error-icon"
+                          title={UNPARSEABLE_MSG}>!</span
+                        >
+                      </li>
+                    {/if}
                   </ul>
                 {/if}
               </div>

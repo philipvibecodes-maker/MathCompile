@@ -262,11 +262,11 @@ body {
   justify-content: center;
   width: 14px;
   height: 14px;
-  border: 1px solid var(--accent-text);
+  border: 1px solid var(--danger);
   border-radius: 50%;
   font-size: 9px;
   font-weight: 700;
-  color: var(--accent-text);
+  color: var(--danger);
   cursor: default;
   flex: 0 0 auto;
 }
@@ -347,6 +347,9 @@ body {
 }
 
 .cell-issues li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   animation: issue-in var(--fade-ms, 150ms) ease-out;
 }
 
@@ -374,7 +377,7 @@ body {
 }
 
 .issue-error {
-  color: var(--accent-text);
+  color: var(--danger);
 }
 
 .issue-note {
