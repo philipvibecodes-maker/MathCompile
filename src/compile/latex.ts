@@ -46,8 +46,29 @@ function rewriteOverUnder(s: string): string {
   return out + rest;
 }
 
+// A lone bare `|` immediately followed by `_{...}`/`^{...}` bounds is
+// textbook "evaluated at" notation (`f'|_{x=a}`); CE can't parse a bare
+// delimiter, so wrap the expression in the \left. \right| form codegen
+// already understands. Only a single unescaped | qualifies — `a|b` and
+// `a\mid b` keep their own meaning/flag.
+function rewriteEvalBar(s: string): string {
+  // Bare pipes only: skip \| escapes and pipes that are the delimiter
+  // argument of a command (\right|, \left|, \middle|, \vert| …).
+  const pipes = [...s.matchAll(/\|/g)].filter((m) => {
+    const before = s.slice(0, m.index);
+    if (before.endsWith('\\')) return false;
+    if (/\\[a-zA-Z]+$/.test(before)) return false;
+    return true;
+  });
+  if (pipes.length !== 1) return s;
+  const i = pipes[0].index;
+  const rest = s.slice(i + 1);
+  if (!/^\s*[_^]\{/.test(rest)) return s;
+  return `\\left.${s.slice(0, i)}\\right|${rest}`;
+}
+
 const canonicalCmds = (s: string): string =>
-  canonicalInt(stripBigDelims(rewriteOverUnder(s)));
+  canonicalInt(stripBigDelims(rewriteEvalBar(stripBigDelims(rewriteOverUnder(s)))));
 
 // The latex output target shows a cell's LaTeX verbatim, except the
 // \displaylines{} wrapper MathQuill adds to multi-line cells — that's an

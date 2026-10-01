@@ -661,12 +661,17 @@ class Emitter {
             "can't infer the evaluation variable — evaluated w.r.t. x",
           );
         const bodyText = this.emit(body);
-        const upper = !missingArg(args[2])
-          ? `(${bodyText}).subs(${this.sym(v)}, ${this.emit(args[2])})`
-          : '';
-        const lower = !missingArg(args[1])
-          ? `(${bodyText}).subs(${this.sym(v)}, ${this.emit(args[1])})`
-          : '';
+        // A bound can be an equation `x=a` — substitute the point, not
+        // the Eq node itself (`subs(x, Eq(x,a))` is meaningless).
+        const boundSub = (b: MathJson | undefined): string => {
+          if (isHead(b, 'Equal') && b.length === 3) {
+            const varText = isStr(b[1]) ? this.sym(b[1]) : this.emit(b[1]);
+            return `(${bodyText}).subs(${varText}, ${this.emit(b[2])})`;
+          }
+          return `(${bodyText}).subs(${this.sym(v)}, ${this.emit(b)})`;
+        };
+        const upper = !missingArg(args[2]) ? boundSub(args[2]) : '';
+        const lower = !missingArg(args[1]) ? boundSub(args[1]) : '';
         if (upper && lower) return [`${upper} - ${lower}`, PREC_ADD];
         if (upper || lower) return [upper || lower, PREC_ATOM];
         return [bodyText, PREC_ATOM];

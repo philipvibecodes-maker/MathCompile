@@ -437,6 +437,29 @@ const FIXTURES: {
     latex: '\\emptyset',
     expectedPython: ['sp.EmptySet'],
   },
+  {
+    // \bigg|_{x=0} is the textbook "evaluated at" bar — \big* sizes are
+    // stripped and the lone | wraps as \left. \right|, and an Equal bound
+    // substitutes the point rather than the equation.
+    latex: '\\frac{dy}{dx}\\bigg|_{x=0}',
+    expectedPython: [
+      "y, x = sp.symbols('y x')",
+      '(sp.diff(y, x)).subs(x, 0)',
+    ],
+  },
+  {
+    latex: 'f\\big|_{a}^{b}',
+    expectedPython: [
+      "f, b, a = sp.symbols('f b a')",
+      '(f).subs(f, b) - (f).subs(f, a)',
+    ],
+  },
+  {
+    // \left. \right| with an equation bound — used to emit
+    // subs(x, Eq(x, a)) instead of substituting the point.
+    latex: '\\left. f \\right|_{x=a}',
+    expectedPython: ["f, x, a = sp.symbols('f x a')", '(f).subs(x, a)'],
+  },
 ];
 
 describe('latexToStatementStrings', () => {
