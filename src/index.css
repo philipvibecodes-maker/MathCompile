@@ -294,9 +294,11 @@ body {
   min-width: 0;
 }
 
+/* Issues float in a panel anchored to the cell's bottom edge, painting
+   over the (invalid) code lines instead of pushing layout. */
 .cell-issues {
   position: absolute;
-  top: calc(100% - 1px);
+  bottom: -1px;
   left: -1px;
   right: -1px;
   z-index: 20;
@@ -307,9 +309,8 @@ body {
   font-size: 11.5px;
   background: var(--panel-bg);
   border: 1px solid var(--border);
-  border-top: none;
   border-radius: 0 0 4px 4px;
-  box-shadow: 0 8px 18px var(--shadow);
+  box-shadow: 0 -6px 16px var(--shadow);
   max-height: 6.5em;
   overflow-y: auto;
 }
