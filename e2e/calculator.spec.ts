@@ -91,6 +91,33 @@ test('indefinite integral shows the constant of integration last', async ({
   expect(text.trim().endsWith('C')).toBe(true);
 });
 
+// Regression for two reported bugs on this exact input: juxtaposed
+// `\sqrt{x}(x+1)` used to compile to `sqrt(x)(x + 1)` → SymPy raised
+// "'Pow' object is not callable", and the result's atan rendered as
+// "a tan" (MathQuill doesn't know `atan` as an operator name).
+test('implicit-multiply integrand evaluates and renders arctan', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await setTarget(page, 'calculator');
+
+  const mf = cell(page, 0);
+  await mf.evaluate((el, v) => {
+    (el as { value: string }).value = v;
+  }, '\\antid \\frac{1}{\\sqrt{x}(x+1)}dx');
+
+  const rows = page.locator('.calc-rows').first();
+  await expect(rows).toBeAttached({ timeout: 90_000 });
+  await expect(rows).not.toHaveClass(/pending/, { timeout: 90_000 });
+  const row = page.locator('.calc-row').first();
+  await expect(row.locator('.calc-error')).toHaveCount(0);
+  // 2 arctan(sqrt(x)) + C — the arc-name renders as one operator name,
+  // not "a" + "tan". \arctan typesets upright in MathQuill.
+  const math = row.locator('.calc-math');
+  await expect(math).toContainText('arctan');
+  await expect(math).toContainText('C');
+});
+
 test('calculator shows an instant nerdamer result while SymPy boots', async ({
   page,
 }) => {

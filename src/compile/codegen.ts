@@ -403,9 +403,18 @@ class Emitter {
               : `${this.emit(f)}(${argList})`;
           return [`${this.sp}diff(${applied}, ${argList}${order})`, PREC_ATOM];
         }
-        const calleeText = isStr(callee)
-          ? this.fn(callee)
-          : this.emit(callee);
+        if (!isStr(callee)) {
+          // A non-name "callee" isn't a call — `\sqrt{x}(x+1)`, `2(x+1)`,
+          // `x^2(y)` are juxtaposed factors (the delimiter group was the
+          // last factor). Emitting `f(args)` here produced executable
+          // nonsense like `sqrt(x)(x + 1)` → 'Pow' object is not
+          // callable; multiplication is the conventional reading.
+          return [
+            args.map((a) => this.emit(a, PREC_MUL)).join(' * '),
+            PREC_MUL,
+          ];
+        }
+        const calleeText = this.fn(callee);
         return [
           `${calleeText}(${args.slice(1).map((a) => this.emit(a)).join(', ')})`,
           PREC_ATOM,

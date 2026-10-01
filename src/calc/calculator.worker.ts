@@ -93,7 +93,10 @@ def _mc_row(val):
     except Exception:
         pass
     try:
-        out = {'latex': sp.latex(val, order='none')}
+        # inv_trig_style='full' prints inverse trig with their arc- names
+        # (arctan, operatorname{arcsec}) instead of the default a- forms
+        # (operatorname{atan}), which MathQuill renders as "a tan".
+        out = {'latex': sp.latex(val, order='none', inv_trig_style='full')}
     except Exception:
         out = {'text': sp.sstr(val, order='none')}
     try:

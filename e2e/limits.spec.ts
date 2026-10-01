@@ -305,6 +305,51 @@ test('\\antid through the latex command input is boundless too', async ({
   expect((await caretInfo(mf)).value).toBe('\\antid xdx');
 });
 
+// A typed `/` scans left for numerator content — the scan must stop at a
+// boundless integral sign the way it does at `\sum`/`\int`, otherwise the
+// ∫ lands inside the fraction.
+test('typed / after \\antid keeps the integral sign out of the fraction', async ({
+  page,
+}) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('antid', { delay: 60 });
+  await mf.pressSequentially('x', { delay: 60 });
+  await page.keyboard.press('/');
+  const info = await caretInfo(mf);
+  expect(info.value).toMatch(/^\\antid *\\frac\{x\}/);
+  expect(info.value).not.toMatch(/frac\{[^}]*antid/);
+  // DOM check: the .mq-int sign is not inside the numerator block.
+  expect(
+    await mf.evaluate((el) => el.querySelectorAll('.mq-numerator .mq-int').length),
+  ).toBe(0);
+  await mf.pressSequentially('y', { delay: 60 });
+  expect((await caretInfo(mf)).value).toBe('\\antid\\frac{x}{y}');
+});
+
+test('typed / after \\iint_{a}^{b} leaves sign and bounds outside', async ({
+  page,
+}) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('iint', { delay: 60 });
+  await mf.pressSequentially('_a', { delay: 60 });
+  await page.keyboard.press('ArrowRight');
+  await mf.pressSequentially('^b', { delay: 60 });
+  await page.keyboard.press('ArrowRight');
+  await mf.pressSequentially('x', { delay: 60 });
+  await page.keyboard.press('/');
+  // The bound SupSub belongs to the integral — the numerator is just x.
+  expect((await caretInfo(mf)).value).toBe('\\iint_{a}^{b}\\frac{x}{ }');
+  expect(
+    await mf.evaluate((el) => {
+      const num = el.querySelector('.mq-numerator');
+      return (
+        (num?.querySelectorAll('.mq-int').length ?? 0) +
+        (num?.querySelectorAll('.mq-supsub').length ?? 0)
+      );
+    }),
+  ).toBe(0);
+});
+
 // `_`/`^` still produce a definite integral on the boundless signs: a
 // sibling SupSub welds onto the atom (same tree `\iint_{a}^{b}` parses to).
 test('\\iint _a Right ^b Right xdx produces \\iint_{a}^{b}xdx', async ({

@@ -9102,9 +9102,21 @@ var __assign = (this && this.__assign) || function () {
     // grow an ordinary sibling SupSub for bounds. `\antid` is a MathCompile
     // insertion alias: the app maps it to `\int` at compile time; `\iint`
     // parses to Integrate in the compute engine on its own.
+    //
+    // BoundlessIntegral is its own class so left-scanning code (a typed `/`
+    // wrapping the preceding run into a numerator) can stop at the sign \u2014
+    // for a SummationNotation like `\sum` the scan already breaks there, and
+    // a boundless \u222b should behave the same way.
+    var BoundlessIntegral = /** @class */ (function (_super) {
+        __extends(BoundlessIntegral, _super);
+        function BoundlessIntegral() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        return BoundlessIntegral;
+    }(MQSymbol));
     var boundlessIntegral = function (ctrlSeq, glyph, speak) {
         return function () {
-            return new MQSymbol(ctrlSeq, h('span', { class: 'mq-int' }, [
+            return new BoundlessIntegral(ctrlSeq, h('span', { class: 'mq-int' }, [
                 h('big', {}, [h.text(glyph)])
             ]), undefined, speak);
         };
@@ -9262,12 +9274,14 @@ var __assign = (this && this.__assign) || function () {
                                     leftward._groupingClass === 'mq-ellipsis-end') ||
                                 leftward instanceof (LatexCmds.text || noop) ||
                                 leftward instanceof SummationNotation ||
+                                leftward instanceof BoundlessIntegral ||
                                 leftward.ctrlSeq === '\\ ' ||
                                 /^[,;:]$/.test(leftward.ctrlSeq)) //lookbehind for operator
                         )
                             leftward = leftward[L];
                     }
-                    if (leftward instanceof SummationNotation &&
+                    if ((leftward instanceof SummationNotation ||
+                        leftward instanceof BoundlessIntegral) &&
                         leftward[R] instanceof SupSub) {
                         // The previous step scanned too far. `\sum_1^5` looks like [SummationNotation,SupSub],
                         // so scan back right

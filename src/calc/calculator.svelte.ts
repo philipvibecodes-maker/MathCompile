@@ -2,6 +2,7 @@ import { outputLatex } from '../compile/latex';
 import { compileCellForCalc } from '../compile/codegen';
 import type { MathJson } from '../compile/ir';
 import { toNerdamerInput } from './nerdamer-latex';
+import { arcTrigNames } from './result-latex';
 
 export interface CalcRowOk {
   ok: true;
@@ -74,7 +75,15 @@ function ensureWorker(): Worker {
         if (r.ok && r.code) console.log('[calc]', r.code);
         else if (!r.ok) console.log('[calc] error:', r.error);
       }
-      p.resolve(m.rows ?? []);
+      // arcTrigNames is a safety net over the worker's inv_trig_style
+      // — anything still emitting \operatorname{atan}-style a- names
+      // (user-defined functions, sympy paths outside _mc_row) renders
+      // as "a tan" in MathQuill without it.
+      p.resolve(
+        (m.rows ?? []).map((r) =>
+          r.ok && r.latex ? { ...r, latex: arcTrigNames(r.latex) } : r,
+        ),
+      );
     } else {
       console.log('[calc] error:', m.error ?? 'evaluation failed');
       p.reject(new Error(m.error ?? 'evaluation failed'));
@@ -144,9 +153,13 @@ export async function interimEvaluate(latex: string): Promise<CalcRow[]> {
       // MathQuill doesn't need \limits — bounds render under/over anyway.
       .map((p) => ({
         ok: true as const,
-        latex: nerdamer(toNerdamerInput(p, nerdamer))
-          .toTeX()
-          .replace(/\\limits/g, ''),
+        // nerdamer writes inverse trig as \mathrm{atan} — MathQuill
+        // renders that "a tan"; arcTrigNames maps to the arc- form.
+        latex: arcTrigNames(
+          nerdamer(toNerdamerInput(p, nerdamer))
+            .toTeX()
+            .replace(/\\limits/g, ''),
+        ),
       }));
   } catch {
     return [];

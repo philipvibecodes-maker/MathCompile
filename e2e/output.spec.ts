@@ -180,6 +180,28 @@ test('import-all checkbox switches between import * and sp. qualifiers', async (
   await expect(first).toContainText('x = sp.Symbol("x")');
 });
 
+// \antid and \iint are insertion aliases for a boundless indefinite ∫ —
+// the latex output view (and its copy) shows the canonical \int, which is
+// also what a pasted-elsewhere LaTeX doc needs.
+test('latex output shows \\antid and \\iint as \\int', async ({ page }) => {
+  const mf = cell(page, 0);
+  await mf.click();
+  await mf.pressSequentially('antid', { delay: 60 });
+  await mf.pressSequentially('xdx', { delay: 40 });
+  await expect(page.locator('.cell-latex').first()).toHaveText('\\int xdx');
+
+  // \iint with sibling SupSub bounds renders as \int_{a}^{b} too.
+  await page.locator('.add-expr').click();
+  await cell(page, 1).pressSequentially('iint_a', { delay: 60 });
+  await page.keyboard.press('ArrowRight');
+  await cell(page, 1).pressSequentially('^b', { delay: 60 });
+  await page.keyboard.press('ArrowRight');
+  await cell(page, 1).pressSequentially('xdx', { delay: 40 });
+  await expect(page.locator('.cell-latex').nth(1)).toHaveText(
+    '\\int_{a}^{b}xdx',
+  );
+});
+
 test('latex output shows multi-line cells as separate lines', async ({
   page,
 }) => {

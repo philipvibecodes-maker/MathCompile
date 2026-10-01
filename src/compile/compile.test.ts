@@ -145,6 +145,38 @@ const FIXTURES: {
     ],
   },
   {
+    // A non-name "callee" is juxtaposed factors, not a call — emitting
+    // `sqrt(x)(x + 1)` raised 'Pow' object is not callable in the worker.
+    latex: '\\sqrt{x}(x+1)',
+    expectedIR: ['Apply', ['Sqrt', 'x'], ['Add', 'x', 1]],
+    expectedPython: ['x = sp.Symbol("x")', 'sp.sqrt(x) * (x + 1)'],
+  },
+  {
+    // `2(x+1)` hit the same bug as 'int' object is not callable.
+    latex: '2(x+1)',
+    expectedIR: ['Apply', 2, ['Add', 'x', 1]],
+    expectedPython: ['x = sp.Symbol("x")', '2 * (x + 1)'],
+  },
+  {
+    latex: 'x^{2}(y+1)',
+    expectedIR: ['Apply', ['Power', 'x', 2], ['Add', 'y', 1]],
+    expectedPython: ["x, y = sp.symbols('x y')", 'x**2 * (y + 1)'],
+  },
+  {
+    // Inside an integrand: \int 1/(\sqrt{x}(x+1)) dx previously emitted
+    // integrate(1/(sqrt(x)(x + 1)), x) → 'Pow' object is not callable.
+    latex: '\\int \\frac{1}{\\sqrt{x}(x+1)}dx',
+    expectedIR: [
+      'Integrate',
+      ['Divide', 1, ['Apply', ['Sqrt', 'x'], ['Add', 'x', 1]]],
+      ['Limits', 'x', 'Nothing', 'Nothing'],
+    ],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.integrate(1 / (sp.sqrt(x) * (x + 1)), x) + sp.Symbol("C")',
+    ],
+  },
+  {
     latex: '\\operatorname{foo}(x) + 1',
     expectedIR: ['Add', ['call', 'foo', 'x'], 1],
     expectedPython: ['x = sp.Symbol("x")', 'sp.foo(x) + 1'],
