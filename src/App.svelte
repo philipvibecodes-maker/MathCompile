@@ -256,6 +256,27 @@
                         transition:fade={{ duration: fadeMs }}>{'\n'}{line}</span
                       >{/each}</code
                   >
+                  {#if (compiled?.cellIssues[i]?.length ?? 0) > 0}
+                    <button
+                      type="button"
+                      class="issue-badge"
+                      aria-label="{compiled?.cellIssues[i]?.length} output issue(s) — hover to read"
+                      transition:fade={{ duration: fadeMs }}
+                    >
+                      ! {compiled?.cellIssues[i]?.length}
+                      <span
+                        class="info-tip issue-tip"
+                        role="tooltip"
+                        aria-hidden="true"
+                      >
+                        {#each compiled?.cellIssues[i] ?? [] as iss, j (j)}
+                          <span class="issue-{iss.severity}"
+                            >{iss.message}</span
+                          >
+                        {/each}
+                      </span>
+                    </button>
+                  {/if}
                   <button
                     class="cell-copy"
                     title="Copy code"
@@ -264,13 +285,6 @@
                     >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
                   >
                 </div>
-                {#if (compiled?.cellIssues[i]?.length ?? 0) > 0}
-                  <ul class="cell-issues" transition:fade={{ duration: fadeMs }}>
-                    {#each compiled?.cellIssues[i] ?? [] as iss, j (j)}
-                      <li class="issue-{iss.severity}">{iss.message}</li>
-                    {/each}
-                  </ul>
-                {/if}
               </div>
             {/if}
             <button
