@@ -127,6 +127,7 @@ const KNOWN_HEADS = new Set([
   'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
   'NotLess', 'NotGreater', 'NotLessEqual', 'NotGreaterEqual', 'NotDivides',
   'Implies', 'Equivalent', 'IdenticallyEqual', 'Degrees',
+  'Minimum', 'Maximum', 'Interval', 'Open',
   'And', 'Or', 'Not', 'Which', 'Piecewise',
   // statement-level IR
   'Assign', 'Def', 'Block', 'Function',
@@ -472,6 +473,48 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     if ((h === 'Subminus' || h === 'Subplus') && node.length === 2) {
       const sign = h === 'Subminus' ? '-' : '+';
       return `${flattenSubscript(normalize(node[1], false))}_{${sign}}`;
+    }
+
+    // \min_{x} f / \max_{x} f: CE folds the underscript into the body as
+    // InvisibleOperator('_', var, body) — split it back out so codegen
+    // sees (body, var) and can emit minimum/maximum rather than
+    // sp.Min(_ * x * f) with a garbage `_` symbol in it.
+    if (
+      (h === 'Min' || h === 'Max') &&
+      node.length === 2 &&
+      isArray(node[1]) &&
+      head(node[1]) === 'InvisibleOperator' &&
+      node[1][1] === '_'
+    ) {
+      const [, , v, body] = node[1];
+      return [
+        h === 'Min' ? 'Minimum' : 'Maximum',
+        normalize(body, false),
+        normalize(v, false),
+      ];
+    }
+    // \inf_{n} a_n / \sup — no SymPy infimum, but emit a readable
+    // Infimum(a_n, n) stub instead of Infimum(_ * n * a_n).
+    if (
+      (h === 'Infimum' || h === 'Supremum') &&
+      node.length === 2 &&
+      isArray(node[1]) &&
+      head(node[1]) === 'InvisibleOperator' &&
+      node[1][1] === '_'
+    ) {
+      const [, , v, body] = node[1];
+      return [h, normalize(body, false), normalize(v, false)];
+    }
+
+    // \underbrace{x}_{a} parses as Subscript(UnderBrace(x), a) — the
+    // label is an annotation, not a subscript of x: unwrap to the body.
+    if (
+      h === 'Subscript' &&
+      node.length === 3 &&
+      isArray(node[1]) &&
+      (head(node[1]) === 'UnderBrace' || head(node[1]) === 'OverBrace')
+    ) {
+      return normalize(node[1][1], false);
     }
 
     if (h === 'Equal') node = flattenEqual(node);

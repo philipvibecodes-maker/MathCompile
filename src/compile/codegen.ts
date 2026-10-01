@@ -464,6 +464,33 @@ class Emitter {
           `${this.emit(args[0], PREC_MUL)} * ${this.sp}pi / 180`,
           PREC_MUL,
         ];
+      case 'Minimum':
+      case 'Maximum': {
+        // \min_{x} f — value of f minimized over x (sp.minimum), not the
+        // elementwise sp.Min that \min(x, y) emits.
+        const fn = h === 'Minimum' ? 'minimum' : 'maximum';
+        const rest = args
+          .slice(1)
+          .map((a) => `, ${this.emit(a)}`)
+          .join('');
+        return [`${this.sp}${fn}(${this.emit(args[0])}${rest})`, PREC_ATOM];
+      }
+      case 'Interval': {
+        // (a,b] / [a,b) — CE marks open ends with Open(x). A fully
+        // closed [a,b] parses as List, not Interval.
+        const [a0, a1] = args;
+        const lo = this.emit(isHead(a0, 'Open') ? a0[1] : a0);
+        const hi = this.emit(isHead(a1, 'Open') ? a1[1] : a1);
+        const loOpen = isHead(a0, 'Open');
+        const hiOpen = isHead(a1, 'Open');
+        const flags =
+          (loOpen ? ', left_open=True' : '') +
+          (hiOpen ? ', right_open=True' : '');
+        return [`${this.sp}Interval(${lo}, ${hi}${flags})`, PREC_ATOM];
+      }
+      case 'Open':
+        // Open marks an interval endpoint — a stray one is meaningless.
+        return [this.emit(args[0]), PREC_ATOM];
       case 'And':
         return [`${this.sp}And(${args.map((a) => this.emit(a)).join(', ')})`, PREC_ATOM];
       case 'Or':

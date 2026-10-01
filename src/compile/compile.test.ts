@@ -418,12 +418,6 @@ const FIXTURES: {
     expectedPython: ["f, x = sp.symbols('f x')", 'sp.limit(f, x, 0)'],
   },
   {
-    // \underbrace{expr}_{label} labels the expression — it collapses to
-    // the expr, and the sibling sub makes it a named symbol.
-    latex: '\\underbrace{x+1}_{n}',
-    expectedPython: ['x_1__n = sp.Symbol("x+1_{n}")'],
-  },
-  {
     // \Big( ... \Big) sizes are dropped — the parens stay an implicit
     // application, so `a` resolves as an undefined worksheet function.
     latex: 'a\\Big(b\\Big)',
@@ -502,6 +496,42 @@ const FIXTURES: {
     // x_{-} is a subscripted name, not an unknown 'Subminus' head.
     latex: 'x_{-}',
     expectedPython: ['x = sp.Symbol("x_{-}")'],
+  },
+  {
+    // \min_{x} f minimizes f over x — used to emit sp.Min(_ * x * f)
+    // with a garbage `_` symbol that raised NameError at runtime.
+    latex: '\\min_{x} f',
+    expectedPython: ["x, f = sp.symbols('x f')", 'sp.minimum(f, x)'],
+  },
+  {
+    latex: '\\max_{x} f',
+    expectedPython: ["x, f = sp.symbols('x f')", 'sp.maximum(f, x)'],
+  },
+  {
+    // \min(x,y) keeps the elementwise sp.Min.
+    latex: '\\min(x,y)',
+    expectedPython: ["x, y = sp.symbols('x y')", 'sp.Min(x, y)'],
+  },
+  {
+    // Half-open intervals map to sp.Interval; Open marks the open end.
+    latex: '(a,b]',
+    expectedPython: [
+      "a, b = sp.symbols('a b')",
+      'sp.Interval(a, b, left_open=True)',
+    ],
+  },
+  {
+    latex: '[a,b)',
+    expectedPython: [
+      "a, b = sp.symbols('a b')",
+      'sp.Interval(a, b, right_open=True)',
+    ],
+  },
+  {
+    // \underbrace{x}_{n}: the label annotates, it isn't a subscript —
+    // the statement is x + 1, not a mangled x_{n} symbol.
+    latex: '\\underbrace{x+1}_{n}',
+    expectedPython: ['x = sp.Symbol("x")', 'x + 1'],
   },
 ];
 
