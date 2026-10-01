@@ -300,7 +300,8 @@ body {
 }
 
 /* Mount animation shared by every issue rendering (li items, code
-   comments, badges). List containers fade via Svelte transitions. */
+   comments, badges). Duration follows the --fade-ms knob; list
+   containers and code lines fade via Svelte transitions. */
 @keyframes issue-in {
   from {
     opacity: 0;
@@ -309,7 +310,30 @@ body {
 }
 
 .cell-issues li {
-  animation: issue-in 0.18s ease-out;
+  animation: issue-in var(--fade-ms, 150ms) ease-out;
+}
+
+/* Prototype knob: fade-duration slider in the output header. */
+.fade-slider {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.fade-slider input[type='range'] {
+  width: 80px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.fade-ms {
+  min-width: 4.5ch;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .issue-error {
