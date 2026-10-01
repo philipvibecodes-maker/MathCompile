@@ -13,14 +13,16 @@ export function installGlobalKeymap(opts: GlobalKeymapOptions) {
   const onKeydown = (e: KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'KeyK') {
       e.preventDefault();
-      opts.onPaletteToggle();
+      // A held chord keeps firing keydown with repeat=true — each one would
+      // re-toggle the palette, so it opens/closes under the user's finger.
+      if (!e.repeat) opts.onPaletteToggle();
       return;
     }
     if (opts.isPaletteOpen()) return;
     if (!e.altKey || e.ctrlKey || e.metaKey) return;
     if (e.code === 'KeyS') {
       e.preventDefault();
-      opts.onSmartModeToggle();
+      if (!e.repeat) opts.onSmartModeToggle();
     }
   };
   window.addEventListener('keydown', onKeydown, true);
