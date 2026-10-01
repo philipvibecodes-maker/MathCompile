@@ -22,6 +22,19 @@ describe('outputLatex', () => {
   it('leaves a non-wrapping displaylines prefix alone', () => {
     expect(outputLatex('\\displaylines{x} + y')).toBe('\\displaylines{x} + y');
   });
+
+  it('shows boundless \\antid and \\iint as \\int', () => {
+    // The boundless signs are insertion aliases — the output view shows
+    // the canonical \int (a copied \antid is meaningless outside MQ).
+    expect(outputLatex('\\antid x^{2}dx')).toBe('\\int x^{2}dx');
+    expect(outputLatex('\\iint xdxdy')).toBe('\\int xdxdy');
+    expect(outputLatex('\\iint_{a}^{b} x\\,dx')).toBe('\\int_{a}^{b} x\\,dx');
+    expect(outputLatex('\\displaylines{\\antid x\\\\ \\iint y}')).toBe(
+      '\\int x\\\\ \\int y',
+    );
+    // Bounds grow as a sibling SupSub — the alias still maps.
+    expect(outputLatex('\\antid_{1} xdx')).toBe('\\int_{1} xdx');
+  });
 });
 
 describe('displayLatex', () => {
@@ -34,5 +47,12 @@ describe('displayLatex', () => {
 
   it('returns single-line latex unchanged', () => {
     expect(displayLatex('x+1')).toBe('x+1');
+  });
+
+  it('shows \\antid and \\iint as \\int too', () => {
+    expect(displayLatex('\\antid xdx')).toBe('\\int xdx');
+    expect(displayLatex('\\displaylines{\\iint x\\\\ \\antid y}')).toBe(
+      '\\int x\\\\\n\\int y',
+    );
   });
 });

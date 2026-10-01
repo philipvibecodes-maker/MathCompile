@@ -891,9 +891,16 @@ LatexCmds['∫'] =
 // grow an ordinary sibling SupSub for bounds. `\antid` is a MathCompile
 // insertion alias: the app maps it to `\int` at compile time; `\iint`
 // parses to Integrate in the compute engine on its own.
+//
+// BoundlessIntegral is its own class so left-scanning code (a typed `/`
+// wrapping the preceding run into a numerator) can stop at the sign —
+// for a SummationNotation like `\sum` the scan already breaks there, and
+// a boundless ∫ should behave the same way.
+class BoundlessIntegral extends MQSymbol {}
+
 const boundlessIntegral = (ctrlSeq: string, glyph: string, speak: string) => {
   return () =>
-    new MQSymbol(
+    new BoundlessIntegral(
       ctrlSeq,
       h('span', { class: 'mq-int' }, [
         h('big', {}, [h.text(glyph)])
@@ -1062,6 +1069,7 @@ var LiveFraction =
                   leftward._groupingClass === 'mq-ellipsis-end') ||
                 leftward instanceof (LatexCmds.text || noop) ||
                 leftward instanceof SummationNotation ||
+                leftward instanceof BoundlessIntegral ||
                 leftward.ctrlSeq === '\\ ' ||
                 /^[,;:]$/.test(leftward.ctrlSeq as string)
               ) //lookbehind for operator
@@ -1069,7 +1077,8 @@ var LiveFraction =
               leftward = leftward[L];
           }
           if (
-            leftward instanceof SummationNotation &&
+            (leftward instanceof SummationNotation ||
+              leftward instanceof BoundlessIntegral) &&
             leftward[R] instanceof SupSub
           ) {
             // The previous step scanned too far. `\sum_1^5` looks like [SummationNotation,SupSub],
