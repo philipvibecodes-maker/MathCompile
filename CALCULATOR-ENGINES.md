@@ -64,6 +64,12 @@ SymPy emitter) now does the input→SymPy translation in TypeScript, so:
   logs and the Show code block.
 - Equations evaluate honestly: `2^n = \sum\binom{i}{n}` simplifies to
   `True`, `x + 1 = 2` stays an `Eq` — no equation solving.
+- Indefinite integrals carry a constant of integration: codegen emits
+  `sp.integrate(body, v) + sp.Symbol(<letter>)` at add-precedence (the
+  constant parenthesizes when the integral nests inside a bigger term).
+  The letter is the first capital not used by the cell or worksheet —
+  `C`, else `D`, `E`, …; each boundless `Integrate` takes the next free
+  one. The nerdamer interim matches (`integrate(f, v) + C`).
 
 ## Pyodide/SymPy — what it costs
 

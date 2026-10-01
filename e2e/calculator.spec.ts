@@ -68,6 +68,27 @@ test('calculator evaluates each statement row of a multi-line cell', async ({
   await expect(rows.nth(1)).toContainText('5');
 });
 
+test('indefinite integral shows the constant of integration', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await setTarget(page, 'calculator');
+
+  const mf = cell(page, 0);
+  await mf.click();
+  // \antid is the boundless (indefinite) integral sign.
+  await mf.pressSequentially('\\antid', { delay: 40 });
+  await page.keyboard.press('Enter');
+  await mf.pressSequentially('xdx', { delay: 40 });
+
+  const rows = page.locator('.calc-rows').first();
+  await expect(rows).toBeAttached({ timeout: 90_000 });
+  await expect(rows).not.toHaveClass(/pending/, { timeout: 90_000 });
+  const row = page.locator('.calc-row').first();
+  await expect(row).toContainText('x');
+  await expect(row).toContainText('C');
+});
+
 test('calculator shows an instant nerdamer result while SymPy boots', async ({
   page,
 }) => {

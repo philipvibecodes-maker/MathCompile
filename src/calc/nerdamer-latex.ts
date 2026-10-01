@@ -80,8 +80,16 @@ function splitDifferential(s: string): [string, string] {
 
 const nonempty = (s: string): boolean => s.trim() !== '';
 
+// Constant of integration for the interim result — first capital letter
+// not appearing in the cell's latex (C, else D, E, …). Mirrors codegen's
+// nextConstName so interim and SymPy rows agree on the letter.
+function constLetter(src: string): string {
+  const used = new Set(src.match(/[A-Z]/g) ?? []);
+  return 'CDEFGHIJKLMNOPQRSTUVWXYZ'.split('').find((l) => !used.has(l)) ?? 'C';
+}
+
 // \int_{lo}^{hi} f dx → defint(f, lo, hi, var); without bounds →
-// integrate(f, var). The integrand is the rest of the line.
+// integrate(f, var) + C. The integrand is the rest of the line.
 const matchInt: Matcher = (src, rec) => {
   const start = src.indexOf('\\int');
   if (start < 0) return null;
@@ -95,7 +103,13 @@ const matchInt: Matcher = (src, rec) => {
       out: `defint(${inner}, ${rec(lo)}, ${rec(hi)}, ${dvar})`,
     };
   }
-  return { start, end: src.length, out: `integrate(${inner}, ${dvar})` };
+  // Parens keep +C bound to the integral when it sits inside a larger
+  // expression.
+  return {
+    start,
+    end: src.length,
+    out: `(integrate(${inner}, ${dvar})+${constLetter(src)})`,
+  };
 };
 
 // \sum_{i=lo}^{hi} f → sum(f, i, lo, hi); \prod likewise.

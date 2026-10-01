@@ -136,6 +136,10 @@ interface Scope {
   /** Errors flagged during this cell's emission — a statement that bumps
    * it is dropped instead of emitting `sp.Error(...)`/`None` fragments. */
   errorCount: number;
+  /** Names reserved for constants of integration — cellBody seeds it with
+   * every name the cell uses so `C` (then D, E, …) never collides. Each
+   * indefinite integral takes and reserves the next free capital. */
+  constNames: Set<string>;
   flag(severity: Issue['severity'], message: string): void;
 }
 
@@ -466,7 +470,13 @@ class Emitter {
             `${this.sp}integrate(${this.emit(body)}, (${this.emit(v)}, ${this.emit(lo)}, ${this.emit(hi)}))`,
             PREC_ATOM,
           ];
-        return [`${this.sp}integrate(${this.emit(body)}, ${this.emit(v)})`, PREC_ATOM];
+        // Indefinite: append the constant of integration (`+ C`). PREC_ADD
+        // keeps the sum parenthesized when the integral nests inside a
+        // larger term (`(∫x dx)^2` -> `(x**2/2 + C)**2`).
+        return [
+          `${this.sp}integrate(${this.emit(body)}, ${this.emit(v)}) + ${this.sp}Symbol(${JSON.stringify(nextConstName(this.scope))})`,
+          PREC_ADD,
+        ];
       }
       case 'Sum':
       case 'Product': {
@@ -614,6 +624,30 @@ function freeNames(node: MathJson, acc = new Set<string>()): string[] {
   return [...acc];
 }
 
+// Every bare name token under the node — cellBody uses it to reserve the
+// cell's names so constants of integration never shadow them.
+function allNames(node: MathJson, acc: Set<string>): void {
+  if (isStr(node)) {
+    acc.add(node);
+    return;
+  }
+  if (isArr(node)) for (const child of node) allNames(child, acc);
+}
+
+// The next constant of integration: first capital letter not used by the
+// cell or bound elsewhere in the worksheet (C, else D, E, …). Exhausted
+// alphabet falls back to reusing C — nothing else is left to give.
+function nextConstName(scope: Scope): string {
+  for (let code = 'C'.charCodeAt(0); code <= 'Z'.charCodeAt(0); code++) {
+    const name = String.fromCharCode(code);
+    if (!scope.constNames.has(name)) {
+      scope.constNames.add(name);
+      return name;
+    }
+  }
+  return 'C';
+}
+
 // Emit one normalized cell IR into defs + per-statement lines. Cells are
 // independent: the scope's defined/symbols/functions sets are fresh per
 // cell, so every free name the cell uses gets its def line at the top of
@@ -623,6 +657,10 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   const emitter = new Emitter(scope);
   const sp = scope.qualified ? 'sp.' : '';
   const preDefined = new Set(scope.defined);
+  // Reserve the cell's own names (and worksheet Assign/Def targets) so
+  // constants of integration start at the first free capital.
+  allNames(ir, scope.constNames);
+  for (const name of scope.declared) scope.constNames.add(name);
   const nodes = isHead(ir, 'Block') ? ir.slice(1) : [ir];
   const parts = nodes.map((stmt) => ({
     stmt,
@@ -867,6 +905,7 @@ function buildScope(
     cellIssues,
     cell,
     errorCount: 0,
+    constNames: new Set(),
     flag(severity, message) {
       if (severity === 'error') this.errorCount += 1;
       this.issues.push({

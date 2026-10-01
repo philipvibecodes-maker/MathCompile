@@ -55,6 +55,12 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
   });
 
+  it('gives an indefinite integral a constant of integration', () => {
+    expect(calc('\\int x\\,dx').statements[0].code).toBe(
+      'sp.integrate(x, x) + sp.Symbol("C")',
+    );
+  });
+
   it('surfaces normalization errors instead of statements', () => {
     const prog = calc('x +');
     expect(prog.issues.some((i) => i.severity === 'error')).toBe(true);
@@ -76,8 +82,9 @@ describe('toNerdamerInput (latex → nerdamer calls)', () => {
     expect(toN('\\int_{0}^{1}x dx')).toBe('defint(x, 0, 1, x)');
   });
 
-  it('maps an indefinite integral to integrate', () => {
-    expect(toN('\\int x')).toBe('integrate(x, x)');
+  it('maps an indefinite integral to integrate + constant', () => {
+    expect(toN('\\int x')).toBe('(integrate(x, x)+C)');
+    expect(toN('\\int C dx')).toBe('(integrate(C, x)+D)');
   });
 
   it('maps \\sum_{i=lo}^{hi} to sum', () => {
@@ -130,6 +137,14 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
     const rows = await interimEvaluate('\\int_{0}^{1}x');
     expect(rows[0].ok).toBe(true);
     expect((rows[0] as { latex?: string }).latex).toBe('\\frac{1}{2}');
+  });
+
+  it('shows + C on an indefinite integral interim too', async () => {
+    const rows = await interimEvaluate('\\int x dx');
+    expect(rows[0].ok).toBe(true);
+    const latex = (rows[0] as { latex?: string }).latex ?? '';
+    expect(latex).toContain('x^{2}');
+    expect(latex).toContain('C');
   });
 
   it('evaluates a derivative via nerdamer diff', async () => {
