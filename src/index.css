@@ -186,14 +186,21 @@ body {
   display: block;
 }
 
+.expr-row math-field .mq-mount {
+  height: 100%;
+}
+
 .expr-row math-field .mq-editable-field {
+  min-height: 100%;
   padding: 10px 12px;
   cursor: text;
+  /* The host draws the box. MQ's own border shows as a stray line in the
+     stretch margin when a tall output cell stretches this row. */
+  border-color: transparent;
 }
 
 .expr-row math-field .mq-editable-field.mq-focused {
   box-shadow: none;
-  border-color: transparent;
 }
 
 .expr-row:focus-within math-field {
@@ -695,10 +702,6 @@ body {
 :root[data-theme='dark'] .mq-math-mode .mq-empty.mq-quiet-delimiter,
 :root[data-theme='dark'] .mq-math-mode.mq-empty {
   background: transparent;
-}
-
-:root[data-theme='dark'] .expr-row math-field .mq-editable-field {
-  border-color: var(--border);
 }
 
 :root[data-theme='dark'] .mq-editable-field .mq-latex-command-input {
