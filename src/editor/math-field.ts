@@ -175,6 +175,8 @@ export interface FieldCallbacks {
   onNewCell?: () => void;
   // Caret hit the top/bottom edge of the field: hop to the adjacent cell.
   onMoveOut?: (direction: 'up' | 'down') => void;
+  // Backspace/Delete pressed while the field holds only a blank line.
+  onDeleteOut?: () => void;
   onFocus?: () => void;
 }
 
@@ -188,6 +190,10 @@ export interface FieldHandle {
 }
 
 const SMART_AUTO_COMMANDS = 'int sum sqrt prod pi infty theta derivative';
+
+// "Only one blank line": an empty field, or a lone \displaylines wrap
+// around nothing (what a single Enter-then-blank line serializes as).
+const BLANK_LATEX = /^\s*$|^\\displaylines\{\s*\}$/;
 
 // Attach the app's editing behavior to a <math-field>. This module is the
 // single boundary with the editor internals — nothing outside src/editor/
@@ -208,11 +214,26 @@ export function attachField(
     else if (detail.direction === 'downward') cb.onMoveOut?.('down');
   };
   const handleNewCell = () => cb.onNewCell?.();
+  // Backspace/Delete on a blank cell deletes the cell — intercept before
+  // MQ's hidden textarea so MQ never munges the keypress.
+  const handleKeydown = (e: KeyboardEvent) => {
+    if (
+      (e.key === 'Backspace' || e.key === 'Delete') &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey &&
+      BLANK_LATEX.test(el.value.trim())
+    ) {
+      e.preventDefault();
+      cb.onDeleteOut?.();
+    }
+  };
 
   el.addEventListener('input', handleInput);
   el.addEventListener('focusin', handleFocusIn);
   el.addEventListener('move-out', handleMoveOut);
   el.addEventListener('new-cell', handleNewCell);
+  el.addEventListener('keydown', handleKeydown, true);
 
   return {
     focus: (edge) => el.focus({ edge }),
@@ -230,6 +251,7 @@ export function attachField(
       el.removeEventListener('focusin', handleFocusIn);
       el.removeEventListener('move-out', handleMoveOut);
       el.removeEventListener('new-cell', handleNewCell);
+      el.removeEventListener('keydown', handleKeydown, true);
     },
   };
 }

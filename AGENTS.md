@@ -124,6 +124,11 @@ and empty blocks serialize as `{ }`.
   `detail.selecting`) come from MQ's `upOutOf`/`downOutOf`/`moveOutOf`/
   `selectOutOf`; `attachField` only hops cells on vertical edges and
   ignores selection extensions.
+- Backspace/Delete in a cell holding only a blank line (`''` or a lone
+  `\displaylines{ }` row) is intercepted in `attachField`'s
+  capture-phase keydown and deletes the cell via `deleteFocused()` —
+  MQ never sees the keypress. Ctrl/Cmd/Alt-modified deletes pass
+  through to MQ.
 - `<math-field>` carries `tabindex="-1"` and forwards host `focus` events
   into MQ's hidden textarea — plain `element.focus()`/`locator.focus()`
   work, and `document.activeElement` inside a field is the textarea

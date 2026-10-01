@@ -1,0 +1,21 @@
+import { chromium } from '@playwright/test';
+const b = await chromium.launch();
+const p = await b.newPage();
+await p.goto('http://localhost:5573/e2e/spike.html');
+await p.waitForFunction(() => window.spike);
+const r = await p.evaluate(() => {
+  const { mq } = window.spike;
+  const out = {};
+  mq.latex('');
+  mq.keystroke('Backspace');
+  out.emptyBs = mq.latex();
+  mq.keystroke('Delete');
+  out.emptyDel = mq.latex();
+  mq.latex('\\displaylines{ }');
+  mq.moveToRightEnd();
+  mq.keystroke('Backspace');
+  out.displayBs = mq.latex();
+  return out;
+});
+console.log(JSON.stringify(r));
+await b.close();

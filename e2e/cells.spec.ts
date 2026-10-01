@@ -122,6 +122,66 @@ test('deleting the last remaining cell clears it instead of removing it', async 
   expect(await cellValue(cell(page, 0))).toBe('');
 });
 
+test('Backspace in an empty cell removes it and focuses a neighbor', async ({
+  page,
+}) => {
+  await cell(page, 0).click();
+  await cell(page, 0).pressSequentially('a', { delay: 40 });
+  // Append an empty cell — it lands focused.
+  await page.locator('.add-expr').click();
+  await expect(page.locator('math-field')).toHaveCount(2);
+  await waitFocusedIndex(page, 1);
+  await page.keyboard.press('Backspace');
+  await expect(page.locator('math-field')).toHaveCount(1);
+  expect(await cellValue(cell(page, 0))).toBe('a');
+  await waitFocusedIndex(page, 0);
+});
+
+test('Delete in an empty middle cell removes it and focuses the next cell', async ({
+  page,
+}) => {
+  await cell(page, 0).click();
+  await cell(page, 0).pressSequentially('a', { delay: 40 });
+  await page.locator('.add-expr').click();
+  await cell(page, 1).pressSequentially('b', { delay: 40 });
+  // Insert a blank cell between a and b via Shift+Enter on cell 0.
+  await focusCell(page, 0);
+  await page.keyboard.press('Shift+Enter');
+  await expect(page.locator('math-field')).toHaveCount(3);
+  await waitFocusedIndex(page, 1);
+  await page.keyboard.press('Delete');
+  await expect(page.locator('math-field')).toHaveCount(2);
+  expect(await cellValue(cell(page, 0))).toBe('a');
+  expect(await cellValue(cell(page, 1))).toBe('b');
+  // deleteFocused prefers the next cell (the old b), now index 1.
+  await waitFocusedIndex(page, 1);
+});
+
+test('Backspace in the only cell just clears it', async ({ page }) => {
+  await cell(page, 0).click();
+  await page.keyboard.press('Backspace');
+  await expect(page.locator('math-field')).toHaveCount(1);
+  expect(await cellValue(cell(page, 0))).toBe('');
+});
+
+test('Backspace unwinds blank displaylines lines before removing the cell', async ({
+  page,
+}) => {
+  await cell(page, 0).click();
+  await cell(page, 0).pressSequentially('a', { delay: 40 });
+  await page.locator('.add-expr').click();
+  // A lone Enter wraps two blank lines — not "one blank line" yet, so the
+  // first Backspace is MQ's own unwrap, the second removes the cell.
+  await page.keyboard.press('Enter');
+  expect(await cellValue(cell(page, 1))).toBe('\\displaylines{\\\\ }');
+  await page.keyboard.press('Backspace');
+  await expect(page.locator('math-field')).toHaveCount(2);
+  expect(await cellValue(cell(page, 1))).toBe('');
+  await page.keyboard.press('Backspace');
+  await expect(page.locator('math-field')).toHaveCount(1);
+  expect(await cellValue(cell(page, 0))).toBe('a');
+});
+
 test('Enter splits the cell into multiple lines', async ({ page }) => {
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('x', { delay: 40 });
