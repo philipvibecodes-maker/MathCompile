@@ -24,7 +24,6 @@ test.beforeEach(async ({ page }) => {
 
 test('latex target hides the python import controls', async ({ page }) => {
   await expect(page.locator('.output-import-all')).toHaveCount(0);
-  await expect(page.locator('.output-import')).toHaveCount(0);
 });
 
 // Disabled <option>s can't be picked via selectOption; dispatch a change
@@ -151,7 +150,7 @@ test('python target shows standalone per-cell scripts', async ({
   // Switching back to latex removes the code output and the controls.
   await setTarget(page, 'latex');
   await expect(page.locator('.cell-python')).toHaveCount(0);
-  await expect(page.locator('.output-import')).toHaveCount(0);
+  await expect(page.locator('.output-import-all')).toHaveCount(0);
 });
 
 test('import-all checkbox switches between import * and sp. qualifiers', async ({
@@ -164,25 +163,17 @@ test('import-all checkbox switches between import * and sp. qualifiers', async (
   await setTarget(page, 'python');
 
   const toggle = page.locator('.output-import-all input');
-  const importChip = page.locator('.output-import');
   const first = page.locator('.cell-python').first();
 
-  // Default: checked, import-* chip, unqualified per-cell output.
+  // Default: checked — each cell's script starts with `from sympy import *`
+  // and emits unqualified names.
   await expect(toggle).toBeChecked();
-  await expect(importChip).toHaveText('from sympy import *');
   await expect(first).toContainText('from sympy import *');
   await expect(first).toContainText('x = Symbol("x")');
 
-  // The header import chip is copyable.
-  await importChip.click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-    'from sympy import *',
-  );
-
-  // Unchecked: `import sympy as sp` chip and sp.-qualified output.
+  // Unchecked: `import sympy as sp` and sp.-qualified output.
   await toggle.click();
   await expect(toggle).not.toBeChecked();
-  await expect(importChip).toHaveText('import sympy as sp');
   await expect(first).toContainText('import sympy as sp');
   await expect(first).toContainText('x = sp.Symbol("x")');
 });

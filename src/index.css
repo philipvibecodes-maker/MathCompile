@@ -270,22 +270,6 @@ body {
   white-space: nowrap;
 }
 
-.output-import {
-  font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
-  font-size: 11.5px;
-  padding: 2px 8px;
-  color: var(--text);
-  background: var(--panel-bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.output-import:hover {
-  border-color: var(--accent-text, var(--muted));
-}
-
 /* Per-cell code output: code row on top, issues below. */
 .cell-code {
   flex-direction: column;

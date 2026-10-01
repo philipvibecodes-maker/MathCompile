@@ -41,13 +41,6 @@
     copiedTimer = setTimeout(() => (copiedId = null), 1200);
   }
 
-  let copiedImport = $state(false);
-  function copyImport() {
-    navigator.clipboard.writeText(compiled?.importLine ?? '');
-    copiedImport = true;
-    setTimeout(() => (copiedImport = false), 1200);
-  }
-
   let copiedScript = $state(false);
   function copyScript() {
     navigator.clipboard.writeText(compiled?.program ?? '');
@@ -210,13 +203,6 @@
               />
               import *
             </label>
-            <button
-              type="button"
-              class="output-import"
-              title="Copy import line"
-              onclick={copyImport}
-              >{copiedImport ? 'Copied' : compiled.importLine}</button
-            >
             <button
               class="cell-copy"
               title="Copy the entire output as one script"
