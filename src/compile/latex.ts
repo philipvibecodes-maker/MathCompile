@@ -5,6 +5,15 @@
 const INT_ALIASES = /\\(?:antid|iint)(?![a-zA-Z])/g;
 const canonicalInt = (s: string): string => s.replace(INT_ALIASES, '\\int');
 
+// Clipboard form: the field's stored serialization verbatim — still
+// \displaylines-wrapped for multi-line cells — with only the \int
+// canonicalization. Unlike outputLatex's unwrapped text, this parses
+// back verbatim (a bare top-level \\ is not valid MathQuill input, so
+// copying the display form silently wiped a pasted cell).
+export function copyableLatex(latex: string): string {
+  return canonicalInt(latex);
+}
+
 // The latex output target shows a cell's LaTeX verbatim, except the
 // \displaylines{} wrapper MathQuill adds to multi-line cells — that's an
 // editing artifact, not part of the expression, so it is unwrapped here.

@@ -282,6 +282,25 @@
 .mq-math-mode .mq-monospace {
   font-family: monospace, Symbola, serif;
 }
+.mq-math-mode .mq-caligraphic {
+  font-family: 'Lucida Calligraphy', 'Apple Chancery', cursive, Symbola, serif;
+}
+.mq-math-mode .mq-fraktur {
+  font-family: 'Old English Text MT', 'UnifrakturMaguntia', fantasy, Symbola, serif;
+}
+.mq-math-mode .mq-fbox {
+  border: 1px solid;
+  padding: 0 0.1em;
+}
+.mq-math-mode .mq-overunderset {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.2;
+}
+.mq-math-mode .mq-overscript {
+  font-size: 0.7em;
+}
 .mq-math-mode .mq-overline {
   border-top: 1px solid;
   margin-top: 1px;

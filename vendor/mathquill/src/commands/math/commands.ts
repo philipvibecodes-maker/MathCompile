@@ -160,6 +160,30 @@ LatexCmds.mathsf = () =>
   );
 LatexCmds.mathtt = () =>
   new Style('\\mathtt', 'span', { class: 'mq-monospace mq-font' }, 'Math Text');
+LatexCmds.mathcal = () =>
+  new Style(
+    '\\mathcal',
+    'span',
+    { class: 'mq-caligraphic mq-font' },
+    'Calligraphic Font'
+  );
+LatexCmds.mathscr = () =>
+  new Style(
+    '\\mathscr',
+    'span',
+    { class: 'mq-caligraphic mq-font' },
+    'Script Font'
+  );
+LatexCmds.mathfrak = () =>
+  new Style(
+    '\\mathfrak',
+    'span',
+    { class: 'mq-fraktur mq-font' },
+    'Fraktur Font'
+  );
+// \bold in math mode is boldmath — serialized canonically as \mathbf
+LatexCmds.bold = () =>
+  new Style('\\mathbf', 'b', { class: 'mq-font' }, 'Bold Font');
 //text-decoration
 LatexCmds.underline = () =>
   new Style(
@@ -282,6 +306,73 @@ LatexCmds.textcolor = class extends MathCommand {
     return true;
   }
 };
+
+// \color{color}math is the declaration form of \textcolor — it
+// canonicalizes to \textcolor{color}{math} (the next block is colored).
+LatexCmds.color = LatexCmds.textcolor;
+
+// \boxed{...} is a boxed frame around its content (amsmath \boxed)
+LatexCmds.boxed = () =>
+  new Style(
+    '\\boxed',
+    'span',
+    { class: 'mq-non-leaf mq-fbox' },
+    'Boxed'
+  );
+
+// \overset{label}{base} stacks a small label above; \underset below;
+// \stackrel is the plain-TeX name for \overset
+LatexCmds.overset = class extends MathCommand {
+  ctrlSeq = '\\overset';
+  domView = new DOMView(2, (blocks) =>
+    h('span', { class: 'mq-non-leaf mq-overunderset' }, [
+      h.block('span', { class: 'mq-overscript' }, blocks[0]),
+      h.block('span', {}, blocks[1])
+    ])
+  );
+};
+LatexCmds.stackrel = LatexCmds.overset;
+LatexCmds.underset = class extends MathCommand {
+  ctrlSeq = '\\underset';
+  domView = new DOMView(2, (blocks) =>
+    h('span', { class: 'mq-non-leaf mq-overunderset' }, [
+      h.block('span', {}, blocks[1]),
+      h.block('span', { class: 'mq-overscript' }, blocks[0])
+    ])
+  );
+};
+
+// \pmod{m} / \pod{m} — parenthesized (mod m) / (m); \bmod is the
+// binary mod operator
+LatexCmds.pmod = () =>
+  new MathCommand(
+    '\\pmod',
+    new DOMView(1, (blocks) =>
+      h('span', { class: 'mq-non-leaf' }, [
+        h('span', {}, [h.text('(mod\u00a0')]),
+        h.block('span', {}, blocks[0]),
+        h('span', {}, [h.text(')')])
+      ])
+    ),
+    ['mod(', ')']
+  );
+LatexCmds.pod = () =>
+  new MathCommand(
+    '\\pod',
+    new DOMView(1, (blocks) =>
+      h('span', { class: 'mq-non-leaf' }, [
+        h('span', {}, [h.text('(')]),
+        h.block('span', {}, blocks[0]),
+        h('span', {}, [h.text(')')])
+      ])
+    ),
+    ['(', ')']
+  );
+LatexCmds.bmod = LatexCmds.mod = bindBinaryOperator(
+  '\\bmod ',
+  'mod',
+  'mod'
+);
 
 // Very similar to the \textcolor command, but will add the given CSS class.
 // Usage: \class{classname}{math}
@@ -768,10 +859,11 @@ class SummationNotation extends MathCommand {
       new Equality().createLeftOf(cursor);
     }
   }
+  limitsCtrlSeq: string | undefined;
   latexRecursive(ctx: LatexContext) {
     this.checkCursorContextOpen(ctx);
 
-    ctx.uncleanedLatex += this.ctrlSeq + '_{';
+    ctx.uncleanedLatex += this.ctrlSeq + (this.limitsCtrlSeq || '') + '_{';
     let beforeLength = ctx.uncleanedLatex.length;
     this.getEnd(L).latexRecursive(ctx);
     let afterLength = ctx.uncleanedLatex.length;
@@ -817,7 +909,19 @@ class SummationNotation extends MathCommand {
       blocks[i].adopt(self, self.getEnd(R), 0);
     }
 
+    // `\sum\limits_{i}^{n}` — an optional \limits/\nolimits between the
+    // operator and its bounds is kept on the node so serialization
+    // round-trips it instead of dropping it or leaving { } bounds.
+    var optLimits = Parser.regex(/^\\(?:no)?limits(?![a-zA-Z])\s*/)
+      .map(function (limits) {
+        self.limitsCtrlSeq = limits.trim() + ' ';
+        return undefined;
+      })
+      .or(succeed(''));
+
     return optWhitespace
+      .then(optLimits)
+      .then(optWhitespace)
       .then(string('_').or(string('^')))
       .then(function (supOrSub) {
         var child = blocks[supOrSub === '_' ? 0 : 1];
@@ -916,6 +1020,16 @@ LatexCmds['∬'] = LatexCmds.iint = boundlessIntegral(
   'indefinite integral'
 );
 LatexCmds.antid = boundlessIntegral('\\antid ', U_INTEGRAL, 'antiderivative');
+LatexCmds['∯'] = LatexCmds.oiint = boundlessIntegral(
+  '\\oiint ',
+  '∯',
+  'surface integral'
+);
+LatexCmds['∰'] = LatexCmds.oiiint = boundlessIntegral(
+  '\\oiiint ',
+  '∰',
+  'volume integral'
+);
 
 var Fraction =
   (LatexCmds.frac =
@@ -1334,6 +1448,10 @@ LatexCmds.vec = () =>
   new DiacriticAbove('\\vec', h.entityText('&rarr;'), ['vec(', ')']);
 LatexCmds.tilde = () =>
   new DiacriticAbove('\\tilde', h.text('~'), ['tilde(', ')']);
+LatexCmds.ddot = () =>
+  new DiacriticAbove('\\ddot', h.text('¨'), ['ddot(', ')']);
+LatexCmds.dddot = () =>
+  new DiacriticAbove('\\dddot', h.text('...'), ['dddot(', ')']);
 
 class DelimsNode extends MathCommand {
   delimFrags: Ends<DOMFragment>;
@@ -1847,6 +1965,10 @@ class Binomial extends DelimsNode {
 }
 
 LatexCmds.binom = LatexCmds.binomial = Binomial;
+// \tfrac serializes canonically as \frac (same as \dfrac/\cfrac);
+// \dbinom/\tbinom likewise as \binom
+LatexCmds.tfrac = LatexCmds.frac;
+LatexCmds.dbinom = LatexCmds.tbinom = LatexCmds.binom;
 
 LatexCmds.choose = class extends Binomial {
   createLeftOf(cursor: Cursor) {

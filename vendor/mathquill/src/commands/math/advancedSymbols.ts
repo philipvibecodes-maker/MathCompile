@@ -162,6 +162,9 @@ LatexCmds.mathbb = class extends MathCommand {
   }
 };
 
+// \Bbb{R} and \mathds{F} are old/amsmath spellings of \mathbb
+LatexCmds.Bbb = LatexCmds.mathds = LatexCmds.mathbb;
+
 LatexCmds['ℕ'] =
   LatexCmds.N =
   LatexCmds.naturals =
@@ -221,6 +224,31 @@ LatexCmds.quad = LatexCmds.emsp = bindVanillaSymbol(
   '4 spaces'
 );
 LatexCmds.qquad = bindVanillaSymbol('\\qquad ', '        ', '8 spaces');
+
+// style switches (\displaystyle … \nolimits) — invisible atoms that
+// serialize their command verbatim. \limits/\nolimits sit between an
+// operator and its bounds; the bound then attaches to this zero-width
+// atom, so `\sum\limits_{i}` renders like `\sum_{i}` and round-trips.
+function bindStyleModifier(ctrlSeq: string, mathspeak: string) {
+  return () =>
+    new VanillaSymbol(
+      ctrlSeq,
+      h('span', { class: 'mq-style-modifier' }),
+      mathspeak
+    );
+}
+LatexCmds.displaystyle = bindStyleModifier(
+  '\\displaystyle ',
+  'displaystyle'
+);
+LatexCmds.textstyle = bindStyleModifier('\\textstyle ', 'textstyle');
+LatexCmds.scriptstyle = bindStyleModifier('\\scriptstyle ', 'scriptstyle');
+LatexCmds.scriptscriptstyle = bindStyleModifier(
+  '\\scriptscriptstyle ',
+  'scriptscriptstyle'
+);
+LatexCmds.limits = bindStyleModifier('\\limits ', 'limits');
+LatexCmds.nolimits = bindStyleModifier('\\nolimits ', 'no limits');
 /* spacing special characters, gonna have to implement this in LatexCommandInput::onText somehow
 case ',':
   return VanillaSymbol('\\, ',' ', 'comma');
@@ -655,10 +683,15 @@ LatexCmds['Å'] =
     bindVanillaSymbol('\\text\\AA ', '&#8491;', 'AA');
 
 LatexCmds['∘'] =
-  LatexCmds.ring =
   LatexCmds.circ =
   LatexCmds.circle =
     bindVanillaSymbol('\\circ ', '&#8728;', 'circle');
+
+// \ring/\mathring are LaTeX ring accents (˚ above), not the ∘ operator
+LatexCmds.ring = () =>
+  new DiacriticAbove('\\ring', h.text('˚'), ['ring(', ')']);
+LatexCmds.mathring = () =>
+  new DiacriticAbove('\\mathring', h.text('˚'), ['ring(', ')']);
 
 LatexCmds['•'] =
   LatexCmds.bull =
@@ -670,10 +703,124 @@ LatexCmds['∖'] =
   LatexCmds.smallsetminus =
     bindVanillaSymbol('\\setminus ', '&#8726;', 'set minus');
 
-LatexCmds.not = //bind(MQSymbol,'\\not ','<span class="not">/</span>', 'not');
+LatexCmds.lnot = // plain negation
   LatexCmds['¬'] =
   LatexCmds.neg =
     bindVanillaSymbol('\\neg ', '&not;', 'not');
+
+// `\not` + a relation produces the negated relation glyph:
+// `\not\in` → ∉, `\not=` → ≠, `\not\subset` → ⊄. Relations without a
+// known negation keep a standalone \not (∕) so the text round-trips.
+const NOT_RELATIONS: { [rel: string]: string } = {
+  '=': 'ne',
+  '<': 'nless',
+  '>': 'ngtr',
+  '\\in': 'notin',
+  '\\ni': 'notni',
+  '\\exists': 'nexists',
+  '\\subset': 'nsubset',
+  '\\supset': 'nsupset',
+  '\\subseteq': 'nsubseteq',
+  '\\supseteq': 'nsupseteq',
+  '\\cong': 'ncong',
+  '\\sim': 'nsim',
+  '\\parallel': 'nparallel',
+  '\\approx': 'napprox',
+  '\\equiv': 'nequiv',
+  '\\mid': 'nmid',
+  '\\le': 'nleq',
+  '\\leq': 'nleq',
+  '\\ge': 'ngeq',
+  '\\geq': 'ngeq',
+  '\\vdash': 'nvdash',
+  '\\prec': 'nprec',
+  '\\succ': 'nsucc',
+  '\\preceq': 'npreceq',
+  '\\succeq': 'nsucceq'
+};
+
+LatexCmds.not = class extends MathCommand {
+  createLeftOf() {}
+  numBlocks() {
+    return 1 as const;
+  }
+  parser() {
+    return Parser.optWhitespace
+      .then(latexMathParser.block)
+      .then(function (block) {
+        var first = block.getEnd(L) as MQNode | undefined;
+        var key = (first && first.ctrlSeq ? first.ctrlSeq : '').replace(
+          /\s+$/,
+          ''
+        );
+        var target = key ? NOT_RELATIONS[key] : undefined;
+        var cmd = target ? LatexCmds[target] : undefined;
+        if (cmd) {
+          return Parser.succeed(
+            isMQNodeClass(cmd)
+              ? new (cmd as typeof MathCommand)()
+              : (cmd as MQNodeBuilderNoParam)()
+          );
+        }
+        return Parser.fail('not a negatable relation');
+      })
+      .or(Parser.succeed(new VanillaSymbol('\\not ', h.text('∕'))));
+  }
+};
+
+// negated relations needed by the \not mapping (and parsed on their own)
+LatexCmds['≉'] = LatexCmds.napprox = bindBinaryOperator(
+  '\\not\\approx ',
+  '&#8777;',
+  'not approximately'
+);
+LatexCmds['≢'] = LatexCmds.nequiv = bindBinaryOperator(
+  '\\not\\equiv ',
+  '&#8802;',
+  'not equivalent to'
+);
+LatexCmds['∤'] = LatexCmds.nmid = bindBinaryOperator(
+  '\\not\\mid ',
+  '&#8740;',
+  'does not divide'
+);
+LatexCmds['≰'] =
+  LatexCmds.nle =
+  LatexCmds.nleq =
+    bindBinaryOperator('\\not\\le ', '&#8816;', 'not less than or equal to');
+LatexCmds['≱'] =
+  LatexCmds.nge =
+  LatexCmds.ngeq =
+    bindBinaryOperator(
+      '\\not\\ge ',
+      '&#8817;',
+      'not greater than or equal to'
+    );
+LatexCmds['⊬'] = LatexCmds.nvdash = bindBinaryOperator(
+  '\\not\\vdash ',
+  '&#8876;',
+  'does not prove'
+);
+LatexCmds['⊀'] = LatexCmds.nprec = bindBinaryOperator(
+  '\\not\\prec ',
+  '&#8832;',
+  'does not precede'
+);
+LatexCmds['⊁'] = LatexCmds.nsucc = bindBinaryOperator(
+  '\\not\\succ ',
+  '&#8833;',
+  'does not succeed'
+);
+LatexCmds['⋠'] = LatexCmds.npreceq = bindBinaryOperator(
+  '\\not\\preceq ',
+  '&#8928;',
+  'not precede or equal'
+);
+LatexCmds['⋡'] = LatexCmds.nsucceq = bindBinaryOperator(
+  '\\not\\succeq ',
+  '&#8929;',
+  'not succeed or equal'
+);
 
 LatexCmds['…'] =
   LatexCmds.dots =

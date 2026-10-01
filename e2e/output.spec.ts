@@ -202,6 +202,29 @@ test('latex output shows \\antid and \\iint as \\int', async ({ page }) => {
   );
 });
 
+// Common latex constructs that previously blanked the field now
+// round-trip: fonts/accents, negated relations, mod, boxed, overset.
+test('latex output round-trips fonts, negations, mod, boxed, overset', async ({
+  page,
+}) => {
+  const cases: [string, string][] = [
+    ['\\mathcal{F}x', '\\mathcal{F}x'],
+    ['x\\not\\in A', 'x\\notin A'],
+    ['x\\pmod{m}', 'x\\pmod{m}'],
+    ['\\boxed{x=1}', '\\boxed{x=1}'],
+    ['\\sum\\limits_{i=0}^{n}x', '\\sum\\limits_{i=0}^{n}x'],
+  ];
+  const mf = cell(page, 0);
+  const out = page.locator('.cell-latex').first();
+  for (const [input, expected] of cases) {
+    await mf.evaluate(
+      (el, latex) => ((el as { value: string }).value = latex),
+      input,
+    );
+    await expect(out).toHaveText(expected);
+  }
+});
+
 test('latex output shows multi-line cells as separate lines', async ({
   page,
 }) => {

@@ -173,6 +173,72 @@ suite('latex', function () {
     assertParsesLatex('\\space\\   \\   space  ', '\\ \\ \\ space');
   });
 
+  test('\\not + relation produces the negated relation', function () {
+    assertParsesLatex('x\\not\\in A', 'x\\notin A');
+    assertParsesLatex('x\\notin A', 'x\\notin A');
+    assertParsesLatex('a\\not=b', 'a\\ne b');
+    assertParsesLatex('A\\not\\subset B', 'A\\not\\subset B');
+    assertParsesLatex('A\\not\\subseteq B', 'A\\not\\subseteq B');
+    assertParsesLatex('a\\not<b', 'a\\nless b');
+    assertParsesLatex('a\\not>b', 'a\\ngtr b');
+    assertParsesLatex('a\\not\\approx b', 'a\\not\\approx b');
+    assertParsesLatex('a\\not\\equiv b', 'a\\not\\equiv b');
+    // unknown followers keep a standalone \not that round-trips
+    assertParsesLatex('\\not\\oplus', '\\not\\oplus');
+  });
+
+  test('font and accent commands round-trip', function () {
+    assertParsesLatex('\\mathcal{F}', '\\mathcal{F}');
+    assertParsesLatex('\\mathscr{F}', '\\mathscr{F}');
+    assertParsesLatex('\\mathfrak{g}', '\\mathfrak{g}');
+    assertParsesLatex('\\bold{x}', '\\mathbf{x}');
+    assertParsesLatex('\\ddot{x}', '\\ddot{x}');
+    assertParsesLatex('\\dddot{x}', '\\dddot{x}');
+    assertParsesLatex('\\ring{x}', '\\ring{x}');
+    assertParsesLatex('\\mathring{x}', '\\mathring{x}');
+    assertParsesLatex('\\Bbb{R}', '\\mathbb{R}');
+    assertParsesLatex('\\mathds{R}', '\\mathbb{R}');
+  });
+
+  test('fraction variants and binomials canonicalize', function () {
+    assertParsesLatex('\\tfrac{1}{2}', '\\frac{1}{2}');
+    assertParsesLatex('\\dfrac{1}{2}', '\\frac{1}{2}');
+    assertParsesLatex('\\dbinom{n}{k}', '\\binom{n}{k}');
+    assertParsesLatex('\\tbinom{n}{k}', '\\binom{n}{k}');
+  });
+
+  test('mod, boxed, overset, style commands', function () {
+    assertParsesLatex('x\\pmod{m}', 'x\\pmod{m}');
+    assertParsesLatex('a\\bmod b', 'a\\bmod b');
+    assertParsesLatex('\\boxed{x=1}', '\\boxed{x=1}');
+    assertParsesLatex('\\overset{?}{=}', '\\overset{?}{=}');
+    assertParsesLatex('\\underset{x}{\\max}', '\\underset{x}{\\max}');
+    assertParsesLatex(
+      '\\displaystyle\\sum_{i=0}^{n}x',
+      '\\displaystyle\\sum_{i=0}^{n}x'
+    );
+    assertParsesLatex(
+      '\\sum\\limits_{i=0}^{n}x',
+      '\\sum\\limits_{i=0}^{n}x'
+    );
+    assertParsesLatex(
+      '\\sum\\nolimits_{i=0}^{n}x',
+      '\\sum\\nolimits_{i=0}^{n}x'
+    );
+    assertParsesLatex(
+      '\\left(\\sum\\limits_{i=0}^{n}\\right)',
+      '\\left(\\sum\\limits_{i=0}^{n}\\right)'
+    );
+    assertParsesLatex('\\oiint', '\\oiint');
+    assertParsesLatex('\\oiiint', '\\oiiint');
+    assertParsesLatex('\\lnot p', '\\neg p');
+  });
+
+  test('\\operatorname* consumes the star', function () {
+    assertParsesLatex('\\operatorname{tr}(A)', 'tr(A)');
+    assertParsesLatex('\\operatorname*{argmin}_{x}', '\\arg\\min_{x}');
+  });
+
   test('\\text', function () {
     assertParsesLatex('\\text { lol! } ', '\\text{ lol! }');
     assertParsesLatex(
