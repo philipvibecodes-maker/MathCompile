@@ -91,7 +91,11 @@ export function parseCellLatex(latex: string): MathJson | undefined {
     try {
       // `form: 'raw'` skips CE canonicalization so the user's term order
       // survives to codegen (a * 2 stays Multiply(a, 2), not sorted).
-      return ce().parse(s, { form: 'raw' }).json as MathJson;
+      // \antid is MathQuill's insertion alias for a boundless \int — map
+      // it to \int so CE parses an ordinary Integrate node.
+      return ce()
+        .parse(s.replaceAll(/\\antid(?![a-zA-Z])/g, '\\int'), { form: 'raw' })
+        .json as MathJson;
     } catch {
       return ['Error', `'parse-failed'`] as MathJson;
     }

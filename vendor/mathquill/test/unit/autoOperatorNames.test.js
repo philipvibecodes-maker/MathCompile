@@ -79,19 +79,17 @@ suite('autoOperatorNames', function () {
   test('works in \\int', function () {
     mq.typedText('int');
     mq.typedText('sin');
-    // The integral is boundless: `sin` lands right of the symbol as an
-    // operatorname, not inside a mandatory lower-bound block.
-    assertLatex('int allows operatorname', '\\int\\sin');
+    assertLatex('int allows operatorname', '\\int_{\\sin}^{ }');
   });
 
-  test('\\int grows bounds from typed _ and ^', function () {
-    mq.typedText('int');
+  test('\\iint grows bounds from typed _ and ^', function () {
+    mq.cmd('\\iint');
     mq.typedText('_a');
     mq.keystroke('Right');
     mq.typedText('^b');
     mq.keystroke('Right');
     mq.typedText('xdx');
-    assertLatex('definite integral via _ and ^', '\\int_{a}^{b}xdx');
+    assertLatex('definite integral via _ and ^', '\\iint_{a}^{b}xdx');
   });
 
   test('works in subscript after log, based on "except" option', function () {

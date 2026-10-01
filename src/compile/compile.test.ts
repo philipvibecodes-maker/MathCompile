@@ -63,6 +63,32 @@ const FIXTURES: {
     expectedPython: ['x = sp.Symbol("x")', 'sp.integrate(x**2, x)'],
   },
   {
+    latex: '\\antid x^2 dx',
+    // \antid is the boundless insertion alias for \int — ir.ts maps it
+    // before ce.parse, so it compiles to the same Integrate node.
+    expectedIR: [
+      'Integrate',
+      ['Power', 'x', 2],
+      ['Limits', 'x', 'Nothing', 'Nothing'],
+    ],
+    expectedPython: ['x = sp.Symbol("x")', 'sp.integrate(x**2, x)'],
+  },
+  {
+    latex: '\\iint x^2 dx',
+    // CE parses \iint natively to Integrate.
+    expectedIR: [
+      'Integrate',
+      ['Power', 'x', 2],
+      ['Limits', 'x', 'Nothing', 'Nothing'],
+    ],
+    expectedPython: ['x = sp.Symbol("x")', 'sp.integrate(x**2, x)'],
+  },
+  {
+    latex: '\\iint_{a}^{b} x\\,dx',
+    expectedIR: ['Integrate', 'x', ['Limits', 'x', 'a', 'b']],
+    expectedPython: ["x, a, b = sp.symbols('x a b')", 'sp.integrate(x, (x, a, b))'],
+  },
+  {
     // Term order is preserved: Multiply(a, 2), not canonical Multiply(2, a).
     latex: 'a \\cdot 2',
     expectedIR: ['Multiply', 'a', 2],

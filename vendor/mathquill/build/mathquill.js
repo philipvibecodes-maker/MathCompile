@@ -208,6 +208,7 @@ var __assign = (this && this.__assign) || function () {
     var U_NARY_PRODUCT = '\u220F';
     var U_NARY_COPRODUCT = '\u2210';
     var U_INTEGRAL = '\u222B';
+    var U_DOUBLE_INTEGRAL = '\u222C';
     /**
      * Like `el.getBoundingClientRect()` but avoids throwing for
      * disconnected and hidden elements in IE <= 11.
@@ -9067,19 +9068,50 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.coprod = LatexCmds.coproduct = function () {
         return new SummationNotation('\\coprod ', U_NARY_COPRODUCT, 'co product');
     };
-    // The integral sign carries no blocks of its own \u2014 bounds are added on
-    // demand by typing `_`/`^`, which grow an ordinary sibling SupSub (the
-    // same structure latex like `\int_{a}^{b}` parses to). This keeps the
-    // caret right of the symbol so an indefinite integral (`\int x dx`)
-    // types linearly without escaping empty bound boxes.
     LatexCmds['\u222b'] =
         LatexCmds['int'] =
-            LatexCmds.integral =
-                function () {
-                    return new MQSymbol('\\int ', h('span', { class: 'mq-int' }, [
-                        h('big', {}, [h.text(U_INTEGRAL)])
-                    ]), undefined, 'integral');
+            LatexCmds.integral = /** @class */ (function (_super) {
+                __extends(class_11, _super);
+                function class_11() {
+                    var _this_1 = _super.call(this, '\\int ', '', 'integral') || this;
+                    _this_1.ariaLabel = 'integral';
+                    _this_1.domView = new DOMView(2, function (blocks) {
+                        return h('span', { class: 'mq-int mq-non-leaf' }, [
+                            h('big', {}, [h.text(U_INTEGRAL)]),
+                            h('span', { class: 'mq-supsub mq-non-leaf' }, [
+                                h('span', { class: 'mq-sup' }, [
+                                    h.block('span', { class: 'mq-sup-inner' }, blocks[1])
+                                ]),
+                                h.block('span', { class: 'mq-sub' }, blocks[0]),
+                                h('span', { style: 'display:inline-block;width:0' }, [
+                                    h.text(U_ZERO_WIDTH_SPACE)
+                                ])
+                            ])
+                        ]);
+                    });
+                    return _this_1;
+                }
+                class_11.prototype.createLeftOf = function (cursor) {
+                    // FIXME: refactor rather than overriding
+                    MathCommand.prototype.createLeftOf.call(this, cursor);
                 };
+                return class_11;
+            }(SummationNotation));
+    // Boundless integral signs for indefinite integrals: `\iint` renders the
+    // double sign \u222c and `\antid` the single sign \u222b \u2014 neither carries blocks,
+    // so the integrand types linearly (`\antid x dx`, `\iint f dx dy`) and
+    // `_`/`^` may still grow an ordinary sibling SupSub for bounds. `\antid`
+    // is a MathCompile insertion alias: the app maps it to `\int` at compile
+    // time; `\iint` parses to Integrate in the compute engine on its own.
+    var boundlessIntegral = function (ctrlSeq, glyph, speak) {
+        return function () {
+            return new MQSymbol(ctrlSeq, h('span', { class: 'mq-int' }, [
+                h('big', {}, [h.text(glyph)])
+            ]), undefined, speak);
+        };
+    };
+    LatexCmds['\u222c'] = LatexCmds.iint = boundlessIntegral('\\iint ', U_DOUBLE_INTEGRAL, 'double integral');
+    LatexCmds.antid = boundlessIntegral('\\antid ', U_INTEGRAL, 'antiderivative');
     var Fraction = (LatexCmds.frac =
         LatexCmds.dfrac =
             LatexCmds.cfrac =
@@ -9214,11 +9246,11 @@ var __assign = (this && this.__assign) || function () {
                 }(MathCommand)));
     var LiveFraction = (LatexCmds.over =
         CharCmds['/'] = /** @class */ (function (_super) {
-            __extends(class_11, _super);
-            function class_11() {
+            __extends(class_12, _super);
+            function class_12() {
                 return _super !== null && _super.apply(this, arguments) || this;
             }
-            class_11.prototype.createLeftOf = function (cursor) {
+            class_12.prototype.createLeftOf = function (cursor) {
                 if (!this.replacedFragment) {
                     var leftward = cursor[L];
                     var dontScan = cursor.options.typingSlashCreatesNewFraction &&
@@ -9258,7 +9290,7 @@ var __assign = (this && this.__assign) || function () {
                 }
                 _super.prototype.createLeftOf.call(this, cursor);
             };
-            return class_11;
+            return class_12;
         }(Fraction)));
     var AnsBuilder = function () {
         return new MQSymbol('\\operatorname{ans}', h('span', { class: 'mq-ans' }, [h.text('ans')]), 'ans');
@@ -9467,16 +9499,16 @@ var __assign = (this && this.__assign) || function () {
     }(SquareRoot));
     LatexCmds.nthroot = NthRoot;
     LatexCmds.cbrt = /** @class */ (function (_super) {
-        __extends(class_12, _super);
-        function class_12() {
+        __extends(class_13, _super);
+        function class_13() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_12.prototype.createLeftOf = function (cursor) {
+        class_13.prototype.createLeftOf = function (cursor) {
             _super.prototype.createLeftOf.call(this, cursor);
             new Digit('3').createLeftOf(cursor);
             cursor.controller.moveRight();
         };
-        return class_12;
+        return class_13;
     }(NthRoot));
     var DiacriticAbove = /** @class */ (function (_super) {
         __extends(DiacriticAbove, _super);
@@ -9946,14 +9978,14 @@ var __assign = (this && this.__assign) || function () {
     }(DelimsNode));
     LatexCmds.binom = LatexCmds.binomial = Binomial;
     LatexCmds.choose = /** @class */ (function (_super) {
-        __extends(class_13, _super);
-        function class_13() {
+        __extends(class_14, _super);
+        function class_14() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_13.prototype.createLeftOf = function (cursor) {
+        class_14.prototype.createLeftOf = function (cursor) {
             LiveFraction.prototype.createLeftOf.call(this, cursor);
         };
-        return class_13;
+        return class_14;
     }(Binomial));
     var MathFieldNode = /** @class */ (function (_super) {
         __extends(MathFieldNode, _super);
@@ -10239,8 +10271,8 @@ var __assign = (this && this.__assign) || function () {
      *************************************************/
     var Environments = {};
     LatexCmds.begin = /** @class */ (function (_super) {
-        __extends(class_14, _super);
-        function class_14() {
+        __extends(class_15, _super);
+        function class_15() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.ctrlSeq = '\\begin';
             _this_1.domView = new DOMView(1, function (blocks) {
@@ -10252,7 +10284,7 @@ var __assign = (this && this.__assign) || function () {
             });
             return _this_1;
         }
-        class_14.prototype.parser = function () {
+        class_15.prototype.parser = function () {
             var string = Parser.string;
             var regex = Parser.regex;
             return string('{')
@@ -10264,7 +10296,7 @@ var __assign = (this && this.__assign) || function () {
                     : Parser.fail('unknown environment type: ' + env)).skip(string('\\end{' + env + '}'));
             });
         };
-        return class_14;
+        return class_15;
     }(MathCommand));
     // A MathCommand whose children ("cells") are laid out in a grid:
     // the matrix family (N columns, optional bracket delimiters) and
