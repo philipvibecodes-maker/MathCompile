@@ -54,12 +54,24 @@ var latexMathParser = (function () {
       string('\\').then(
         regex(/^[a-z]+/i)
           .or(regex(/^\s+/).result(' '))
-          .or(any)
+          // \<char> escapes keep a distinguishing '\x' ctrlSeq so their
+          // commands (e.g. \{, \|, \;) never shadow the bare char — the
+          // same LatexCmds map resolves single chars via the branch above.
+          .or(
+            any.map(function (c) {
+              return '\\' + c;
+            })
+          )
       )
     )
     .then(function (ctrlSeq) {
       // TODO - is Parser<MQNode> correct?
       var cmdKlass = (LatexCmds as LatexCmdsSingleChar)[ctrlSeq];
+      if (!cmdKlass && ctrlSeq.charAt(0) === '\\') {
+        // '\<char>' with no dedicated escape command falls back to the
+        // bare char's command (previous behavior: \% -> %, \. -> .).
+        cmdKlass = (LatexCmds as LatexCmdsSingleChar)[ctrlSeq.slice(1)];
+      }
 
       if (cmdKlass) {
         if (cmdKlass.constructor) {

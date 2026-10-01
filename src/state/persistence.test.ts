@@ -109,7 +109,7 @@ describe('persistCells', () => {
 });
 
 describe('prefs', () => {
-  it('round-trips smartMode, target, guideOpen, showCode, and importAll', () => {
+  it('round-trips all prefs', () => {
     stubStorage();
     savePrefs({
       smartMode: false,
@@ -117,6 +117,10 @@ describe('prefs', () => {
       guideOpen: false,
       showCode: true,
       importAll: false,
+      fadeMs: 150,
+      debounceMs: 600,
+      fadeInMs: 150,
+      fadeOutMs: 150,
     });
     expect(loadPrefs()).toEqual({
       smartMode: false,
@@ -124,6 +128,10 @@ describe('prefs', () => {
       guideOpen: false,
       showCode: true,
       importAll: false,
+      fadeMs: 150,
+      debounceMs: 600,
+      fadeInMs: 150,
+      fadeOutMs: 150,
     });
   });
 

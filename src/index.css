@@ -135,9 +135,11 @@ body {
   flex: 0 0 34%;
   margin-left: 6px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
   min-width: 0;
+  position: relative;
 }
 
 .col-delete {
@@ -254,9 +256,29 @@ body {
   cursor: default;
 }
 
+/* Error cue for a dropped statement (replaces an overlay text line). */
+.parse-error-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--danger);
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--danger);
+  cursor: default;
+  flex: 0 0 auto;
+}
+
 /* Generated code in the per-cell output column (target = python). */
 .cell-python {
   flex: 1;
+  /* Top-anchor so the import line never shifts when body lines mount
+     below it (align-items: center on the row would center a 1-line
+     block against the taller Copy button, moving it ~3px up). */
+  align-self: flex-start;
   min-width: 0;
   overflow-x: auto;
   white-space: pre-wrap;
@@ -277,11 +299,14 @@ body {
   white-space: nowrap;
 }
 
-/* Per-cell code output: code row on top, issues below. */
+/* Per-cell code output: code row on top, issues below. Issues float in
+   an overlay panel under the cell (out of flow), so mounting them never
+   resizes the row — they paint over the rows beneath instead. */
 .cell-code {
   flex-direction: column;
   align-items: stretch;
   padding: 6px 8px;
+  position: relative;
 }
 
 .cell-code-body {
@@ -291,16 +316,133 @@ body {
   min-width: 0;
 }
 
+/* Issues float in a panel anchored to the cell's bottom edge, painting
+   over the (invalid) code lines instead of pushing layout. */
 .cell-issues {
-  margin: 4px 0 0;
-  padding: 0;
+  position: absolute;
+  bottom: -1px;
+  left: -1px;
+  right: -1px;
+  z-index: 20;
+  margin: 0;
+  padding: 5px 8px;
   list-style: none;
   font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
   font-size: 11.5px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 0 0 4px 4px;
+  box-shadow: 0 -6px 16px var(--shadow);
+  max-height: 6.5em;
+  overflow-y: auto;
+}
+
+/* Mount animation shared by every issue rendering (li items, code
+   comments, badges). Duration follows the --fade-ms knob; list
+   containers and code lines fade via Svelte transitions. */
+@keyframes issue-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+.cell-issues li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  animation: issue-in var(--fade-ms, 150ms) ease-out;
+}
+
+/* Settings menu (animations tab) — popover under the output header. */
+.settings-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: default;
+}
+
+.settings-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 30;
+  margin-top: 4px;
+  width: 250px;
+  padding-bottom: 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 6px 16px var(--shadow);
+}
+
+.settings-tabs {
+  display: flex;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-tab {
+  padding: 6px 8px;
+  font-size: 11.5px;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+}
+
+.settings-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px 4px;
+}
+
+.settings-body .fade-slider {
+  justify-content: space-between;
+}
+
+/* Prototype knob: fade-duration slider in the output header. */
+.fade-slider {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.fade-slider input[type='range'] {
+  width: 80px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.fade-ms {
+  min-width: 4.5ch;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .issue-error {
-  color: var(--accent-text);
+  color: var(--danger);
 }
 
 .issue-note {

@@ -110,6 +110,7 @@ const KNOWN_HEADS = new Set([
   // arithmetic / algebra
   'Add', 'Multiply', 'Divide', 'Negate', 'Power', 'Sqrt', 'Root',
   'Rational', 'Complex', 'Abs', 'Sign', 'Floor', 'Ceil', 'Min', 'Max',
+  'Norm', 'Divides',
   'Exp', 'Ln', 'Log', 'Factorial', 'Gamma', 'Binomial', 'GCD', 'LCM', 'Mod',
   'Lb', 'Lg',
   // trigonometric
@@ -119,10 +120,19 @@ const KNOWN_HEADS = new Set([
   'Arcsinh', 'Arccosh', 'Arctanh',
   // calculus
   'D', 'Derivative', 'Apply', 'Integrate', 'Sum', 'Product', 'Limit',
+  'InverseFunction', 'EvaluateAt',
   // linear algebra
-  'Matrix', 'Determinant', 'Transpose', 'Inverse',
+  'Matrix', 'Determinant', 'Transpose', 'ConjugateTranspose', 'Inverse',
   // relations / logic / piecewise
   'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
+  'NotLess', 'NotGreater', 'NotLessEqual', 'NotGreaterEqual', 'NotDivides',
+  'Implies', 'Equivalent', 'IdenticallyEqual', 'Degrees',
+  'Minimum', 'Maximum', 'Interval', 'Open',
+  // set operators — codegen emits real SymPy when operands are set-like,
+  // and the same flagged Function stub as before otherwise.
+  'Element', 'NotElement', 'Union', 'Intersection', 'SetMinus',
+  'Subset', 'SubsetEqual', 'Superset', 'SupersetEqual',
+  'NotSubset', 'NotSubsetNotEqual', 'NotSuperset', 'NotSupersetNotEqual',
   'And', 'Or', 'Not', 'Which', 'Piecewise',
   // statement-level IR
   'Assign', 'Def', 'Block', 'Function',
@@ -193,6 +203,14 @@ function flattenSubscript(node: MathJson): string {
     if (h === 'Negate') return `-${flattenSubscript(node[1])}`;
     if (h === 'Power')
       return `${flattenSubscript(node[1])}^${flattenSubscript(node[2])}`;
+    // x_{i,j}: Sequence/Delimiter wrap the comma-list — join with
+    // commas, dropping delimiter-marker text literals like '(,)'.
+    if (h === 'Sequence' || h === 'Delimiter')
+      return node
+        .slice(1)
+        .filter((c) => !(isString(c) && TEXT_LITERAL.test(c)))
+        .map(flattenSubscript)
+        .join(',');
   }
   return '?';
 }
@@ -336,6 +354,18 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       return node;
     }
 
+    // \; \, \: etc. produce HorizontalSpacing nodes — pure layout, not
+    // operands. Strip them from every node's argument list; a bare spacing
+    // node on its own degrades to the empty-slot path.
+    if (h === 'HorizontalSpacing') return 'Nothing';
+    node = [
+      node[0],
+      ...node
+        .slice(1)
+        .filter((c) => !(isArray(c) && head(c) === 'HorizontalSpacing')),
+    ];
+    if (node.length === 1) return 'Nothing';
+
     if (h === 'Error') {
       issues.push(issue('error', describeError(node)));
       return node;
@@ -373,6 +403,125 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       return ['Block', ...node.slice(1).map((n) => normalize(n, true))];
     }
 
+    // \left. f \right|_{a}^{b}: CE emits the evaluation bar as
+    // Power(Subscript(EvaluateAt(f), a), b) — fold back into
+    // ['EvaluateAt', f, lo, hi] so codegen can emit the substitution
+    // difference. Single-bound forms keep the other slot 'Nothing'.
+    if (
+      h === 'Power' &&
+      node.length === 3 &&
+      isArray(node[1]) &&
+      head(node[1]) === 'Subscript' &&
+      (node[1] as MathJson[]).length === 3 &&
+      isArray((node[1] as MathJson[])[1]) &&
+      head((node[1] as MathJson[])[1]) === 'EvaluateAt'
+    ) {
+      const sub = node[1] as MathJson[];
+      const at = sub[1] as MathJson[];
+      return [
+        'EvaluateAt',
+        normalize(at[1], false),
+        normalize(sub[2], false),
+        normalize(node[2], false),
+      ];
+    }
+    if (
+      h === 'Subscript' &&
+      node.length === 3 &&
+      isArray(node[1]) &&
+      head(node[1]) === 'EvaluateAt'
+    ) {
+      const at = node[1] as MathJson[];
+      return [
+        'EvaluateAt',
+        normalize(at[1], false),
+        normalize(node[2], false),
+        'Nothing',
+      ];
+    }
+    if (
+      h === 'Power' &&
+      node.length === 3 &&
+      isArray(node[1]) &&
+      head(node[1]) === 'EvaluateAt'
+    ) {
+      const at = node[1] as MathJson[];
+      return [
+        'EvaluateAt',
+        normalize(at[1], false),
+        'Nothing',
+        normalize(node[2], false),
+      ];
+    }
+
+    // CE emits a stray text-literal row marker ('..') as a trailing Matrix
+    // arg — keeping it treated an extra row and produced mismatched
+    // dimensions at runtime.
+    if (h === 'Matrix') {
+      return [
+        'Matrix',
+        ...node
+          .slice(1)
+          .filter(isArray)
+          .map((n) => normalize(n, false)),
+      ];
+    }
+
+    // `a'` / `x'` unapplied: a primed variable name, not sp.prime.
+    if (h === 'Prime' && node.length >= 2 && isString(node[1])) {
+      const ticks = typeof node[2] === 'number' ? node[2] : 1;
+      return `${node[1]}${"'".repeat(ticks)}`;
+    }
+
+    // x_{-} / x_{+} — subscript sign; same composite-subscript naming as
+    // x_{i,j} (otherwise the head flags 'unknown head "Subminus"').
+    if ((h === 'Subminus' || h === 'Subplus') && node.length === 2) {
+      const sign = h === 'Subminus' ? '-' : '+';
+      return `${flattenSubscript(normalize(node[1], false))}_{${sign}}`;
+    }
+
+    // \min_{x} f / \max_{x} f: CE folds the underscript into the body as
+    // InvisibleOperator('_', var, body) — split it back out so codegen
+    // sees (body, var) and can emit minimum/maximum rather than
+    // sp.Min(_ * x * f) with a garbage `_` symbol in it.
+    if (
+      (h === 'Min' || h === 'Max') &&
+      node.length === 2 &&
+      isArray(node[1]) &&
+      head(node[1]) === 'InvisibleOperator' &&
+      node[1][1] === '_'
+    ) {
+      const [, , v, body] = node[1];
+      return [
+        h === 'Min' ? 'Minimum' : 'Maximum',
+        normalize(body, false),
+        normalize(v, false),
+      ];
+    }
+    // \inf_{n} a_n / \sup — no SymPy infimum, but emit a readable
+    // Infimum(a_n, n) stub instead of Infimum(_ * n * a_n).
+    if (
+      (h === 'Infimum' || h === 'Supremum') &&
+      node.length === 2 &&
+      isArray(node[1]) &&
+      head(node[1]) === 'InvisibleOperator' &&
+      node[1][1] === '_'
+    ) {
+      const [, , v, body] = node[1];
+      return [h, normalize(body, false), normalize(v, false)];
+    }
+
+    // \underbrace{x}_{a} parses as Subscript(UnderBrace(x), a) — the
+    // label is an annotation, not a subscript of x: unwrap to the body.
+    if (
+      h === 'Subscript' &&
+      node.length === 3 &&
+      isArray(node[1]) &&
+      (head(node[1]) === 'UnderBrace' || head(node[1]) === 'OverBrace')
+    ) {
+      return normalize(node[1][1], false);
+    }
+
     if (h === 'Equal') node = flattenEqual(node);
 
     if (atStatement && h === 'Equal') {
@@ -389,6 +538,39 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
         normalize(node[1], false),
         ['Negate', normalize(node[2], false)],
       ];
+    }
+
+    // Grouping-only wrappers CE mints from \boxed, \underbrace,
+    // \overbrace — the semantics live in the wrapped expression, so
+    // collapse to it. Annotated's second arg is a styling-attrs dict.
+    if (h === 'UnderBrace' || h === 'OverBrace' || h === 'Annotated') {
+      return normalize(node[1], false);
+    }
+
+    // Accent marks that denote distinct variables — \hat{x}, \vec{v},
+    // \bar{z}, \dot{x}, \tilde{t} — become suffixed symbol names
+    // (x_hat, v_vec, ...) rather than collapsing to the unmarked name.
+    const ACCENT_SUFFIX: Record<string, string> = {
+      OverHat: 'hat',
+      OverVector: 'vec',
+      OverBar: 'bar',
+      Overline: 'bar',
+      Overarc: 'arc',
+      OverDot: 'dot',
+      OverDDot: 'ddot',
+      Overtilde: 'tilde',
+    };
+    if (ACCENT_SUFFIX[h] !== undefined && node.length >= 2) {
+      return `${flattenSubscript(node[1])}_${ACCENT_SUFFIX[h]}`;
+    }
+
+    // \widehat{AB}: CE reads the decoration as the arc/segment AB;
+    // a single arg is just a wide hat over one symbol.
+    if (h === 'Arc' && node.length === 3) {
+      return ['Multiply', normalize(node[1], false), normalize(node[2], false)];
+    }
+    if (h === 'Arc' && node.length === 2) {
+      return `${flattenSubscript(node[1])}_hat`;
     }
 
     if (h === 'Add') {
@@ -485,7 +667,10 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     }
 
     if (h === 'Subscript' && node.length === 3) {
-      return `${flattenSubscript(node[1])}_{${flattenSubscript(node[2])}}`;
+      // Normalize the base first so decorative wrappers (UnderBrace,
+      // Accent marks) resolve to their flattened name before the
+      // subscript suffix is appended.
+      return `${flattenSubscript(normalize(node[1], false))}_{${flattenSubscript(node[2])}}`;
     }
 
     if (h === 'Function') {

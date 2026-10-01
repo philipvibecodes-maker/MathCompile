@@ -55,7 +55,12 @@ const PY_KEYWORDS = new Set([
 // identifier that consistently refers to that symbol.
 function pyIdent(name: string): string {
   if (/^[A-Za-z_]\w*$/.test(name) && !PY_KEYWORDS.has(name)) return name;
-  let out = name.replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+  // Prime ticks are meaningful (x' is a distinct variable, not x) —
+  // translate them to _prime before the generic strip eats them.
+  let out = name
+    .replace(/'/g, '_prime')
+    .replace(/[^A-Za-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '');
   if (out === '') out = 'sym';
   if (/^\d/.test(out)) out = `_${out}`;
   if (PY_KEYWORDS.has(out)) out += '_';
@@ -75,6 +80,14 @@ const CONSTANTS: Record<string, string> = {
   EulerGamma: 'EulerGamma',
   CatalansConstant: 'Catalan',
   GoldenRatio: 'GoldenRatio',
+  EmptySet: 'EmptySet',
+  // \mathbb{...} number sets — CE symbol names -> the S.* set objects.
+  RealNumbers: 'S.Reals',
+  ComplexNumbers: 'S.Complexes',
+  RationalNumbers: 'S.Rationals',
+  Integers: 'S.Integers',
+  NonNegativeIntegers: 'S.Naturals0',
+  Primes: 'S.Primes',
   True: 'True',
   False: 'False',
 };
@@ -111,6 +124,89 @@ const SP_FUNCS: Record<string, string> = {
 const STATEMENT_HEADS = new Set(['Assign', 'Def', 'Block', 'Which', 'Piecewise']);
 const STATEMENT_CALL_HEADS = new Set(['solve', 'Solve', 'piecewise', 'Piecewise']);
 
+// `call` heads that are real SymPy functions — keep emitting `sp.<name>`
+// for them. Every other applied unknown name (f(x), \operatorname{foo}(x))
+// becomes a worksheet Function def instead: `sp.f(x)` raised
+// AttributeError ('module sympy has no attribute f') at eval time.
+const SP_BUILTIN_CALL = new Set(
+  (
+    'erf erfc erfi erfinv erfcinv Ei expint Si Ci Shi Chi li Li zeta ' +
+    'lerchphi polylog digamma trigamma polygamma loggamma beta betainc ' +
+    'lowergamma uppergamma LambertW besselj bessely besseli besselk ' +
+    'hankel1 hankel2 jn yn airyai airybi airyaiprime airybiprime ' +
+    'marcumq fresnels fresnelc hyper meijerg appellf1 legendre ' +
+    'assoc_legendre hermite hermite_prob chebyshevt chebyshevu ' +
+    'gegenbauer jacobi laguerre assoc_laguerre fibonacci lucas ' +
+    'tribonacci bernoulli euler bell catalan harmonic genocchi ' +
+    'partition primepi mobius totient reduced_totient divisor_sigma ' +
+    'legendre_symbol jacobi_symbol kronecker_symbol rf ff factorial2 ' +
+    'subfactorial stirling multinomial nC nP nT Piecewise piecewise ' +
+    'sign ceiling conjugate arg re im ' +
+    'solve solveset linsolve nonlinsolve simplify factor expand cancel ' +
+    'collect apart together trigsimp expand_trig powsimp nsimplify ' +
+    'radsimp ratsimp fraction limit series residue solve_linear '
+  ).split(' '),
+);
+
+// Minimum arity for SP_FUNCS entries — a lone `\gcd(10)` or `a\bmod` `
+// otherwise emits a call SymPy raises TypeError on at eval time.
+const SP_FUNC_MIN_ARGS: Record<string, number> = {
+  gcd: 2,
+  lcm: 2,
+  Mod: 2,
+  binomial: 2,
+  root: 1,
+  Min: 1,
+  Max: 1,
+};
+
+// Nodes that provably emit a SymPy Set — used to gate Element/Union/
+// Complement emission (those raise TypeError on plain Symbols).
+const SETISH_SYMBOLS = new Set([
+  'EmptySet', 'RealNumbers', 'ComplexNumbers', 'RationalNumbers',
+  'Integers', 'NonNegativeIntegers', 'Primes',
+]);
+const SETISH_HEADS = new Set([
+  'Interval', 'Set', 'FiniteSet', 'Union', 'Intersection', 'SetMinus',
+  'Complement', 'Subset', 'SubsetEqual', 'Superset', 'SupersetEqual',
+]);
+
+// Domain a leaf membership implies for its symbol: `x \in \mathbb{R}`
+// constructs `x = Symbol('x', real=True)` when x is first defined.
+// `kwargs` go to the Symbol constructor, `preds` are the Q-predicate
+// names for a `with assuming(...)` block (compound sets only — leaf
+// sets don't need one once the Symbol carries the assumption).
+const SET_CONSTRAINTS: Record<string, { kwargs: string[]; preds: string[] }> = {
+  RealNumbers: { kwargs: ['real=True'], preds: ['real'] },
+  ComplexNumbers: { kwargs: ['complex=True'], preds: ['complex'] },
+  RationalNumbers: { kwargs: ['rational=True'], preds: ['rational'] },
+  Integers: { kwargs: ['integer=True'], preds: ['integer'] },
+  NonNegativeIntegers: {
+    kwargs: ['integer=True', 'nonnegative=True'],
+    preds: ['integer', 'nonnegative'],
+  },
+  Primes: { kwargs: ['prime=True'], preds: ['prime'] },
+};
+
+// CE head names that exist in SymPy under a different spelling —
+// `call` resolves these to `sp.<mapped>` rather than a declared
+// worksheet function.
+const CALL_RENAMES: Record<string, string> = {
+  Factorial2: 'factorial2',
+  Set: 'FiniteSet',
+  Erf: 'erf',
+  Erfc: 'erfc',
+};
+
+// \sin^{-1}(x) etc.: CE wraps the base name as ['InverseFunction', 'Sin'].
+const INVERSE_FUNCS: Record<string, string> = {
+  Sin: 'asin', Cos: 'acos', Tan: 'atan',
+  Sec: 'asec', Csc: 'acsc', Cot: 'acot',
+  Sinh: 'asinh', Cosh: 'acosh', Tanh: 'atanh',
+  Coth: 'acoth', Sech: 'asech', Csch: 'acsch',
+  Exp: 'log', Ln: 'exp', Log: 'exp',
+};
+
 interface Scope {
   /** `import sympy as sp` mode: emit `sp.` qualifiers. With
    * `from sympy import *` (the default) names emit unqualified. */
@@ -128,6 +224,9 @@ interface Scope {
   symbols: Map<string, string>;
   /** Names used as functions (f'(x), Apply callees) -> sp.Function lines. */
   functions: Map<string, string>;
+  /** Symbol kwargs inferred from memberships (`x \in \mathbb{R}` ->
+   * `real=True`) applied to this cell's Symbol def lines. */
+  assumptions: Map<string, Set<string>>;
   issues: Issue[];
   /** Unprefixed issues bucketed per cell (parallel to the inputs). */
   cellIssues: Issue[][];
@@ -156,6 +255,10 @@ function numText(node: MathJson): string {
     return String((node as { num: unknown }).num);
   return String(node);
 }
+
+// CE's empty-argument marker (or a hole/absent slot).
+const missingArg = (n: MathJson | undefined): boolean =>
+  n === undefined || n === 'Nothing' || isHead(n, 'Error');
 
 // Numeric literal node — number or `{num: "..."}`.
 const isNum = (v: MathJson | undefined): boolean =>
@@ -223,6 +326,80 @@ class Emitter {
     if (typeof node === 'object' && node !== null && 'num' in node)
       return String((node as { num: unknown }).num).startsWith('-');
     return false;
+  }
+
+  /** Domain constraints a set operand implies for a member symbol.
+   * `assuming` marks memberships that need a `with assuming(...)` block
+   * (the member's domain can't be expressed by the set itself). */
+  private constraintsFor(set: MathJson | undefined): {
+    kwargs: string[];
+    preds: string[];
+    assuming: boolean;
+  } | null {
+    if (isStr(set)) {
+      const c = SET_CONSTRAINTS[set];
+      return c ? { ...c, assuming: false } : null;
+    }
+    // A real interval constrains its members to the reals.
+    if (isHead(set, 'Interval'))
+      return { kwargs: ['real=True'], preds: ['real'], assuming: true };
+    return null;
+  }
+
+  /** Record membership-derived Symbol kwargs for a first-referenced
+   * name (`x \in \mathbb{R}` before any def -> `real=True`). */
+  private assumeFrom(member: MathJson, set: MathJson): void {
+    if (
+      !isStr(member) ||
+      this.scope.defined.has(member) ||
+      this.scope.bound.has(member)
+    )
+      return;
+    const c = this.constraintsFor(set);
+    if (!c) return;
+    const acc = this.scope.assumptions.get(member) ?? new Set<string>();
+    for (const k of c.kwargs) acc.add(k);
+    this.scope.assumptions.set(member, acc);
+  }
+
+  /** `with ...assuming(...):` header for compound memberships like
+   * `x \in (a,b]`, or null when the statement emits flat. */
+  assumingWrap(node: MathJson): string | null {
+    if (!isArr(node) || headOf(node) !== 'Element' || node.length < 3)
+      return null;
+    const [member, set] = [node[1], node[2]];
+    if (!isStr(member)) return null;
+    const c = this.constraintsFor(set);
+    if (!c?.assuming) return null;
+    const ident =
+      this.scope.bound.has(member) || this.scope.defined.has(member)
+        ? pyIdent(member)
+        : (this.scope.symbols.get(member) ?? pyIdent(member));
+    const preds = c.preds.map((p) => `${this.sp}Q.${p}(${ident})`);
+    const joined =
+      preds.length === 1 ? preds[0] : preds.map((p) => `(${p})`).join(' & ');
+    return `with ${this.sp}assuming(${joined}):`;
+  }
+
+  /** Is this node guaranteed to emit a SymPy Set? Gates Contains/Union/
+   * Complement emission — those raise TypeError on plain Symbols. */
+  private isSetish(n: MathJson | undefined): boolean {
+    if (isStr(n)) return SETISH_SYMBOLS.has(n);
+    if (!isArr(n)) return false;
+    // \{1,2\} arrives call-wrapped as ['call', 'Set', ...] since Set
+    // isn't a KNOWN_HEAD — check the callee name too.
+    if (isHead(n, 'call')) return isStr(n[1]) && SETISH_HEADS.has(n[1]);
+    return SETISH_HEADS.has(headOf(n) ?? '');
+  }
+
+  /** Emit a `call`-tier Function stub for a head we know but can't map —
+   * same flag + output shape normalizeIR's unknown-head path produces. */
+  private unknownCall(h: string, args: MathJson[]): [string, number] {
+    this.scope.flag('note', `unknown head "${h}" — emitted as ${h}(...)`);
+    return [
+      `${this.fn(h)}(${args.map((a) => this.emit(a)).join(', ')})`,
+      PREC_ATOM,
+    ];
   }
 
   /** Emit `node`, wrapping in parens when its precedence is below minPrec. */
@@ -350,6 +527,151 @@ class Emitter {
         return [`${this.sp}Gt(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM];
       case 'GreaterEqual':
         return [`${this.sp}Ge(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM];
+      // Negated relations — SymPy has no \nless-family builtins, so emit
+      // the faithful Not(<rel>) rather than collapsing to the inverse.
+      case 'NotLess':
+        return [
+          `${this.sp}Not(${this.sp}Lt(${this.emit(args[0])}, ${this.emit(args[1])}))`,
+          PREC_ATOM,
+        ];
+      case 'NotGreater':
+        return [
+          `${this.sp}Not(${this.sp}Gt(${this.emit(args[0])}, ${this.emit(args[1])}))`,
+          PREC_ATOM,
+        ];
+      case 'NotLessEqual':
+        return [
+          `${this.sp}Not(${this.sp}Le(${this.emit(args[0])}, ${this.emit(args[1])}))`,
+          PREC_ATOM,
+        ];
+      case 'NotGreaterEqual':
+        return [
+          `${this.sp}Not(${this.sp}Ge(${this.emit(args[0])}, ${this.emit(args[1])}))`,
+          PREC_ATOM,
+        ];
+      case 'NotDivides':
+        return [
+          `${this.sp}Not(${this.sp}Eq(${this.sp}Mod(${this.emit(args[1])}, ${this.emit(args[0])}), 0))`,
+          PREC_ATOM,
+        ];
+      case 'Implies':
+        return [
+          `${this.sp}Implies(${this.emit(args[0])}, ${this.emit(args[1])})`,
+          PREC_ATOM,
+        ];
+      case 'Equivalent':
+        return [
+          `${this.sp}Equivalent(${this.emit(args[0])}, ${this.emit(args[1])})`,
+          PREC_ATOM,
+        ];
+      case 'IdenticallyEqual':
+        // a \equiv b — Eq is the SymPy statement form.
+        return [
+          `${this.sp}Eq(${this.emit(args[0])}, ${this.emit(args[1])})`,
+          PREC_ATOM,
+        ];
+      case 'Degrees':
+        // x^{\circ} — convert to radians.
+        return [
+          `${this.emit(args[0], PREC_MUL)} * ${this.sp}pi / 180`,
+          PREC_MUL,
+        ];
+      case 'Minimum':
+      case 'Maximum': {
+        // \min_{x} f — value of f minimized over x (sp.minimum), not the
+        // elementwise sp.Min that \min(x, y) emits.
+        const fn = h === 'Minimum' ? 'minimum' : 'maximum';
+        const rest = args
+          .slice(1)
+          .map((a) => `, ${this.emit(a)}`)
+          .join('');
+        return [`${this.sp}${fn}(${this.emit(args[0])}${rest})`, PREC_ATOM];
+      }
+      case 'Interval': {
+        // (a,b] / [a,b) — CE marks open ends with Open(x). A fully
+        // closed [a,b] parses as List, not Interval.
+        const [a0, a1] = args;
+        const lo = this.emit(isHead(a0, 'Open') ? a0[1] : a0);
+        const hi = this.emit(isHead(a1, 'Open') ? a1[1] : a1);
+        const loOpen = isHead(a0, 'Open');
+        const hiOpen = isHead(a1, 'Open');
+        const flags =
+          (loOpen ? ', left_open=True' : '') +
+          (hiOpen ? ', right_open=True' : '');
+        return [`${this.sp}Interval(${lo}, ${hi}${flags})`, PREC_ATOM];
+      }
+      case 'Open':
+        // Open marks an interval endpoint — a stray one is meaningless.
+        return [this.emit(args[0]), PREC_ATOM];
+      case 'Element': {
+        // x \in S — sp.Contains requires a real Set (a bare Symbol raises
+        // TypeError), so map only when the operand is provably set-like;
+        // otherwise keep the readable Element(...) stub + flag. A
+        // first-referenced member also picks up the set's domain as
+        // Symbol kwargs (\mathbb{R} -> real=True); \notin asserts the
+        // opposite, so NotElement intentionally skips this.
+        if (!this.isSetish(args[1])) return this.unknownCall(h, args);
+        this.assumeFrom(args[0], args[1]);
+        return [
+          `${this.sp}Contains(${this.emit(args[0])}, ${this.emit(args[1])})`,
+          PREC_ATOM,
+        ];
+      }
+      case 'NotElement': {
+        if (!this.isSetish(args[1])) return this.unknownCall(h, args);
+        return [
+          `${this.sp}Not(${this.sp}Contains(${this.emit(args[0])}, ${this.emit(args[1])}))`,
+          PREC_ATOM,
+        ];
+      }
+      case 'Union':
+      case 'Intersection':
+      case 'SetMinus': {
+        // Same caveat as Element: Union/Intersection/Complement raise on
+        // non-Set operands, so plain symbols keep the flagged stub.
+        if (!args.every((a) => this.isSetish(a)))
+          return this.unknownCall(h, args);
+        const fn =
+          h === 'Union'
+            ? 'Union'
+            : h === 'Intersection'
+              ? 'Intersection'
+              : 'Complement';
+        return [
+          `${this.sp}${fn}(${args.map((a) => this.emit(a)).join(', ')})`,
+          PREC_ATOM,
+        ];
+      }
+      case 'Subset':
+      case 'SubsetEqual': {
+        if (!args.every((a) => this.isSetish(a)))
+          return this.unknownCall(h, args);
+        return [
+          `(${this.emit(args[0], PREC_ATOM)}).is_subset(${this.emit(args[1])})`,
+          PREC_ATOM,
+        ];
+      }
+      case 'Superset':
+      case 'SupersetEqual': {
+        if (!args.every((a) => this.isSetish(a)))
+          return this.unknownCall(h, args);
+        return [
+          `(${this.emit(args[1], PREC_ATOM)}).is_subset(${this.emit(args[0])})`,
+          PREC_ATOM,
+        ];
+      }
+      case 'NotSubset':
+      case 'NotSubsetNotEqual':
+      case 'NotSuperset':
+      case 'NotSupersetNotEqual': {
+        if (!args.every((a) => this.isSetish(a)))
+          return this.unknownCall(h, args);
+        const [l, r] = h.startsWith('NotSub') ? [0, 1] : [1, 0];
+        return [
+          `${this.sp}Not((${this.emit(args[l], PREC_ATOM)}).is_subset(${this.emit(args[r])}))`,
+          PREC_ATOM,
+        ];
+      }
       case 'And':
         return [`${this.sp}And(${args.map((a) => this.emit(a)).join(', ')})`, PREC_ATOM];
       case 'Or':
@@ -388,6 +710,18 @@ class Emitter {
       }
       case 'Apply': {
         const callee = args[0];
+        if (isHead(callee, 'InverseFunction')) {
+          // \sin^{-1}(x) -> asin(x); an unknown base keeps a readable
+          // inverse(f)(x)-style row instead of InverseFunction garbage.
+          const base = callee[1];
+          const mapped = isStr(base) ? INVERSE_FUNCS[base] : undefined;
+          const argList = args.slice(1).map((a) => this.emit(a)).join(', ');
+          if (base === 'Sqrt')
+            return [`(${argList})**2`, PREC_POW];
+          if (mapped) return [`${this.sp}${mapped}(${argList})`, PREC_ATOM];
+          const name = isStr(base) ? `${base}inv` : 'inverse';
+          return [`${this.sp}Function(${JSON.stringify(name)})(${argList})`, PREC_ATOM];
+        }
         if (isHead(callee, 'Derivative')) {
           // f'(x): ["Apply", ["Derivative", f, n], x]
           const [, f, n] = callee;
@@ -492,28 +826,52 @@ class Emitter {
         const { body } = unwrapLambda(args[0]);
         const limits = isHead(args[1], 'Limits') ? args[1].slice(1) : null;
         const eager = h === 'Sum' ? 'summation' : 'product';
-        const lazy = h === 'Sum' ? 'Sum' : 'Product';
-        if (
-          limits &&
-          !(isStr(limits[1]) && limits[1] === 'Nothing') &&
-          !(isStr(limits[2]) && limits[2] === 'Nothing')
-        )
-          return [
-            `${this.sp}${eager}(${this.emit(body)}, (${this.emit(limits[0])}, ${this.emit(limits[1])}, ${this.emit(limits[2])}))`,
-            PREC_ATOM,
-          ];
-        // Missing bounds can't be evaluated — emit the unevaluated form.
+        const missing = (n: MathJson | undefined): boolean =>
+          n === undefined || n === 'Nothing' || isHead(n, 'Error');
+        const word = h === 'Sum' ? 'sum' : 'product';
+        // SymPy has no boundless/partial Sum or Product form — every
+        // shape except a complete (var, lo, hi) tuple raises ValueError.
+        // Flag like the integral's half-bound case and drop the row.
+        if (!limits || missing(limits[0])) {
+          this.scope.flag(
+            'error',
+            `${word} needs an index and bounds — write ${
+              h === 'Sum' ? '\\sum' : '\\prod'
+            }_{i=1}^{n}`,
+          );
+          return [`${this.sp}${h}(${this.emit(body)})`, PREC_ATOM];
+        }
+        if (missing(limits[1]) || missing(limits[2])) {
+          this.scope.flag(
+            'error',
+            `${missing(limits[2]) ? 'upper' : 'lower'} bound is empty — fill it in or delete it`,
+          );
+          return [`${this.sp}${h}(${this.emit(body)})`, PREC_ATOM];
+        }
         return [
-          limits
-            ? `${this.sp}${lazy}(${this.emit(body)}, ${this.emit(limits[0])})`
-            : `${this.sp}${lazy}(${this.emit(body)})`,
+          `${this.sp}${eager}(${this.emit(body)}, (${this.emit(limits[0])}, ${this.emit(limits[1])}, ${this.emit(limits[2])}))`,
           PREC_ATOM,
         ];
       }
       case 'Limit': {
-        // ["Limit", ["Function", body, x], value]; defensive 3-arg form
-        // ["Limit", expr, x, value] too.
+        // ["Limit", ["Function", body, x], value] or
+        // ["Limit", ["Function", body, x], value, dir] where dir is ±1
+        // (one-sided limits); defensive flat form ["Limit", expr, x,
+        // value] too.
         const { body, params } = unwrapLambda(args[0]);
+        if (isHead(args[0], 'Function')) {
+          const v = params[0] ?? 'x';
+          const dir =
+            args[2] === 1
+              ? ", dir='+'"
+              : args[2] === -1
+                ? ", dir='-'"
+                : '';
+          return [
+            `${this.sp}limit(${this.emit(body)}, ${this.emit(v)}, ${this.emit(args[1])}${dir})`,
+            PREC_ATOM,
+          ];
+        }
         if (args.length >= 3)
           return [
             `${this.sp}limit(${this.emit(body)}, ${this.emit(args[1])}, ${this.emit(args[2])})`,
@@ -538,11 +896,64 @@ class Emitter {
         return [`${this.sp}Matrix([${text}])`, PREC_ATOM];
       }
       case 'Determinant':
-        return [`${this.emit(args[0], PREC_ATOM)}.det()`, PREC_ATOM];
+        // `.det()` on a non-matrix literal emitted e.g. `3.det()` (a
+        // SyntaxError). sp.Determinant(non-matrix) raises TypeError at
+        // eval time, so flag the gap; the emission still displays the
+        // intended form.
+        if (!isHead(args[0], 'Matrix'))
+          this.scope.flag(
+            'note',
+            "determinant needs a matrix — the argument isn't one",
+          );
+        return isHead(args[0], 'Matrix')
+          ? [`${this.emit(args[0], PREC_ATOM)}.det()`, PREC_ATOM]
+          : [`${this.sp}Determinant(${this.emit(args[0])})`, PREC_ATOM];
       case 'Transpose':
-        return [`${this.emit(args[0], PREC_ATOM)}.T`, PREC_ATOM];
+        return isHead(args[0], 'Matrix')
+          ? [`${this.emit(args[0], PREC_ATOM)}.T`, PREC_ATOM]
+          : [`${this.sp}Transpose(${this.emit(args[0])})`, PREC_ATOM];
+      case 'ConjugateTranspose':
+        // A^{\dagger} — Adjoint evaluates on both matrices and scalars.
+        return [`${this.sp}Adjoint(${this.emit(args[0])})`, PREC_ATOM];
+      case 'EvaluateAt': {
+        // \left.f\right|_{lo}^{hi} -> f.subs(v, hi) - f.subs(v, lo).
+        const body = args[0];
+        const free = freeNames(body);
+        const v = free.length === 1 ? free[0] : 'x';
+        if (free.length !== 1)
+          this.scope.flag(
+            'note',
+            "can't infer the evaluation variable — evaluated w.r.t. x",
+          );
+        const bodyText = this.emit(body);
+        // A bound can be an equation `x=a` — substitute the point, not
+        // the Eq node itself (`subs(x, Eq(x,a))` is meaningless).
+        const boundSub = (b: MathJson | undefined): string => {
+          if (isHead(b, 'Equal') && b.length === 3) {
+            const varText = isStr(b[1]) ? this.sym(b[1]) : this.emit(b[1]);
+            return `(${bodyText}).subs(${varText}, ${this.emit(b[2])})`;
+          }
+          return `(${bodyText}).subs(${this.sym(v)}, ${this.emit(b)})`;
+        };
+        const upper = !missingArg(args[2]) ? boundSub(args[2]) : '';
+        const lower = !missingArg(args[1]) ? boundSub(args[1]) : '';
+        if (upper && lower) return [`${upper} - ${lower}`, PREC_ADD];
+        if (upper || lower) return [upper || lower, PREC_ATOM];
+        return [bodyText, PREC_ATOM];
+      }
       case 'Inverse':
         return [`${this.emit(args[0], PREC_ATOM)}**-1`, PREC_ATOM];
+      case 'Norm':
+        // \|v\|: Abs for scalars, .norm() for matrices.
+        if (isHead(args[0], 'Matrix'))
+          return [`(${this.emit(args[0])}).norm()`, PREC_ATOM];
+        return [`${this.sp}Abs(${this.emit(args[0])})`, PREC_ATOM];
+      case 'Divides':
+        // a \mid b: a divides b.
+        return [
+          `${this.sp}Eq(${this.sp}Mod(${this.emit(args[1])}, ${this.emit(args[0])}), 0)`,
+          PREC_ATOM,
+        ];
       case 'List':
         return [`[${args.map((a) => this.emit(a)).join(', ')}]`, PREC_ATOM];
       case 'Tuple':
@@ -551,24 +962,38 @@ class Emitter {
           PREC_ATOM,
         ];
       case 'call': {
-        // Escape hatch: unknown/`\operatorname` heads -> sp.<head>(args),
-        // except worksheet-declared names, which call directly (f(x)=...) —
-        // declared-but-not-yet-bound gets a Function def in this cell.
+        // Unknown/`\operatorname` heads resolve in three tiers:
+        // worksheet-declared names call directly (f(x)=...), known SymPy
+        // builtins keep the sp.<head> escape hatch, and everything else
+        // becomes an undefined worksheet function — `sp.f(x)` raised
+        // AttributeError, `f(x)` displays and stays valid.
         const name = isStr(args[0]) ? args[0] : 'unknown';
         const rendered = args
           .slice(1)
           .map((a) => this.emit(a))
           .join(', ');
-        if (this.scope.declared.has(name))
+        if (CALL_RENAMES[name])
+          return [`${this.sp}${CALL_RENAMES[name]}(${rendered})`, PREC_ATOM];
+        if (this.scope.declared.has(name) || !SP_BUILTIN_CALL.has(name))
           return [`${this.fn(name)}(${rendered})`, PREC_ATOM];
         return [`${this.sp}${pyIdent(name)}(${rendered})`, PREC_ATOM];
       }
       default:
-        if (SP_FUNCS[h])
+        if (SP_FUNCS[h]) {
+          const fnName = SP_FUNCS[h];
+          const minArgs = SP_FUNC_MIN_ARGS[fnName] ?? 0;
+          if (args.length < minArgs) {
+            this.scope.flag(
+              'error',
+              `${fnName} needs at least ${minArgs} arguments`,
+            );
+            return [`${this.sp}${fnName}(${args.map((a) => this.emit(a)).join(', ')})`, PREC_ATOM];
+          }
           return [
-            `${this.sp}${SP_FUNCS[h]}(${args.map((a) => this.emit(a)).join(', ')})`,
+            `${this.sp}${fnName}(${args.map((a) => this.emit(a)).join(', ')})`,
             PREC_ATOM,
           ];
+        }
         // Shouldn't reach — normalizeIR wraps unknown heads in 'call' —
         // but stay unblocked if raw IR is fed in directly.
         this.scope.flag('note', `unknown head "${h}" — emitted as ${h}(...)`);
@@ -683,16 +1108,28 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   for (const raw of newNames) scope.defined.add(raw);
 
   const defs: string[] = [];
-  const simple = newSyms.filter(([raw, ident]) => ident === pyIdent(raw));
-  const fancy = newSyms.filter(([raw, ident]) => ident !== pyIdent(raw));
+  // `simple` names are already valid identifiers — they go in one grouped
+  // `sp.symbols('a b')` call whose string must not contain quotes or
+  // punctuation. Anything needing mangling (a_0', {abc}, ? names) gets an
+  // individual `sp.Symbol("raw name")` def where JSON quoting is safe.
+  const simple = newSyms.filter(
+    ([raw, ident]) => raw === ident && !scope.assumptions.has(raw),
+  );
+  const fancy = newSyms.filter(
+    ([raw, ident]) => raw !== ident || scope.assumptions.has(raw),
+  );
   if (simple.length === 1)
     defs.push(`${simple[0][1]} = ${sp}Symbol(${JSON.stringify(simple[0][0])})`);
   else if (simple.length > 1)
     defs.push(
       `${simple.map(([, ident]) => ident).join(', ')} = ${sp}symbols('${simple.map(([raw]) => raw).join(' ')}')`,
     );
-  for (const [raw, ident] of fancy)
-    defs.push(`${ident} = ${sp}Symbol(${JSON.stringify(raw)})`);
+  for (const [raw, ident] of fancy) {
+    const kw = scope.assumptions.get(raw);
+    defs.push(
+      `${ident} = ${sp}Symbol(${JSON.stringify(raw)}${kw?.size ? `, ${[...kw].join(', ')}` : ''})`,
+    );
+  }
   for (const [raw, ident] of newFns)
     defs.push(`${ident} = ${sp}Function(${JSON.stringify(raw)})`);
 
@@ -714,15 +1151,21 @@ function cellStatements(ir: MathJson | undefined, scope: Scope): string[] {
 // Emit a single expression statement, dropping it when emission flagged
 // an error — a broken statement produces `sp.Error(...)`/`None` fragments
 // that just repeat what the issues list already says.
-function emitExprStatement(node: MathJson, emitter: Emitter): string[] {
+function emitExprStatement(node: MathJson, emitter: Emitter): StatementOut {
   const before = emitter.scope.errorCount;
   const line = emitter.emit(node);
-  return emitter.scope.errorCount === before ? [line] : [];
+  if (emitter.scope.errorCount !== before) return { lines: [] };
+  // Compound memberships (`x \in (a,b]`) emit inside `with assuming(...)`
+  // so Contains sees the member's implied domain; the membership itself
+  // stays the row's display expression.
+  const wrap = emitter.assumingWrap(node);
+  if (wrap) return { lines: [wrap, `    ${line}`], display: line };
+  return { lines: [line] };
 }
 
 function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
   const sp = emitter.scope.qualified ? 'sp.' : '';
-  if (!isArr(node)) return { lines: emitExprStatement(node, emitter) };
+  if (!isArr(node)) return emitExprStatement(node, emitter);
   const h = headOf(node);
   if (h === 'Assign') {
     // RHS emits first so `x = x + 1` collects x as a symbol; the Assign
@@ -770,7 +1213,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     return {
       lines: node.slice(1).flatMap((s) => emitStatement(s, emitter).lines),
     };
-  return { lines: emitExprStatement(node, emitter) };
+  return emitExprStatement(node, emitter);
 }
 
 // Walk normalized IR for heads that only lower to Python.
@@ -915,6 +1358,7 @@ function buildScope(
     cell,
     errorCount: 0,
     constNames: new Set(),
+    assumptions: new Map(),
     flag(severity, message) {
       if (severity === 'error') this.errorCount += 1;
       this.issues.push({

@@ -231,6 +231,76 @@ LatexCmds.dot = () => {
   );
 };
 
+// \boxed{...} — content with a drawn frame.
+LatexCmds.boxed = () =>
+  new Style(
+    '\\boxed',
+    'span',
+    { class: 'mq-non-leaf mq-boxed' },
+    'Boxed'
+  );
+
+// \underbrace{x}_{label} / \overbrace{x}^{label} — the label lands as an
+// ordinary sibling SupSub (same pattern as boundless integral bounds),
+// so only the grouping command itself is needed here.
+LatexCmds.underbrace = () =>
+  new Style(
+    '\\underbrace',
+    'span',
+    { class: 'mq-non-leaf mq-underbrace' },
+    'Underbrace'
+  );
+LatexCmds.overbrace = () =>
+  new Style(
+    '\\overbrace',
+    'span',
+    { class: 'mq-non-leaf mq-overbrace' },
+    'Overbrace'
+  );
+
+// \underset{a}{b} renders b with a below it; \overset{a}{b} with a above.
+class UnderOverSet extends MathCommand {
+  constructor(top: boolean) {
+    super();
+    this.ctrlSeq = top ? '\\overset' : '\\underset';
+    this.ariaLabel = top ? 'overset' : 'underset';
+    this.domView = new DOMView(2, (blocks) =>
+      top
+        ? h('span', { class: 'mq-overunderset mq-non-leaf' }, [
+            h('span', { class: 'mq-overunderset-label' }, [
+              h.block('span', {}, blocks[0])
+            ]),
+            h.block('span', { class: 'mq-overunderset-main' }, blocks[1])
+          ])
+        : h('span', { class: 'mq-overunderset mq-non-leaf' }, [
+            h.block('span', { class: 'mq-overunderset-main' }, blocks[1]),
+            h('span', { class: 'mq-overunderset-label' }, [
+              h.block('span', {}, blocks[0])
+            ])
+          ])
+    );
+  }
+  parser() {
+    var self = this;
+    var block = latexMathParser.block;
+    var blocks = (this.blocks = [new MathBlock(), new MathBlock()]);
+    for (var i = 0; i < blocks.length; i += 1) {
+      blocks[i].adopt(self, self.getEnd(R), 0);
+    }
+    return Parser.optWhitespace
+      .then(block)
+      .then(function (b0) {
+        b0.children().adopt(blocks[0], blocks[0].getEnd(R), 0);
+        return Parser.optWhitespace.then(block).then(function (b1) {
+          b1.children().adopt(blocks[1], blocks[1].getEnd(R), 0);
+          return Parser.succeed(self);
+        });
+      });
+  }
+}
+LatexCmds.underset = () => new UnderOverSet(false);
+LatexCmds.overset = () => new UnderOverSet(true);
+
 // `\textcolor{color}{math}` will apply a color to the given math content, where
 // `color` is any valid CSS Color Value (see [SitePoint docs][] (recommended),
 // [Mozilla docs][], or [W3C spec][]).
@@ -240,6 +310,14 @@ LatexCmds.dot = () => {
 // [W3C spec]: http://dev.w3.org/csswg/css3-color/#colorunits
 LatexCmds.textcolor = class extends MathCommand {
   color: string | undefined;
+
+  // Parser-only command: typing '\textcolor' in the command input
+  // can't supply a color argument, so typed insertion is a no-op
+  // (same convention as \operatorname / \mathbb).
+  createLeftOf() {}
+  numBlocks() {
+    return 1 as const;
+  }
 
   setColor(color: string) {
     this.color = color;
@@ -289,6 +367,12 @@ LatexCmds.textcolor = class extends MathCommand {
 // https://github.com/mathquill/mathquill/pull/191#discussion_r4327442
 var Class = (LatexCmds['class'] = class extends MathCommand {
   cls: string | undefined;
+
+  // Parser-only command, see \textcolor.
+  createLeftOf() {}
+  numBlocks() {
+    return 1 as const;
+  }
 
   parser() {
     var string = Parser.string,
@@ -1262,6 +1346,10 @@ LatexCmds.hat = class Hat extends MathCommand {
   textTemplate = ['hat(', ')'];
 };
 
+// \widehat is the wide variant of \hat; render it with the same atom
+// (serializes back as \hat).
+LatexCmds.widehat = LatexCmds.hat;
+
 class NthRoot extends SquareRoot {
   domView = new DOMView(2, (blocks) =>
     h('span', { class: 'mq-nthroot-container mq-non-leaf' }, [
@@ -1427,7 +1515,9 @@ class Bracket extends DelimsNode {
   }
   getSymbol(side: BracketSide) {
     var ch = this.sides[side || R].ch as keyof typeof SVG_SYMBOLS;
-    return SVG_SYMBOLS[ch] || { width: '0', html: '' };
+    // Unknown delimiters (e.g. the '.' in \left./\right.) render as
+    // invisible zero-width marks.
+    return SVG_SYMBOLS[ch] || { width: '0', html: () => h('span') };
   }
   latexRecursive(ctx: LatexContext) {
     this.checkCursorContextOpen(ctx);
@@ -1740,13 +1830,21 @@ LatexCmds.rVert = () =>
   new Bracket(R, '&#8741;', '&#8741;', '\\lVert ', '\\rVert ');
 
 LatexCmds.left = class extends MathCommand {
+  // Parser-only command: the delimiter lives in the argument after
+  // \left, so a typed '\left' inserts nothing and the following
+  // delimiter keystroke auto-pairs the bracket itself.
+  createLeftOf() {}
+  numBlocks() {
+    return 1 as const;
+  }
+
   parser() {
     var regex = Parser.regex;
     var string = Parser.string;
     var optWhitespace = Parser.optWhitespace;
 
     return optWhitespace
-      .then(regex(/^(?:[([|]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z]))/))
+      .then(regex(/^(?:[([|.]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z]))/))
       .then(function (ctrlSeq) {
         var open = ctrlSeq.replace(/^\\/, '');
         if (ctrlSeq == '\\langle') {
@@ -1761,7 +1859,7 @@ LatexCmds.left = class extends MathCommand {
           return string('\\right')
             .skip(optWhitespace)
             .then(
-              regex(/^(?:[\])|]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z]))/)
+              regex(/^(?:[\])|.]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z]))/)
             )
             .map(function (end) {
               var close = end.replace(/^\\/, '');
@@ -1784,10 +1882,79 @@ LatexCmds.left = class extends MathCommand {
 };
 
 LatexCmds.right = class extends MathCommand {
+  // Parser-only command, see \left.
+  createLeftOf() {}
+  numBlocks() {
+    return 1 as const;
+  }
+
   parser() {
     return Parser.fail('unmatched \\right');
   }
 };
+
+// \big| \Big| \bigg| \Bigg| — fixed-size delimiters. Parser-only (like
+// \left): they render the delimiter glyph at a fixed scale and keep the
+// full \big<delim> ctrlSeq so the latex round-trips.
+const BIG_DELIM_SCALES: Record<string, string> = {
+  big: '1.2',
+  Big: '1.6',
+  bigg: '2.1',
+  Bigg: '2.6'
+};
+const BIG_DELIM_CHARS: Record<string, string> = {
+  '(': '(',
+  ')': ')',
+  '[': '[',
+  ']': ']',
+  '|': '|',
+  '.': '',
+  '\\{': '{',
+  '\\}': '}',
+  '\\|': '‖',
+  '\\langle': '⟨',
+  '\\rangle': '⟩',
+  '\\lVert': '‖',
+  '\\rVert': '‖'
+};
+const BIG_DELIM_RE =
+  /^(?:\\langle(?![a-zA-Z])|\\rangle(?![a-zA-Z])|\\lVert(?![a-zA-Z])|\\rVert(?![a-zA-Z])|\\\{|\\\}|\\[|.]|[()\[\]|.])/;
+class BigDelim extends MathCommand {
+  sizeSeq = '\\big';
+  constructor(sizeSeq: string) {
+    super();
+    this.sizeSeq = '\\' + sizeSeq;
+  }
+  createLeftOf() {}
+  numBlocks() {
+    return 1 as const;
+  }
+  parser() {
+    var self = this;
+    return Parser.optWhitespace
+      .then(Parser.regex(BIG_DELIM_RE))
+      .then(function (delimTok) {
+        var ch = BIG_DELIM_CHARS[delimTok];
+        if (ch === undefined) return Parser.fail('not a \\big delimiter');
+        var ctrlSeq =
+          self.sizeSeq + (delimTok.length > 1 ? delimTok + ' ' : delimTok);
+        var scale = BIG_DELIM_SCALES[self.sizeSeq.slice(1)];
+        var inner =
+          ch === ''
+            ? h('span', { style: 'width:0' })
+            : h('span', { style: 'font-size:' + scale + 'em' }, [
+                h.text(ch)
+              ]);
+        return Parser.succeed(
+          new MQSymbol(ctrlSeq, h('span', {}, [inner]), undefined, 'delimiter')
+        );
+      });
+  }
+}
+LatexCmds.big = () => new BigDelim('big');
+LatexCmds.Big = () => new BigDelim('Big');
+LatexCmds.bigg = () => new BigDelim('bigg');
+LatexCmds.Bigg = () => new BigDelim('Bigg');
 
 var leftBinomialSymbol = SVG_SYMBOLS['('];
 var rightBinomialSymbol = SVG_SYMBOLS[')'];
