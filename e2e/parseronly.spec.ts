@@ -103,6 +103,13 @@ const ESCAPE_CASES: [string, string][] = [
   ['x\\,y', 'x\\, y'],
   ['x\\:y', 'x\\: y'],
   ['\\|\\mathbf{v}\\|', '\\| \\mathbf{v}\\| '],
+  // negated relations / asymptotic equality — were unparseable commands
+  // that blanked the field on hydrate.
+  ['a\\nleq b', 'a\\nleq b'],
+  ['a\\ngeq b', 'a\\ngeq b'],
+  ['a\\nle b', 'a\\nleq b'],
+  ['a\\nge b', 'a\\ngeq b'],
+  ['a\\asymp b', 'a\\asymp b'],
 ];
 for (const [latex, expected] of ESCAPE_CASES) {
   test(`hydrates \\-escape ${latex}`, async ({ page }) => {

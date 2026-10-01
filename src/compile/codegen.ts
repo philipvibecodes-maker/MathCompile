@@ -55,7 +55,12 @@ const PY_KEYWORDS = new Set([
 // identifier that consistently refers to that symbol.
 function pyIdent(name: string): string {
   if (/^[A-Za-z_]\w*$/.test(name) && !PY_KEYWORDS.has(name)) return name;
-  let out = name.replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+  // Prime ticks are meaningful (x' is a distinct variable, not x) —
+  // translate them to _prime before the generic strip eats them.
+  let out = name
+    .replace(/'/g, '_prime')
+    .replace(/[^A-Za-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '');
   if (out === '') out = 'sym';
   if (/^\d/.test(out)) out = `_${out}`;
   if (PY_KEYWORDS.has(out)) out += '_';
@@ -410,6 +415,55 @@ class Emitter {
         return [`${this.sp}Gt(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM];
       case 'GreaterEqual':
         return [`${this.sp}Ge(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM];
+      // Negated relations — SymPy has no \nless-family builtins, so emit
+      // the faithful Not(<rel>) rather than collapsing to the inverse.
+      case 'NotLess':
+        return [
+          `${this.sp}Not(${this.sp}Lt(${this.emit(args[0])}, ${this.emit(args[1])}))`,
+          PREC_ATOM,
+        ];
+      case 'NotGreater':
+        return [
+          `${this.sp}Not(${this.sp}Gt(${this.emit(args[0])}, ${this.emit(args[1])}))`,
+          PREC_ATOM,
+        ];
+      case 'NotLessEqual':
+        return [
+          `${this.sp}Not(${this.sp}Le(${this.emit(args[0])}, ${this.emit(args[1])}))`,
+          PREC_ATOM,
+        ];
+      case 'NotGreaterEqual':
+        return [
+          `${this.sp}Not(${this.sp}Ge(${this.emit(args[0])}, ${this.emit(args[1])}))`,
+          PREC_ATOM,
+        ];
+      case 'NotDivides':
+        return [
+          `${this.sp}Not(${this.sp}Eq(${this.sp}Mod(${this.emit(args[1])}, ${this.emit(args[0])}), 0))`,
+          PREC_ATOM,
+        ];
+      case 'Implies':
+        return [
+          `${this.sp}Implies(${this.emit(args[0])}, ${this.emit(args[1])})`,
+          PREC_ATOM,
+        ];
+      case 'Equivalent':
+        return [
+          `${this.sp}Equivalent(${this.emit(args[0])}, ${this.emit(args[1])})`,
+          PREC_ATOM,
+        ];
+      case 'IdenticallyEqual':
+        // a \equiv b — Eq is the SymPy statement form.
+        return [
+          `${this.sp}Eq(${this.emit(args[0])}, ${this.emit(args[1])})`,
+          PREC_ATOM,
+        ];
+      case 'Degrees':
+        // x^{\circ} — convert to radians.
+        return [
+          `${this.emit(args[0], PREC_MUL)} * ${this.sp}pi / 180`,
+          PREC_MUL,
+        ];
       case 'And':
         return [`${this.sp}And(${args.map((a) => this.emit(a)).join(', ')})`, PREC_ATOM];
       case 'Or':

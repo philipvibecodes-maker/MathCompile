@@ -6715,6 +6715,9 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds['\u22a3'] = LatexCmds.dashv = bindVanillaSymbol('\\dashv ', '&#8867;', 'dash v');
     LatexCmds['\u226e'] = LatexCmds.nless = bindVanillaSymbol('\\nless ', '&#8814;', 'not less than');
     LatexCmds['\u226f'] = LatexCmds.ngtr = bindVanillaSymbol('\\ngtr ', '&#8815;', 'not greater than');
+    LatexCmds['\u2270'] = LatexCmds.nleq = LatexCmds.nle = bindVanillaSymbol('\\nleq ', '&#8816;', 'not less than or equal to');
+    LatexCmds['\u2271'] = LatexCmds.ngeq = LatexCmds.nge = bindVanillaSymbol('\\ngeq ', '&#8817;', 'not greater than or equal to');
+    LatexCmds['\u224d'] = LatexCmds.asymp = bindVanillaSymbol('\\asymp ', '&#8781;', 'asymptotically equal to');
     //arrows
     LatexCmds.longleftarrow = bindVanillaSymbol('\\longleftarrow ', '&#8592;', 'left arrow');
     LatexCmds.longrightarrow = bindVanillaSymbol('\\longrightarrow ', '&#8594;', 'right arrow');

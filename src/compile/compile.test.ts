@@ -305,10 +305,11 @@ const FIXTURES: {
   },
   {
     // `a'` is a primed name, not an applied derivative — `sp.prime`
-    // doesn't exist; it emits as its own symbol.
+    // doesn't exist; it emits as its own symbol (a_prime ident so it
+    // can't silently collide with `a`).
     latex: "a'",
     expectedIR: "a'",
-    expectedPython: ['a = sp.Symbol("a\'")'],
+    expectedPython: ['a_prime = sp.Symbol("a\'")'],
   },
   {
     latex: "x''(t)",
@@ -459,6 +460,48 @@ const FIXTURES: {
     // subs(x, Eq(x, a)) instead of substituting the point.
     latex: '\\left. f \\right|_{x=a}',
     expectedPython: ["f, x, a = sp.symbols('f x a')", '(f).subs(x, a)'],
+  },
+  {
+    // A primed variable is distinct from the unprimed name — the `'` must
+    // survive ident mangling (x' -> x_prime), not collapse onto `x`.
+    latex: "x' + x",
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'x_prime = sp.Symbol("x\'")',
+      'x_prime + x',
+    ],
+  },
+  {
+    // Negated relation heads CE emits directly (\nmid, \nless, \ngtr)
+    // emit the faithful Not(<rel>) — SymPy has no \nless builtins.
+    latex: 'a \\nmid b',
+    expectedPython: [
+      "b, a = sp.symbols('b a')",
+      'sp.Not(sp.Eq(sp.Mod(b, a), 0))',
+    ],
+  },
+  {
+    latex: 'a \\nless b',
+    expectedPython: ["a, b = sp.symbols('a b')", 'sp.Not(sp.Lt(a, b))'],
+  },
+  {
+    latex: 'a \\implies b',
+    expectedPython: ["a, b = sp.symbols('a b')", 'sp.Implies(a, b)'],
+  },
+  {
+    latex: 'a \\equiv b',
+    expectedPython: ["a, b = sp.symbols('a b')", 'sp.Eq(a, b)'],
+  },
+  {
+    // x^{\circ} is degrees — emit the radians conversion, not an
+    // unknown-head flag.
+    latex: 'x^{\\circ}',
+    expectedPython: ['x = sp.Symbol("x")', 'x * sp.pi / 180'],
+  },
+  {
+    // x_{-} is a subscripted name, not an unknown 'Subminus' head.
+    latex: 'x_{-}',
+    expectedPython: ['x = sp.Symbol("x_{-}")'],
   },
 ];
 

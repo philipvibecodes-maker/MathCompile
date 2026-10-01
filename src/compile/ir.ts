@@ -125,6 +125,8 @@ const KNOWN_HEADS = new Set([
   'Matrix', 'Determinant', 'Transpose', 'Inverse',
   // relations / logic / piecewise
   'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
+  'NotLess', 'NotGreater', 'NotLessEqual', 'NotGreaterEqual', 'NotDivides',
+  'Implies', 'Equivalent', 'IdenticallyEqual', 'Degrees',
   'And', 'Or', 'Not', 'Which', 'Piecewise',
   // statement-level IR
   'Assign', 'Def', 'Block', 'Function',
@@ -463,6 +465,13 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     if (h === 'Prime' && node.length >= 2 && isString(node[1])) {
       const ticks = typeof node[2] === 'number' ? node[2] : 1;
       return `${node[1]}${"'".repeat(ticks)}`;
+    }
+
+    // x_{-} / x_{+} — subscript sign; same composite-subscript naming as
+    // x_{i,j} (otherwise the head flags 'unknown head "Subminus"').
+    if ((h === 'Subminus' || h === 'Subplus') && node.length === 2) {
+      const sign = h === 'Subminus' ? '-' : '+';
+      return `${flattenSubscript(normalize(node[1], false))}_{${sign}}`;
     }
 
     if (h === 'Equal') node = flattenEqual(node);
