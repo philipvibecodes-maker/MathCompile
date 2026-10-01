@@ -387,6 +387,56 @@ const FIXTURES: {
       "sp.limit(1 / x, x, 0, dir='-')",
     ],
   },
+  {
+    // Comma-list subscripts keep their name — used to emit 'x_{?}'.
+    latex: 'x_{i,j}',
+    expectedPython: ['x__i_j = sp.Symbol("x_{i,j}")'],
+  },
+  {
+    // \boxed is presentational — emit the wrapped expression.
+    latex: '\\boxed{x^{2}}',
+    expectedPython: ['x = sp.Symbol("x")', 'x**2'],
+  },
+  {
+    // Accent marks denote distinct variables: \hat{x} -> x_hat.
+    latex: '\\hat{x} + \\vec{v}',
+    expectedPython: ["x_hat, v_vec = sp.symbols('x_hat v_vec')", 'x_hat + v_vec'],
+  },
+  {
+    latex: '\\|v\\|',
+    expectedPython: ['v = sp.Symbol("v")', 'sp.Abs(v)'],
+  },
+  {
+    // a \mid b: a divides b.
+    latex: 'a \\mid b',
+    expectedPython: ["b, a = sp.symbols('b a')", 'sp.Eq(sp.Mod(b, a), 0)'],
+  },
+  {
+    // CE can't parse \underset — rewritten to \lim_{x\to0} before parse.
+    latex: '\\underset{x\\to0}{\\lim} f',
+    expectedPython: ["f, x = sp.symbols('f x')", 'sp.limit(f, x, 0)'],
+  },
+  {
+    // \underbrace{expr}_{label} labels the expression — it collapses to
+    // the expr, and the sibling sub makes it a named symbol.
+    latex: '\\underbrace{x+1}_{n}',
+    expectedPython: ['x_1__n = sp.Symbol("x+1_{n}")'],
+  },
+  {
+    // \Big( ... \Big) sizes are dropped — the parens stay an implicit
+    // application, so `a` resolves as an undefined worksheet function.
+    latex: 'a\\Big(b\\Big)',
+    expectedPython: ['b = sp.Symbol("b")', 'a = sp.Function("a")', 'a(b)'],
+  },
+  {
+    // \; spacing commands are stripped for codegen (implicit multiply).
+    latex: 'x \\; y',
+    expectedPython: ["x, y = sp.symbols('x y')", 'x * y'],
+  },
+  {
+    latex: '\\emptyset',
+    expectedPython: ['sp.EmptySet'],
+  },
 ];
 
 describe('latexToStatementStrings', () => {

@@ -110,6 +110,7 @@ const KNOWN_HEADS = new Set([
   // arithmetic / algebra
   'Add', 'Multiply', 'Divide', 'Negate', 'Power', 'Sqrt', 'Root',
   'Rational', 'Complex', 'Abs', 'Sign', 'Floor', 'Ceil', 'Min', 'Max',
+  'Norm', 'Divides',
   'Exp', 'Ln', 'Log', 'Factorial', 'Gamma', 'Binomial', 'GCD', 'LCM', 'Mod',
   'Lb', 'Lg',
   // trigonometric
@@ -482,6 +483,39 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       ];
     }
 
+    // Grouping-only wrappers CE mints from \boxed, \underbrace,
+    // \overbrace — the semantics live in the wrapped expression, so
+    // collapse to it. Annotated's second arg is a styling-attrs dict.
+    if (h === 'UnderBrace' || h === 'OverBrace' || h === 'Annotated') {
+      return normalize(node[1], false);
+    }
+
+    // Accent marks that denote distinct variables — \hat{x}, \vec{v},
+    // \bar{z}, \dot{x}, \tilde{t} — become suffixed symbol names
+    // (x_hat, v_vec, ...) rather than collapsing to the unmarked name.
+    const ACCENT_SUFFIX: Record<string, string> = {
+      OverHat: 'hat',
+      OverVector: 'vec',
+      OverBar: 'bar',
+      Overline: 'bar',
+      Overarc: 'arc',
+      OverDot: 'dot',
+      OverDDot: 'ddot',
+      Overtilde: 'tilde',
+    };
+    if (ACCENT_SUFFIX[h] !== undefined && node.length >= 2) {
+      return `${flattenSubscript(node[1])}_${ACCENT_SUFFIX[h]}`;
+    }
+
+    // \widehat{AB}: CE reads the decoration as the arc/segment AB;
+    // a single arg is just a wide hat over one symbol.
+    if (h === 'Arc' && node.length === 3) {
+      return ['Multiply', normalize(node[1], false), normalize(node[2], false)];
+    }
+    if (h === 'Arc' && node.length === 2) {
+      return `${flattenSubscript(node[1])}_hat`;
+    }
+
     if (h === 'Add') {
       const args = node
         .slice(1)
@@ -576,7 +610,10 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     }
 
     if (h === 'Subscript' && node.length === 3) {
-      return `${flattenSubscript(node[1])}_{${flattenSubscript(node[2])}}`;
+      // Normalize the base first so decorative wrappers (UnderBrace,
+      // Accent marks) resolve to their flattened name before the
+      // subscript suffix is appended.
+      return `${flattenSubscript(normalize(node[1], false))}_{${flattenSubscript(node[2])}}`;
     }
 
     if (h === 'Function') {

@@ -891,6 +891,30 @@ LatexCmds.f = class extends Letter {
 LatexCmds[' '] = LatexCmds.space = () =>
   new DigitGroupingChar('\\ ', h('span', {}, [h.text(U_NO_BREAK_SPACE)]), ' ');
 
+// \<char> escapes — spacing (\, \: \; \!), braces (\{ \}) and the norm
+// shorthand (\|). These are keyed with a backslash prefix so they only
+// resolve through the '\'-prefixed parse branch (see latex.ts): bare
+// ',', ';', '{', ... keep their literal meaning and '}' still closes
+// groups.
+LatexCmds['\\,'] =
+  LatexCmds.thinspace =
+    bindVanillaSymbol('\\, ', U_NO_BREAK_SPACE, 'thin space');
+LatexCmds['\\:'] =
+  LatexCmds.medspace =
+    bindVanillaSymbol('\\: ', U_NO_BREAK_SPACE, 'medium space');
+LatexCmds['\\;'] =
+  LatexCmds.thickspace =
+    bindVanillaSymbol('\\; ', U_NO_BREAK_SPACE, 'thick space');
+LatexCmds['\\!'] = () =>
+  new VanillaSymbol(
+    '\\! ',
+    h('span', { style: 'margin-right:-.2em' }),
+    'negative thin space'
+  );
+LatexCmds['\\{'] = bindVanillaSymbol('\\{ ', '{', 'open brace');
+LatexCmds['\\}'] = bindVanillaSymbol('\\} ', '}', 'close brace');
+LatexCmds['\\|'] = bindVanillaSymbol('\\| ', '&#8741;', 'norm');
+
 LatexCmds['.'] = () =>
   new DigitGroupingChar(
     '.',

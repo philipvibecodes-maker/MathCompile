@@ -673,6 +673,17 @@ class Emitter {
       }
       case 'Inverse':
         return [`${this.emit(args[0], PREC_ATOM)}**-1`, PREC_ATOM];
+      case 'Norm':
+        // \|v\|: Abs for scalars, .norm() for matrices.
+        if (isHead(args[0], 'Matrix'))
+          return [`(${this.emit(args[0])}).norm()`, PREC_ATOM];
+        return [`${this.sp}Abs(${this.emit(args[0])})`, PREC_ATOM];
+      case 'Divides':
+        // a \mid b: a divides b.
+        return [
+          `${this.sp}Eq(${this.sp}Mod(${this.emit(args[1])}, ${this.emit(args[0])}), 0)`,
+          PREC_ATOM,
+        ];
       case 'List':
         return [`[${args.map((a) => this.emit(a)).join(', ')}]`, PREC_ATOM];
       case 'Tuple':
