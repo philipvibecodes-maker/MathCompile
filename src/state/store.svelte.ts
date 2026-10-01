@@ -1,6 +1,6 @@
-import type { FieldHandle } from './editor/math-field';
-import type { TargetId } from './targets';
-import { parseCellLatex, type MathJson } from './ir';
+import type { FieldHandle } from '../editor/math-field';
+import type { TargetId } from '../compile/targets';
+import { parseCellLatex, type MathJson } from '../compile/ir';
 import {
   installFlushOnHide,
   loadCells,
@@ -48,11 +48,11 @@ function initDarkMode(): boolean {
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
 }
 
-// App state + the field registry/focus service (challenges.md §4/§7: one
-// focus owner; commands reach fields through `fields.get(id)?.method()`,
-// never through prop deltas like the old focusNonce). Cell ops are DOM-free
-// except focusCell, which no-ops when no field is registered for the id —
-// so this is fully unit-testable in node.
+// App state + the field registry/focus service: the single focus owner.
+// Commands reach fields through `fields.get(id)?.method()` — never through
+// prop-encoded commands. Cell ops are DOM-free except focusCell, which
+// no-ops when no field is registered for the id — so this is fully
+// unit-testable in node.
 export class AppStore {
   cells = $state<Cell[]>(initCells());
   focusedId = $state<number>(this.cells[0].id);
@@ -73,7 +73,7 @@ export class AppStore {
     installFlushOnHide();
   }
 
-  // Debounced snapshot of the worksheet; storage.ts coalesces the
+  // Debounced snapshot of the worksheet; persistence.ts coalesces the
   // writes so the keystroke path never touches setItem directly.
   private persist() {
     persistCells(this.cells);

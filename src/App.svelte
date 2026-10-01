@@ -1,16 +1,16 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import MathField from './components/MathField.svelte';
-  import { TARGETS } from './targets';
-  import type { TargetId } from './targets';
+  import { TARGETS } from './compile/targets';
+  import type { TargetId } from './compile/targets';
   import CommandPalette from './components/CommandPalette.svelte';
   import HowToGuide from './components/HowToGuide.svelte';
-  import { appStore, THEME_STORAGE_KEY } from './appState.svelte.ts';
-  import { savePrefs } from './persistence';
-  import { displayLatex, outputLatex } from './latex';
-  import { buildCommands } from './commands.ts';
+  import { appStore, THEME_STORAGE_KEY } from './state/store.svelte';
+  import { savePrefs } from './state/persistence';
+  import { displayLatex, outputLatex } from './compile/latex';
+  import { buildCommands } from './commands';
   import { installGlobalKeymap } from './editor/keymap';
-  import { compileWorksheet } from './codegen.ts';
+  import { compileWorksheet } from './compile/codegen';
 
   const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent);
   let commands = $derived(buildCommands(appStore));

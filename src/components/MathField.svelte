@@ -2,13 +2,13 @@
   import { onMount } from 'svelte';
   import { attachField } from '../editor/math-field';
   import type { FieldHandle, MathFieldElement } from '../editor/math-field';
-  import { appStore } from '../appState.svelte.ts';
-  import type { Cell } from '../appState.svelte.ts';
+  import { appStore } from '../state/store.svelte';
+  import type { Cell } from '../state/store.svelte';
 
   // Thin wrapper: the element is created here but every editor
   // interaction goes through the adapter handle. Imperative actions
   // (focus, setValue) are methods on the handle
-  // registered in the store — no prop-delta channels like focusNonce.
+  // registered in the store — never prop-encoded commands.
   let { cell }: { cell: Cell } = $props();
 
   let mf: MathFieldElement;

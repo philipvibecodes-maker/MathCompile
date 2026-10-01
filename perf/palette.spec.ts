@@ -1,8 +1,9 @@
-// Command-palette latency, split the way challenges.md §8 prescribes:
-// cold open (first open on a fresh document — JIT + first overlay layout)
-// vs warm open. Plus filter keystrokes, command execution, and Escape ->
-// cell refocus. The cells=20 variants scale the command list (one "go to
-// expression" item per cell) to expose per-command costs.
+// Command-palette latency, split cold vs warm open: cold open is the
+// first open on a fresh document (JIT + first overlay layout), warm open
+// is the steady-state class flip. Plus filter keystrokes, command
+// execution, and Escape -> cell refocus. The cells=20 variants scale the
+// command list (one "go to expression" item per cell) to expose
+// per-command costs.
 
 import { expect, test } from '@playwright/test';
 import {
@@ -48,7 +49,7 @@ test('Ctrl+K cold open -> palette painted (fresh pages)', async ({
       // A realistic pre-open state: user just edited a cell.
       await cell(page).click();
       await cell(page).pressSequentially('x');
-      await page.waitForTimeout(150); // past MathLive's refocus window
+      await page.waitForTimeout(150); // let the edit settle before timing
       const { ms } = await timed(
         page,
         () => page.keyboard.press('Control+k'),

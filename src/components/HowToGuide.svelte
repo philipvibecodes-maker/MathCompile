@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { appStore } from '../appState.svelte.ts';
+  import { appStore } from '../state/store.svelte';
 
   // `smart` shows when smart mode is on, `plain` when off; `how` is shared.
   const entries: { goal: string; how?: string; smart?: string; plain?: string }[] = [

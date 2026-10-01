@@ -235,9 +235,9 @@ test('Backspace at the start of the field hops over a bounds-carrying atom', asy
   expect(info.value).toBe('\\int_{a}^{b}');
 });
 
-// Pinned as expected-fail under MathLive (its selection-change fix re-fired
-// after Tab's own navigation and yanked the caret back to the lower bound).
-// Under MathQuill there is one caret owner, so Tab just reaches the upper
+// Regression guard: this used to be pinned expected-fail when the
+// editor's own selection handler fought the app's caret fix over the
+// same selection. Under MathQuill there is one caret owner, so Tab just reaches the upper
 // bound — runs as a normal test now.
 test('Tab from the lower bound reaches the upper bound', async ({ page }) => {
   const mf = page.locator('math-field').first();
