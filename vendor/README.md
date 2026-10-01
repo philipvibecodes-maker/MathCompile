@@ -39,14 +39,14 @@ Vendored copy of the Desmos fork of MathQuill
   app's smartMode toggle can turn it back off; upstream had no way to
   clear the list once set.
 - `src/commands/math/commands.ts` + `src/css/math.less`: boundless
-  integral signs — `LatexCmds.int`/`integral`/`∫`, `iint`/`∬`, and
-  `antid` all produce a leaf `MQSymbol` instead of a `SummationNotation`
-  with mandatory bound blocks, so the caret lands right of the sign and
-  an indefinite integral (`\int x dx`) types linearly. Bounds come from
-  ordinary `_`/`^` SupSub on demand (or from parsing `\int_{a}^{b}`),
-  and `.mq-int` sibling-supsub rules keep the bound styling. `iint`
-  renders ∬; `\antid` is an insertion alias: the app maps it to `\int`
-  at compile time (CE has no `\antid`).
+  `\iint`/`\antid` signs — `LatexCmds.iint`/`∬` and `LatexCmds.antid`
+  produce a leaf `MQSymbol` (bare ∫ glyph) instead of the
+  `SummationNotation` with mandatory bound blocks that `\int` keeps, so
+  the caret lands right of the sign and an indefinite integral
+  (`\iint x dx`) types linearly. Bounds come from ordinary `_`/`^`
+  SupSub on demand (or from parsing `\iint_{a}^{b}`), and `.mq-int`
+  sibling-supsub rules keep the bound styling. `\antid` is an insertion
+  alias: the app maps it to `\int` at compile time (CE has no `\antid`).
 
 Coverage: `test/unit/environments.test.js` (mocha; run `make test` then
 open `test/unit.html`, or run `npx playwright test e2e/vendor.spec.ts`

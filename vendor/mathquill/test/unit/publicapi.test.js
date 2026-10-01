@@ -1158,19 +1158,17 @@ suite('Public API', function () {
       mq.cmd('0');
       assert.equal(mq.latex(), '\\sum_{n=0}^{ }', 'cursor after the `n=`');
     });
-    test('integral is boundless', function () {
+    test('integral still has empty limits', function () {
       var mq = MQ.MathField($('<span>').appendTo('#mock')[0], {
         sumStartsWithNEquals: true
       });
       assert.equal(mq.latex(), '');
 
-      // `int` produces a bare integral sign with the caret right of it —
-      // bounds are added on demand with `_`/`^`, not prefilled.
       mq.cmd('\\int');
-      assert.equal(mq.latex(), '\\int');
+      assert.equal(mq.latex(), '\\int_{ }^{ }');
 
       mq.cmd('0');
-      assert.equal(mq.latex(), '\\int0', 'cursor at the baseline');
+      assert.equal(mq.latex(), '\\int_{0}^{ }', 'cursor in the from block');
     });
     test('iint and antid insert boundless signs', function () {
       var mq = MQ.MathField($('<span>').appendTo('#mock')[0]);
