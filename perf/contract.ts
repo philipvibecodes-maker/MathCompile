@@ -1,15 +1,13 @@
 // The DOM contract the perf battery depends on — deliberately identical to
 // the behavioral suite in e2e/. A rewrite keeps these hooks and every spec
 // keeps working; if the cell editor stops being a <math-field>, provide the
-// same surface (tag name, getValue(), focus()) via a thin adapter element.
+// same surface (tag name, getValue()/value, focus()) via a thin adapter
+// element.
 //
-// Two editor backends implement that surface today:
-// - MathLive <math-field>: el.getValue(), and the host itself is the
-//   document.activeElement when focused.
-// - MathQuill adapters (rewrite/*-mathquill): a <math-field> host that may
-//   expose getValue() or only a .value property, and focuses an internal
-//   textarea — so focus is always checked with contains()/closest(), and
-//   value reads use the readLatex fallback below.
+// Today's <math-field> element exposes a .value property and focuses an
+// internal textarea; other adapters have exposed getValue() instead — so
+// value reads use the fallback below, and focus is always checked with
+// contains()/closest().
 //
 // Nothing here reaches into app state, component internals, or a framework
 // API — that is what makes the battery framework-agnostic.
@@ -42,9 +40,10 @@ interface CellEl {
   value: string;
 }
 
-// getValue() on MathLive and the Solid+MathQuill adapter; .value on the
-// Svelte+MathQuill element. Callbacks passed to evaluate/waitForFunction are
-// serialized into the page, so this fallback is inlined at each call site.
+// .value on this app's <math-field> element; getValue() covers adapters
+// that expose that instead. Callbacks passed to evaluate/waitForFunction
+// are serialized into the page, so the fallback is inlined at each call
+// site.
 export const cellValue = (mf: Locator): Promise<string> =>
   mf.evaluate((el) => {
     const e = el as unknown as CellEl;
@@ -75,9 +74,8 @@ export const lenGrows =
       [SEL.cell, i, before] as const,
     );
 
-// contains() not ===: a MathQuill field's activeElement is its hidden
-// textarea, not the <math-field> host. Reflexive for MathLive, whose host
-// itself takes focus.
+// contains() not ===: the field's activeElement is its hidden textarea,
+// not the <math-field> host.
 export const focusedIndex = (page: Page): Promise<number> =>
   page.evaluate(() =>
     [...document.querySelectorAll('math-field')].findIndex((el) =>
@@ -120,8 +118,9 @@ export const committedToOutput =
     );
   };
 
-// MathLive re-focuses a field's internal span ~60ms after the field gains
-// focus; 150ms is safely past that window (same convention as e2e).
+// Safety margin before handing focus to a cell — the current editor has
+// no deferred refocus, but other implementations have stolen focus back
+// ~60ms after gaining it. 150ms clears that window either way.
 export const settleFocus = (page: Page) => page.waitForTimeout(150);
 
 export const focusCell = async (page: Page, i: number) => {
@@ -140,9 +139,9 @@ export const clearFirstCell = async (page: Page) => {
 };
 
 // Adds cells by driving the real UI (click + typing) until `count` exist.
-// Seeding via setValue() would bypass the app's state — MathLive silences
-// notifications for programmatic setValue, and a rewrite may sync state on
-// input alone — so every implementation gets identical, honest input.
+// Seeding via setValue() would bypass the app's state — some editors
+// silence change notifications for programmatic writes — so every
+// implementation gets identical, honest input.
 export const seedCells = async (page: Page, count: number, text = 'x') => {
   const have = await cellCount(page);
   for (let i = have; i < count; i++) {

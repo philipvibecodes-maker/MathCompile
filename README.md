@@ -1,32 +1,67 @@
-# React + TypeScript + Vite
+# MathCompile
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Desmos-style multi-cell math expression editor: write math, get LaTeX and
+executable code out. Cells are `<math-field>` custom elements backed by a
+vendored Desmos-fork [MathQuill](vendor/mathquill). Each cell's LaTeX is
+compiled through a MathJSON IR (`@cortex-js/compute-engine`) to LaTeX or
+SymPy-flavored Python, shown per cell in the output column.
 
-Currently, two official plugins are available:
+**Stack:** Svelte 5 (runes) · TypeScript · Vite · Vitest · Playwright · oxlint
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Quickstart
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```sh
+npm install
+npm run dev        # http://localhost:5573
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Scripts
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Vite dev server on :5573 (strict port) |
+| `npm run build` | `svelte-check` + production bundle to `dist/` |
+| `npm run check` | Type-check `.svelte`/`.ts` sources |
+| `npm run lint` | oxlint (`vendor/` excluded) |
+| `npm test` | Vitest unit tests (`src/**/*.test.ts`, node env) |
+| `npm run test:e2e` | Playwright behavioral suite (`e2e/`) |
+| `npm run test:perf` | Input→paint perf battery (`perf/`); builds + previews on :4173 |
+
+`PERF_BASE_URL=<url> PERF_LABEL=<name> npm run test:perf` measures any
+other served build; `node perf/compare.mjs <labelA> <labelB>` diffs two
+labeled runs in `perf-results/`.
+
+## Layout
+
+```
+src/
+  App.svelte            worksheet UI: cell list, output column, header
+  main.ts               mounts App, defines the <math-field> element
+  commands.ts           command palette entries
+  fuzzy.ts              palette search scoring
+  components/           MathField, CommandPalette, HowToGuide
+  editor/               the only code that touches MathQuill
+    math-field.ts         <math-field> element + attachField() -> FieldHandle
+    mathquill.ts          vendored build shim (mq3 + types)
+    keymap.ts             capture-phase global keys (Ctrl+K, Alt+S)
+  state/
+    store.svelte.ts       runes store: cells, field registry, focus, prefs
+    persistence.ts        localStorage (cells, prefs, theme)
+  compile/              pure-TS pipeline, no DOM: latex -> IR -> code
+    latex.ts              output/display LaTeX helpers
+    ir.ts                 ce.parse + normalizeIR (MathJSON)
+    codegen.ts            IR -> SymPy Python (compileWorksheet)
+    targets.ts            output-target registry
+e2e/                    Playwright specs + the spike.html/spike.ts harness
+perf/                   perf battery (contract.ts pins the DOM contract)
+vendor/mathquill/       vendored MathQuill + local patches (see its README)
+```
+
+## Docs
+
+- `AGENTS.md` — architecture notes, invariants, and testing tips
+- `SYMBOLS.md` — every symbol/command typeable in the editor
+- `vendor/README.md` — MathQuill pin, local patch list, rebuild steps
+
+Deployed to GitHub Pages on every push to `main`
+(`.github/workflows/deploy.yml`).

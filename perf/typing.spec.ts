@@ -95,11 +95,11 @@ test('keystroke -> paint vs document size', async ({ page }) => {
 });
 
 test('keystroke -> paint inside a complex expression', async ({ page }) => {
-  // The seed is unmeasured — each backend gets the sequence its own e2e
-  // suite proves: MathLive and the Solid+MathQuill adapter auto-convert
-  // 'int' on the next char (autoCommands always on); the Svelte+MathQuill
-  // element (no getValue(), smart mode off by default) seeds the same
-  // structure through the '\int' command input + Enter instead.
+  // The seed is unmeasured — each implementation gets the sequence its
+  // own e2e suite proves: adapters with getValue() auto-convert 'int' on
+  // the next char (autoCommands always on); this app's element (no
+  // getValue(), smart mode off by default) seeds the same structure
+  // through the '\int' command input + Enter instead.
   const mf = cell(page);
   const hasGetValue = await page.evaluate(
     () =>
@@ -120,9 +120,9 @@ test('keystroke -> paint inside a complex expression', async ({ page }) => {
   await mf.pressSequentially('b');
   await page.keyboard.press('ArrowRight');
   await mf.pressSequentially('x^2');
-  // MQ Home/End are block-local — Ctrl+End reaches the field edge. End is
-  // field-wide in MathLive already. Either way the caret ends up after the
-  // expression, which is what the timed keystrokes append to.
+  // MQ Home/End are block-local — Ctrl+End reaches the field edge; other
+  // editors' End is already field-wide. Either way the caret ends up
+  // after the expression, which is what the timed keystrokes append to.
   await page.keyboard.press(hasGetValue ? 'End' : 'Control+End');
   for (let i = 0; i < 15; i++) {
     const before = await valueLen(page);
@@ -134,7 +134,8 @@ test('keystroke -> paint inside a complex expression', async ({ page }) => {
     record('typing.paint complex-expr', ms);
   }
   // The limit structure survived; typed chars appended after it. Braces
-  // are stripped: MQ serializes the exponent as x^{2}, MathLive as x^2.
+  // are stripped so the assertion holds whether the editor serializes
+  // the exponent as x^{2} or x^2.
   expect((await cellValue(mf)).replace(/[{}]/g, '')).toContain(
     '\\int_a^bx^2',
   );

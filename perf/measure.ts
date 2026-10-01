@@ -37,7 +37,7 @@ const gitLabel = () => {
   }
 };
 
-/** Label for this run. Set PERF_LABEL per implementation (react, svelte…). */
+/** Label for this run. Set PERF_LABEL per implementation (svelte, solid…). */
 export const LABEL = (process.env.PERF_LABEL ?? gitLabel()).replace(
   /[^\w.-]+/g,
   '_',

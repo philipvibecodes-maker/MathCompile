@@ -1,5 +1,5 @@
-import type { Cell } from './appState.svelte';
-import { TARGETS, type TargetId } from './targets';
+import type { Cell } from './store.svelte';
+import { TARGETS, type TargetId } from '../compile/targets';
 
 export const CELLS_STORAGE_KEY = 'mathcompile-cells';
 export const PREFS_STORAGE_KEY = 'mathcompile-prefs';

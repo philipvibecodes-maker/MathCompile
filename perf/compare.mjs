@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Diff two perf runs:
 //
-//   node perf/compare.mjs react svelte          # perf-results/<label>/*.json
-//   node perf/compare.mjs react                 # single run, full table
+//   node perf/compare.mjs main candidate       # perf-results/<label>/*.json
+//   node perf/compare.mjs main                  # single run, full table
 //   node perf/compare.mjs a.json b.json         # individual result files
 //
 // Prints per-metric p50 (and p95) with the B/A ratio. Metric names are

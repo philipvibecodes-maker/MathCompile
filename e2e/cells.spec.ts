@@ -28,9 +28,9 @@ const waitFocusedIndex = (page: Page, i: number) =>
     i,
   );
 
-// MathQuill has no deferred internal refocus (unlike MathLive's ~60ms
-// keyboardDelegate steal), so click() alone is reliable; the settle wait is
-// kept minimal anyway so fast test runs don't race the render.
+// MathQuill has no deferred internal refocus, so click() alone is
+// reliable; the settle wait is kept minimal anyway so fast test runs
+// don't race the render.
 const focusCell = async (page: Page, i: number) => {
   await cell(page, i).focus();
   await waitFocusedIndex(page, i);

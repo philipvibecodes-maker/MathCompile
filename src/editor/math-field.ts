@@ -10,12 +10,12 @@ export interface MoveOutDetail {
 
 /**
  * Framework-free `<math-field>` custom element wrapping a vendored
- * MathQuill v3 EditableField. Keeps the e2e-facing contract of the old
- * MathLive element: a `<math-field>` host that dispatches `input` on
- * edits and `move-out` (detail.direction: up/down/forward/backward)
- * when the caret leaves the field.
+ * MathQuill v3 EditableField. Owns the e2e-facing contract: a
+ * `<math-field>` host that dispatches `input` on edits and `move-out`
+ * (detail.direction: up/down/forward/backward) when the caret leaves
+ * the field.
  *
- * Keymap contract (mirrors the old app):
+ * Keymap contract:
  * - Enter → MQ `enter` handler → `insertLineBreak()` (vendored env
  *   patch): matrix row inside a matrix, \displaylines split otherwise.
  *   LatexCommandInput Enter stays MQ-owned (command acceptance).
@@ -190,7 +190,8 @@ export interface FieldHandle {
 const SMART_AUTO_COMMANDS = 'int sum sqrt prod pi infty theta derivative';
 
 // Attach the app's editing behavior to a <math-field>. This module is the
-// single boundary with the editor internals (challenges.md §2 analog).
+// single boundary with the editor internals — nothing outside src/editor/
+// touches MathQuill.
 export function attachField(
   el: MathFieldElement,
   cb: FieldCallbacks,

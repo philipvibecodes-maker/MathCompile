@@ -40,7 +40,7 @@ declare global {
 const spike = <T>(page: Page, fn: () => T) => page.evaluate(fn);
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/spike.html');
+  await page.goto('/e2e/spike.html');
   await page.waitForFunction(() => !!window.spike);
 });
 
@@ -130,8 +130,8 @@ test('no deferred focus steal after handing focus elsewhere', async ({
     );
   });
   expect(r.final).toBe('other');
-  // No transition back to the hidden textarea after `other` took focus
-  // (MathLive's deferred ~60ms refocus would show up here).
+  // No transition back to the hidden textarea after `other` took focus;
+  // a deferred refocus by the editor would show up here.
   const lastOther = r.watch.map((w) => w.id).lastIndexOf('other');
   const stolen = r.watch.slice(lastOther + 1);
   expect(stolen, `focus watch: ${JSON.stringify(r.watch)}`).toEqual([]);

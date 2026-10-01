@@ -1,5 +1,8 @@
-import { mq3 } from './editor/mathquill';
-import { defineMathField, type MathFieldElement } from './editor/math-field';
+import { mq3 } from '../src/editor/mathquill';
+import {
+  defineMathField,
+  type MathFieldElement,
+} from '../src/editor/math-field';
 
 const el = document.getElementById('field')!;
 const logEl = document.getElementById('log')!;
@@ -22,8 +25,8 @@ const mq = mq3.MathField(el, {
   },
 });
 
-// Adapter element: Phase 2 contract — value round-trip, input/move-out/
-// new-cell events, Enter -> insertLineBreak default.
+// Adapter element under test: value round-trip, input/move-out/new-cell
+// events, Enter -> insertLineBreak default.
 defineMathField();
 const adapterEl = document.getElementById('adapter-field') as MathFieldElement;
 adapterEl.options = {
