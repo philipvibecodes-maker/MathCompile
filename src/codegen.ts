@@ -1,10 +1,12 @@
 // Normalized IR -> target codegen.
 //
-// The `python` target emits executable SymPy: `import sympy as sp`, an
-// `x, y = sp.symbols('x y')` preamble collected from free symbols, then one
-// statement per cell — Assign/Def thread state across cells. Any head the
-// mapping table doesn't cover falls through to the escape hatch
-// `sp.<head>(args)` so users are never blocked by vocabulary gaps.
+// The `python` target emits executable SymPy: `from sympy import *`
+// (default; `import sympy as sp` + `sp.` qualifiers when `importAll` is
+// off), then one statement per cell — Assign/Def thread state across
+// cells, and each cell emits `x = Symbol('x')`/`f = Function('f')` def
+// lines for the names first bound there. Any head the mapping table
+// doesn't cover falls through to the escape hatch `<head>(args)` so users
+// are never blocked by vocabulary gaps.
 //
 // Statement-level heads (Assign, Def, Block, Solve, Piecewise/Which) are
 // Python-only: for the javascript/glsl/c targets the compiler returns an
@@ -22,6 +24,9 @@ export interface CompileResult {
   ok: boolean;
   /** Full worksheet program — imports + symbols preamble + per-cell code. */
   program: string;
+  /** The program's import statement — `from sympy import *` (default) or
+   * `import sympy as sp` when `importAll` is off. */
+  importLine: string;
   /** Emitted statement lines per cell (parallel to the input cells). */
   cellLines: string[][];
   /** Normalized IR per cell — the OutputPanel debug view renders this. */
@@ -51,16 +56,19 @@ function pyIdent(name: string): string {
   return out;
 }
 
-// CE constants -> SymPy. Anything else that's a bare string is a symbol.
+// CE constants -> SymPy names (unqualified — the `sp.` prefix is applied
+// per-emission via the emitter's `sp` getter so `from sympy import *`
+// mode emits bare names). `True`/`False` are Python builtins and stay
+// unqualified in both modes.
 const CONSTANTS: Record<string, string> = {
-  Pi: 'sp.pi',
-  ExponentialE: 'sp.E',
-  ImaginaryUnit: 'sp.I',
-  PositiveInfinity: 'sp.oo',
-  NegativeInfinity: '-sp.oo',
-  EulerGamma: 'sp.EulerGamma',
-  CatalansConstant: 'sp.Catalan',
-  GoldenRatio: 'sp.GoldenRatio',
+  Pi: 'pi',
+  ExponentialE: 'E',
+  ImaginaryUnit: 'I',
+  PositiveInfinity: 'oo',
+  NegativeInfinity: '-oo',
+  EulerGamma: 'EulerGamma',
+  CatalansConstant: 'Catalan',
+  GoldenRatio: 'GoldenRatio',
   True: 'True',
   False: 'False',
 };
@@ -98,6 +106,9 @@ const STATEMENT_HEADS = new Set(['Assign', 'Def', 'Block', 'Which', 'Piecewise']
 const STATEMENT_CALL_HEADS = new Set(['solve', 'Solve', 'piecewise', 'Piecewise']);
 
 interface Scope {
+  /** `import sympy as sp` mode: emit `sp.` qualifiers. With
+   * `from sympy import *` (the default) names emit unqualified. */
+  qualified: boolean;
   /** Names defined by Assign/Def anywhere in the worksheet (pre-scan;
    * distinguishes worksheet functions from the sp.<head> escape hatch). */
   declared: Set<string>;
@@ -131,6 +142,11 @@ function numText(node: MathJson): string {
   return String(node);
 }
 
+// Numeric literal node — number or `{num: "..."}`.
+const isNum = (v: MathJson | undefined): boolean =>
+  typeof v === 'number' ||
+  (typeof v === 'object' && v !== null && 'num' in v);
+
 // Python precedence levels for parenthesization.
 const PREC_LOW = 0; // expression statements, call args
 const PREC_ADD = 10;
@@ -143,6 +159,18 @@ class Emitter {
   scope: Scope;
   constructor(scope: Scope) {
     this.scope = scope;
+  }
+
+  /** `sp.` qualifier prefix — empty under `from sympy import *`. */
+  private get sp(): string {
+    return this.scope.qualified ? 'sp.' : '';
+  }
+
+  /** SymPy constant: qualified in `import sympy as sp` mode; Python
+   * builtins (True/False) and literals stay unqualified either way. */
+  private constName(c: string): string {
+    if (c === 'True' || c === 'False') return c;
+    return c.startsWith('-') ? `-${this.sp}${c.slice(1)}` : `${this.sp}${c}`;
   }
 
   private alloc(map: Map<string, string>, name: string): string {
@@ -197,7 +225,7 @@ class Emitter {
       return [numText(node), PREC_ATOM];
     if (isStr(node)) {
       const c = CONSTANTS[node];
-      if (c) return [c, PREC_ATOM];
+      if (c) return [this.constName(c), PREC_ATOM];
       if (node === 'Nothing') {
         this.scope.flag('error', 'missing argument cannot be emitted');
         return ['None', PREC_ATOM];
@@ -247,6 +275,12 @@ class Emitter {
           PREC_MUL,
         ];
       case 'Divide':
+        // int/int divides to a Python float — keep it exact as Rational.
+        if (isNum(args[0]) && isNum(args[1]))
+          return [
+            `${this.sp}Rational(${numText(args[0])}, ${numText(args[1])})`,
+            PREC_ATOM,
+          ];
         return [
           `${this.emit(args[0], PREC_MUL)} / ${this.emit(args[1], PREC_MUL + 1)}`,
           PREC_MUL,
@@ -257,50 +291,50 @@ class Emitter {
           PREC_POW,
         ];
       case 'Rational':
-        return [`sp.Rational(${numText(args[0])}, ${numText(args[1])})`, PREC_ATOM];
+        return [`${this.sp}Rational(${numText(args[0])}, ${numText(args[1])})`, PREC_ATOM];
       case 'Complex':
         return [
-          `${numText(args[0])} + ${numText(args[1])}*sp.I`,
+          `${numText(args[0])} + ${numText(args[1])}*${this.sp}I`,
           PREC_ADD,
         ];
       case 'Root':
         return args.length === 2
-          ? [`sp.root(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM]
-          : [`sp.sqrt(${this.emit(args[0])})`, PREC_ATOM];
+          ? [`${this.sp}root(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM]
+          : [`${this.sp}sqrt(${this.emit(args[0])})`, PREC_ATOM];
       case 'Log':
         return args.length === 2
-          ? [`sp.log(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM]
-          : [`sp.log(${this.emit(args[0])}, 10)`, PREC_ATOM];
+          ? [`${this.sp}log(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM]
+          : [`${this.sp}log(${this.emit(args[0])}, 10)`, PREC_ATOM];
       case 'Factorial':
-        return [`sp.factorial(${this.emit(args[0])})`, PREC_ATOM];
+        return [`${this.sp}factorial(${this.emit(args[0])})`, PREC_ATOM];
       case 'Equal': {
         if (args.length === 2)
           return [
-            `sp.Eq(${this.emit(args[0])}, ${this.emit(args[1])})`,
+            `${this.sp}Eq(${this.emit(args[0])}, ${this.emit(args[1])})`,
             PREC_ATOM,
           ];
-        // a = b = c -> sp.And(sp.Eq(a, b), sp.Eq(b, c))
+        // a = b = c -> ${this.sp}And(${this.sp}Eq(a, b), ${this.sp}Eq(b, c))
         const pairs = args
           .slice(0, -1)
-          .map((a, i) => `sp.Eq(${this.emit(a)}, ${this.emit(args[i + 1])})`);
-        return [`sp.And(${pairs.join(', ')})`, PREC_ATOM];
+          .map((a, i) => `${this.sp}Eq(${this.emit(a)}, ${this.emit(args[i + 1])})`);
+        return [`${this.sp}And(${pairs.join(', ')})`, PREC_ATOM];
       }
       case 'NotEqual':
-        return [`sp.Ne(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM];
+        return [`${this.sp}Ne(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM];
       case 'Less':
-        return [`sp.Lt(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM];
+        return [`${this.sp}Lt(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM];
       case 'LessEqual':
-        return [`sp.Le(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM];
+        return [`${this.sp}Le(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM];
       case 'Greater':
-        return [`sp.Gt(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM];
+        return [`${this.sp}Gt(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM];
       case 'GreaterEqual':
-        return [`sp.Ge(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM];
+        return [`${this.sp}Ge(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM];
       case 'And':
-        return [`sp.And(${args.map((a) => this.emit(a)).join(', ')})`, PREC_ATOM];
+        return [`${this.sp}And(${args.map((a) => this.emit(a)).join(', ')})`, PREC_ATOM];
       case 'Or':
-        return [`sp.Or(${args.map((a) => this.emit(a)).join(', ')})`, PREC_ATOM];
+        return [`${this.sp}Or(${args.map((a) => this.emit(a)).join(', ')})`, PREC_ATOM];
       case 'Not':
-        return [`sp.Not(${this.emit(args[0])})`, PREC_ATOM];
+        return [`${this.sp}Not(${this.emit(args[0])})`, PREC_ATOM];
       case 'Which': {
         // CE: (cond, expr) pairs, odd tail is the else value.
         const pieces: string[] = [];
@@ -310,7 +344,7 @@ class Emitter {
           );
         if (args.length % 2 === 1)
           pieces.push(`(${this.emit(args[args.length - 1])}, True)`);
-        return [`sp.Piecewise(${pieces.join(', ')})`, PREC_ATOM];
+        return [`${this.sp}Piecewise(${pieces.join(', ')})`, PREC_ATOM];
       }
       case 'Piecewise': {
         // CE also emits ["Piecewise", ["List", expr, cond], ...]
@@ -321,15 +355,15 @@ class Emitter {
               : `(${this.emit(a)}, True)`,
           )
           .join(', ');
-        return [`sp.Piecewise(${pieces})`, PREC_ATOM];
+        return [`${this.sp}Piecewise(${pieces})`, PREC_ATOM];
       }
       case 'D': {
         // \frac{d}{dx} f and partials both parse to D(f, x[, n]).
         const f = this.emit(args[0]);
         const x = this.emit(args[1]);
         return args.length >= 3
-          ? [`sp.diff(${f}, ${x}, ${this.emit(args[2])})`, PREC_ATOM]
-          : [`sp.diff(${f}, ${x})`, PREC_ATOM];
+          ? [`${this.sp}diff(${f}, ${x}, ${this.emit(args[2])})`, PREC_ATOM]
+          : [`${this.sp}diff(${f}, ${x})`, PREC_ATOM];
       }
       case 'Apply': {
         const callee = args[0];
@@ -346,7 +380,7 @@ class Emitter {
             fname !== null
               ? `${fname}(${argList})`
               : `${this.emit(f)}(${argList})`;
-          return [`sp.diff(${applied}, ${argList}${order})`, PREC_ATOM];
+          return [`${this.sp}diff(${applied}, ${argList}${order})`, PREC_ATOM];
         }
         const calleeText = isStr(callee)
           ? this.fn(callee)
@@ -358,7 +392,7 @@ class Emitter {
       }
       case 'Derivative':
         return [
-          `sp.Derivative(${args
+          `${this.sp}Derivative(${args
             .map((a, i) => (i === 0 && isStr(a) ? this.fn(a) : this.emit(a)))
             .join(', ')})`,
           PREC_ATOM,
@@ -380,15 +414,15 @@ class Emitter {
         const lo = limits?.[1];
         const hi = limits?.[2];
         if (v === undefined)
-          return [`sp.integrate(${this.emit(body)})`, PREC_ATOM];
+          return [`${this.sp}integrate(${this.emit(body)})`, PREC_ATOM];
         if (isStr(lo) && isStr(hi) && lo === 'Nothing' && hi === 'Nothing')
-          return [`sp.integrate(${this.emit(body)}, ${this.emit(v)})`, PREC_ATOM];
+          return [`${this.sp}integrate(${this.emit(body)}, ${this.emit(v)})`, PREC_ATOM];
         if (limits && !(isStr(lo) && lo === 'Nothing'))
           return [
-            `sp.integrate(${this.emit(body)}, (${this.emit(v)}, ${this.emit(lo)}, ${this.emit(hi)}))`,
+            `${this.sp}integrate(${this.emit(body)}, (${this.emit(v)}, ${this.emit(lo)}, ${this.emit(hi)}))`,
             PREC_ATOM,
           ];
-        return [`sp.integrate(${this.emit(body)}, ${this.emit(v)})`, PREC_ATOM];
+        return [`${this.sp}integrate(${this.emit(body)}, ${this.emit(v)})`, PREC_ATOM];
       }
       case 'Sum':
       case 'Product': {
@@ -402,14 +436,14 @@ class Emitter {
           !(isStr(limits[2]) && limits[2] === 'Nothing')
         )
           return [
-            `sp.${eager}(${this.emit(body)}, (${this.emit(limits[0])}, ${this.emit(limits[1])}, ${this.emit(limits[2])}))`,
+            `${this.sp}${eager}(${this.emit(body)}, (${this.emit(limits[0])}, ${this.emit(limits[1])}, ${this.emit(limits[2])}))`,
             PREC_ATOM,
           ];
         // Missing bounds can't be evaluated — emit the unevaluated form.
         return [
           limits
-            ? `sp.${lazy}(${this.emit(body)}, ${this.emit(limits[0])})`
-            : `sp.${lazy}(${this.emit(body)})`,
+            ? `${this.sp}${lazy}(${this.emit(body)}, ${this.emit(limits[0])})`
+            : `${this.sp}${lazy}(${this.emit(body)})`,
           PREC_ATOM,
         ];
       }
@@ -419,12 +453,12 @@ class Emitter {
         const { body, params } = unwrapLambda(args[0]);
         if (args.length >= 3)
           return [
-            `sp.limit(${this.emit(body)}, ${this.emit(args[1])}, ${this.emit(args[2])})`,
+            `${this.sp}limit(${this.emit(body)}, ${this.emit(args[1])}, ${this.emit(args[2])})`,
             PREC_ATOM,
           ];
         const v = params[0] ?? 'x';
         return [
-          `sp.limit(${this.emit(body)}, ${this.emit(v)}, ${this.emit(args[1])})`,
+          `${this.sp}limit(${this.emit(body)}, ${this.emit(v)}, ${this.emit(args[1])})`,
           PREC_ATOM,
         ];
       }
@@ -438,7 +472,7 @@ class Emitter {
               : `[${this.emit(r)}]`,
           )
           .join(', ');
-        return [`sp.Matrix([${text}])`, PREC_ATOM];
+        return [`${this.sp}Matrix([${text}])`, PREC_ATOM];
       }
       case 'Determinant':
         return [`${this.emit(args[0], PREC_ATOM)}.det()`, PREC_ATOM];
@@ -456,7 +490,7 @@ class Emitter {
       case 'call': {
         // Escape hatch: unknown/`\operatorname` heads -> sp.<head>(args),
         // except worksheet-declared names, which call directly (f(x)=...) —
-        // declared-but-not-yet-bound gets an sp.Function def in this cell.
+        // declared-but-not-yet-bound gets a Function def in this cell.
         const name = isStr(args[0]) ? args[0] : 'unknown';
         const rendered = args
           .slice(1)
@@ -464,19 +498,19 @@ class Emitter {
           .join(', ');
         if (this.scope.declared.has(name))
           return [`${this.fn(name)}(${rendered})`, PREC_ATOM];
-        return [`sp.${pyIdent(name)}(${rendered})`, PREC_ATOM];
+        return [`${this.sp}${pyIdent(name)}(${rendered})`, PREC_ATOM];
       }
       default:
         if (SP_FUNCS[h])
           return [
-            `sp.${SP_FUNCS[h]}(${args.map((a) => this.emit(a)).join(', ')})`,
+            `${this.sp}${SP_FUNCS[h]}(${args.map((a) => this.emit(a)).join(', ')})`,
             PREC_ATOM,
           ];
         // Shouldn't reach — normalizeIR wraps unknown heads in 'call' —
         // but stay unblocked if raw IR is fed in directly.
-        this.scope.flag('note', `unknown head "${h}" — emitted as sp.${h}(...)`);
+        this.scope.flag('note', `unknown head "${h}" — emitted as ${h}(...)`);
         return [
-          `sp.${pyIdent(h)}(${args.map((a) => this.emit(a)).join(', ')})`,
+          `${this.sp}${pyIdent(h)}(${args.map((a) => this.emit(a)).join(', ')})`,
           PREC_ATOM,
         ];
     }
@@ -496,11 +530,13 @@ function unwrapLambda(node: MathJson): { body: MathJson; params: string[] } {
 
 // Emit one normalized cell IR as python statement lines. Names first
 // needed in this cell get their definition line at the top of the cell
-// (`a = sp.Symbol("a")`, `f = sp.Function("f")`) — a symbol is defined in
-// the cell that defines it, so program order stays truthful.
+// (`a = Symbol("a")` / `f = Function("f")`, `sp.`-qualified when the
+// `import sympy as sp` mode is selected) — a symbol is defined in the
+// cell that defines it, so program order stays truthful.
 function cellStatements(ir: MathJson | undefined, scope: Scope): string[] {
   if (ir === undefined) return [];
   const emitter = new Emitter(scope);
+  const sp = scope.qualified ? 'sp.' : '';
   const preDefined = new Set(scope.defined);
   const nodes = isHead(ir, 'Block') ? ir.slice(1) : [ir];
   const parts = nodes.map((stmt) => ({
@@ -518,18 +554,18 @@ function cellStatements(ir: MathJson | undefined, scope: Scope): string[] {
   const simple = newSyms.filter(([raw, ident]) => ident === pyIdent(raw));
   const fancy = newSyms.filter(([raw, ident]) => ident !== pyIdent(raw));
   if (simple.length === 1)
-    defs.push(`${simple[0][1]} = sp.Symbol(${JSON.stringify(simple[0][0])})`);
+    defs.push(`${simple[0][1]} = ${sp}Symbol(${JSON.stringify(simple[0][0])})`);
   else if (simple.length > 1)
     defs.push(
-      `${simple.map(([, ident]) => ident).join(', ')} = sp.symbols('${simple.map(([raw]) => raw).join(' ')}')`,
+      `${simple.map(([, ident]) => ident).join(', ')} = ${sp}symbols('${simple.map(([raw]) => raw).join(' ')}')`,
     );
   for (const [raw, ident] of fancy)
-    defs.push(`${ident} = sp.Symbol(${JSON.stringify(raw)})`);
+    defs.push(`${ident} = ${sp}Symbol(${JSON.stringify(raw)})`);
   for (const [raw, ident] of newFns)
-    defs.push(`${ident} = sp.Function(${JSON.stringify(raw)})`);
+    defs.push(`${ident} = ${sp}Function(${JSON.stringify(raw)})`);
 
   // A bare `a` cell whose symbol is defined here collapses to just the
-  // definition line — `a = sp.Symbol("a")` is the cell's output.
+  // definition line — `a = Symbol("a")` is the cell's output.
   const stmts = parts.flatMap(({ stmt, lines }) =>
     isStr(stmt) && newNames.has(stmt) ? [] : lines,
   );
@@ -577,12 +613,23 @@ function findStatementHeads(node: MathJson, found: Set<string>): void {
   for (const child of node.slice(1)) findStatementHeads(child, found);
 }
 
+export interface CompileOptions {
+  /** Emit `from sympy import *` and unqualified sympy names (default).
+   * `false` emits `import sympy as sp` with `sp.` qualifiers. */
+  importAll?: boolean;
+}
+
 // Compile the whole worksheet. `python` produces a runnable SymPy program;
 // other targets return diagnostics (expression lowering lands later).
 export function compileWorksheet(
   cells: CellInput[],
   target: string,
+  opts: CompileOptions = {},
 ): CompileResult {
+  const qualified = opts.importAll === false;
+  const importLine = qualified
+    ? 'import sympy as sp'
+    : 'from sympy import *';
   const perCell = cells.map((c) => normalizeIR(c.json));
   const issues: Issue[] = perCell.flatMap((r, i) =>
     r.issues.map((iss) => ({
@@ -600,6 +647,7 @@ export function compileWorksheet(
       return {
         ok: false,
         program: '',
+        importLine,
         cellLines: cells.map(() => []),
         normalized: perCell,
         issues: [
@@ -614,6 +662,7 @@ export function compileWorksheet(
     return {
       ok: false,
       program: '',
+      importLine,
       cellLines: cells.map(() => []),
       normalized: perCell,
       issues: [
@@ -638,6 +687,7 @@ export function compileWorksheet(
   }
 
   const scope: Scope = {
+    qualified,
     declared,
     defined: new Set(),
     bound: new Set(),
@@ -659,7 +709,7 @@ export function compileWorksheet(
     return lines;
   });
 
-  const lines: string[] = ['import sympy as sp'];
+  const lines: string[] = [importLine];
   cellLines.forEach((stmts, i) => {
     if (stmts.length === 0) return;
     lines.push('', `# cell ${i + 1}`, ...stmts);
@@ -668,6 +718,7 @@ export function compileWorksheet(
   return {
     ok: !issues.some((i) => i.severity === 'error'),
     program: lines.join('\n'),
+    importLine,
     cellLines,
     normalized: perCell,
     issues,

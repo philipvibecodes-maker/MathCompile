@@ -60,6 +60,9 @@ export class AppStore {
   target = $state<TargetId>(loadPrefs().target ?? 'latex');
   smartMode = $state(loadPrefs().smartMode ?? true);
   guideOpen = $state(loadPrefs().guideOpen ?? true);
+  // Python output mode: `from sympy import *` (default, bare names) vs
+  // `import sympy as sp` (sp.-qualified).
+  importAll = $state(loadPrefs().importAll ?? true);
   paletteOpen = $state(false);
   darkMode = $state(initDarkMode());
 

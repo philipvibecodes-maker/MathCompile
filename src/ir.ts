@@ -10,6 +10,12 @@
 // and codegen: it flattens variants CE emits (Subtract, chained Equal,
 // Subscript nodes), resolves statement-level `=` into Assign/Def, and
 // reports malformed/unsupported fragments as issues instead of throwing.
+//
+// Cells parse with `canonical: false` so the user's term order is preserved
+// (a * 2 stays Multiply(a, 2), not Multiply(2, a)); non-canonical MathJSON
+// has more surface shapes — InvisibleOperator for implicit multiply /
+// function application, Tuple for operator bounds, Subtract/Divide kept
+// unflattened — which this pass folds back into the canonical vocabulary.
 
 import { ComputeEngine } from '@cortex-js/compute-engine';
 import { outputLatex } from './latex';
@@ -83,7 +89,9 @@ export function parseCellLatex(latex: string): MathJson | undefined {
   if (statements.length === 0) return undefined;
   const parsed = statements.map((s) => {
     try {
-      return ce().parse(s).json as MathJson;
+      // `form: 'raw'` skips CE canonicalization so the user's term order
+      // survives to codegen (a * 2 stays Multiply(a, 2), not sorted).
+      return ce().parse(s, { form: 'raw' }).json as MathJson;
     } catch {
       return ['Error', `'parse-failed'`] as MathJson;
     }
@@ -100,6 +108,7 @@ const KNOWN_HEADS = new Set([
   'Add', 'Multiply', 'Divide', 'Negate', 'Power', 'Sqrt', 'Root',
   'Rational', 'Complex', 'Abs', 'Sign', 'Floor', 'Ceil', 'Min', 'Max',
   'Exp', 'Ln', 'Log', 'Factorial', 'Gamma', 'Binomial', 'GCD', 'LCM', 'Mod',
+  'Lb', 'Lg',
   // trigonometric
   'Sin', 'Cos', 'Tan', 'Sec', 'Csc', 'Cot',
   'Sinh', 'Cosh', 'Tanh', 'Coth', 'Sech', 'Csch',
@@ -146,17 +155,54 @@ function flattenSubscript(node: MathJson): string {
 const isSymbolString = (v: MathJson): v is string =>
   isString(v) && v !== '' && !v.startsWith("'");
 
-// f(x, y) shape: lowercase-ish head applied to bare symbols. CE encodes
-// function application as ["name", arg1, ...].
+// A Delimiter node's argument list: Delimiter(x) -> [x],
+// Delimiter(Sequence(a, b), '(,)') -> [a, b] (the '(,)' marker is dropped).
+function delimiterArgs(delim: MathJson): MathJson[] {
+  if (!isArray(delim)) return [delim];
+  const inner = delim
+    .slice(1)
+    .filter((a) => !(isString(a) && TEXT_LITERAL.test(a)));
+  if (inner.length === 1 && isArray(inner[0]) && head(inner[0]) === 'Sequence')
+    return inner[0].slice(1);
+  return inner;
+}
+
+// Is `last` a Delimiter/Delimiters group — the applicand of an
+// InvisibleOperator application like f(x)?
+const isDelimiterGroup = (v: MathJson): v is MathJson[] =>
+  isArray(v) && (head(v) === 'Delimiter' || head(v) === 'Delimiters');
+
+// f(x, y) shape: lowercase-ish head applied to bare symbols. Canonical CE
+// encodes application as ["name", arg1, ...]; non-canonical parses give
+// InvisibleOperator("name", Delimiter(args...)) — both resolve to a Def.
 function functionDefShape(
   node: MathJson,
 ): { name: string; params: string[] } | null {
   if (!isArray(node) || node.length < 2) return null;
-  const name = node[0];
-  if (!isSymbolString(name)) return null;
-  const params = node.slice(1);
-  if (params.every(isSymbolString)) return { name, params };
+  if (isSymbolString(node[0])) {
+    const params = node.slice(1);
+    if (params.every(isSymbolString)) return { name: node[0], params };
+  }
+  if (head(node) === 'InvisibleOperator' && node.length === 3) {
+    const [, fn, delim] = node;
+    if (isSymbolString(fn) && isDelimiterGroup(delim)) {
+      const params = delimiterArgs(delim);
+      if (params.every(isSymbolString)) return { name: fn, params };
+    }
+  }
   return null;
+}
+
+// a = b = c arrives right-nested as Equal(a, Equal(b, c)); flatten into a
+// multi-arg Equal so codegen sees the chained-relation shape (sp.And of
+// pairwise Eq) and never mistakes the nested form for an assignment.
+function flattenEqual(node: MathJson[]): MathJson[] {
+  const args = node
+    .slice(1)
+    .flatMap((a): MathJson[] =>
+      isArray(a) && head(a) === 'Equal' ? flattenEqual(a).slice(1) : [a],
+    );
+  return ['Equal', ...args];
 }
 
 // Disambiguate statement-level `Equal`: `x = rhs` assigns, `f(x) = rhs`
@@ -189,8 +235,13 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     node: MathJson,
     atStatement: boolean,
     allowNothing = false,
+    asName = false,
   ): MathJson => {
     if (isString(node)) {
+      // `asName` marks slots where a string is a variable/operator name
+      // (assignment targets, def params, integral variables) rather than a
+      // value — no constant or literal mapping applies there.
+      if (asName) return node;
       const text = TEXT_LITERAL.exec(node);
       if (text) {
         issues.push(
@@ -206,6 +257,9 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
           issues.push(issue('error', 'missing argument in expression'));
         return node;
       }
+      // Non-canonical parse leaves `e` as a bare symbol; it is always
+      // Euler's constant (sp.E), never a variable.
+      if (node === 'e') return 'ExponentialE';
       return node;
     }
     if (!isArray(node)) {
@@ -240,17 +294,111 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       return ['Block', ...node.slice(1).map((n) => normalize(n, true))];
     }
 
+    if (h === 'Equal') node = flattenEqual(node);
+
     if (atStatement && h === 'Equal') {
       return normalizeStatementEqual(node, (n) => normalize(n, false));
     }
 
-    // CE already emits Add/Negate instead of Subtract, but normalize the
-    // variant anyway so both forms are safe to feed in.
+    // CE already emits Add/Negate instead of Subtract under canonical
+    // parse; non-canonical keeps Subtract, so normalize the variant either
+    // way. Nested Add (x - (3 - y)-style terms) is flattened to the
+    // canonical multi-term shape.
     if (h === 'Subtract' && node.length === 3) {
       return [
         'Add',
         normalize(node[1], false),
         ['Negate', normalize(node[2], false)],
+      ];
+    }
+
+    if (h === 'Add') {
+      const args = node
+        .slice(1)
+        .map((n) => normalize(n, false))
+        .flatMap((n): MathJson[] =>
+          isArray(n) && head(n) === 'Add' ? n.slice(1) : [n],
+        );
+      return ['Add', ...args];
+    }
+
+    // InvisibleOperator is the non-canonical implicit-application head:
+    // `x y` / `2x` are multiplication, `f(x)` is a call (the Delimiter
+    // group marks the argument list). Calls reshape to ["name", ...args]
+    // so they join the same unknown-head/call path canonical f(x) takes.
+    if (h === 'InvisibleOperator' && node.length >= 3) {
+      const last = node[node.length - 1];
+      if (isDelimiterGroup(last)) {
+        const callArgs = delimiterArgs(last).map((n) => normalize(n, false));
+        const mid = node.slice(2, -1).map((n) => normalize(n, false));
+        const fn = node[1];
+        if (isString(fn) && mid.length === 0)
+          return normalize([fn, ...callArgs], atStatement);
+        return ['Apply', normalize(fn, false), ...mid, ...callArgs];
+      }
+      const args = node.slice(1).map((n) => normalize(n, false));
+      // `2i` (number times bare i) means the imaginary unit — matches the
+      // canonical Complex-node output. `xi`/`ij` keep i as a symbol.
+      const imaginary =
+        args.includes('i') && args.some((a) => typeof a === 'number');
+      return [
+        'Multiply',
+        ...args.map((a) => (imaginary && a === 'i' ? 'ImaginaryUnit' : a)),
+      ];
+    }
+
+    // Non-canonical \int/\sum/\prod take Tuple bounds (or a bare variable
+    // for indefinite integrals); fold into the canonical Limits shape.
+    if (h === 'Integrate' || h === 'Sum' || h === 'Product') {
+      const body = normalize(node[1], false);
+      const lim = node[2];
+      if (isArray(lim) && head(lim) === 'Tuple') {
+        return [
+          h,
+          body,
+          [
+            'Limits',
+            normalize(lim[1], false, false, true),
+            normalize(lim[2], false, true),
+            normalize(lim[3], false, true),
+          ],
+        ];
+      }
+      if (isString(lim))
+        return [h, body, ['Limits', lim, 'Nothing', 'Nothing']];
+      return [h, body, ...node.slice(2).map((n) => normalize(n, false))];
+    }
+
+    // Lb/Lg are the non-canonical base-2/base-10 log heads.
+    if (h === 'Lb') return ['Log', normalize(node[1], false), 2];
+    if (h === 'Lg') return ['Log', normalize(node[1], false), 10];
+
+    if (h === 'Sequence') {
+      return ['List', ...node.slice(1).map((n) => normalize(n, false))];
+    }
+
+    // D(body, x): the variable is a name slot, not a value.
+    if (h === 'D') {
+      return [
+        'D',
+        normalize(node[1], false),
+        ...node.slice(2).map((n) => normalize(n, false, false, true)),
+      ];
+    }
+
+    if (h === 'Derivative' || h === 'PartialDerivative') {
+      return [
+        h,
+        normalize(node[1], false, false, true),
+        ...node.slice(2).map((n) => normalize(n, false)),
+      ];
+    }
+
+    if (h === 'Apply') {
+      return [
+        'Apply',
+        normalize(node[1], false, false, true),
+        ...node.slice(2).map((n) => normalize(n, false)),
       ];
     }
 
@@ -269,30 +417,29 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       return [
         'Function',
         normalize(unwrapped, false),
-        ...node.slice(2).map((p) => normalize(p, false)),
+        ...node.slice(2).map((p) => normalize(p, false, false, true)),
       ];
     }
 
     if (h === 'Limits') {
-      // ["Limits", var, lo, hi] — Nothing bounds are legal (indefinite).
+      // ["Limits", var, lo, hi] — Nothing bounds are legal (indefinite);
+      // the var is a name slot, not a value.
       return [
         'Limits',
-        normalize(node[1], false),
+        normalize(node[1], false, false, true),
         normalize(node[2], false, true),
         normalize(node[3], false, true),
       ];
     }
 
-    if (h === 'Delimiters') {
+    if (h === 'Delimiters' || h === 'Delimiter') {
       // Parenthesized group — CE wraps (a+b) as ["Delimiters", inner, ...];
       // keep the inner expression.
       return normalize(node[1], atStatement);
     }
 
     if (!KNOWN_HEADS.has(h)) {
-      issues.push(
-        issue('note', `unknown head "${h}" — emitted as sp.${h}(...)`),
-      );
+      issues.push(issue('note', `unknown head "${h}" — emitted as ${h}(...)`));
       return ['call', h, ...node.slice(1).map((n) => normalize(n, false))];
     }
 

@@ -10,10 +10,14 @@
     result,
     cells,
     label,
+    importAll,
+    onToggleImportAll,
   }: {
     result: CompileResult;
     cells: Cell[];
     label: string;
+    importAll: boolean;
+    onToggleImportAll: (v: boolean) => void;
   } = $props();
 
   let copied = $state(false);
@@ -24,11 +28,35 @@
     clearTimeout(copiedTimer);
     copiedTimer = setTimeout(() => (copied = false), 1200);
   }
+
+  let copiedImport = $state(false);
+  let copiedImportTimer: ReturnType<typeof setTimeout> | undefined;
+  function copyImport() {
+    navigator.clipboard.writeText(result.importLine);
+    copiedImport = true;
+    clearTimeout(copiedImportTimer);
+    copiedImportTimer = setTimeout(() => (copiedImport = false), 1200);
+  }
 </script>
 
 <section class="output-panel" aria-label="Compiled output">
   <div class="output-panel-head">
     <h2>{label}</h2>
+    <label class="option-checkbox output-import-all">
+      <input
+        type="checkbox"
+        checked={importAll}
+        onchange={(e) => onToggleImportAll(e.currentTarget.checked)}
+      />
+      from sympy import *
+    </label>
+    <button
+      type="button"
+      class="output-import"
+      title="Copy import line"
+      onclick={copyImport}
+      >{copiedImport ? 'Copied' : result.importLine}</button
+    >
     <button
       class="cell-copy"
       title="Copy program"

@@ -3,9 +3,12 @@ import { parseCellLatex, normalizeIR, latexToStatementStrings } from './ir';
 import { compileWorksheet } from './codegen';
 
 // Fixture triples per the IR spec: latex -> normalized IR -> generated
-// SymPy. `expectedPython` is the *cell's* full statement lines, including
-// the `= sp.Symbol`/`sp.Function` definitions for names first needed in
-// that cell — a symbol is defined in the cell that defines it.
+// SymPy. `expectedPython` is the *cell's* full statement lines in the
+// `import sympy as sp` (qualified) mode, including the `= sp.Symbol`/
+// `sp.Function` definitions for names first needed in that cell — a
+// symbol is defined in the cell that defines it. The default
+// `from sympy import *` mode emits the same lines without `sp.` — see
+// the importAll describe block.
 const FIXTURES: {
   latex: string;
   expectedIR?: unknown;
@@ -35,13 +38,14 @@ const FIXTURES: {
   },
   {
     latex: '\\frac{x+1}{y-2}',
-    expectedIR: ['Divide', ['Add', 'x', 1], ['Add', 'y', -2]],
+    expectedIR: ['Divide', ['Add', 'x', 1], ['Add', 'y', ['Negate', 2]]],
     expectedPython: ["x, y = sp.symbols('x y')", '(x + 1) / (y - 2)'],
   },
   {
     latex: '-x + 3 - y',
-    expectedIR: ['Add', ['Negate', 'x'], ['Negate', 'y'], 3],
-    expectedPython: ["x, y = sp.symbols('x y')", '-x - y + 3'],
+    // Non-canonical Subtract folds into flat Add; input order survives.
+    expectedIR: ['Add', ['Negate', 'x'], 3, ['Negate', 'y']],
+    expectedPython: ["x, y = sp.symbols('x y')", '-x + 3 - y'],
   },
   {
     latex: '\\int_{a}^{b} x\\,dx',
@@ -50,12 +54,32 @@ const FIXTURES: {
   },
   {
     latex: '\\int x^2 dx',
+    // Non-canonical indefinite integrals give a bare variable — folded
+    // into Limits with Nothing bounds.
     expectedIR: [
       'Integrate',
-      ['Function', ['Power', 'x', 2], 'x'],
+      ['Power', 'x', 2],
       ['Limits', 'x', 'Nothing', 'Nothing'],
     ],
     expectedPython: ['x = sp.Symbol("x")', 'sp.integrate(x**2, x)'],
+  },
+  {
+    // Term order is preserved: Multiply(a, 2), not canonical Multiply(2, a).
+    latex: 'a \\cdot 2',
+    expectedIR: ['Multiply', 'a', 2],
+    expectedPython: ['a = sp.Symbol("a")', 'a * 2'],
+  },
+  {
+    // Implicit multiplication keeps user order too.
+    latex: '2 x y',
+    expectedIR: ['Multiply', 2, 'x', 'y'],
+    expectedPython: ["x, y = sp.symbols('x y')", '2 * x * y'],
+  },
+  {
+    // `e` is Euler's constant (sp.E), never a Symbol.
+    latex: 'e^x',
+    expectedIR: ['Power', 'ExponentialE', 'x'],
+    expectedPython: ['x = sp.Symbol("x")', 'sp.E**x'],
   },
   {
     latex: '\\sum_{i=0}^{n} i^2',
@@ -115,16 +139,17 @@ const FIXTURES: {
   {
     latex:
       '\\begin{cases} x & x > 0 \\\\ -x & x \\le 0 \\end{cases}',
+    // Conditions keep their written order (Greater, not flipped Less).
     expectedIR: [
       'Which',
-      ['Less', 0, 'x'],
+      ['Greater', 'x', 0],
       'x',
       ['LessEqual', 'x', 0],
       ['Negate', 'x'],
     ],
     expectedPython: [
       'x = sp.Symbol("x")',
-      'sp.Piecewise((x, sp.Lt(0, x)), (-x, sp.Le(x, 0)))',
+      'sp.Piecewise((x, sp.Gt(x, 0)), (-x, sp.Le(x, 0)))',
     ],
   },
   {
@@ -134,20 +159,22 @@ const FIXTURES: {
   },
   {
     latex: '\\frac{1}{2}',
-    expectedIR: ['Rational', 1, 2],
+    // Non-canonical keeps Divide; codegen lowers int/int to Rational so
+    // the division stays exact.
+    expectedIR: ['Divide', 1, 2],
     expectedPython: ['sp.Rational(1, 2)'],
   },
   {
     latex: '\\sqrt{x} + \\sin(\\theta)',
     expectedPython: [
-      "theta, x = sp.symbols('theta x')",
-      'sp.sin(theta) + sp.sqrt(x)',
+      "x, theta = sp.symbols('x theta')",
+      'sp.sqrt(x) + sp.sin(theta)',
     ],
   },
   {
     latex: 'x \\ge 2',
-    expectedIR: ['LessEqual', 2, 'x'],
-    expectedPython: ['x = sp.Symbol("x")', 'sp.Le(2, x)'],
+    expectedIR: ['GreaterEqual', 'x', 2],
+    expectedPython: ['x = sp.Symbol("x")', 'sp.Ge(x, 2)'],
   },
   {
     latex: 'x \\ne 0',
@@ -181,6 +208,8 @@ const FIXTURES: {
   },
   {
     latex: '\\log_{2} x',
+    // Non-canonical Lb head folds to Log(x, 2).
+    expectedIR: ['Log', 'x', 2],
     expectedPython: ['x = sp.Symbol("x")', 'sp.log(x, 2)'],
   },
   {
@@ -268,7 +297,11 @@ describe('SymPy codegen fixtures', () => {
       const json = parseCellLatex(fx.latex);
       const norm = normalizeIR(json);
       if (fx.expectedIR !== undefined) expect(norm.ir).toEqual(fx.expectedIR);
-      const out = compileWorksheet([{ json }], 'python');
+      // Fixture output pins the qualified `import sympy as sp` mode;
+      // the default unqualified mode is covered below.
+      const out = compileWorksheet([{ json }], 'python', {
+        importAll: false,
+      });
       expect(out.cellLines[0]).toEqual(fx.expectedPython);
       for (const frag of fx.issues ?? [])
         expect(
@@ -285,7 +318,7 @@ describe('worksheet program', () => {
       { json: parseCellLatex('a * y') },
       { json: parseCellLatex('b = 5') },
     ];
-    const out = compileWorksheet(cells, 'python');
+    const out = compileWorksheet(cells, 'python', { importAll: false });
     expect(out.program).toBe(
       [
         'import sympy as sp',
@@ -313,18 +346,24 @@ describe('worksheet program', () => {
       { json: parseCellLatex('a + 1') },
       { json: parseCellLatex('a = 2') },
     ];
-    const out = compileWorksheet(cells, 'python');
+    const out = compileWorksheet(cells, 'python', { importAll: false });
     expect(out.cellLines[0]).toEqual(['a = sp.Symbol("a")', 'a + 1']);
     expect(out.cellLines[1]).toEqual(['a = 2']);
   });
 
   it('non-identifier symbol names get sp.Symbol lines', () => {
-    const out = compileWorksheet([{ json: parseCellLatex('a_{n+1}') }], 'python');
+    const out = compileWorksheet(
+      [{ json: parseCellLatex('a_{n+1}') }],
+      'python',
+      { importAll: false },
+    );
     expect(out.program).toContain(`# cell 1\na__n_1 = sp.Symbol("a_{n+1}")`);
   });
 
   it("function names (f'(x)) get sp.Function, not sp.Symbol", () => {
-    const out = compileWorksheet([{ json: parseCellLatex("f'(x)") }], 'python');
+    const out = compileWorksheet([{ json: parseCellLatex("f'(x)") }], 'python', {
+      importAll: false,
+    });
     expect(out.program).toContain('f = sp.Function("f")');
     expect(out.program).not.toMatch(/sp\.Symbol\("f"\)/);
   });
@@ -334,7 +373,7 @@ describe('worksheet program', () => {
       { json: parseCellLatex('f(x) = x^2') },
       { json: parseCellLatex('f(3)') },
     ];
-    const out = compileWorksheet(cells, 'python');
+    const out = compileWorksheet(cells, 'python', { importAll: false });
     // f is bound by the def in cell 1 — the cell-2 call needs no defs.
     expect(out.cellLines[1]).toEqual(['f(3)']);
     expect(out.program).toContain('f(3)');
@@ -347,7 +386,7 @@ describe('worksheet program', () => {
       { json: parseCellLatex('f(3)') },
       { json: parseCellLatex('f(x) = x^2') },
     ];
-    const out = compileWorksheet(cells, 'python');
+    const out = compileWorksheet(cells, 'python', { importAll: false });
     expect(out.cellLines[0]).toEqual(['f = sp.Function("f")', 'f(3)']);
     expect(out.cellLines[1]).toEqual(['def f(x):', '    return x**2']);
   });
@@ -356,9 +395,55 @@ describe('worksheet program', () => {
     const out = compileWorksheet(
       [{ json: parseCellLatex('2^n = \\sum_{i=0}^n\\binom{i}{n}') }],
       'python',
+      { importAll: false },
     );
     expect(out.ok).toBe(true);
     expect(out.program).toContain('sp.Eq(2**n, sp.summation(sp.binomial(i, n), (i, 0, n)))');
+  });
+});
+
+describe('from sympy import * (default)', () => {
+  it('emits unqualified names and the import-* line', () => {
+    const cells = [
+      { json: parseCellLatex('a = x + 1') },
+      { json: parseCellLatex('\\int_{0}^{1} x\\,dx') },
+    ];
+    const out = compileWorksheet(cells, 'python');
+    expect(out.importLine).toBe('from sympy import *');
+    expect(out.program).toBe(
+      [
+        'from sympy import *',
+        '',
+        '# cell 1',
+        'x = Symbol("x")',
+        'a = x + 1',
+        '',
+        '# cell 2',
+        'integrate(x, (x, 0, 1))',
+      ].join('\n'),
+    );
+  });
+
+  it('symbols/functions/relations all emit bare under import *', () => {
+    const out = compileWorksheet(
+      [{ json: parseCellLatex("x \\ge 0 \\land f'(x)") }],
+      'python',
+    );
+    expect(out.program).not.toContain('sp.');
+    expect(out.program).toContain('Ge(x, 0)');
+    expect(out.program).toContain('f = Function("f")');
+    expect(out.program).toContain('diff(f(x), x)');
+  });
+
+  it('importAll: false restores sp. qualifiers everywhere', () => {
+    const out = compileWorksheet(
+      [{ json: parseCellLatex('x \\ge 0') }],
+      'python',
+      { importAll: false },
+    );
+    expect(out.importLine).toBe('import sympy as sp');
+    expect(out.program).toContain('sp.Ge(x, 0)');
+    expect(out.program).toContain('x = sp.Symbol("x")');
   });
 });
 

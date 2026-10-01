@@ -21,7 +21,9 @@
   let compiled = $derived(
     appStore.target === 'latex'
       ? null
-      : compileWorksheet(appStore.cells, appStore.target),
+      : compileWorksheet(appStore.cells, appStore.target, {
+          importAll: appStore.importAll,
+        }),
   );
 
   let copiedId = $state<number | null>(null);
@@ -63,6 +65,7 @@
       smartMode: appStore.smartMode,
       target: appStore.target,
       guideOpen: appStore.guideOpen,
+      importAll: appStore.importAll,
     }),
   );
 </script>
@@ -234,6 +237,8 @@
           result={compiled}
           cells={appStore.cells}
           label="Python (SymPy)"
+          importAll={appStore.importAll}
+          onToggleImportAll={(v) => (appStore.importAll = v)}
         />
       {/if}
       <HowToGuide />

@@ -130,9 +130,10 @@ test('python target shows per-cell code and the worksheet program', async ({
   await setTarget(page, 'python');
 
   // Per-cell output: the Symbol definition lives in the cell that defines
-  // it, above the assign statement.
+  // it, above the assign statement. The default `from sympy import *`
+  // mode emits unqualified names.
   await expect(page.locator('.cell-python').first()).toContainText(
-    'x = sp.Symbol("x")',
+    'x = Symbol("x")',
   );
   await expect(page.locator('.cell-python').first()).toContainText(
     'a = x + 1',
@@ -142,14 +143,49 @@ test('python target shows per-cell code and the worksheet program', async ({
   const panel = page.locator('.output-panel');
   await expect(panel).toBeVisible();
   const code = page.locator('.output-code');
-  await expect(code).toContainText('import sympy as sp');
-  await expect(code).toContainText('x = sp.Symbol("x")');
+  await expect(code).toContainText('from sympy import *');
+  await expect(code).toContainText('x = Symbol("x")');
   await expect(code).toContainText('a = x + 1');
 
   // Switching back to latex removes the panel and code output.
   await setTarget(page, 'latex');
   await expect(page.locator('.output-panel')).toHaveCount(0);
   await expect(page.locator('.cell-python')).toHaveCount(0);
+});
+
+test('import-all checkbox switches between import * and sp. qualifiers', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await cell(page, 0).click();
+  await cell(page, 0).pressSequentially('a=x+1', { delay: 40 });
+  await setTarget(page, 'python');
+
+  const toggle = page.locator('.output-import-all input');
+  const importChip = page.locator('.output-import');
+  const code = page.locator('.output-code');
+
+  // Default: checked, import-* header, unqualified output.
+  await expect(toggle).toBeChecked();
+  await expect(importChip).toHaveText('from sympy import *');
+  await expect(code).toContainText('x = Symbol("x")');
+
+  // The header import line is copyable.
+  await importChip.click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    'from sympy import *',
+  );
+
+  // Unchecked: `import sympy as sp` header and sp.-qualified output.
+  await toggle.click();
+  await expect(toggle).not.toBeChecked();
+  await expect(importChip).toHaveText('import sympy as sp');
+  await expect(code).toContainText('import sympy as sp');
+  await expect(code).toContainText('x = sp.Symbol("x")');
+  await expect(page.locator('.cell-python').first()).toContainText(
+    'x = sp.Symbol("x")',
+  );
 });
 
 test('latex output shows multi-line cells as separate lines', async ({
