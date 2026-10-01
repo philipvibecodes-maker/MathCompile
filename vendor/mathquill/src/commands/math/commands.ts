@@ -855,35 +855,23 @@ LatexCmds['∏'] =
 LatexCmds.coprod = LatexCmds.coproduct = () =>
   new SummationNotation('\\coprod ', U_NARY_COPRODUCT, 'co product');
 
+// The integral sign carries no blocks of its own — bounds are added on
+// demand by typing `_`/`^`, which grow an ordinary sibling SupSub (the
+// same structure latex like `\int_{a}^{b}` parses to). This keeps the
+// caret right of the symbol so an indefinite integral (`\int x dx`)
+// types linearly without escaping empty bound boxes.
 LatexCmds['∫'] =
   LatexCmds['int'] =
   LatexCmds.integral =
-    class extends SummationNotation {
-      constructor() {
-        super('\\int ', '', 'integral');
-
-        this.ariaLabel = 'integral';
-        this.domView = new DOMView(2, (blocks) =>
-          h('span', { class: 'mq-int mq-non-leaf' }, [
-            h('big', {}, [h.text(U_INTEGRAL)]),
-            h('span', { class: 'mq-supsub mq-non-leaf' }, [
-              h('span', { class: 'mq-sup' }, [
-                h.block('span', { class: 'mq-sup-inner' }, blocks[1])
-              ]),
-              h.block('span', { class: 'mq-sub' }, blocks[0]),
-              h('span', { style: 'display:inline-block;width:0' }, [
-                h.text(U_ZERO_WIDTH_SPACE)
-              ])
-            ])
-          ])
-        );
-      }
-
-      createLeftOf(cursor: Cursor) {
-        // FIXME: refactor rather than overriding
-        MathCommand.prototype.createLeftOf.call(this, cursor);
-      }
-    };
+    () =>
+      new MQSymbol(
+        '\\int ',
+        h('span', { class: 'mq-int' }, [
+          h('big', {}, [h.text(U_INTEGRAL)])
+        ]) as HTMLElement,
+        undefined,
+        'integral'
+      );
 var Fraction =
   (LatexCmds.frac =
   LatexCmds.dfrac =

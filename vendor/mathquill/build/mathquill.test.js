@@ -7236,6 +7236,11 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         _maxLength: 0
     };
     baseOptionProcessors.autoCommands = function (cmds) {
+        // '' disables autoCommands entirely (the stock processor had no way to
+        // turn the list back off once set — needed for the smartMode toggle).
+        if (cmds === '') {
+            return { _maxLength: 0 };
+        }
         if (typeof cmds !== 'string' || !/^[a-z]+(?: [a-z]+)*$/i.test(cmds)) {
             throw '"' + cmds + '" not a space-delimited list of only letters';
         }
@@ -9071,35 +9076,19 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds.coprod = LatexCmds.coproduct = function () {
         return new SummationNotation('\\coprod ', U_NARY_COPRODUCT, 'co product');
     };
+    // The integral sign carries no blocks of its own — bounds are added on
+    // demand by typing `_`/`^`, which grow an ordinary sibling SupSub (the
+    // same structure latex like `\int_{a}^{b}` parses to). This keeps the
+    // caret right of the symbol so an indefinite integral (`\int x dx`)
+    // types linearly without escaping empty bound boxes.
     LatexCmds['∫'] =
         LatexCmds['int'] =
-            LatexCmds.integral = /** @class */ (function (_super) {
-                __extends(class_11, _super);
-                function class_11() {
-                    var _this_1 = _super.call(this, '\\int ', '', 'integral') || this;
-                    _this_1.ariaLabel = 'integral';
-                    _this_1.domView = new DOMView(2, function (blocks) {
-                        return h('span', { class: 'mq-int mq-non-leaf' }, [
-                            h('big', {}, [h.text(U_INTEGRAL)]),
-                            h('span', { class: 'mq-supsub mq-non-leaf' }, [
-                                h('span', { class: 'mq-sup' }, [
-                                    h.block('span', { class: 'mq-sup-inner' }, blocks[1])
-                                ]),
-                                h.block('span', { class: 'mq-sub' }, blocks[0]),
-                                h('span', { style: 'display:inline-block;width:0' }, [
-                                    h.text(U_ZERO_WIDTH_SPACE)
-                                ])
-                            ])
-                        ]);
-                    });
-                    return _this_1;
-                }
-                class_11.prototype.createLeftOf = function (cursor) {
-                    // FIXME: refactor rather than overriding
-                    MathCommand.prototype.createLeftOf.call(this, cursor);
+            LatexCmds.integral =
+                function () {
+                    return new MQSymbol('\\int ', h('span', { class: 'mq-int' }, [
+                        h('big', {}, [h.text(U_INTEGRAL)])
+                    ]), undefined, 'integral');
                 };
-                return class_11;
-            }(SummationNotation));
     var Fraction = (LatexCmds.frac =
         LatexCmds.dfrac =
             LatexCmds.cfrac =
@@ -9234,11 +9223,11 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 }(MathCommand)));
     var LiveFraction = (LatexCmds.over =
         CharCmds['/'] = /** @class */ (function (_super) {
-            __extends(class_12, _super);
-            function class_12() {
+            __extends(class_11, _super);
+            function class_11() {
                 return _super !== null && _super.apply(this, arguments) || this;
             }
-            class_12.prototype.createLeftOf = function (cursor) {
+            class_11.prototype.createLeftOf = function (cursor) {
                 if (!this.replacedFragment) {
                     var leftward = cursor[L];
                     var dontScan = cursor.options.typingSlashCreatesNewFraction &&
@@ -9278,7 +9267,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 }
                 _super.prototype.createLeftOf.call(this, cursor);
             };
-            return class_12;
+            return class_11;
         }(Fraction)));
     var AnsBuilder = function () {
         return new MQSymbol('\\operatorname{ans}', h('span', { class: 'mq-ans' }, [h.text('ans')]), 'ans');
@@ -9487,16 +9476,16 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     }(SquareRoot));
     LatexCmds.nthroot = NthRoot;
     LatexCmds.cbrt = /** @class */ (function (_super) {
-        __extends(class_13, _super);
-        function class_13() {
+        __extends(class_12, _super);
+        function class_12() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_13.prototype.createLeftOf = function (cursor) {
+        class_12.prototype.createLeftOf = function (cursor) {
             _super.prototype.createLeftOf.call(this, cursor);
             new Digit('3').createLeftOf(cursor);
             cursor.controller.moveRight();
         };
-        return class_13;
+        return class_12;
     }(NthRoot));
     var DiacriticAbove = /** @class */ (function (_super) {
         __extends(DiacriticAbove, _super);
@@ -9966,14 +9955,14 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     }(DelimsNode));
     LatexCmds.binom = LatexCmds.binomial = Binomial;
     LatexCmds.choose = /** @class */ (function (_super) {
-        __extends(class_14, _super);
-        function class_14() {
+        __extends(class_13, _super);
+        function class_13() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_14.prototype.createLeftOf = function (cursor) {
+        class_13.prototype.createLeftOf = function (cursor) {
             LiveFraction.prototype.createLeftOf.call(this, cursor);
         };
-        return class_14;
+        return class_13;
     }(Binomial));
     var MathFieldNode = /** @class */ (function (_super) {
         __extends(MathFieldNode, _super);
@@ -10259,8 +10248,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
      *************************************************/
     var Environments = {};
     LatexCmds.begin = /** @class */ (function (_super) {
-        __extends(class_15, _super);
-        function class_15() {
+        __extends(class_14, _super);
+        function class_14() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.ctrlSeq = '\\begin';
             _this_1.domView = new DOMView(1, function (blocks) {
@@ -10272,7 +10261,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             });
             return _this_1;
         }
-        class_15.prototype.parser = function () {
+        class_14.prototype.parser = function () {
             var string = Parser.string;
             var regex = Parser.regex;
             return string('{')
@@ -10284,7 +10273,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     : Parser.fail('unknown environment type: ' + env)).skip(string('\\end{' + env + '}'));
             });
         };
-        return class_15;
+        return class_14;
     }(MathCommand));
     // A MathCommand whose children ("cells") are laid out in a grid:
     // the matrix family (N columns, optional bracket delimiters) and
@@ -11163,6 +11152,175 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             };
         };
     }
+    suite('SupSub', function () {
+        var $ = window.test_only_jquery;
+        var mq;
+        setup(function () {
+            mq = MQ.MathField($('<span></span>').appendTo('#mock')[0]);
+        });
+        function prayWellFormedPoint(pt) {
+            prayWellFormed(pt.parent, pt[L], pt[R]);
+        }
+        var expecteds = [
+            'x_{ab} x_{ba}, x_{a}^{b} x_{a}^{b}; x_{ab} x_{ba}, x_{a}^{b} x_{a}^{b}; x_{a} x_{a}, x_{a}^{} x_{a}^{}',
+            'x_{b}^{a} x_{b}^{a}, x^{ab} x^{ba}; x_{b}^{a} x_{b}^{a}, x^{ab} x^{ba}; x_{}^{a} x_{}^{a}, x^{a} x^{a}'
+        ];
+        var expectedsAfterC = [
+            'x_{abc} x_{bca}, x_{a}^{bc} x_{a}^{bc}; x_{ab}c x_{bca}, x_{a}^{b}c x_{a}^{b}c; x_{a}c x_{ca}, x_{a}^{}c x_{a}^{}c',
+            'x_{bc}^{a} x_{bc}^{a}, x^{abc} x^{bca}; x_{b}^{a}c x_{b}^{a}c, x^{ab}c x^{bca}; x_{}^{a}c x_{}^{a}c, x^{a}c x^{ca}'
+        ];
+        'sub super'.split(' ').forEach(function (initSupsub, i) {
+            var initialLatex = 'x_{a} x^{a}'.split(' ')[i];
+            'typed, wrote, wrote empty'.split(', ').forEach(function (did, j) {
+                var doTo = [
+                    function (mq, supsub) {
+                        mq.typedText(supsub).typedText('b');
+                    },
+                    function (mq, supsub) {
+                        mq.write(supsub + 'b');
+                    },
+                    function (mq, supsub) {
+                        mq.write(supsub + '{}');
+                    }
+                ][j];
+                'sub super'.split(' ').forEach(function (supsub, k) {
+                    var cmd = '_^'.split('')[k];
+                    'after before'.split(' ').forEach(function (side, l) {
+                        var moveToSide = [
+                            noop,
+                            function (mq) {
+                                mq.moveToLeftEnd().keystroke('Right');
+                            }
+                        ][l];
+                        var expected = expecteds[i].split('; ')[j].split(', ')[k].split(' ')[l];
+                        var expectedAfterC = expectedsAfterC[i]
+                            .split('; ')[j].split(', ')[k].split(' ')[l];
+                        test('initial ' +
+                            initSupsub +
+                            'script then ' +
+                            did +
+                            ' ' +
+                            supsub +
+                            'script ' +
+                            side, function () {
+                            mq.latex(initialLatex);
+                            assert.equal(mq.latex(), initialLatex);
+                            moveToSide(mq);
+                            doTo(mq, cmd);
+                            assert.equal(mq.latex().replace(/ /g, ''), expected);
+                            prayWellFormedPoint(mq.__controller.cursor);
+                            mq.typedText('c');
+                            assert.equal(mq.latex().replace(/ /g, ''), expectedAfterC);
+                        });
+                    });
+                });
+            });
+        });
+        var expecteds = 'x_{a}^{3} x_{a}^{3}, x_{a}^{3} x_{a}^{3}; x^{a3} x^{3a}, x^{a3} x^{3a}';
+        var expectedsAfterC = 'x_{a}^{3}c x_{a}^{3}c, x_{a}^{3}c x_{a}^{3}c; x^{a3}c x^{3ca}, x^{a3}c x^{3ca}';
+        'sub super'.split(' ').forEach(function (initSupsub, i) {
+            var initialLatex = 'x_{a} x^{a}'.split(' ')[i];
+            'typed wrote'.split(' ').forEach(function (did, j) {
+                var doTo = [
+                    function (mq) {
+                        mq.typedText('³');
+                    },
+                    function (mq) {
+                        mq.write('³');
+                    }
+                ][j];
+                'after before'.split(' ').forEach(function (side, k) {
+                    var moveToSide = [
+                        noop,
+                        function (mq) {
+                            mq.moveToLeftEnd().keystroke('Right');
+                        }
+                    ][k];
+                    var expected = expecteds.split('; ')[i].split(', ')[j].split(' ')[k];
+                    var expectedAfterC = expectedsAfterC
+                        .split('; ')[i].split(', ')[j].split(' ')[k];
+                    test('initial ' + initSupsub + 'script then ' + did + " '³' " + side, function () {
+                        mq.latex(initialLatex);
+                        assert.equal(mq.latex(), initialLatex);
+                        moveToSide(mq);
+                        doTo(mq);
+                        assert.equal(mq.latex().replace(/ /g, ''), expected);
+                        prayWellFormedPoint(mq.__controller.cursor);
+                        mq.typedText('c');
+                        assert.equal(mq.latex().replace(/ /g, ''), expectedAfterC);
+                    });
+                });
+            });
+        });
+        test("render LaTeX with 2 SupSub's in a row", function () {
+            mq.latex('x_a_b');
+            assert.equal(mq.latex(), 'x_{ab}');
+            mq.latex('x_a_{}');
+            assert.equal(mq.latex(), 'x_{a}');
+            mq.latex('x_{}_a');
+            assert.equal(mq.latex(), 'x_{a}');
+            mq.latex('x^a^b');
+            assert.equal(mq.latex(), 'x^{ab}');
+            mq.latex('x^a^{}');
+            assert.equal(mq.latex(), 'x^{a}');
+            mq.latex('x^{}^a');
+            assert.equal(mq.latex(), 'x^{a}');
+        });
+        test("render LaTeX with 3 alternating SupSub's in a row", function () {
+            mq.latex('x_a^b_c');
+            assert.equal(mq.latex(), 'x_{ac}^{b}');
+            mq.latex('x^a_b^c');
+            assert.equal(mq.latex(), 'x_{b}^{ac}');
+        });
+        suite('deleting', function () {
+            test('backspacing out of and then re-typing subscript', function () {
+                mq.latex('x_a^b');
+                assert.equal(mq.latex(), 'x_{a}^{b}');
+                mq.keystroke('Down Backspace');
+                assert.equal(mq.latex(), 'x_{ }^{b}');
+                mq.keystroke('Backspace');
+                assert.equal(mq.latex(), 'x^{b}');
+                mq.typedText('_a');
+                assert.equal(mq.latex(), 'x_{a}^{b}');
+                mq.keystroke('Left Backspace');
+                assert.equal(mq.latex(), 'xa^{b}');
+                mq.typedText('c');
+                assert.equal(mq.latex(), 'xca^{b}');
+            });
+            test('backspacing out of and then re-typing superscript', function () {
+                mq.latex('x_a^b');
+                assert.equal(mq.latex(), 'x_{a}^{b}');
+                mq.keystroke('Up Backspace');
+                assert.equal(mq.latex(), 'x_{a}^{ }');
+                mq.keystroke('Backspace');
+                assert.equal(mq.latex(), 'x_{a}');
+                mq.typedText('^b');
+                assert.equal(mq.latex(), 'x_{a}^{b}');
+                mq.keystroke('Left Backspace');
+                assert.equal(mq.latex(), 'x_{a}b');
+                mq.typedText('c');
+                assert.equal(mq.latex(), 'x_{a}cb');
+            });
+        });
+        suite('Escpae', function () {
+            test('from partial selection of a superscript', function () {
+                mq.typedText('x^2.3');
+                assert.equal(mq.latex(), 'x^{2.3}');
+                mq.keystroke('Shift-Left');
+                mq.keystroke('Esc');
+                mq.typedText('+1');
+                assert.equal(mq.latex(), 'x^{2.3}+1');
+            });
+            test('from partial selection of a subscript', function () {
+                mq.typedText('x_2.3');
+                assert.equal(mq.latex(), 'x_{2.3}');
+                mq.keystroke('Shift-Left');
+                mq.keystroke('Esc');
+                mq.typedText('+1');
+                assert.equal(mq.latex(), 'x_{2.3}+1');
+            });
+        });
+    });
     suite('ans command', function () {
         var $ = window.test_only_jquery;
         var mq;
@@ -11493,7 +11651,18 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         test('works in \\int', function () {
             mq.typedText('int');
             mq.typedText('sin');
-            assertLatex('int allows operatorname', '\\int_{\\sin}^{ }');
+            // The integral is boundless: `sin` lands right of the symbol as an
+            // operatorname, not inside a mandatory lower-bound block.
+            assertLatex('int allows operatorname', '\\int\\sin');
+        });
+        test('\\int grows bounds from typed _ and ^', function () {
+            mq.typedText('int');
+            mq.typedText('_a');
+            mq.keystroke('Right');
+            mq.typedText('^b');
+            mq.keystroke('Right');
+            mq.typedText('xdx');
+            assertLatex('definite integral via _ and ^', '\\int_{a}^{b}xdx');
         });
         test('works in subscript after log, based on "except" option', function () {
             // log subscript without config option
@@ -16028,15 +16197,17 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 mq.cmd('0');
                 assert.equal(mq.latex(), '\\sum_{n=0}^{ }', 'cursor after the `n=`');
             });
-            test('integral still has empty limits', function () {
+            test('integral is boundless', function () {
                 var mq = MQ.MathField($('<span>').appendTo('#mock')[0], {
                     sumStartsWithNEquals: true
                 });
                 assert.equal(mq.latex(), '');
+                // `int` produces a bare integral sign with the caret right of it —
+                // bounds are added on demand with `_`/`^`, not prefilled.
                 mq.cmd('\\int');
-                assert.equal(mq.latex(), '\\int_{ }^{ }');
+                assert.equal(mq.latex(), '\\int');
                 mq.cmd('0');
-                assert.equal(mq.latex(), '\\int_{0}^{ }', 'cursor in the from block');
+                assert.equal(mq.latex(), '\\int0', 'cursor at the baseline');
             });
         });
         suite('substituteTextarea', function () {
@@ -16869,175 +17040,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             Point.prototype.init.call(cursor, A.parent, A[L], A[R]);
             assert.throws(function () {
                 cursor.select();
-            });
-        });
-    });
-    suite('SupSub', function () {
-        var $ = window.test_only_jquery;
-        var mq;
-        setup(function () {
-            mq = MQ.MathField($('<span></span>').appendTo('#mock')[0]);
-        });
-        function prayWellFormedPoint(pt) {
-            prayWellFormed(pt.parent, pt[L], pt[R]);
-        }
-        var expecteds = [
-            'x_{ab} x_{ba}, x_{a}^{b} x_{a}^{b}; x_{ab} x_{ba}, x_{a}^{b} x_{a}^{b}; x_{a} x_{a}, x_{a}^{} x_{a}^{}',
-            'x_{b}^{a} x_{b}^{a}, x^{ab} x^{ba}; x_{b}^{a} x_{b}^{a}, x^{ab} x^{ba}; x_{}^{a} x_{}^{a}, x^{a} x^{a}'
-        ];
-        var expectedsAfterC = [
-            'x_{abc} x_{bca}, x_{a}^{bc} x_{a}^{bc}; x_{ab}c x_{bca}, x_{a}^{b}c x_{a}^{b}c; x_{a}c x_{ca}, x_{a}^{}c x_{a}^{}c',
-            'x_{bc}^{a} x_{bc}^{a}, x^{abc} x^{bca}; x_{b}^{a}c x_{b}^{a}c, x^{ab}c x^{bca}; x_{}^{a}c x_{}^{a}c, x^{a}c x^{ca}'
-        ];
-        'sub super'.split(' ').forEach(function (initSupsub, i) {
-            var initialLatex = 'x_{a} x^{a}'.split(' ')[i];
-            'typed, wrote, wrote empty'.split(', ').forEach(function (did, j) {
-                var doTo = [
-                    function (mq, supsub) {
-                        mq.typedText(supsub).typedText('b');
-                    },
-                    function (mq, supsub) {
-                        mq.write(supsub + 'b');
-                    },
-                    function (mq, supsub) {
-                        mq.write(supsub + '{}');
-                    }
-                ][j];
-                'sub super'.split(' ').forEach(function (supsub, k) {
-                    var cmd = '_^'.split('')[k];
-                    'after before'.split(' ').forEach(function (side, l) {
-                        var moveToSide = [
-                            noop,
-                            function (mq) {
-                                mq.moveToLeftEnd().keystroke('Right');
-                            }
-                        ][l];
-                        var expected = expecteds[i].split('; ')[j].split(', ')[k].split(' ')[l];
-                        var expectedAfterC = expectedsAfterC[i]
-                            .split('; ')[j].split(', ')[k].split(' ')[l];
-                        test('initial ' +
-                            initSupsub +
-                            'script then ' +
-                            did +
-                            ' ' +
-                            supsub +
-                            'script ' +
-                            side, function () {
-                            mq.latex(initialLatex);
-                            assert.equal(mq.latex(), initialLatex);
-                            moveToSide(mq);
-                            doTo(mq, cmd);
-                            assert.equal(mq.latex().replace(/ /g, ''), expected);
-                            prayWellFormedPoint(mq.__controller.cursor);
-                            mq.typedText('c');
-                            assert.equal(mq.latex().replace(/ /g, ''), expectedAfterC);
-                        });
-                    });
-                });
-            });
-        });
-        var expecteds = 'x_{a}^{3} x_{a}^{3}, x_{a}^{3} x_{a}^{3}; x^{a3} x^{3a}, x^{a3} x^{3a}';
-        var expectedsAfterC = 'x_{a}^{3}c x_{a}^{3}c, x_{a}^{3}c x_{a}^{3}c; x^{a3}c x^{3ca}, x^{a3}c x^{3ca}';
-        'sub super'.split(' ').forEach(function (initSupsub, i) {
-            var initialLatex = 'x_{a} x^{a}'.split(' ')[i];
-            'typed wrote'.split(' ').forEach(function (did, j) {
-                var doTo = [
-                    function (mq) {
-                        mq.typedText('³');
-                    },
-                    function (mq) {
-                        mq.write('³');
-                    }
-                ][j];
-                'after before'.split(' ').forEach(function (side, k) {
-                    var moveToSide = [
-                        noop,
-                        function (mq) {
-                            mq.moveToLeftEnd().keystroke('Right');
-                        }
-                    ][k];
-                    var expected = expecteds.split('; ')[i].split(', ')[j].split(' ')[k];
-                    var expectedAfterC = expectedsAfterC
-                        .split('; ')[i].split(', ')[j].split(' ')[k];
-                    test('initial ' + initSupsub + 'script then ' + did + " '³' " + side, function () {
-                        mq.latex(initialLatex);
-                        assert.equal(mq.latex(), initialLatex);
-                        moveToSide(mq);
-                        doTo(mq);
-                        assert.equal(mq.latex().replace(/ /g, ''), expected);
-                        prayWellFormedPoint(mq.__controller.cursor);
-                        mq.typedText('c');
-                        assert.equal(mq.latex().replace(/ /g, ''), expectedAfterC);
-                    });
-                });
-            });
-        });
-        test("render LaTeX with 2 SupSub's in a row", function () {
-            mq.latex('x_a_b');
-            assert.equal(mq.latex(), 'x_{ab}');
-            mq.latex('x_a_{}');
-            assert.equal(mq.latex(), 'x_{a}');
-            mq.latex('x_{}_a');
-            assert.equal(mq.latex(), 'x_{a}');
-            mq.latex('x^a^b');
-            assert.equal(mq.latex(), 'x^{ab}');
-            mq.latex('x^a^{}');
-            assert.equal(mq.latex(), 'x^{a}');
-            mq.latex('x^{}^a');
-            assert.equal(mq.latex(), 'x^{a}');
-        });
-        test("render LaTeX with 3 alternating SupSub's in a row", function () {
-            mq.latex('x_a^b_c');
-            assert.equal(mq.latex(), 'x_{ac}^{b}');
-            mq.latex('x^a_b^c');
-            assert.equal(mq.latex(), 'x_{b}^{ac}');
-        });
-        suite('deleting', function () {
-            test('backspacing out of and then re-typing subscript', function () {
-                mq.latex('x_a^b');
-                assert.equal(mq.latex(), 'x_{a}^{b}');
-                mq.keystroke('Down Backspace');
-                assert.equal(mq.latex(), 'x_{ }^{b}');
-                mq.keystroke('Backspace');
-                assert.equal(mq.latex(), 'x^{b}');
-                mq.typedText('_a');
-                assert.equal(mq.latex(), 'x_{a}^{b}');
-                mq.keystroke('Left Backspace');
-                assert.equal(mq.latex(), 'xa^{b}');
-                mq.typedText('c');
-                assert.equal(mq.latex(), 'xca^{b}');
-            });
-            test('backspacing out of and then re-typing superscript', function () {
-                mq.latex('x_a^b');
-                assert.equal(mq.latex(), 'x_{a}^{b}');
-                mq.keystroke('Up Backspace');
-                assert.equal(mq.latex(), 'x_{a}^{ }');
-                mq.keystroke('Backspace');
-                assert.equal(mq.latex(), 'x_{a}');
-                mq.typedText('^b');
-                assert.equal(mq.latex(), 'x_{a}^{b}');
-                mq.keystroke('Left Backspace');
-                assert.equal(mq.latex(), 'x_{a}b');
-                mq.typedText('c');
-                assert.equal(mq.latex(), 'x_{a}cb');
-            });
-        });
-        suite('Escpae', function () {
-            test('from partial selection of a superscript', function () {
-                mq.typedText('x^2.3');
-                assert.equal(mq.latex(), 'x^{2.3}');
-                mq.keystroke('Shift-Left');
-                mq.keystroke('Esc');
-                mq.typedText('+1');
-                assert.equal(mq.latex(), 'x^{2.3}+1');
-            });
-            test('from partial selection of a subscript', function () {
-                mq.typedText('x_2.3');
-                assert.equal(mq.latex(), 'x_{2.3}');
-                mq.keystroke('Shift-Left');
-                mq.keystroke('Esc');
-                mq.typedText('+1');
-                assert.equal(mq.latex(), 'x_{2.3}+1');
             });
         });
     });
@@ -18485,9 +18487,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             });
             test('works in \\int', function () {
                 mq.typedText('int');
-                assertLatex('\\int_{ }^{ }');
+                assertLatex('\\int');
                 mq.typedText('sin');
-                assertLatex('\\int_{\\sin\\left(\\right)}^{ }');
+                assertLatex('\\int\\sin\\left(\\right)');
             });
             test('no auto operator names in simple subscripts', function () {
                 mq.config(normalConfig);
@@ -18751,9 +18753,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             });
             test('typing ∫ directly', function () {
                 mq.typedText('∫');
-                assertLatex('\\int_{ }^{ }');
+                assertLatex('\\int');
                 mq.typedText('n');
-                assertLatex('\\int_{n}^{ }');
+                assertLatex('\\int n');
             });
             test('typing and backspacing \\to', function () {
                 mq.typedText('-');
@@ -19163,6 +19165,67 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             assert.equal(inner.__controller.cursor.parent, inner.__controller.root);
         });
     });
+    suite('HTML', function () {
+        function renderHtml(domView) {
+            var Cmd = /** @class */ (function (_super) {
+                __extends(class_15, _super);
+                function class_15() {
+                    var _this_1 = _super.call(this, undefined, domView) || this;
+                    _this_1.id = 1;
+                    _this_1.blocks = Array(domView.childCount);
+                    var _loop_6 = function (i) {
+                        var content = 'Block:' + i;
+                        this_5.blocks[i] = {
+                            id: 2 + i,
+                            setDOM: function (_sibling) { },
+                            html: function () {
+                                var frag = document.createDocumentFragment();
+                                frag.appendChild(h.text(content));
+                                return frag;
+                            }
+                        };
+                    };
+                    var this_5 = this;
+                    for (var i = 0; i < domView.childCount; i += 1) {
+                        _loop_6(i);
+                    }
+                    return _this_1;
+                }
+                return class_15;
+            }(MathCommand));
+            return new Cmd().html();
+        }
+        function assertDOMEqual(actual, expected, message) {
+            var expectedNode = parseHTML(expected);
+            if (actual.isEqualNode(expectedNode))
+                return;
+            var d = document.createElement('div');
+            d.appendChild(actual);
+            var actualString = d.innerHTML;
+            assert.fail(message + ' expected (' + actualString + ') to equal (' + expected + ')');
+        }
+        test('simple HTML templates', function () {
+            assertDOMEqual(renderHtml(new DOMView(0, function () { return h('span', {}, [h.text('A Symbol')]); })), '<span>A Symbol</span>', 'a symbol');
+            assertDOMEqual(renderHtml(new DOMView(1, function (blocks) { return h.block('span', {}, blocks[0]); })), '<span>Block:0</span>', 'same span is cmd and block');
+            assertDOMEqual(renderHtml(new DOMView(2, function (blocks) {
+                return h('span', {}, [
+                    h.block('span', {}, blocks[0]),
+                    h.block('span', {}, blocks[1])
+                ]);
+            })), '<span>' + '<span>Block:0</span>' + '<span>Block:1</span>' + '</span>', 'container span with two block spans');
+            assertDOMEqual(renderHtml(new DOMView(0, function () { return h('br'); })), '<br/>', 'self-closing tag');
+        });
+        test('Attempting to render multiple html nodes into a math command throws', function () {
+            assert.throws(function () {
+                renderHtml(new DOMView(2, function (blocks) {
+                    var frag = document.createDocumentFragment();
+                    frag.appendChild(h('span', {}, [h.block('span', {}, blocks[0])]));
+                    frag.appendChild(h('span', {}, [h.block('span', {}, blocks[1])]));
+                    return frag;
+                }));
+            });
+        });
+    });
     suite('DOMFragment', function () {
         function nodeArraysEqual(arr1, arr2) {
             if (arr1.length !== arr2.length)
@@ -19567,7 +19630,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 assert.ok(nodeArraysEqual(domFrag(docFrag.firstChild, docFrag.lastChild).toNodeArray(), children));
             });
         });
-        var _loop_6 = function (name, apply) {
+        var _loop_7 = function (name, apply) {
             suite(name, function () {
                 test('is a noop when called on an empty fragment', function () {
                     var children = [h('span')];
@@ -19645,9 +19708,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             }
         ]; _c < _d.length; _c++) {
             var _e = _d[_c], name = _e.name, apply = _e.apply;
-            _loop_6(name, apply);
+            _loop_7(name, apply);
         }
-        var _loop_7 = function (name, apply) {
+        var _loop_8 = function (name, apply) {
             suite(name, function () {
                 test('is a noop when called on an empty fragment', function () {
                     var children = [h('span')];
@@ -19728,7 +19791,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             }
         ]; _f < _g.length; _f++) {
             var _h = _g[_f], name = _h.name, apply = _h.apply;
-            _loop_7(name, apply);
+            _loop_8(name, apply);
         }
         suite('.append()', function () {
             test('is a noop when called with an empty fragment', function () {
@@ -19852,7 +19915,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 assert.ok(nodeArraysEqual(domFrag(targetParent).children().toNodeArray(), sourceChildren.concat(targetChildren)), 'all source children moved to target children');
             });
         });
-        var _loop_8 = function (name, apply) {
+        var _loop_9 = function (name, apply) {
             suite(name, function () {
                 test('is a noop when this is an empty fragment', function () {
                     var children = [h('span')];
@@ -19898,9 +19961,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             }
         ]; _j < _k.length; _j++) {
             var _l = _k[_j], name = _l.name, apply = _l.apply;
-            _loop_8(name, apply);
+            _loop_9(name, apply);
         }
-        var _loop_9 = function (name, apply) {
+        var _loop_10 = function (name, apply) {
             suite(name, function () {
                 test('is a noop when this is an empty fragment', function () {
                     var children = [h('span')];
@@ -19946,7 +20009,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             }
         ]; _m < _o.length; _m++) {
             var _p = _o[_m], name = _p.name, apply = _p.apply;
-            _loop_9(name, apply);
+            _loop_10(name, apply);
         }
         suite('.parent()', function () {
             test('returns an empty fragment when this is an empty fragment', function () {
@@ -20339,7 +20402,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 }
             });
         });
-        var _loop_10 = function (method) {
+        var _loop_11 = function (method) {
             suite(".".concat(method, "()"), function () {
                 test('is a noop on an empty fragment', function () {
                     assert.ok(domFrag()[method]().isValid());
@@ -20367,7 +20430,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         // that DOMFragment doesn't
         for (var _q = 0, _r = ['remove', 'detach']; _q < _r.length; _q++) {
             var method = _r[_q];
-            _loop_10(method);
+            _loop_11(method);
         }
         suite('.hasClass()', function () {
             test('is always false for an empty fragment', function () {
@@ -20519,67 +20582,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 assert.equal(children[0].className, 'a b');
                 assert.equal(children[2].className, 'c');
                 assert.equal(children[3].className, 'd');
-            });
-        });
-    });
-    suite('HTML', function () {
-        function renderHtml(domView) {
-            var Cmd = /** @class */ (function (_super) {
-                __extends(class_16, _super);
-                function class_16() {
-                    var _this_1 = _super.call(this, undefined, domView) || this;
-                    _this_1.id = 1;
-                    _this_1.blocks = Array(domView.childCount);
-                    var _loop_11 = function (i) {
-                        var content = 'Block:' + i;
-                        this_5.blocks[i] = {
-                            id: 2 + i,
-                            setDOM: function (_sibling) { },
-                            html: function () {
-                                var frag = document.createDocumentFragment();
-                                frag.appendChild(h.text(content));
-                                return frag;
-                            }
-                        };
-                    };
-                    var this_5 = this;
-                    for (var i = 0; i < domView.childCount; i += 1) {
-                        _loop_11(i);
-                    }
-                    return _this_1;
-                }
-                return class_16;
-            }(MathCommand));
-            return new Cmd().html();
-        }
-        function assertDOMEqual(actual, expected, message) {
-            var expectedNode = parseHTML(expected);
-            if (actual.isEqualNode(expectedNode))
-                return;
-            var d = document.createElement('div');
-            d.appendChild(actual);
-            var actualString = d.innerHTML;
-            assert.fail(message + ' expected (' + actualString + ') to equal (' + expected + ')');
-        }
-        test('simple HTML templates', function () {
-            assertDOMEqual(renderHtml(new DOMView(0, function () { return h('span', {}, [h.text('A Symbol')]); })), '<span>A Symbol</span>', 'a symbol');
-            assertDOMEqual(renderHtml(new DOMView(1, function (blocks) { return h.block('span', {}, blocks[0]); })), '<span>Block:0</span>', 'same span is cmd and block');
-            assertDOMEqual(renderHtml(new DOMView(2, function (blocks) {
-                return h('span', {}, [
-                    h.block('span', {}, blocks[0]),
-                    h.block('span', {}, blocks[1])
-                ]);
-            })), '<span>' + '<span>Block:0</span>' + '<span>Block:1</span>' + '</span>', 'container span with two block spans');
-            assertDOMEqual(renderHtml(new DOMView(0, function () { return h('br'); })), '<br/>', 'self-closing tag');
-        });
-        test('Attempting to render multiple html nodes into a math command throws', function () {
-            assert.throws(function () {
-                renderHtml(new DOMView(2, function (blocks) {
-                    var frag = document.createDocumentFragment();
-                    frag.appendChild(h('span', {}, [h.block('span', {}, blocks[0])]));
-                    frag.appendChild(h('span', {}, [h.block('span', {}, blocks[1])]));
-                    return frag;
-                }));
             });
         });
     });

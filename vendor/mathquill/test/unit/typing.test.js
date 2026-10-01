@@ -1264,9 +1264,9 @@ suite('typing with auto-replaces', function () {
 
     test('works in \\int', function () {
       mq.typedText('int');
-      assertLatex('\\int_{ }^{ }');
+      assertLatex('\\int');
       mq.typedText('sin');
-      assertLatex('\\int_{\\sin\\left(\\right)}^{ }');
+      assertLatex('\\int\\sin\\left(\\right)');
     });
 
     test('no auto operator names in simple subscripts', function () {
@@ -1608,9 +1608,9 @@ suite('typing with auto-replaces', function () {
 
     test('typing ∫ directly', function () {
       mq.typedText('∫');
-      assertLatex('\\int_{ }^{ }');
+      assertLatex('\\int');
       mq.typedText('n');
-      assertLatex('\\int_{n}^{ }');
+      assertLatex('\\int n');
     });
 
     test('typing and backspacing \\to', function () {

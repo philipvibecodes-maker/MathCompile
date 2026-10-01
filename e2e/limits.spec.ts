@@ -8,22 +8,22 @@ type CaretInfo = {
 };
 
 // MathQuill renders the caret as a .mq-cursor element in the light DOM; its
-// ancestor chain tells us which block it's in (.mq-sub/.mq-sup inside the
-// operator), and DOM position vs the operator handles left/right-of-atom.
+// ancestor chain tells us which block it's in, and DOM position vs the
+// operator handles left/right-of-atom. The bound blocks live in different
+// containers per operator: \sum wraps its limits inside .mq-large-operator
+// (.mq-from/.mq-to), while \int is a bare .mq-int leaf whose bounds are a
+// sibling .mq-supsub (.mq-sub/.mq-sup) — either way a field-wide search for
+// the block classes finds the one containing the caret.
 const caretInfo = (mf: Locator): Promise<CaretInfo> =>
   mf.evaluate((el) => {
     const value = (el as unknown as { value: string }).value;
     const cursor = el.querySelector('.mq-cursor');
-    // The bounds-bearing atom: \int renders .mq-int; \sum renders a
-    // .mq-large-operator (over/under limits).
     const op =
       el.querySelector('.mq-int') ?? el.querySelector('.mq-large-operator');
     if (!cursor || !op) return { value, where: 'none' };
-    // msubsup ops use .mq-sub/.mq-sup; over/under ops (\sum, \prod) use
-    // .mq-from/.mq-to.
-    if (op.querySelector('.mq-sub, .mq-from')?.contains(cursor))
+    if (el.querySelector('.mq-sub, .mq-from')?.contains(cursor))
       return { value, where: 'lower' };
-    if (op.querySelector('.mq-sup, .mq-to')?.contains(cursor))
+    if (el.querySelector('.mq-sup, .mq-to')?.contains(cursor))
       return { value, where: 'upper' };
     const rel = op.compareDocumentPosition(cursor);
     if (rel & Node.DOCUMENT_POSITION_FOLLOWING)
@@ -43,9 +43,9 @@ test.beforeEach(async ({ page }) => {
   await clearFirstCell(page);
 });
 
-// `\int` through the latex command input: Enter accepts it and lands the
-// caret in the lower bound (MathQuill visits sub before sup).
-test('\\int a Right b Right x^2 produces \\int_{a}^{b}x^{2}', async ({
+// `\int` through the latex command input produces a bare integral sign
+// with the caret right of it — no bound boxes to escape.
+test('\\int lands the caret right of a bare integral sign', async ({
   page,
 }) => {
   const mf = page.locator('math-field').first();
@@ -53,72 +53,124 @@ test('\\int a Right b Right x^2 produces \\int_{a}^{b}x^{2}', async ({
   await page.keyboard.press('Enter');
   await settle(page);
   expect(await caretInfo(mf)).toMatchObject({
-    value: '\\int_{ }^{ }',
-    where: 'lower',
+    value: '\\int',
+    where: 'right',
   });
-  await mf.pressSequentially('a', { delay: 60 });
+});
+
+// The headline flow: an indefinite integral types linearly — the integrand
+// lands right of the sign instead of being trapped in a lower-bound box.
+test('\\int x^2 dx types an indefinite integral linearly', async ({
+  page,
+}) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\int', { delay: 60 });
+  await page.keyboard.press('Enter');
+  await mf.pressSequentially('x^2', { delay: 60 });
+  await settle(page);
+  // `x^2` lands at the baseline (caret inside the exponent).
+  expect(await caretInfo(mf)).toMatchObject({
+    value: '\\int x^{2}',
+    where: 'upper',
+  });
+  await page.keyboard.press('ArrowRight');
+  await mf.pressSequentially('dx', { delay: 60 });
+  expect((await caretInfo(mf)).value).toBe('\\int x^{2}dx');
+});
+
+// Bounds are opt-in via `_`/`^`: a sub block grows on demand and `^`
+// typed at baseline welds a sup onto the same SupSub.
+test('\\int + _ a Right ^ b Right xdx produces \\int_{a}^{b}xdx', async ({
+  page,
+}) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\int', { delay: 60 });
+  await page.keyboard.press('Enter');
+  await mf.pressSequentially('_a', { delay: 60 });
   await settle(page);
   expect(await caretInfo(mf)).toMatchObject({
-    value: '\\int_{a}^{ }',
+    value: '\\int_{a}',
     where: 'lower',
   });
   await page.keyboard.press('ArrowRight');
   await settle(page);
-  expect(await caretInfo(mf)).toMatchObject({ where: 'upper' });
-  await mf.pressSequentially('b', { delay: 60 });
+  expect(await caretInfo(mf)).toMatchObject({ where: 'right' });
+  await mf.pressSequentially('^b', { delay: 60 });
   await settle(page);
   expect(await caretInfo(mf)).toMatchObject({
     value: '\\int_{a}^{b}',
     where: 'upper',
   });
   await page.keyboard.press('ArrowRight');
-  await settle(page);
-  expect(await caretInfo(mf)).toMatchObject({ where: 'right' });
-  await mf.pressSequentially('x^2', { delay: 60 });
-  expect((await caretInfo(mf)).value).toBe('\\int_{a}^{b}x^{2}');
+  await mf.pressSequentially('xdx', { delay: 60 });
+  expect((await caretInfo(mf)).value).toBe('\\int_{a}^{b}xdx');
 });
 
-test('ArrowLeft twice from the lower limit lands left of the integral', async ({
+test('ArrowLeft from the bare integral moves left of it in one step', async ({
   page,
 }) => {
   const mf = page.locator('math-field').first();
   await mf.pressSequentially('\\int', { delay: 60 });
   await page.keyboard.press('Enter');
-  await mf.pressSequentially('a', { delay: 60 });
-  await page.keyboard.press('ArrowLeft');
   await page.keyboard.press('ArrowLeft');
   await settle(page);
-  const info = await caretInfo(mf);
-  expect(info.where).toBe('left');
+  expect(await caretInfo(mf)).toMatchObject({ where: 'left' });
 });
 
-test('ArrowRight from left of the integral enters the lower limit', async ({
+test('ArrowRight from left of the integral passes it, then enters the sub', async ({
   page,
 }) => {
   const mf = page.locator('math-field').first();
   await mf.pressSequentially('\\int', { delay: 60 });
   await page.keyboard.press('Enter');
+  await mf.pressSequentially('_a', { delay: 60 });
+  await page.keyboard.press('ArrowRight');
+  await mf.pressSequentially('^b', { delay: 60 });
   // MQ binds Home/End to the current block; Ctrl+Home reaches the field start.
   await page.keyboard.press('Control+Home');
   await settle(page);
   expect(await caretInfo(mf)).toMatchObject({ where: 'left' });
   await page.keyboard.press('ArrowRight');
   await settle(page);
+  // A baseline caret stop exists between the sign and its bounds.
   expect(await caretInfo(mf)).toMatchObject({
-    value: '\\int_{ }^{ }',
-    where: 'lower',
+    value: '\\int_{a}^{b}',
+    where: 'right',
   });
-  await mf.pressSequentially('a', { delay: 60 });
-  expect((await caretInfo(mf)).value).toBe('\\int_{a}^{ }');
+  await page.keyboard.press('ArrowRight');
+  await settle(page);
+  expect(await caretInfo(mf)).toMatchObject({ where: 'lower' });
+});
+
+// A sub-only bound is arrow-skippable at baseline: autoSubscriptNumerals
+// (smart mode) treats a lone `_{a}` like `x_1` — Right hops past it rather
+// than trapping the caret inside.
+test('ArrowRight hops over a lone lower bound (autoSubscriptNumerals)', async ({
+  page,
+}) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\int', { delay: 60 });
+  await page.keyboard.press('Enter');
+  await mf.pressSequentially('_a', { delay: 60 });
+  await page.keyboard.press('Control+Home');
+  await settle(page);
+  expect(await caretInfo(mf)).toMatchObject({ where: 'left' });
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await settle(page);
+  // Second Right is past the SupSub entirely — never inside it.
+  expect(await caretInfo(mf)).toMatchObject({ where: 'right' });
+  await mf.pressSequentially('x', { delay: 60 });
+  expect((await caretInfo(mf)).value).toBe('\\int_{a}x');
 });
 
 test('ArrowRight does not hijack in-limit movement', async ({ page }) => {
   const mf = page.locator('math-field').first();
   await mf.pressSequentially('\\int', { delay: 60 });
   await page.keyboard.press('Enter');
-  await mf.pressSequentially('a', { delay: 60 });
+  await mf.pressSequentially('_a', { delay: 60 });
   await page.keyboard.press('ArrowRight');
-  await mf.pressSequentially('b', { delay: 60 });
+  await mf.pressSequentially('^b', { delay: 60 });
   await page.keyboard.press('ArrowRight');
   await mf.pressSequentially('x', { delay: 60 });
   expect((await caretInfo(mf)).value).toBe('\\int_{a}^{b}x');
@@ -126,21 +178,27 @@ test('ArrowRight does not hijack in-limit movement', async ({ page }) => {
   await settle(page);
   await page.keyboard.press('ArrowRight');
   await settle(page);
+  expect(await caretInfo(mf)).toMatchObject({ where: 'right' });
+  await page.keyboard.press('ArrowRight');
+  await settle(page);
   expect(await caretInfo(mf)).toMatchObject({ where: 'lower' });
   await page.keyboard.press('ArrowRight');
   await settle(page);
   expect(await caretInfo(mf)).toMatchObject({ where: 'lower' });
+  await page.keyboard.press('ArrowRight');
+  await settle(page);
+  expect(await caretInfo(mf)).toMatchObject({ where: 'upper' });
 });
 
-test('ArrowLeft traverses upper -> lower -> left of the integral', async ({
+test('ArrowLeft traverses upper -> lower -> right of the integral', async ({
   page,
 }) => {
   const mf = page.locator('math-field').first();
   await mf.pressSequentially('\\int', { delay: 60 });
   await page.keyboard.press('Enter');
-  await mf.pressSequentially('a', { delay: 60 });
+  await mf.pressSequentially('_a', { delay: 60 });
   await page.keyboard.press('ArrowRight');
-  await mf.pressSequentially('b', { delay: 60 });
+  await mf.pressSequentially('^b', { delay: 60 });
   await page.keyboard.press('ArrowLeft');
   await settle(page);
   expect(await caretInfo(mf)).toMatchObject({ where: 'upper' });
@@ -152,17 +210,22 @@ test('ArrowLeft traverses upper -> lower -> left of the integral', async ({
   expect(await caretInfo(mf)).toMatchObject({ where: 'lower' });
   await page.keyboard.press('ArrowLeft');
   await settle(page);
+  expect(await caretInfo(mf)).toMatchObject({ where: 'right' });
+  await page.keyboard.press('ArrowLeft');
+  await settle(page);
   expect(await caretInfo(mf)).toMatchObject({ where: 'left' });
 });
 
-test('fast typing: inta with zero delay lands a in the lower limit', async ({
+test('fast typing: intx lands x right of the integral, not in a bound', async ({
   page,
 }) => {
   const mf = page.locator('math-field').first();
   await mf.pressSequentially('\\int');
   await page.keyboard.press('Enter');
-  await mf.pressSequentially('a');
-  expect((await caretInfo(mf)).value).toBe('\\int_{a}^{ }');
+  await mf.pressSequentially('x');
+  const info = await caretInfo(mf);
+  expect(info.value).toBe('\\int x');
+  expect(info.where).toBe('right');
 });
 
 test('ArrowLeft on a plain expression moves one atom', async ({ page }) => {
@@ -193,27 +256,33 @@ test('\\sum: multi-atom lower bound then upper', async ({ page }) => {
   expect((await caretInfo(mf)).value).toBe('\\sum_{i=1}^{n}');
 });
 
-test('Backspace right of a limits-bearing atom descends into it', async ({
+test('Backspace right of a limits-bearing atom clears a bound at a time', async ({
   page,
 }) => {
   const mf = page.locator('math-field').first();
   await mf.pressSequentially('\\int', { delay: 60 });
   await page.keyboard.press('Enter');
-  await mf.pressSequentially('a', { delay: 60 });
+  await mf.pressSequentially('_a', { delay: 60 });
   await page.keyboard.press('ArrowRight');
-  await mf.pressSequentially('b', { delay: 60 });
+  await mf.pressSequentially('^b', { delay: 60 });
   await page.keyboard.press('ArrowRight');
   await settle(page);
   expect(await caretInfo(mf)).toMatchObject({
     value: '\\int_{a}^{b}',
     where: 'right',
   });
+  // autoSubscriptNumerals treats the bounds as one node: the first
+  // Backspace deletes the whole lower bound (like x_1), not the upper.
   await page.keyboard.press('Backspace');
   await settle(page);
-  // MQ descends into the last bound (upper) rather than deleting the atom.
-  const info = await caretInfo(mf);
-  expect(info.where).toBe('upper');
-  expect(info.value).toBe('\\int_{a}^{b}');
+  expect(await caretInfo(mf)).toMatchObject({
+    value: '\\int^{b}',
+    where: 'right',
+  });
+  // With no sub left, the next Backspace descends into the upper bound.
+  await page.keyboard.press('Backspace');
+  await settle(page);
+  expect(await caretInfo(mf)).toMatchObject({ where: 'upper' });
 });
 
 test('Backspace at the start of the field hops over a bounds-carrying atom', async ({
@@ -222,9 +291,9 @@ test('Backspace at the start of the field hops over a bounds-carrying atom', asy
   const mf = page.locator('math-field').first();
   await mf.pressSequentially('\\int', { delay: 60 });
   await page.keyboard.press('Enter');
-  await mf.pressSequentially('a', { delay: 60 });
+  await mf.pressSequentially('_a', { delay: 60 });
   await page.keyboard.press('ArrowRight');
-  await mf.pressSequentially('b', { delay: 60 });
+  await mf.pressSequentially('^b', { delay: 60 });
   await page.keyboard.press('Control+Home');
   await settle(page);
   await page.keyboard.press('Backspace');
@@ -235,18 +304,18 @@ test('Backspace at the start of the field hops over a bounds-carrying atom', asy
   expect(info.value).toBe('\\int_{a}^{b}');
 });
 
-// Regression guard: this used to be pinned expected-fail when the
-// editor's own selection handler fought the app's caret fix over the
-// same selection. Under MathQuill there is one caret owner, so Tab just reaches the upper
-// bound — runs as a normal test now.
-test('Tab from the lower bound reaches the upper bound', async ({ page }) => {
+test('Tab inside the sub bound reaches the baseline right of the bounds', async ({
+  page,
+}) => {
   const mf = page.locator('math-field').first();
   await mf.pressSequentially('\\int', { delay: 60 });
   await page.keyboard.press('Enter');
-  await mf.pressSequentially('a', { delay: 60 });
+  await mf.pressSequentially('_a', { delay: 60 });
   await page.keyboard.press('Tab');
   await settle(page);
-  expect(await caretInfo(mf)).toMatchObject({ where: 'upper' });
-  await mf.pressSequentially('b', { delay: 60 });
+  // No upper bound exists yet — Tab exits the sub to the baseline,
+  // where `^` welds one on.
+  expect(await caretInfo(mf)).toMatchObject({ where: 'right' });
+  await mf.pressSequentially('^b', { delay: 60 });
   expect((await caretInfo(mf)).value).toBe('\\int_{a}^{b}');
 });

@@ -38,6 +38,13 @@ Vendored copy of the Desmos fork of MathQuill
   processor accepts `''` (empty dict — disables auto-commands) so the
   app's smartMode toggle can turn it back off; upstream had no way to
   clear the list once set.
+- `src/commands/math/commands.ts` + `src/css/math.less`: boundless
+  `\int` — `LatexCmds.int`/`integral`/`∫` produce a leaf `MQSymbol`
+  (`\int `) instead of a `SummationNotation` with mandatory bound
+  blocks, so the caret lands right of the integral sign and an
+  indefinite integral (`\int x dx`) types linearly. Bounds come from
+  ordinary `_`/`^` SupSub on demand (or from parsing `\int_{a}^{b}`),
+  and `.mq-int` sibling-supsub rules keep the bound styling.
 
 Coverage: `test/unit/environments.test.js` (mocha; run `make test` then
 open `test/unit.html`, or run `npx playwright test e2e/vendor.spec.ts`

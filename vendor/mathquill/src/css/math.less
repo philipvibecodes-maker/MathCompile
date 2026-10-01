@@ -178,13 +178,20 @@
       vertical-align: -0.16em;
     }
 
-    > .mq-supsub {
+    // Bounds are an on-demand sibling SupSub (typed `_`/`^` or parsed
+    // `\int_{a}^{b}`), not child blocks of the integral. The caret may
+    // sit between the symbol and its bounds, so cover that too.
+    + .mq-supsub,
+    + .mq-cursor + .mq-supsub {
       font-size: 80%;
       vertical-align: -1.1em;
       padding-right: 0.2em;
 
-      > .mq-sup > .mq-sup-inner {
-        vertical-align: 1.3em;
+      // Plain SupSub has no .mq-sup-inner (unlike the large-operator
+      // template), so spread the bounds with margins instead: keep the
+      // upper bound visibly above the lower one.
+      > .mq-sup {
+        margin-bottom: 0.4em;
       }
 
       > .mq-sub {

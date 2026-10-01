@@ -152,9 +152,13 @@ and empty blocks serialize as `{ }`.
   Shift+Space adds a column; arrows move cell-to-cell without leaving
   the field.
 - Serializations to pin in tests: empty blocks are `{ }` (with a space);
-  `\int_{ }^{ }` writes sub before sup and lands the caret in the lower
-  bound; `x^2` serializes `x^{2}`; `\displaylines{x\\ y}` puts a space
-  after `\\` before binary operators like `+`.
+  `\int` is a boundless leaf — `int`/`∫` inserts just the sign with the
+  caret at baseline right of it; typed `_`/`^` grow an ordinary SupSub
+  sibling (`\int_{a}^{b}`), which autoSubscriptNumerals treats like
+  `x_1` (a lone `_{a}` is arrow-skippable at baseline, and Backspace
+  deletes a bound wholesale before descending); `x^2` serializes
+  `x^{2}`; `\displaylines{x\\ y}` puts a space after `\\` before binary
+  operators like `+`.
 
 ## Testing notes
 
