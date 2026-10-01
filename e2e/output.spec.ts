@@ -115,10 +115,11 @@ test('latex target shows per-cell output with a copy button', async ({
   await expect(copy).toHaveText('Copied');
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('x+1');
 
-  // The python target swaps the per-cell output for generated code.
+  // The python target swaps the per-cell output for generated code
+  // (symbol defs included — x is defined in this cell).
   await setTarget(page, 'python');
   await expect(page.locator('.cell-latex')).toHaveCount(0);
-  await expect(page.locator('.cell-python').first()).toHaveText('x + 1');
+  await expect(page.locator('.cell-python').first()).toContainText('x + 1');
 });
 
 test('python target shows per-cell code and the worksheet program', async ({
@@ -128,15 +129,21 @@ test('python target shows per-cell code and the worksheet program', async ({
   await cell(page, 0).pressSequentially('a=x+1', { delay: 40 });
   await setTarget(page, 'python');
 
-  // Per-cell statement: `a = x + 1` for this cell.
-  await expect(page.locator('.cell-python').first()).toHaveText('a = x + 1');
+  // Per-cell output: the Symbol definition lives in the cell that defines
+  // it, above the assign statement.
+  await expect(page.locator('.cell-python').first()).toContainText(
+    'x = sp.Symbol("x")',
+  );
+  await expect(page.locator('.cell-python').first()).toContainText(
+    'a = x + 1',
+  );
 
   // The output panel shows the full SymPy program.
   const panel = page.locator('.output-panel');
   await expect(panel).toBeVisible();
   const code = page.locator('.output-code');
   await expect(code).toContainText('import sympy as sp');
-  await expect(code).toContainText("x = sp.symbols('x')");
+  await expect(code).toContainText('x = sp.Symbol("x")');
   await expect(code).toContainText('a = x + 1');
 
   // Switching back to latex removes the panel and code output.

@@ -98,11 +98,16 @@ const STATEMENT_HEADS = new Set(['Assign', 'Def', 'Block', 'Which', 'Piecewise']
 const STATEMENT_CALL_HEADS = new Set(['solve', 'Solve', 'piecewise', 'Piecewise']);
 
 interface Scope {
-  /** Names defined by Assign/Def anywhere in the worksheet. */
+  /** Names defined by Assign/Def anywhere in the worksheet (pre-scan;
+   * distinguishes worksheet functions from the sp.<head> escape hatch). */
   declared: Set<string>;
+  /** Names bound so far in emission order (Assign/Def targets plus every
+   * name that has had a `= sp.Symbol`/`sp.Function` line emitted). */
+  defined: Set<string>;
   /** Python-local bound names (Def params) while inside a def body. */
   bound: Set<string>;
-  /** Free symbol name -> emitted python identifier, insertion-ordered. */
+  /** Free symbol name -> emitted python identifier, insertion-ordered.
+   * A def line is emitted in the cell where the name is first needed. */
   symbols: Map<string, string>;
   /** Names used as functions (f'(x), Apply callees) -> sp.Function lines. */
   functions: Map<string, string>;
@@ -157,13 +162,15 @@ class Emitter {
   }
 
   private sym(name: string): string {
-    if (this.scope.bound.has(name)) return pyIdent(name);
+    if (this.scope.bound.has(name) || this.scope.defined.has(name))
+      return pyIdent(name);
     return this.alloc(this.scope.symbols, name);
   }
 
   // A name used as a function (f in f'(x)) needs sp.Function, not
   // sp.symbols — symbols aren't callable.
   private fn(name: string): string {
+    if (this.scope.defined.has(name)) return pyIdent(name);
     return this.alloc(this.scope.functions, name);
   }
 
@@ -334,11 +341,7 @@ class Emitter {
             .slice(1)
             .map((a) => this.emit(a))
             .join(', ');
-          const fname = isStr(f)
-            ? this.scope.declared.has(f)
-              ? pyIdent(f)
-              : this.fn(f)
-            : null;
+          const fname = isStr(f) ? this.fn(f) : null;
           const applied =
             fname !== null
               ? `${fname}(${argList})`
@@ -346,9 +349,7 @@ class Emitter {
           return [`sp.diff(${applied}, ${argList}${order})`, PREC_ATOM];
         }
         const calleeText = isStr(callee)
-          ? this.scope.declared.has(callee)
-            ? pyIdent(callee)
-            : this.fn(callee)
+          ? this.fn(callee)
           : this.emit(callee);
         return [
           `${calleeText}(${args.slice(1).map((a) => this.emit(a)).join(', ')})`,
@@ -454,14 +455,15 @@ class Emitter {
         ];
       case 'call': {
         // Escape hatch: unknown/`\operatorname` heads -> sp.<head>(args),
-        // except worksheet-declared names, which call directly (f(x)=...).
+        // except worksheet-declared names, which call directly (f(x)=...) —
+        // declared-but-not-yet-bound gets an sp.Function def in this cell.
         const name = isStr(args[0]) ? args[0] : 'unknown';
         const rendered = args
           .slice(1)
           .map((a) => this.emit(a))
           .join(', ');
         if (this.scope.declared.has(name))
-          return [`${pyIdent(name)}(${rendered})`, PREC_ATOM];
+          return [`${this.fn(name)}(${rendered})`, PREC_ATOM];
         return [`sp.${pyIdent(name)}(${rendered})`, PREC_ATOM];
       }
       default:
@@ -492,21 +494,59 @@ function unwrapLambda(node: MathJson): { body: MathJson; params: string[] } {
   return { body: node, params: [] };
 }
 
-// Emit one normalized cell IR as python statement lines.
+// Emit one normalized cell IR as python statement lines. Names first
+// needed in this cell get their definition line at the top of the cell
+// (`a = sp.Symbol("a")`, `f = sp.Function("f")`) — a symbol is defined in
+// the cell that defines it, so program order stays truthful.
 function cellStatements(ir: MathJson | undefined, scope: Scope): string[] {
   if (ir === undefined) return [];
   const emitter = new Emitter(scope);
-  if (isHead(ir, 'Block')) {
-    return ir.slice(1).flatMap((stmt) => emitStatement(stmt, emitter));
-  }
-  return emitStatement(ir, emitter);
+  const preDefined = new Set(scope.defined);
+  const nodes = isHead(ir, 'Block') ? ir.slice(1) : [ir];
+  const parts = nodes.map((stmt) => ({
+    stmt,
+    lines: emitStatement(stmt, emitter),
+  }));
+
+  // Names first needed in this cell (not already bound in earlier ones).
+  const newSyms = [...scope.symbols].filter(([raw]) => !preDefined.has(raw));
+  const newFns = [...scope.functions].filter(([raw]) => !preDefined.has(raw));
+  const newNames = new Set([...newSyms, ...newFns].map(([raw]) => raw));
+  for (const raw of newNames) scope.defined.add(raw);
+
+  const defs: string[] = [];
+  const simple = newSyms.filter(([raw, ident]) => ident === pyIdent(raw));
+  const fancy = newSyms.filter(([raw, ident]) => ident !== pyIdent(raw));
+  if (simple.length === 1)
+    defs.push(`${simple[0][1]} = sp.Symbol(${JSON.stringify(simple[0][0])})`);
+  else if (simple.length > 1)
+    defs.push(
+      `${simple.map(([, ident]) => ident).join(', ')} = sp.symbols('${simple.map(([raw]) => raw).join(' ')}')`,
+    );
+  for (const [raw, ident] of fancy)
+    defs.push(`${ident} = sp.Symbol(${JSON.stringify(raw)})`);
+  for (const [raw, ident] of newFns)
+    defs.push(`${ident} = sp.Function(${JSON.stringify(raw)})`);
+
+  // A bare `a` cell whose symbol is defined here collapses to just the
+  // definition line — `a = sp.Symbol("a")` is the cell's output.
+  const stmts = parts.flatMap(({ stmt, lines }) =>
+    isStr(stmt) && newNames.has(stmt) ? [] : lines,
+  );
+  return [...defs, ...stmts];
 }
 
 function emitStatement(node: MathJson, emitter: Emitter): string[] {
   if (!isArr(node)) return [emitter.emit(node)];
   const h = headOf(node);
-  if (h === 'Assign')
-    return [`${pyIdent(isStr(node[1]) ? node[1] : 'result')} = ${emitter.emit(node[2])}`];
+  if (h === 'Assign') {
+    // RHS emits first so `x = x + 1` collects x as a symbol; the Assign
+    // then marks `x` bound for later statements/cells.
+    const rhs = emitter.emit(node[2]);
+    const name = isStr(node[1]) ? node[1] : 'result';
+    if (isStr(node[1])) emitter.scope.defined.add(name);
+    return [`${pyIdent(name)} = ${rhs}`];
+  }
   if (h === 'Def') {
     const name = isStr(node[1]) ? node[1] : 'f';
     const params =
@@ -515,6 +555,7 @@ function emitStatement(node: MathJson, emitter: Emitter): string[] {
     emitter.scope.bound = new Set(params);
     const body = emitter.emit(node[3]);
     emitter.scope.bound = saved;
+    emitter.scope.defined.add(name);
     return [
       `def ${pyIdent(name)}(${params.map(pyIdent).join(', ')}):`,
       `    return ${body}`,
@@ -598,6 +639,7 @@ export function compileWorksheet(
 
   const scope: Scope = {
     declared,
+    defined: new Set(),
     bound: new Set(),
     symbols: new Map(),
     functions: new Map(),
@@ -618,18 +660,6 @@ export function compileWorksheet(
   });
 
   const lines: string[] = ['import sympy as sp'];
-  const simple: string[] = [];
-  const fancy: [string, string][] = [];
-  for (const [name, ident] of scope.symbols) {
-    if (ident === name) simple.push(name);
-    else fancy.push([ident, name]);
-  }
-  if (simple.length > 0)
-    lines.push('', `${simple.join(', ')} = sp.symbols('${simple.join(' ')}')`);
-  for (const [ident, name] of fancy)
-    lines.push(`${ident} = sp.Symbol(${JSON.stringify(name)})`);
-  for (const [name, ident] of scope.functions)
-    lines.push(`${ident} = sp.Function(${JSON.stringify(name)})`);
   cellLines.forEach((stmts, i) => {
     if (stmts.length === 0) return;
     lines.push('', `# cell ${i + 1}`, ...stmts);
