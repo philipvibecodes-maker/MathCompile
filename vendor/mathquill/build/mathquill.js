@@ -7435,6 +7435,30 @@ var __assign = (this && this.__assign) || function () {
             // check for operator names: at each position from left to right, check
             // substrings from longest to shortest
             outer: for (var i = 0, first = l[R] || this.parent.getEnd(L); first && i < str.length; i += 1, first = first[R]) {
+                // A letter run inside \operatorname{...}/\mathrm{...} (its first
+                // letter's ctrlSeq carries the `\name{` prefix and its last carries
+                // `}`) is already an explicit operator name \u2014 keep it whole and
+                // upright. Scanning it for built-in names split e.g.
+                // \operatorname{sign} into "sin" + "g" and \operatorname{atan}
+                // into "a" + "tan".
+                if (first instanceof Letter &&
+                    /^\\(?:operatorname|mathrm|mathsf|mathnormal|mathbf)\{/.test(first.ctrlSeq)) {
+                    var opLetter = first;
+                    var opLen = 0;
+                    while (opLetter instanceof Letter) {
+                        opLetter.italicize(false);
+                        opLen += 1;
+                        var endsRun = opLetter.ctrlSeq.endsWith('}');
+                        opLetter = opLetter[R];
+                        if (endsRun)
+                            break;
+                    }
+                    i += opLen - 1;
+                    first = opLetter instanceof Letter ? opLetter[L] : first;
+                    if (!opLetter)
+                        break;
+                    continue;
+                }
                 for (var len = min(autoOpsLength, str.length - i); len > 0; len -= 1) {
                     var word = str.slice(i, i + len);
                     var last = undefined; // TODO - TS complaining that we use last before assigning to it
@@ -7542,8 +7566,10 @@ var __assign = (this && this.__assign) || function () {
                                 1;
         }
         // compat with some of the nonstandard LaTeX exported by MathQuill
-        // before #247. None of these are real LaTeX commands so, seems safe
-        var moreNonstandardOps = 'gcf hcf lcm proj span'.split(' ');
+        // before #247. None of these are real LaTeX commands so, seems safe.
+        // 'sign' (not built into LaTeX) exports as \operatorname{sign}, which
+        // MathCompile's compile pipeline lowers to SymPy's sign().
+        var moreNonstandardOps = 'gcf hcf lcm proj span sign'.split(' ');
         for (var i = 0; i < moreNonstandardOps.length; i += 1) {
             AutoOpNames[moreNonstandardOps[i]] = 1;
         }
@@ -8504,6 +8530,13 @@ var __assign = (this && this.__assign) || function () {
         function class_9() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
+        // Parser-only command: typing '\textcolor' in the command input
+        // can't supply a color argument, so typed insertion is a no-op
+        // (same convention as \operatorname / \mathbb).
+        class_9.prototype.createLeftOf = function () { };
+        class_9.prototype.numBlocks = function () {
+            return 1;
+        };
         class_9.prototype.setColor = function (color) {
             this.color = color;
             this.domView = new DOMView(1, function (blocks) {
@@ -8551,6 +8584,11 @@ var __assign = (this && this.__assign) || function () {
         function class_10() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
+        // Parser-only command, see \textcolor.
+        class_10.prototype.createLeftOf = function () { };
+        class_10.prototype.numBlocks = function () {
+            return 1;
+        };
         class_10.prototype.parser = function () {
             var _this_1 = this;
             var string = Parser.string, regex = Parser.regex;
@@ -9611,7 +9649,9 @@ var __assign = (this && this.__assign) || function () {
         };
         Bracket.prototype.getSymbol = function (side) {
             var ch = this.sides[side || R].ch;
-            return SVG_SYMBOLS[ch] || { width: '0', html: '' };
+            // Unknown delimiters (e.g. the '.' in \left./\right.) render as
+            // invisible zero-width marks.
+            return SVG_SYMBOLS[ch] || { width: '0', html: function () { return h('span'); } };
         };
         Bracket.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
@@ -9888,16 +9928,23 @@ var __assign = (this && this.__assign) || function () {
         return new Bracket(R, '&#8741;', '&#8741;', '\\lVert ', '\\rVert ');
     };
     LatexCmds.left = /** @class */ (function (_super) {
-        __extends(left, _super);
-        function left() {
+        __extends(class_14, _super);
+        function class_14() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        left.prototype.parser = function () {
+        // Parser-only command: the delimiter lives in the argument after
+        // \left, so a typed '\left' inserts nothing and the following
+        // delimiter keystroke auto-pairs the bracket itself.
+        class_14.prototype.createLeftOf = function () { };
+        class_14.prototype.numBlocks = function () {
+            return 1;
+        };
+        class_14.prototype.parser = function () {
             var regex = Parser.regex;
             var string = Parser.string;
             var optWhitespace = Parser.optWhitespace;
             return optWhitespace
-                .then(regex(/^(?:[([|]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z]))/))
+                .then(regex(/^(?:[([|.]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z]))/))
                 .then(function (ctrlSeq) {
                 var open = ctrlSeq.replace(/^\\/, '');
                 if (ctrlSeq == '\\langle') {
@@ -9911,7 +9958,7 @@ var __assign = (this && this.__assign) || function () {
                 return latexMathParser.then(function (block) {
                     return string('\\right')
                         .skip(optWhitespace)
-                        .then(regex(/^(?:[\])|]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z]))/))
+                        .then(regex(/^(?:[\])|.]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z]))/))
                         .map(function (end) {
                         var close = end.replace(/^\\/, '');
                         if (end == '\\rangle') {
@@ -9930,17 +9977,22 @@ var __assign = (this && this.__assign) || function () {
                 });
             });
         };
-        return left;
+        return class_14;
     }(MathCommand));
     LatexCmds.right = /** @class */ (function (_super) {
-        __extends(right, _super);
-        function right() {
+        __extends(class_15, _super);
+        function class_15() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        right.prototype.parser = function () {
+        // Parser-only command, see \left.
+        class_15.prototype.createLeftOf = function () { };
+        class_15.prototype.numBlocks = function () {
+            return 1;
+        };
+        class_15.prototype.parser = function () {
             return Parser.fail('unmatched \\right');
         };
-        return right;
+        return class_15;
     }(MathCommand));
     var leftBinomialSymbol = SVG_SYMBOLS['('];
     var rightBinomialSymbol = SVG_SYMBOLS[')'];
@@ -9991,14 +10043,14 @@ var __assign = (this && this.__assign) || function () {
     }(DelimsNode));
     LatexCmds.binom = LatexCmds.binomial = Binomial;
     LatexCmds.choose = /** @class */ (function (_super) {
-        __extends(class_14, _super);
-        function class_14() {
+        __extends(class_16, _super);
+        function class_16() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_14.prototype.createLeftOf = function (cursor) {
+        class_16.prototype.createLeftOf = function (cursor) {
             LiveFraction.prototype.createLeftOf.call(this, cursor);
         };
-        return class_14;
+        return class_16;
     }(Binomial));
     var MathFieldNode = /** @class */ (function (_super) {
         __extends(MathFieldNode, _super);
@@ -10284,8 +10336,8 @@ var __assign = (this && this.__assign) || function () {
      *************************************************/
     var Environments = {};
     LatexCmds.begin = /** @class */ (function (_super) {
-        __extends(class_15, _super);
-        function class_15() {
+        __extends(class_17, _super);
+        function class_17() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.ctrlSeq = '\\begin';
             _this_1.domView = new DOMView(1, function (blocks) {
@@ -10297,7 +10349,7 @@ var __assign = (this && this.__assign) || function () {
             });
             return _this_1;
         }
-        class_15.prototype.parser = function () {
+        class_17.prototype.parser = function () {
             var string = Parser.string;
             var regex = Parser.regex;
             return string('{')
@@ -10309,7 +10361,7 @@ var __assign = (this && this.__assign) || function () {
                     : Parser.fail('unknown environment type: ' + env)).skip(string('\\end{' + env + '}'));
             });
         };
-        return class_15;
+        return class_17;
     }(MathCommand));
     // A MathCommand whose children ("cells") are laid out in a grid:
     // the matrix family (N columns, optional bracket delimiters) and

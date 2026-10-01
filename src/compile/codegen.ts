@@ -75,6 +75,7 @@ const CONSTANTS: Record<string, string> = {
   EulerGamma: 'EulerGamma',
   CatalansConstant: 'Catalan',
   GoldenRatio: 'GoldenRatio',
+  EmptySet: 'EmptySet',
   True: 'True',
   False: 'False',
 };
@@ -110,6 +111,61 @@ const SP_FUNCS: Record<string, string> = {
 // Statement-position heads that only lower to Python.
 const STATEMENT_HEADS = new Set(['Assign', 'Def', 'Block', 'Which', 'Piecewise']);
 const STATEMENT_CALL_HEADS = new Set(['solve', 'Solve', 'piecewise', 'Piecewise']);
+
+// `call` heads that are real SymPy functions — keep emitting `sp.<name>`
+// for them. Every other applied unknown name (f(x), \operatorname{foo}(x))
+// becomes a worksheet Function def instead: `sp.f(x)` raised
+// AttributeError ('module sympy has no attribute f') at eval time.
+const SP_BUILTIN_CALL = new Set(
+  (
+    'erf erfc erfi erfinv erfcinv Ei expint Si Ci Shi Chi li Li zeta ' +
+    'lerchphi polylog digamma trigamma polygamma loggamma beta betainc ' +
+    'lowergamma uppergamma LambertW besselj bessely besseli besselk ' +
+    'hankel1 hankel2 jn yn airyai airybi airyaiprime airybiprime ' +
+    'marcumq fresnels fresnelc hyper meijerg appellf1 legendre ' +
+    'assoc_legendre hermite hermite_prob chebyshevt chebyshevu ' +
+    'gegenbauer jacobi laguerre assoc_laguerre fibonacci lucas ' +
+    'tribonacci bernoulli euler bell catalan harmonic genocchi ' +
+    'partition primepi mobius totient reduced_totient divisor_sigma ' +
+    'legendre_symbol jacobi_symbol kronecker_symbol rf ff factorial2 ' +
+    'subfactorial stirling multinomial nC nP nT Piecewise piecewise ' +
+    'sign ceiling conjugate arg re im ' +
+    'solve solveset linsolve nonlinsolve simplify factor expand cancel ' +
+    'collect apart together trigsimp expand_trig powsimp nsimplify ' +
+    'radsimp ratsimp fraction limit series residue solve_linear '
+  ).split(' '),
+);
+
+// Minimum arity for SP_FUNCS entries — a lone `\gcd(10)` or `a\bmod` `
+// otherwise emits a call SymPy raises TypeError on at eval time.
+const SP_FUNC_MIN_ARGS: Record<string, number> = {
+  gcd: 2,
+  lcm: 2,
+  Mod: 2,
+  binomial: 2,
+  root: 1,
+  Min: 1,
+  Max: 1,
+};
+
+// CE head names that exist in SymPy under a different spelling —
+// `call` resolves these to `sp.<mapped>` rather than a declared
+// worksheet function.
+const CALL_RENAMES: Record<string, string> = {
+  Factorial2: 'factorial2',
+  Set: 'FiniteSet',
+  Erf: 'erf',
+  Erfc: 'erfc',
+};
+
+// \sin^{-1}(x) etc.: CE wraps the base name as ['InverseFunction', 'Sin'].
+const INVERSE_FUNCS: Record<string, string> = {
+  Sin: 'asin', Cos: 'acos', Tan: 'atan',
+  Sec: 'asec', Csc: 'acsc', Cot: 'acot',
+  Sinh: 'asinh', Cosh: 'acosh', Tanh: 'atanh',
+  Coth: 'acoth', Sech: 'asech', Csch: 'acsch',
+  Exp: 'log', Ln: 'exp', Log: 'exp',
+};
 
 interface Scope {
   /** `import sympy as sp` mode: emit `sp.` qualifiers. With
@@ -156,6 +212,10 @@ function numText(node: MathJson): string {
     return String((node as { num: unknown }).num);
   return String(node);
 }
+
+// CE's empty-argument marker (or a hole/absent slot).
+const missingArg = (n: MathJson | undefined): boolean =>
+  n === undefined || n === 'Nothing' || isHead(n, 'Error');
 
 // Numeric literal node — number or `{num: "..."}`.
 const isNum = (v: MathJson | undefined): boolean =>
@@ -388,6 +448,18 @@ class Emitter {
       }
       case 'Apply': {
         const callee = args[0];
+        if (isHead(callee, 'InverseFunction')) {
+          // \sin^{-1}(x) -> asin(x); an unknown base keeps a readable
+          // inverse(f)(x)-style row instead of InverseFunction garbage.
+          const base = callee[1];
+          const mapped = isStr(base) ? INVERSE_FUNCS[base] : undefined;
+          const argList = args.slice(1).map((a) => this.emit(a)).join(', ');
+          if (base === 'Sqrt')
+            return [`(${argList})**2`, PREC_POW];
+          if (mapped) return [`${this.sp}${mapped}(${argList})`, PREC_ATOM];
+          const name = isStr(base) ? `${base}inv` : 'inverse';
+          return [`${this.sp}Function(${JSON.stringify(name)})(${argList})`, PREC_ATOM];
+        }
         if (isHead(callee, 'Derivative')) {
           // f'(x): ["Apply", ["Derivative", f, n], x]
           const [, f, n] = callee;
@@ -492,28 +564,52 @@ class Emitter {
         const { body } = unwrapLambda(args[0]);
         const limits = isHead(args[1], 'Limits') ? args[1].slice(1) : null;
         const eager = h === 'Sum' ? 'summation' : 'product';
-        const lazy = h === 'Sum' ? 'Sum' : 'Product';
-        if (
-          limits &&
-          !(isStr(limits[1]) && limits[1] === 'Nothing') &&
-          !(isStr(limits[2]) && limits[2] === 'Nothing')
-        )
-          return [
-            `${this.sp}${eager}(${this.emit(body)}, (${this.emit(limits[0])}, ${this.emit(limits[1])}, ${this.emit(limits[2])}))`,
-            PREC_ATOM,
-          ];
-        // Missing bounds can't be evaluated — emit the unevaluated form.
+        const missing = (n: MathJson | undefined): boolean =>
+          n === undefined || n === 'Nothing' || isHead(n, 'Error');
+        const word = h === 'Sum' ? 'sum' : 'product';
+        // SymPy has no boundless/partial Sum or Product form — every
+        // shape except a complete (var, lo, hi) tuple raises ValueError.
+        // Flag like the integral's half-bound case and drop the row.
+        if (!limits || missing(limits[0])) {
+          this.scope.flag(
+            'error',
+            `${word} needs an index and bounds — write ${
+              h === 'Sum' ? '\\sum' : '\\prod'
+            }_{i=1}^{n}`,
+          );
+          return [`${this.sp}${h}(${this.emit(body)})`, PREC_ATOM];
+        }
+        if (missing(limits[1]) || missing(limits[2])) {
+          this.scope.flag(
+            'error',
+            `${missing(limits[2]) ? 'upper' : 'lower'} bound is empty — fill it in or delete it`,
+          );
+          return [`${this.sp}${h}(${this.emit(body)})`, PREC_ATOM];
+        }
         return [
-          limits
-            ? `${this.sp}${lazy}(${this.emit(body)}, ${this.emit(limits[0])})`
-            : `${this.sp}${lazy}(${this.emit(body)})`,
+          `${this.sp}${eager}(${this.emit(body)}, (${this.emit(limits[0])}, ${this.emit(limits[1])}, ${this.emit(limits[2])}))`,
           PREC_ATOM,
         ];
       }
       case 'Limit': {
-        // ["Limit", ["Function", body, x], value]; defensive 3-arg form
-        // ["Limit", expr, x, value] too.
+        // ["Limit", ["Function", body, x], value] or
+        // ["Limit", ["Function", body, x], value, dir] where dir is ±1
+        // (one-sided limits); defensive flat form ["Limit", expr, x,
+        // value] too.
         const { body, params } = unwrapLambda(args[0]);
+        if (isHead(args[0], 'Function')) {
+          const v = params[0] ?? 'x';
+          const dir =
+            args[2] === 1
+              ? ", dir='+'"
+              : args[2] === -1
+                ? ", dir='-'"
+                : '';
+          return [
+            `${this.sp}limit(${this.emit(body)}, ${this.emit(v)}, ${this.emit(args[1])}${dir})`,
+            PREC_ATOM,
+          ];
+        }
         if (args.length >= 3)
           return [
             `${this.sp}limit(${this.emit(body)}, ${this.emit(args[1])}, ${this.emit(args[2])})`,
@@ -538,9 +634,43 @@ class Emitter {
         return [`${this.sp}Matrix([${text}])`, PREC_ATOM];
       }
       case 'Determinant':
-        return [`${this.emit(args[0], PREC_ATOM)}.det()`, PREC_ATOM];
+        // `.det()` on a non-matrix literal emitted e.g. `3.det()` (a
+        // SyntaxError). sp.Determinant(non-matrix) raises TypeError at
+        // eval time, so flag the gap; the emission still displays the
+        // intended form.
+        if (!isHead(args[0], 'Matrix'))
+          this.scope.flag(
+            'note',
+            "determinant needs a matrix — the argument isn't one",
+          );
+        return isHead(args[0], 'Matrix')
+          ? [`${this.emit(args[0], PREC_ATOM)}.det()`, PREC_ATOM]
+          : [`${this.sp}Determinant(${this.emit(args[0])})`, PREC_ATOM];
       case 'Transpose':
-        return [`${this.emit(args[0], PREC_ATOM)}.T`, PREC_ATOM];
+        return isHead(args[0], 'Matrix')
+          ? [`${this.emit(args[0], PREC_ATOM)}.T`, PREC_ATOM]
+          : [`${this.sp}Transpose(${this.emit(args[0])})`, PREC_ATOM];
+      case 'EvaluateAt': {
+        // \left.f\right|_{lo}^{hi} -> f.subs(v, hi) - f.subs(v, lo).
+        const body = args[0];
+        const free = freeNames(body);
+        const v = free.length === 1 ? free[0] : 'x';
+        if (free.length !== 1)
+          this.scope.flag(
+            'note',
+            "can't infer the evaluation variable — evaluated w.r.t. x",
+          );
+        const bodyText = this.emit(body);
+        const upper = !missingArg(args[2])
+          ? `(${bodyText}).subs(${this.sym(v)}, ${this.emit(args[2])})`
+          : '';
+        const lower = !missingArg(args[1])
+          ? `(${bodyText}).subs(${this.sym(v)}, ${this.emit(args[1])})`
+          : '';
+        if (upper && lower) return [`${upper} - ${lower}`, PREC_ADD];
+        if (upper || lower) return [upper || lower, PREC_ATOM];
+        return [bodyText, PREC_ATOM];
+      }
       case 'Inverse':
         return [`${this.emit(args[0], PREC_ATOM)}**-1`, PREC_ATOM];
       case 'List':
@@ -551,24 +681,38 @@ class Emitter {
           PREC_ATOM,
         ];
       case 'call': {
-        // Escape hatch: unknown/`\operatorname` heads -> sp.<head>(args),
-        // except worksheet-declared names, which call directly (f(x)=...) —
-        // declared-but-not-yet-bound gets a Function def in this cell.
+        // Unknown/`\operatorname` heads resolve in three tiers:
+        // worksheet-declared names call directly (f(x)=...), known SymPy
+        // builtins keep the sp.<head> escape hatch, and everything else
+        // becomes an undefined worksheet function — `sp.f(x)` raised
+        // AttributeError, `f(x)` displays and stays valid.
         const name = isStr(args[0]) ? args[0] : 'unknown';
         const rendered = args
           .slice(1)
           .map((a) => this.emit(a))
           .join(', ');
-        if (this.scope.declared.has(name))
+        if (CALL_RENAMES[name])
+          return [`${this.sp}${CALL_RENAMES[name]}(${rendered})`, PREC_ATOM];
+        if (this.scope.declared.has(name) || !SP_BUILTIN_CALL.has(name))
           return [`${this.fn(name)}(${rendered})`, PREC_ATOM];
         return [`${this.sp}${pyIdent(name)}(${rendered})`, PREC_ATOM];
       }
       default:
-        if (SP_FUNCS[h])
+        if (SP_FUNCS[h]) {
+          const fnName = SP_FUNCS[h];
+          const minArgs = SP_FUNC_MIN_ARGS[fnName] ?? 0;
+          if (args.length < minArgs) {
+            this.scope.flag(
+              'error',
+              `${fnName} needs at least ${minArgs} arguments`,
+            );
+            return [`${this.sp}${fnName}(${args.map((a) => this.emit(a)).join(', ')})`, PREC_ATOM];
+          }
           return [
-            `${this.sp}${SP_FUNCS[h]}(${args.map((a) => this.emit(a)).join(', ')})`,
+            `${this.sp}${fnName}(${args.map((a) => this.emit(a)).join(', ')})`,
             PREC_ATOM,
           ];
+        }
         // Shouldn't reach — normalizeIR wraps unknown heads in 'call' —
         // but stay unblocked if raw IR is fed in directly.
         this.scope.flag('note', `unknown head "${h}" — emitted as ${h}(...)`);

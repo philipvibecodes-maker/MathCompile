@@ -118,6 +118,28 @@ test('implicit-multiply integrand evaluates and renders arctan', async ({
   await expect(math).toContainText('C');
 });
 
+// \left. f \right|_{a}^{b}: the `.` delimiter used to be unparseable in
+// MathQuill (the whole cell rendered blank), and the evaluation bar used
+// to compile to garbage. Now it emits the substitution difference.
+test('evaluation bar computes the substitution difference', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await setTarget(page, 'calculator');
+
+  const mf = cell(page, 0);
+  await mf.evaluate((el, v) => {
+    (el as { value: string }).value = v;
+  }, '\\left. x^{2} \\right|_{0}^{1}');
+
+  const rows = page.locator('.calc-rows').first();
+  await expect(rows).toBeAttached({ timeout: 90_000 });
+  await expect(rows).not.toHaveClass(/pending/, { timeout: 90_000 });
+  const row = page.locator('.calc-row').first();
+  await expect(row.locator('.calc-error')).toHaveCount(0);
+  await expect(row.locator('.calc-math')).toContainText('1');
+});
+
 test('calculator shows an instant nerdamer result while SymPy boots', async ({
   page,
 }) => {

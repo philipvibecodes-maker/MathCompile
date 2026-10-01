@@ -577,6 +577,32 @@ class Letter extends Variable {
       first && i < str.length;
       i += 1, first = (first as MQNode)[R]
     ) {
+      // A letter run inside \operatorname{...}/\mathrm{...} (its first
+      // letter's ctrlSeq carries the `\name{` prefix and its last carries
+      // `}`) is already an explicit operator name — keep it whole and
+      // upright. Scanning it for built-in names split e.g.
+      // \operatorname{sign} into "sin" + "g" and \operatorname{atan}
+      // into "a" + "tan".
+      if (
+        first instanceof Letter &&
+        /^\\(?:operatorname|mathrm|mathsf|mathnormal|mathbf)\{/.test(
+          first.ctrlSeq
+        )
+      ) {
+        var opLetter: NodeRef = first;
+        var opLen = 0;
+        while (opLetter instanceof Letter) {
+          opLetter.italicize(false);
+          opLen += 1;
+          var endsRun = opLetter.ctrlSeq.endsWith('}');
+          opLetter = opLetter[R];
+          if (endsRun) break;
+        }
+        i += opLen - 1;
+        first = opLetter instanceof Letter ? ((opLetter[L] as MQNode)) : first;
+        if (!opLetter) break;
+        continue;
+      }
       for (var len = min(autoOpsLength, str.length - i); len > 0; len -= 1) {
         var word = str.slice(i, i + len);
         var last: Letter = undefined!; // TODO - TS complaining that we use last before assigning to it
@@ -704,8 +730,10 @@ function defaultAutoOpNames() {
   }
 
   // compat with some of the nonstandard LaTeX exported by MathQuill
-  // before #247. None of these are real LaTeX commands so, seems safe
-  var moreNonstandardOps = 'gcf hcf lcm proj span'.split(' ');
+  // before #247. None of these are real LaTeX commands so, seems safe.
+  // 'sign' (not built into LaTeX) exports as \operatorname{sign}, which
+  // MathCompile's compile pipeline lowers to SymPy's sign().
+  var moreNonstandardOps = 'gcf hcf lcm proj span sign'.split(' ');
   for (var i = 0; i < moreNonstandardOps.length; i += 1) {
     AutoOpNames[moreNonstandardOps[i]] = 1;
   }

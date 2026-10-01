@@ -119,6 +119,7 @@ const KNOWN_HEADS = new Set([
   'Arcsinh', 'Arccosh', 'Arctanh',
   // calculus
   'D', 'Derivative', 'Apply', 'Integrate', 'Sum', 'Product', 'Limit',
+  'InverseFunction', 'EvaluateAt',
   // linear algebra
   'Matrix', 'Determinant', 'Transpose', 'Inverse',
   // relations / logic / piecewise
@@ -193,6 +194,14 @@ function flattenSubscript(node: MathJson): string {
     if (h === 'Negate') return `-${flattenSubscript(node[1])}`;
     if (h === 'Power')
       return `${flattenSubscript(node[1])}^${flattenSubscript(node[2])}`;
+    // x_{i,j}: Sequence/Delimiter wrap the comma-list — join with
+    // commas, dropping delimiter-marker text literals like '(,)'.
+    if (h === 'Sequence' || h === 'Delimiter')
+      return node
+        .slice(1)
+        .filter((c) => !(isString(c) && TEXT_LITERAL.test(c)))
+        .map(flattenSubscript)
+        .join(',');
   }
   return '?';
 }
@@ -336,6 +345,18 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       return node;
     }
 
+    // \; \, \: etc. produce HorizontalSpacing nodes — pure layout, not
+    // operands. Strip them from every node's argument list; a bare spacing
+    // node on its own degrades to the empty-slot path.
+    if (h === 'HorizontalSpacing') return 'Nothing';
+    node = [
+      node[0],
+      ...node
+        .slice(1)
+        .filter((c) => !(isArray(c) && head(c) === 'HorizontalSpacing')),
+    ];
+    if (node.length === 1) return 'Nothing';
+
     if (h === 'Error') {
       issues.push(issue('error', describeError(node)));
       return node;
@@ -371,6 +392,76 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
 
     if (h === 'Block') {
       return ['Block', ...node.slice(1).map((n) => normalize(n, true))];
+    }
+
+    // \left. f \right|_{a}^{b}: CE emits the evaluation bar as
+    // Power(Subscript(EvaluateAt(f), a), b) — fold back into
+    // ['EvaluateAt', f, lo, hi] so codegen can emit the substitution
+    // difference. Single-bound forms keep the other slot 'Nothing'.
+    if (
+      h === 'Power' &&
+      node.length === 3 &&
+      isArray(node[1]) &&
+      head(node[1]) === 'Subscript' &&
+      (node[1] as MathJson[]).length === 3 &&
+      isArray((node[1] as MathJson[])[1]) &&
+      head((node[1] as MathJson[])[1]) === 'EvaluateAt'
+    ) {
+      const sub = node[1] as MathJson[];
+      const at = sub[1] as MathJson[];
+      return [
+        'EvaluateAt',
+        normalize(at[1], false),
+        normalize(sub[2], false),
+        normalize(node[2], false),
+      ];
+    }
+    if (
+      h === 'Subscript' &&
+      node.length === 3 &&
+      isArray(node[1]) &&
+      head(node[1]) === 'EvaluateAt'
+    ) {
+      const at = node[1] as MathJson[];
+      return [
+        'EvaluateAt',
+        normalize(at[1], false),
+        normalize(node[2], false),
+        'Nothing',
+      ];
+    }
+    if (
+      h === 'Power' &&
+      node.length === 3 &&
+      isArray(node[1]) &&
+      head(node[1]) === 'EvaluateAt'
+    ) {
+      const at = node[1] as MathJson[];
+      return [
+        'EvaluateAt',
+        normalize(at[1], false),
+        'Nothing',
+        normalize(node[2], false),
+      ];
+    }
+
+    // CE emits a stray text-literal row marker ('..') as a trailing Matrix
+    // arg — keeping it treated an extra row and produced mismatched
+    // dimensions at runtime.
+    if (h === 'Matrix') {
+      return [
+        'Matrix',
+        ...node
+          .slice(1)
+          .filter(isArray)
+          .map((n) => normalize(n, false)),
+      ];
+    }
+
+    // `a'` / `x'` unapplied: a primed variable name, not sp.prime.
+    if (h === 'Prime' && node.length >= 2 && isString(node[1])) {
+      const ticks = typeof node[2] === 'number' ? node[2] : 1;
+      return `${node[1]}${"'".repeat(ticks)}`;
     }
 
     if (h === 'Equal') node = flattenEqual(node);

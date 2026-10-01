@@ -241,6 +241,14 @@ LatexCmds.dot = () => {
 LatexCmds.textcolor = class extends MathCommand {
   color: string | undefined;
 
+  // Parser-only command: typing '\textcolor' in the command input
+  // can't supply a color argument, so typed insertion is a no-op
+  // (same convention as \operatorname / \mathbb).
+  createLeftOf() {}
+  numBlocks() {
+    return 1 as const;
+  }
+
   setColor(color: string) {
     this.color = color;
     this.domView = new DOMView(1, (blocks) =>
@@ -289,6 +297,12 @@ LatexCmds.textcolor = class extends MathCommand {
 // https://github.com/mathquill/mathquill/pull/191#discussion_r4327442
 var Class = (LatexCmds['class'] = class extends MathCommand {
   cls: string | undefined;
+
+  // Parser-only command, see \textcolor.
+  createLeftOf() {}
+  numBlocks() {
+    return 1 as const;
+  }
 
   parser() {
     var string = Parser.string,
@@ -1427,7 +1441,9 @@ class Bracket extends DelimsNode {
   }
   getSymbol(side: BracketSide) {
     var ch = this.sides[side || R].ch as keyof typeof SVG_SYMBOLS;
-    return SVG_SYMBOLS[ch] || { width: '0', html: '' };
+    // Unknown delimiters (e.g. the '.' in \left./\right.) render as
+    // invisible zero-width marks.
+    return SVG_SYMBOLS[ch] || { width: '0', html: () => h('span') };
   }
   latexRecursive(ctx: LatexContext) {
     this.checkCursorContextOpen(ctx);
@@ -1740,13 +1756,21 @@ LatexCmds.rVert = () =>
   new Bracket(R, '&#8741;', '&#8741;', '\\lVert ', '\\rVert ');
 
 LatexCmds.left = class extends MathCommand {
+  // Parser-only command: the delimiter lives in the argument after
+  // \left, so a typed '\left' inserts nothing and the following
+  // delimiter keystroke auto-pairs the bracket itself.
+  createLeftOf() {}
+  numBlocks() {
+    return 1 as const;
+  }
+
   parser() {
     var regex = Parser.regex;
     var string = Parser.string;
     var optWhitespace = Parser.optWhitespace;
 
     return optWhitespace
-      .then(regex(/^(?:[([|]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z]))/))
+      .then(regex(/^(?:[([|.]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z]))/))
       .then(function (ctrlSeq) {
         var open = ctrlSeq.replace(/^\\/, '');
         if (ctrlSeq == '\\langle') {
@@ -1761,7 +1785,7 @@ LatexCmds.left = class extends MathCommand {
           return string('\\right')
             .skip(optWhitespace)
             .then(
-              regex(/^(?:[\])|]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z]))/)
+              regex(/^(?:[\])|.]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z]))/)
             )
             .map(function (end) {
               var close = end.replace(/^\\/, '');
@@ -1784,6 +1808,12 @@ LatexCmds.left = class extends MathCommand {
 };
 
 LatexCmds.right = class extends MathCommand {
+  // Parser-only command, see \left.
+  createLeftOf() {}
+  numBlocks() {
+    return 1 as const;
+  }
+
   parser() {
     return Parser.fail('unmatched \\right');
   }

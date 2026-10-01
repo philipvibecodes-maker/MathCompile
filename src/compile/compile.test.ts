@@ -179,7 +179,13 @@ const FIXTURES: {
   {
     latex: '\\operatorname{foo}(x) + 1',
     expectedIR: ['Add', ['call', 'foo', 'x'], 1],
-    expectedPython: ['x = sp.Symbol("x")', 'sp.foo(x) + 1'],
+    // Unknown names become worksheet functions — sp.foo(x) would raise
+    // AttributeError at eval time.
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'foo = sp.Function("foo")',
+      'foo(x) + 1',
+    ],
     issues: ['unknown head "foo"'],
   },
   {
@@ -284,6 +290,102 @@ const FIXTURES: {
     // emits `a = sp.Symbol('a')` as its output.
     latex: 'a',
     expectedPython: ['a = sp.Symbol("a")'],
+  },
+  {
+    // A bare `f(x)` used to emit `sp.f(x)` — AttributeError in the
+    // worker. Unknown applied names become worksheet Function defs.
+    latex: 'f(x)',
+    expectedIR: ['call', 'f', 'x'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+      'f(x)',
+    ],
+    issues: ['unknown head "f"'],
+  },
+  {
+    // `a'` is a primed name, not an applied derivative — `sp.prime`
+    // doesn't exist; it emits as its own symbol.
+    latex: "a'",
+    expectedIR: "a'",
+    expectedPython: ['a = sp.Symbol("a\'")'],
+  },
+  {
+    latex: "x''(t)",
+    expectedIR: ['Apply', ['Derivative', 'x', 2], 't'],
+    expectedPython: [
+      't = sp.Symbol("t")',
+      'x = sp.Function("x")',
+      'sp.diff(x(t), t, 2)',
+    ],
+  },
+  {
+    // \cos^{-1}(x): CE wraps the base as InverseFunction; codegen maps
+    // to the arc- form. Previously emitted InverseFunction garbage.
+    latex: '\\cos^{-1}(x)',
+    expectedIR: ['Apply', ['InverseFunction', 'Cos'], 'x'],
+    expectedPython: ['x = sp.Symbol("x")', 'sp.acos(x)'],
+  },
+  {
+    // \det on a non-matrix emitted `3.det()` / `A.det()` — a
+    // SyntaxError or wrong answer; Determinant(...) displays the form
+    // and flags that it can't evaluate.
+    latex: '\\det(3)',
+    expectedPython: ['sp.Determinant(3)'],
+    issues: ['determinant needs a matrix'],
+  },
+  {
+    latex: 'A^T',
+    expectedPython: ['A = sp.Symbol("A")', 'sp.Transpose(A)'],
+  },
+  {
+    // \left. f \right|_{lo}^{hi}: folded to EvaluateAt — the
+    // substitution difference, not a mangled power.
+    latex: '\\left. \\frac{x^2}{2} \\right|_{0}^{1}',
+    expectedIR: ['EvaluateAt', ['Divide', ['Power', 'x', 2], 2], 0, 1],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      '(x**2 / 2).subs(x, 1) - (x**2 / 2).subs(x, 0)',
+    ],
+  },
+  {
+    // \; \, spacing commands are layout, not operands — they used to
+    // leak a HorizontalSpacing node into codegen.
+    latex: 'x\\;y',
+    expectedIR: ['Multiply', 'x', 'y'],
+    expectedPython: ["x, y = sp.symbols('x y')", 'x * y'],
+  },
+  {
+    // n!! is factorial2 in SymPy, not a `Factorial2` unknown head.
+    latex: 'n!!',
+    expectedPython: ['n = sp.Symbol("n")', 'sp.factorial2(n)'],
+    issues: ['unknown head "Factorial2"'],
+  },
+  {
+    latex: '\\{1, 2, 3\\}',
+    expectedPython: ['sp.FiniteSet(1, 2, 3)'],
+    issues: ['unknown head "Set"'],
+  },
+  {
+    latex: '\\operatorname{sign}(x)',
+    expectedIR: ['Sign', 'x'],
+    expectedPython: ['x = sp.Symbol("x")', 'sp.sign(x)'],
+  },
+  {
+    // One-sided limits carry a direction arg (±1) — previously the
+    // direction landed as the limit point: limit(f, 0, 1).
+    latex: '\\lim_{x \\to 0^{+}} \\frac{1}{x}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      "sp.limit(1 / x, x, 0, dir='+')",
+    ],
+  },
+  {
+    latex: '\\lim_{x \\to 0^{-}} \\frac{1}{x}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      "sp.limit(1 / x, x, 0, dir='-')",
+    ],
   },
 ];
 
@@ -487,6 +589,33 @@ describe('error messages + resilient emission', () => {
     const { lines } = compile('x +');
     expect(lines.join('\n')).not.toContain('Error');
     expect(lines.join('\n')).not.toContain('None');
+  });
+
+  it('a \\sum or \\prod with missing bounds names the gap — SymPy has no boundless form', () => {
+    expect(compile('\\sum i').issues).toContain(
+      'sum needs an index and bounds — write \\sum_{i=1}^{n}',
+    );
+    expect(compile('\\prod k').issues).toContain(
+      'product needs an index and bounds',
+    );
+    expect(compile('\\sum_{i=1}^{ }i').issues).toContain(
+      'upper bound is empty — fill it in or delete it',
+    );
+    expect(compile('\\sum_{i= }^{n}i').issues).toContain(
+      'lower bound is empty — fill it in or delete it',
+    );
+    // Previously these emitted Sum(i) / Sum(i, i) — every non-tuple
+    // shape raises ValueError at eval time.
+    expect(compile('\\sum i').lines.join('\n')).not.toContain('summation');
+  });
+
+  it('under-arity builtins say how many args they need', () => {
+    for (const [latex, frag] of [
+      ['\\gcd(10)', 'gcd needs at least 2 arguments'],
+      ['\\mathrm{lcm}(4)', 'lcm needs at least 2 arguments'],
+    ] as const) {
+      expect(compile(latex).issues).toContain(frag);
+    }
   });
 });
 
