@@ -18,7 +18,6 @@ declare function loadPyodide(opts: {
 interface PyodideLike {
   loadPackage(pkgs: string | string[]): Promise<void>;
   runPythonAsync(code: string): Promise<unknown>;
-  globals: { set(name: string, value: unknown): void };
 }
 
 interface CalcStatementMsg {
@@ -143,8 +142,10 @@ scope.onmessage = (e) => {
   const { id, program } = e.data;
   void ensureEngine()
     .then(async (py) => {
-      py.globals.set('__mc_prog', JSON.stringify(program));
-      const json = await py.runPythonAsync('mc_run(__mc_prog)');
+      // The program travels inside the python source as a quoted literal —
+      // a shared globals slot would race when evals overlap.
+      const call = `mc_run(${JSON.stringify(JSON.stringify(program))})`;
+      const json = await py.runPythonAsync(call);
       scope.postMessage({ id, ok: true, rows: JSON.parse(json as string) });
     })
     .catch((err: unknown) => {

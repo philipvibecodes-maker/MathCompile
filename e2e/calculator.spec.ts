@@ -3,7 +3,7 @@ import { clearFirstCell } from './helpers';
 
 // The calculator target evaluates each cell through SymPy on Pyodide
 // (loaded from the CDN on first use). First engine boot pulls the wasm
-// runtime + sympy + antlr wheels, so specs get a long timeout.
+// runtime + sympy wheels, so specs get a long timeout.
 
 const cell = (page: import('@playwright/test').Page, i: number) =>
   page.locator('math-field').nth(i);
@@ -87,6 +87,37 @@ test('calculator shows an instant nerdamer result while SymPy boots', async ({
     timeout: 90_000,
   });
   await expect(page.locator('.calc-row').first()).toContainText('4');
+});
+
+test('reload evaluates each persisted cell to its own result', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  // All cells eval in parallel on reload — each must get its own rows
+  // back (a shared python global once handed every cell the last
+  // program's results).
+  await cell(page, 0).pressSequentially('2+2', { delay: 40 });
+  await page.locator('.add-expr').click();
+  await cell(page, 1).pressSequentially('9+9', { delay: 40 });
+  await page.waitForFunction(() =>
+    localStorage.getItem('mathcompile-cells')?.includes('9+9'),
+  );
+  await setTarget(page, 'calculator');
+  await page.waitForFunction(() =>
+    localStorage.getItem('mathcompile-prefs')?.includes('calculator'),
+  );
+
+  await page.reload();
+  await page.waitForSelector('math-field');
+
+  const exprRows = page.locator('.expr-row');
+  await expect(
+    exprRows.nth(0).locator('.calc-row').first(),
+  ).toContainText('4', { timeout: 90_000 });
+  await expect(
+    exprRows.nth(1).locator('.calc-row').first(),
+  ).toContainText('18', { timeout: 90_000 });
 });
 
 test('show code toggle reveals highlighted SymPy code under the result', async ({
