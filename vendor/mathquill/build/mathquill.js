@@ -9611,7 +9611,9 @@ var __assign = (this && this.__assign) || function () {
         };
         Bracket.prototype.getSymbol = function (side) {
             var ch = this.sides[side || R].ch;
-            return SVG_SYMBOLS[ch] || { width: '0', html: '' };
+            // a delimiter with no glyph (the invisible `\left.`/`\right.` null
+            // delimiter) renders as a zero-width span
+            return SVG_SYMBOLS[ch] || { width: '0', html: function () { return h.text(''); } };
         };
         Bracket.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
@@ -9861,7 +9863,8 @@ var __assign = (this && this.__assign) || function () {
     var BRACKET_NAMES = {
         '&lang;': 'angle-bracket',
         '&rang;': 'angle-bracket',
-        '|': 'pipe'
+        '|': 'pipe',
+        '.': 'null-delimiter'
     };
     function bindCharBracketPair(open, ctrlSeq, name) {
         var ctrlSeq = ctrlSeq || open;
@@ -9897,7 +9900,7 @@ var __assign = (this && this.__assign) || function () {
             var string = Parser.string;
             var optWhitespace = Parser.optWhitespace;
             return optWhitespace
-                .then(regex(/^(?:[([|]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z]))/))
+                .then(regex(/^(?:[([|.]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z])|\\\|)/))
                 .then(function (ctrlSeq) {
                 var open = ctrlSeq.replace(/^\\/, '');
                 if (ctrlSeq == '\\langle') {
@@ -9908,10 +9911,13 @@ var __assign = (this && this.__assign) || function () {
                     open = '&#8741;';
                     ctrlSeq = ctrlSeq + ' ';
                 }
+                if (ctrlSeq == '\\|') {
+                    open = '&#8741;';
+                }
                 return latexMathParser.then(function (block) {
                     return string('\\right')
                         .skip(optWhitespace)
-                        .then(regex(/^(?:[\])|]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z]))/))
+                        .then(regex(/^(?:[\])|.]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z])|\\\|)/))
                         .map(function (end) {
                         var close = end.replace(/^\\/, '');
                         if (end == '\\rangle') {
@@ -9921,6 +9927,9 @@ var __assign = (this && this.__assign) || function () {
                         if (end == '\\rVert') {
                             close = '&#8741;';
                             end = end + ' ';
+                        }
+                        if (end == '\\|') {
+                            close = '&#8741;';
                         }
                         var cmd = new Bracket(0, open, close, ctrlSeq, end);
                         cmd.blocks = [block];
