@@ -1,6 +1,6 @@
 export const TARGETS = [
   { id: 'latex', label: 'LaTeX', enabled: true },
-  { id: 'python', label: 'Python', enabled: false },
+  { id: 'python', label: 'Python', enabled: true },
   { id: 'javascript', label: 'JavaScript', enabled: false },
   { id: 'glsl', label: 'GLSL', enabled: false },
   { id: 'c', label: 'C', enabled: false },

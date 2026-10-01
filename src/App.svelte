@@ -5,19 +5,36 @@
   import type { TargetId } from './targets';
   import CommandPalette from './components/CommandPalette.svelte';
   import HowToGuide from './components/HowToGuide.svelte';
+  import OutputPanel from './components/OutputPanel.svelte';
   import { appStore, THEME_STORAGE_KEY } from './appState.svelte.ts';
   import { savePrefs } from './persistence';
   import { displayLatex, outputLatex } from './latex';
   import { buildCommands } from './commands.ts';
   import { installGlobalKeymap } from './editor/keymap';
+  import { compileWorksheet } from './codegen.ts';
 
   const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent);
   let commands = $derived(buildCommands(appStore));
+
+  // The latex target bypasses the compile pipeline (per-cell displayLatex);
+  // every codegen target compiles the whole worksheet.
+  let compiled = $derived(
+    appStore.target === 'latex'
+      ? null
+      : compileWorksheet(appStore.cells, appStore.target),
+  );
 
   let copiedId = $state<number | null>(null);
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
   function copyLatex(cell: { id: number; latex: string }) {
     navigator.clipboard.writeText(outputLatex(cell.latex));
+    copiedId = cell.id;
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (copiedId = null), 1200);
+  }
+
+  function copyCode(cell: { id: number }, i: number) {
+    navigator.clipboard.writeText(compiled?.cellLines[i]?.join('\n') ?? '');
     copiedId = cell.id;
     clearTimeout(copiedTimer);
     copiedTimer = setTimeout(() => (copiedId = null), 1200);
@@ -186,6 +203,19 @@
                   >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
                 >
               </div>
+            {:else if appStore.target === 'python'}
+              <div class="cell-output cell-code">
+                <code class="cell-python"
+                  >{compiled?.cellLines[i]?.join('\n') ?? ''}</code
+                >
+                <button
+                  class="cell-copy"
+                  title="Copy code"
+                  disabled={!compiled?.cellLines[i]?.length}
+                  onclick={() => copyCode(cell, i)}
+                  >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
+                >
+              </div>
             {/if}
             <button
               class="expr-delete"
@@ -199,6 +229,13 @@
       <button class="add-expr" onclick={() => appStore.addCell()}>
         + Add expression
       </button>
+      {#if compiled}
+        <OutputPanel
+          result={compiled}
+          cells={appStore.cells}
+          label="Python (SymPy)"
+        />
+      {/if}
       <HowToGuide />
     </section>
   </div>

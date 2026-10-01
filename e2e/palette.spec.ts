@@ -44,10 +44,10 @@ test('running a command by fuzzy match changes the target', async ({
   page,
 }) => {
   await page.keyboard.press('Control+k');
-  await page.locator('.palette-input').pressSequentially('target glsl');
+  await page.locator('.palette-input').pressSequentially('target python');
   await page.keyboard.press('Enter');
   await expect(page.locator('.palette')).not.toBeVisible();
-  await expect(page.locator('.target-select select')).toHaveValue('glsl');
+  await expect(page.locator('.target-select select')).toHaveValue('python');
 });
 
 test('insert expression below adds a focused cell', async ({ page }) => {
@@ -90,8 +90,9 @@ test('clicking the backdrop closes the palette', async ({ page }) => {
 
 test('empty query lists every command', async ({ page }) => {
   await page.keyboard.press('Control+k');
-  // 7 fixed commands + 5 targets + 1 goto per cell (single cell here).
-  await expect(page.locator('.cmd-item')).toHaveCount(13);
+  // 6 fixed commands + 2 enabled targets + 1 goto per cell (single cell
+  // here).
+  await expect(page.locator('.cmd-item')).toHaveCount(9);
 });
 
 test('a query matching nothing shows the empty state', async ({ page }) => {
@@ -121,26 +122,26 @@ test('arrow keys move the selection and Enter runs the highlighted command', asy
 }) => {
   await page.keyboard.press('Control+k');
   await page.locator('.palette-input').pressSequentially('target');
-  // 'target' scores identically per command; the shorter-text tiebreak wins,
-  // so the order is C, GLSL, Python, JavaScript.
+  // 'target' scores identically per command; the shorter-text tiebreak
+  // wins, so the (enabled-targets-only) order is LaTeX, Python.
   const titles = page.locator('.cmd-item .cmd-title');
-  await expect(titles.first()).toHaveText('Target: C');
+  await expect(titles.first()).toHaveText('Target: LaTeX');
   await page.keyboard.press('ArrowDown');
   await expect(page.locator('.cmd-item').nth(1)).toHaveClass(/selected/);
-  await expect(titles.nth(1)).toHaveText('Target: GLSL');
+  await expect(titles.nth(1)).toHaveText('Target: Python');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.target-select select')).toHaveValue('glsl');
+  await expect(page.locator('.target-select select')).toHaveValue('python');
 });
 
 test('hovering selects an item and clicking runs it', async ({ page }) => {
   await page.keyboard.press('Control+k');
-  await page.locator('.palette-input').pressSequentially('target c');
-  const item = page.locator('.cmd-item', { hasText: 'Target: C' });
+  await page.locator('.palette-input').pressSequentially('target python');
+  const item = page.locator('.cmd-item', { hasText: 'Target: Python' });
   await item.hover();
   await expect(item).toHaveClass(/selected/);
   await item.click();
   await expect(page.locator('.palette')).not.toBeVisible();
-  await expect(page.locator('.target-select select')).toHaveValue('c');
+  await expect(page.locator('.target-select select')).toHaveValue('python');
 });
 
 test('the active option is marked current', async ({ page }) => {

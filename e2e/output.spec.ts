@@ -22,7 +22,7 @@ test.beforeEach(async ({ page }) => {
   await clearFirstCell(page);
 });
 
-test('there is no output panel', async ({ page }) => {
+test('there is no output panel for the latex target', async ({ page }) => {
   await expect(page.locator('.output-panel')).toHaveCount(0);
 });
 
@@ -48,7 +48,7 @@ test('output select sits above the output column', async ({ page }) => {
   await expect(colHead).toContainText('Output');
 });
 
-test('target select offers all codegen targets, non-latex disabled', async ({
+test('target select offers all codegen targets, python enabled', async ({
   page,
 }) => {
   await expect(page.locator('.target-select option')).toHaveText([
@@ -66,7 +66,7 @@ test('target select offers all codegen targets, non-latex disabled', async ({
     );
   expect(disabled).toEqual([
     ['latex', false],
-    ['python', true],
+    ['python', false],
     ['javascript', true],
     ['glsl', true],
     ['c', true],
@@ -115,9 +115,34 @@ test('latex target shows per-cell output with a copy button', async ({
   await expect(copy).toHaveText('Copied');
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('x+1');
 
-  // Other targets hide the per-cell output.
+  // The python target swaps the per-cell output for generated code.
   await setTarget(page, 'python');
-  await expect(page.locator('.cell-output')).toHaveCount(0);
+  await expect(page.locator('.cell-latex')).toHaveCount(0);
+  await expect(page.locator('.cell-python').first()).toHaveText('x + 1');
+});
+
+test('python target shows per-cell code and the worksheet program', async ({
+  page,
+}) => {
+  await cell(page, 0).click();
+  await cell(page, 0).pressSequentially('a=x+1', { delay: 40 });
+  await setTarget(page, 'python');
+
+  // Per-cell statement: `a = x + 1` for this cell.
+  await expect(page.locator('.cell-python').first()).toHaveText('a = x + 1');
+
+  // The output panel shows the full SymPy program.
+  const panel = page.locator('.output-panel');
+  await expect(panel).toBeVisible();
+  const code = page.locator('.output-code');
+  await expect(code).toContainText('import sympy as sp');
+  await expect(code).toContainText("x = sp.symbols('x')");
+  await expect(code).toContainText('a = x + 1');
+
+  // Switching back to latex removes the panel and code output.
+  await setTarget(page, 'latex');
+  await expect(page.locator('.output-panel')).toHaveCount(0);
+  await expect(page.locator('.cell-python')).toHaveCount(0);
 });
 
 test('latex output shows multi-line cells as separate lines', async ({
