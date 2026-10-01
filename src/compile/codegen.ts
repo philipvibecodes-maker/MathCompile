@@ -171,6 +171,23 @@ const SETISH_HEADS = new Set([
   'Complement', 'Subset', 'SubsetEqual', 'Superset', 'SupersetEqual',
 ]);
 
+// Domain a leaf membership implies for its symbol: `x \in \mathbb{R}`
+// constructs `x = Symbol('x', real=True)` when x is first defined.
+// `kwargs` go to the Symbol constructor, `preds` are the Q-predicate
+// names for a `with assuming(...)` block (compound sets only — leaf
+// sets don't need one once the Symbol carries the assumption).
+const SET_CONSTRAINTS: Record<string, { kwargs: string[]; preds: string[] }> = {
+  RealNumbers: { kwargs: ['real=True'], preds: ['real'] },
+  ComplexNumbers: { kwargs: ['complex=True'], preds: ['complex'] },
+  RationalNumbers: { kwargs: ['rational=True'], preds: ['rational'] },
+  Integers: { kwargs: ['integer=True'], preds: ['integer'] },
+  NonNegativeIntegers: {
+    kwargs: ['integer=True', 'nonnegative=True'],
+    preds: ['integer', 'nonnegative'],
+  },
+  Primes: { kwargs: ['prime=True'], preds: ['prime'] },
+};
+
 // CE head names that exist in SymPy under a different spelling —
 // `call` resolves these to `sp.<mapped>` rather than a declared
 // worksheet function.
@@ -207,6 +224,9 @@ interface Scope {
   symbols: Map<string, string>;
   /** Names used as functions (f'(x), Apply callees) -> sp.Function lines. */
   functions: Map<string, string>;
+  /** Symbol kwargs inferred from memberships (`x \in \mathbb{R}` ->
+   * `real=True`) applied to this cell's Symbol def lines. */
+  assumptions: Map<string, Set<string>>;
   issues: Issue[];
   /** Unprefixed issues bucketed per cell (parallel to the inputs). */
   cellIssues: Issue[][];
@@ -306,6 +326,59 @@ class Emitter {
     if (typeof node === 'object' && node !== null && 'num' in node)
       return String((node as { num: unknown }).num).startsWith('-');
     return false;
+  }
+
+  /** Domain constraints a set operand implies for a member symbol.
+   * `assuming` marks memberships that need a `with assuming(...)` block
+   * (the member's domain can't be expressed by the set itself). */
+  private constraintsFor(set: MathJson | undefined): {
+    kwargs: string[];
+    preds: string[];
+    assuming: boolean;
+  } | null {
+    if (isStr(set)) {
+      const c = SET_CONSTRAINTS[set];
+      return c ? { ...c, assuming: false } : null;
+    }
+    // A real interval constrains its members to the reals.
+    if (isHead(set, 'Interval'))
+      return { kwargs: ['real=True'], preds: ['real'], assuming: true };
+    return null;
+  }
+
+  /** Record membership-derived Symbol kwargs for a first-referenced
+   * name (`x \in \mathbb{R}` before any def -> `real=True`). */
+  private assumeFrom(member: MathJson, set: MathJson): void {
+    if (
+      !isStr(member) ||
+      this.scope.defined.has(member) ||
+      this.scope.bound.has(member)
+    )
+      return;
+    const c = this.constraintsFor(set);
+    if (!c) return;
+    const acc = this.scope.assumptions.get(member) ?? new Set<string>();
+    for (const k of c.kwargs) acc.add(k);
+    this.scope.assumptions.set(member, acc);
+  }
+
+  /** `with ...assuming(...):` header for compound memberships like
+   * `x \in (a,b]`, or null when the statement emits flat. */
+  assumingWrap(node: MathJson): string | null {
+    if (!isArr(node) || headOf(node) !== 'Element' || node.length < 3)
+      return null;
+    const [member, set] = [node[1], node[2]];
+    if (!isStr(member)) return null;
+    const c = this.constraintsFor(set);
+    if (!c?.assuming) return null;
+    const ident =
+      this.scope.bound.has(member) || this.scope.defined.has(member)
+        ? pyIdent(member)
+        : (this.scope.symbols.get(member) ?? pyIdent(member));
+    const preds = c.preds.map((p) => `${this.sp}Q.${p}(${ident})`);
+    const joined =
+      preds.length === 1 ? preds[0] : preds.map((p) => `(${p})`).join(' & ');
+    return `with ${this.sp}assuming(${joined}):`;
   }
 
   /** Is this node guaranteed to emit a SymPy Set? Gates Contains/Union/
@@ -533,8 +606,12 @@ class Emitter {
       case 'Element': {
         // x \in S — sp.Contains requires a real Set (a bare Symbol raises
         // TypeError), so map only when the operand is provably set-like;
-        // otherwise keep the readable Element(...) stub + flag.
+        // otherwise keep the readable Element(...) stub + flag. A
+        // first-referenced member also picks up the set's domain as
+        // Symbol kwargs (\mathbb{R} -> real=True); \notin asserts the
+        // opposite, so NotElement intentionally skips this.
         if (!this.isSetish(args[1])) return this.unknownCall(h, args);
+        this.assumeFrom(args[0], args[1]);
         return [
           `${this.sp}Contains(${this.emit(args[0])}, ${this.emit(args[1])})`,
           PREC_ATOM,
@@ -1035,16 +1112,24 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   // `sp.symbols('a b')` call whose string must not contain quotes or
   // punctuation. Anything needing mangling (a_0', {abc}, ? names) gets an
   // individual `sp.Symbol("raw name")` def where JSON quoting is safe.
-  const simple = newSyms.filter(([raw, ident]) => raw === ident);
-  const fancy = newSyms.filter(([raw, ident]) => raw !== ident);
+  const simple = newSyms.filter(
+    ([raw, ident]) => raw === ident && !scope.assumptions.has(raw),
+  );
+  const fancy = newSyms.filter(
+    ([raw, ident]) => raw !== ident || scope.assumptions.has(raw),
+  );
   if (simple.length === 1)
     defs.push(`${simple[0][1]} = ${sp}Symbol(${JSON.stringify(simple[0][0])})`);
   else if (simple.length > 1)
     defs.push(
       `${simple.map(([, ident]) => ident).join(', ')} = ${sp}symbols('${simple.map(([raw]) => raw).join(' ')}')`,
     );
-  for (const [raw, ident] of fancy)
-    defs.push(`${ident} = ${sp}Symbol(${JSON.stringify(raw)})`);
+  for (const [raw, ident] of fancy) {
+    const kw = scope.assumptions.get(raw);
+    defs.push(
+      `${ident} = ${sp}Symbol(${JSON.stringify(raw)}${kw?.size ? `, ${[...kw].join(', ')}` : ''})`,
+    );
+  }
   for (const [raw, ident] of newFns)
     defs.push(`${ident} = ${sp}Function(${JSON.stringify(raw)})`);
 
@@ -1066,15 +1151,21 @@ function cellStatements(ir: MathJson | undefined, scope: Scope): string[] {
 // Emit a single expression statement, dropping it when emission flagged
 // an error — a broken statement produces `sp.Error(...)`/`None` fragments
 // that just repeat what the issues list already says.
-function emitExprStatement(node: MathJson, emitter: Emitter): string[] {
+function emitExprStatement(node: MathJson, emitter: Emitter): StatementOut {
   const before = emitter.scope.errorCount;
   const line = emitter.emit(node);
-  return emitter.scope.errorCount === before ? [line] : [];
+  if (emitter.scope.errorCount !== before) return { lines: [] };
+  // Compound memberships (`x \in (a,b]`) emit inside `with assuming(...)`
+  // so Contains sees the member's implied domain; the membership itself
+  // stays the row's display expression.
+  const wrap = emitter.assumingWrap(node);
+  if (wrap) return { lines: [wrap, `    ${line}`], display: line };
+  return { lines: [line] };
 }
 
 function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
   const sp = emitter.scope.qualified ? 'sp.' : '';
-  if (!isArr(node)) return { lines: emitExprStatement(node, emitter) };
+  if (!isArr(node)) return emitExprStatement(node, emitter);
   const h = headOf(node);
   if (h === 'Assign') {
     // RHS emits first so `x = x + 1` collects x as a symbol; the Assign
@@ -1122,7 +1213,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     return {
       lines: node.slice(1).flatMap((s) => emitStatement(s, emitter).lines),
     };
-  return { lines: emitExprStatement(node, emitter) };
+  return emitExprStatement(node, emitter);
 }
 
 // Walk normalized IR for heads that only lower to Python.
@@ -1267,6 +1358,7 @@ function buildScope(
     cell,
     errorCount: 0,
     constNames: new Set(),
+    assumptions: new Map(),
     flag(severity, message) {
       if (severity === 'error') this.errorCount += 1;
       this.issues.push({

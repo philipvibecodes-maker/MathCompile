@@ -542,9 +542,61 @@ const FIXTURES: {
   {
     // \in maps to sp.Contains only when the operand is provably a Set —
     // a bare symbol S keeps the flagged Element(...) stub because
-    // sp.Contains raises TypeError on it.
+    // sp.Contains raises TypeError on it. A first-referenced member
+    // also carries the set's domain on its Symbol constructor.
     latex: 'x \\in \\mathbb{R}',
-    expectedPython: ['x = sp.Symbol("x")', 'sp.Contains(x, sp.S.Reals)'],
+    expectedPython: [
+      'x = sp.Symbol("x", real=True)',
+      'sp.Contains(x, sp.S.Reals)',
+    ],
+  },
+  {
+    // Each standard number set contributes the fullest Symbol kwargs
+    // the constructor allows.
+    latex: 'x \\in \\mathbb{Z}',
+    expectedPython: [
+      'x = sp.Symbol("x", integer=True)',
+      'sp.Contains(x, sp.S.Integers)',
+    ],
+  },
+  {
+    latex: 'x \\in \\mathbb{N}',
+    expectedPython: [
+      'x = sp.Symbol("x", integer=True, nonnegative=True)',
+      'sp.Contains(x, sp.S.Naturals0)',
+    ],
+  },
+  {
+    // Interval membership implies the real domain too — first-referenced
+    // symbols get real=True, and the membership emits inside a
+    // `with assuming(Q.real(x)):` block since the interval itself
+    // can't carry the member's assumption.
+    latex: 'x \\in (a,b]',
+    expectedPython: [
+      "a, b = sp.symbols('a b')",
+      'x = sp.Symbol("x", real=True)',
+      'with sp.assuming(sp.Q.real(x)):',
+      '    sp.Contains(x, sp.Interval(a, b, left_open=True))',
+    ],
+  },
+  {
+    // A member already bound (Assign) is not first-referenced — no
+    // Symbol kwargs, but the interval membership still assumes real.
+    latex: '\\displaylines{ x = 1 \\\\ x \\in (0,2] }',
+    expectedPython: [
+      'x = 1',
+      'with sp.assuming(sp.Q.real(x)):',
+      '    sp.Contains(x, sp.Interval(0, 2, left_open=True))',
+    ],
+  },
+  {
+    // \notin asserts the opposite domain — no Symbol kwargs and no
+    // assuming block, only the negated Contains.
+    latex: 'x \\notin \\mathbb{R}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.Not(sp.Contains(x, sp.S.Reals))',
+    ],
   },
   {
     latex: 'x \\in S',
