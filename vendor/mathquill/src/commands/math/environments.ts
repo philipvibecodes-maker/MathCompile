@@ -707,6 +707,47 @@ class DisplayLines extends CellGrid {
 Environments.displaylines = () => new DisplayLines();
 LatexCmds.displaylines = () => withBraces(new DisplayLines());
 LatexCmds.pmatrix = () => withBraces(new PMatrix());
+
+// \begin{gathered}: a single-column grid, like displaylines but
+// \end-bounded.
+class Gathered extends DisplayLines {
+  latexOpen() {
+    return '\\begin{gathered}';
+  }
+  latexClose() {
+    return '\\end{gathered}';
+  }
+}
+Environments.gathered = () => new Gathered();
+Environments.Gathered = () => new Gathered();
+
+// \begin{aligned}: a two-column (or repeating two-column) grid —
+// parsed like matrix; cell alignment alternates right/left via CSS.
+class Aligned extends CellGrid {
+  gridClass = 'mq-aligned mq-non-leaf';
+  cellTextAlign = 'left';
+  latexOpen() {
+    return '\\begin{aligned}';
+  }
+  latexClose() {
+    return '\\end{aligned}';
+  }
+}
+Environments.aligned = () => new Aligned();
+Environments.alignat = () => new Aligned();
+
+// \substack{i=1\\ j=2}: a braced single-column stack used as a bound.
+class Substack extends DisplayLines {
+  gridClass = 'mq-substack mq-non-leaf';
+  cellTextAlign = 'center';
+  latexOpen() {
+    return '\\substack{';
+  }
+  latexClose() {
+    return '}';
+  }
+}
+LatexCmds.substack = () => withBraces(new Substack());
 LatexCmds.bmatrix = () => withBraces(new BMatrix());
 LatexCmds.Bmatrix = () => withBraces(new BBMatrix());
 LatexCmds.vmatrix = () => withBraces(new VMatrix());

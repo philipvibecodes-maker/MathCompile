@@ -234,6 +234,111 @@ suite('latex', function () {
     assertParsesLatex('\\lnot p', '\\neg p');
   });
 
+  test('\\big-sized delimiters and \\middle', function () {
+    assertParsesLatex('\\bigl(x\\bigr)', '\\bigl(x\\bigr)');
+    assertParsesLatex(
+      '\\Bigl[\\frac{1}{2}\\Bigr]',
+      '\\Bigl[\\frac{1}{2}\\Bigr]'
+    );
+    assertParsesLatex('\\big|x\\big|', '\\big|x\\big|');
+    assertParsesLatex('\\bigl.', '\\bigl.');
+    assertParsesLatex(
+      '\\left(x\\middle|y\\right)',
+      '\\left(x\\middle|y\\right)'
+    );
+    // letter-name delimiters keep a separating space so the emitted
+    // text re-parses (\langlex would glue into an unknown command)
+    assertParsesLatex(
+      '\\big\\langle a,b\\big\\rangle',
+      '\\big\\langle a,b\\big\\rangle'
+    );
+  });
+
+  test('\\mathbb accepts any capital or digit', function () {
+    assertParsesLatex('\\mathbb{R}', '\\mathbb{R}');
+    assertParsesLatex('\\mathbb{F}', '\\mathbb{F}');
+    assertParsesLatex('\\mathbb{A}', '\\mathbb{A}');
+    assertParsesLatex('\\mathbb{1}', '\\mathbb{1}');
+    assertParsesLatex('\\mathds{F}', '\\mathbb{F}');
+  });
+
+  test('named spacing, hspace, phantom, invisible wrappers', function () {
+    assertParsesLatex('x\\thinspace y', 'x\\thinspace y');
+    assertParsesLatex('x\\enspace y', 'x\\enspace y');
+    assertParsesLatex('x\\negthickspace y', 'x\\negthickspace y');
+    assertParsesLatex('a\\hspace{1em}b', 'a\\hspace{1em}b');
+    assertParsesLatex('a\\mspace{5mu}b', 'a\\mspace{5mu}b');
+    assertParsesLatex('x\\phantom{y}z', 'x\\phantom{y}z');
+    assertParsesLatex('\\vphantom{x}', '\\vphantom{x}');
+    assertParsesLatex('x\\mathrel{=}y', 'x\\mathrel{=}y');
+    assertParsesLatex('\\mathnormal{x}', '\\mathnormal{x}');
+    assertParsesLatex('x\\tag{1}', 'x\\tag{1}');
+    assertParsesLatex('x\\notag', 'x\\notag');
+  });
+
+  test('under/overbrace, xarrows, cancel, accents', function () {
+    assertParsesLatex(
+      '\\underbrace{x+y}_{n}',
+      '\\underbrace{x+y}_{n}'
+    );
+    assertParsesLatex(
+      '\\overbrace{x+y}^{n}',
+      '\\overbrace{x+y}^{n}'
+    );
+    assertParsesLatex('\\widehat{xy}', '\\widehat{xy}');
+    assertParsesLatex('\\widetilde{xy}', '\\widetilde{xy}');
+    assertParsesLatex('\\xrightarrow{a}', '\\xrightarrow{a}');
+    assertParsesLatex('\\xmapsto{a}', '\\xmapsto{a}');
+    assertParsesLatex('\\cancel{x}', '\\cancel{x}');
+    assertParsesLatex('\\bcancel{x}', '\\bcancel{x}');
+    assertParsesLatex('\\v{s}', '\\v{s}');
+    assertParsesLatex('\\r{a}', '\\r{a}');
+    assertParsesLatex('\\c{c}', '\\c{c}');
+    assertParsesLatex('\\d{u}', '\\d{u}');
+  });
+
+  test('grid environments: gathered, aligned, substack, line break', function () {
+    assertParsesLatex(
+      '\\begin{gathered}a\\\\b\\end{gathered}',
+      '\\begin{gathered}a\\\\ b\\end{gathered}'
+    );
+    assertParsesLatex(
+      '\\begin{aligned}a&=b\\\\c&=d\\end{aligned}',
+      '\\begin{aligned}a&=b\\\\ c&=d\\end{aligned}'
+    );
+    assertParsesLatex(
+      '\\substack{i=1\\\\j=2}',
+      '\\substack{i=1\\\\ j=2}'
+    );
+    // bare \\ outside a grid parses as a line break and re-parses
+    assertParsesLatex('x\\\\y', 'x\\\\y');
+  });
+
+  test('more relations and symbols parse', function () {
+    assertParsesLatex('x\\subsetneq y', 'x\\subsetneq y');
+    assertParsesLatex('x\\subsetneqq y', 'x\\subsetneqq y');
+    assertParsesLatex('x\\lesssim y', 'x\\lesssim y');
+    assertParsesLatex('x\\precsim y', 'x\\precsim y');
+    assertParsesLatex('x\\approxeq y', 'x\\approxeq y');
+    assertParsesLatex('x\\doteqdot y', 'x\\doteqdot y');
+    assertParsesLatex('x\\eqcirc y', 'x\\eqcirc y');
+    assertParsesLatex('x\\triangleq y', 'x\\triangleq y');
+    assertParsesLatex('x\\vDash y', 'x\\vDash y');
+    assertParsesLatex('x\\Vvdash y', 'x\\Vvdash y');
+    assertParsesLatex('x\\coloneqq y', 'x\\coloneqq y');
+    assertParsesLatex('x\\complement', 'x\\complement');
+    assertParsesLatex('\\sphericalangle', '\\sphericalangle');
+    assertParsesLatex('\\imath', '\\imath');
+    assertParsesLatex('\\beth', '\\beth');
+    assertParsesLatex('\\Finv', '\\Finv');
+    assertParsesLatex('\\backepsilon x', '\\backepsilon x');
+    assertParsesLatex('\\LaTeX', '\\LaTeX');
+    assertParsesLatex('\\S', '\\S');
+    assertParsesLatex('\\yen', '\\yen');
+    assertParsesLatex('\\euro', '\\euro');
+    assertParsesLatex('a\\not\\sim b', 'a\\nsim b');
+  });
+
   test('\\operatorname* consumes the star', function () {
     assertParsesLatex('\\operatorname{tr}(A)', 'tr(A)');
     assertParsesLatex('\\operatorname*{argmin}_{x}', '\\arg\\min_{x}');

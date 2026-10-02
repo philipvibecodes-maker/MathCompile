@@ -1453,6 +1453,162 @@ LatexCmds.ddot = () =>
 LatexCmds.dddot = () =>
   new DiacriticAbove('\\dddot', h.text('...'), ['dddot(', ')']);
 
+class DiacriticBelow extends MathCommand {
+  constructor(ctrlSeq: string, html: ChildNode, textTemplate?: string[]) {
+    var domView = new DOMView(1, (blocks) =>
+      h('span', { class: 'mq-non-leaf' }, [
+        h.block('span', { class: 'mq-diacritic-stem' }, blocks[0]),
+        h('span', { class: 'mq-diacritic-below' }, [html])
+      ])
+    );
+    super(ctrlSeq, domView, textTemplate);
+  }
+}
+
+// \underbrace{x+y}_{n} / \overbrace — a 1-block command with a brace
+// drawn under/over; a following _ or ^ block grows an ordinary sibling
+// SupSub so the bound round-trips verbatim.
+class UnderOverBrace extends MathCommand {
+  constructor(ctrlSeq: string, below: boolean) {
+    super();
+    this.ctrlSeq = ctrlSeq;
+    var mark = h('span', { class: 'mq-underbrace-arc' }, [
+      h.text(below ? '⏟' : '⏞')
+    ]);
+    this.domView = new DOMView(1, (blocks) =>
+      h('span', { class: 'mq-non-leaf mq-underoverbrace' }, below
+        ? [h.block('span', {}, blocks[0]), mark]
+        : [mark, h.block('span', {}, blocks[0])]
+      )
+    );
+  }
+}
+LatexCmds.underbrace = () => new UnderOverBrace('\\underbrace', true);
+LatexCmds.overbrace = () => new UnderOverBrace('\\overbrace', false);
+
+// \xrightarrow{label} / \xleftarrow / \xmapsto — a small label over an
+// extensible-looking arrow; the arrow is a fixed glyph.
+function bindArrowLabelCmd(ctrlSeq: string, arrow: string) {
+  return () =>
+    new MathCommand(
+      ctrlSeq,
+      new DOMView(1, (blocks) =>
+        h('span', { class: 'mq-non-leaf mq-overunderset' }, [
+          h.block('span', { class: 'mq-overscript' }, blocks[0]),
+          h('span', { class: 'mq-xarrow' }, [h.text(arrow)])
+        ])
+      )
+    );
+}
+LatexCmds.xrightarrow = bindArrowLabelCmd('\\xrightarrow', '⟶');
+LatexCmds.xleftarrow = bindArrowLabelCmd('\\xleftarrow', '⟵');
+LatexCmds.xmapsto = bindArrowLabelCmd('\\xmapsto', '⟼');
+
+// \cancel \bcancel \xcancel — struck-through content.
+function bindCancelCmd(ctrlSeq: string, cls: string) {
+  return () =>
+    new MathCommand(
+      ctrlSeq,
+      new DOMView(1, (blocks) =>
+        h('span', { class: 'mq-non-leaf mq-cancel ' + cls }, [
+          h.block('span', {}, blocks[0])
+        ])
+      )
+    );
+}
+LatexCmds.cancel = bindCancelCmd('\\cancel', 'mq-cancel-forward');
+LatexCmds.bcancel = bindCancelCmd('\\bcancel', 'mq-cancel-back');
+LatexCmds.xcancel = bindCancelCmd('\\xcancel', 'mq-cancel-both');
+
+// \big \Big \bigg \Bigg sized delimiters (with optional l/r/m suffix)
+// and \middle — a sized-delimiter prefix consumes the following
+// delimiter token and renders that glyph, keeping the prefix in the
+// ctrlSeq so `\bigl(` serializes verbatim.
+var DELIM_GLYPHS: { [token: string]: string } = {
+  '(': '(',
+  ')': ')',
+  '[': '[',
+  ']': ']',
+  '{': '{',
+  '}': '}',
+  '|': '|',
+  '<': '⟨',
+  '>': '⟩',
+  '/': '/',
+  '.': '',
+  '\\{': '{',
+  '\\}': '}',
+  '\\|': '‖',
+  '\\langle': '⟨',
+  '\\rangle': '⟩',
+  '\\lVert': '‖',
+  '\\rVert': '‖',
+  '\\lceil': '⌈',
+  '\\rceil': '⌉',
+  '\\lfloor': '⌊',
+  '\\rfloor': '⌋',
+  '\\backslash': '\\',
+  '\\ulcorner': '⌜',
+  '\\urcorner': '⌝',
+  '\\llcorner': '⌞',
+  '\\lrcorner': '⌟',
+  '\\uparrow': '↑',
+  '\\downarrow': '↓',
+  '\\updownarrow': '↕',
+  '\\Uparrow': '⇑',
+  '\\Downarrow': '⇓',
+  '\\Updownarrow': '⇕'
+};
+
+class SizedDelimiter extends MQSymbol {
+  prefix: string;
+  constructor(prefix: string) {
+    super();
+    this.prefix = prefix;
+  }
+  parser() {
+    var self = this;
+    return Parser.optWhitespace
+      .then(Parser.regex(/^(?:\\[a-zA-Z]+|\\[^a-zA-Z\s]|[.()[\]{}/|<>])/))
+      .map(function (delim) {
+        // A \langle-style delimiter needs a trailing space in the
+        // emitted ctrlSeq — otherwise `\Bigg\langle x` would serialize
+        // as `\Bigg\langlex` and glue into an unknown command.
+        self.ctrlSeq =
+          self.prefix + delim + (/^\\[a-zA-Z]+$/.test(delim) ? ' ' : '');
+        var glyph = DELIM_GLYPHS[delim];
+        if (glyph === undefined) glyph = delim.replace(/^\\/, '');
+        self.domView = new DOMView(0, () =>
+          h('span', { class: 'mq-sized-delim' }, [h.text(glyph)])
+        );
+        return self;
+      });
+  }
+}
+(function () {
+  ['big', 'Big', 'bigg', 'Bigg'].forEach(function (size) {
+    ['l', 'r', 'm', ''].forEach(function (side) {
+      LatexCmds[size + side] = function () {
+        return new SizedDelimiter('\\' + size + side);
+      };
+    });
+  });
+  LatexCmds.middle = function () {
+    return new SizedDelimiter('\\middle');
+  };
+})();
+
+// A bare \\ at any level is a hard line break — the matrix/displaylines
+// cell-grid parsers consume \\ as a row delimiter before node parsing
+// reaches it, so this only kicks in outside grids (e.g. pasting `x\\ y`).
+LatexCmds['\\'] = function () {
+  return new VanillaSymbol(
+    '\\\\',
+    h('br', {}, []) as unknown as HTMLElement,
+    'line break'
+  );
+};
+
 class DelimsNode extends MathCommand {
   delimFrags: Ends<DOMFragment>;
 

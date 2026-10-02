@@ -213,6 +213,12 @@ test('latex output round-trips fonts, negations, mod, boxed, overset', async ({
     ['x\\pmod{m}', 'x\\pmod{m}'],
     ['\\boxed{x=1}', '\\boxed{x=1}'],
     ['\\sum\\limits_{i=0}^{n}x', '\\sum\\limits_{i=0}^{n}x'],
+    ['\\bigl(x\\bigr)', '\\bigl(x\\bigr)'],
+    ['\\mathbb{F}', '\\mathbb{F}'],
+    ['\\left(x\\middle|y\\right)', '\\left(x\\middle|y\\right)'],
+    ['\\underbrace{x+y}_{n}', '\\underbrace{x+y}_{n}'],
+    ['\\begin{gathered}a\\\\b\\end{gathered}', '\\begin{gathered}a\\\\ b\\end{gathered}'],
+    ['x\\\\y', 'x\\\\y'],
   ];
   const mf = cell(page, 0);
   const out = page.locator('.cell-latex').first();

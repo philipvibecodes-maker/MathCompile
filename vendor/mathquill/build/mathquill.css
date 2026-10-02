@@ -309,6 +309,54 @@
   border-bottom: 1px solid;
   margin-bottom: 1px;
 }
+.mq-math-mode .mq-diacritic-below {
+  display: block;
+  text-align: center;
+  line-height: 0.4em;
+  font-size: 0.8em;
+}
+.mq-math-mode .mq-underoverbrace {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+}
+.mq-math-mode .mq-underbrace-arc {
+  font-size: 0.8em;
+  line-height: 0.7em;
+}
+.mq-math-mode .mq-xarrow {
+  font-size: 1.3em;
+  line-height: 0.9;
+}
+.mq-math-mode .mq-invisible {
+  visibility: hidden;
+  width: 0;
+  display: inline-block;
+  overflow: hidden;
+}
+.mq-math-mode .mq-phantom {
+  visibility: hidden;
+}
+.mq-math-mode .mq-sized-delim {
+  font-size: 1.5em;
+  line-height: 1;
+}
+.mq-math-mode .mq-substack td {
+  font-size: 0.8em;
+}
+.mq-math-mode .mq-aligned td:nth-child(odd) {
+  text-align: right;
+}
+.mq-math-mode .mq-cancel-forward {
+  background: linear-gradient(to left top, transparent 46%, currentColor 49%, transparent 52%);
+}
+.mq-math-mode .mq-cancel-back {
+  background: linear-gradient(to right top, transparent 46%, currentColor 49%, transparent 52%);
+}
+.mq-math-mode .mq-cancel-both {
+  background: linear-gradient(to left top, transparent 46%, currentColor 49%, transparent 52%), linear-gradient(to right top, transparent 46%, currentColor 49%, transparent 52%);
+}
 .mq-math-mode .mq-binary-operator {
   padding: 0 0.2em;
   display: -moz-inline-box;

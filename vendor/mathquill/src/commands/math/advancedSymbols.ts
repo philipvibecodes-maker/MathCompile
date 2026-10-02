@@ -135,6 +135,31 @@ LatexCmds['⊋'] =
     );
 
 //the canonical sets of numbers
+// Unicode codepoints for double-struck capitals without a dedicated
+// LatexCmds class (the letterlike-symbol letters C/H/N/P/Q/R/Z have
+// their own classes below). Digits use the 𝟘-𝟡 block.
+var MATHBB_GLYPHS: { [ch: string]: number } = {
+  A: 0x1d538,
+  B: 0x1d539,
+  D: 0x1d53b,
+  E: 0x1d53c,
+  F: 0x1d53d,
+  G: 0x1d53e,
+  I: 0x1d540,
+  J: 0x1d541,
+  K: 0x1d542,
+  L: 0x1d543,
+  M: 0x1d544,
+  O: 0x1d546,
+  S: 0x1d54a,
+  T: 0x1d54b,
+  U: 0x1d54c,
+  V: 0x1d54d,
+  W: 0x1d54e,
+  X: 0x1d54f,
+  Y: 0x1d550
+};
+
 LatexCmds.mathbb = class extends MathCommand {
   createLeftOf(_cursor: Cursor) {}
   numBlocks() {
@@ -147,17 +172,26 @@ LatexCmds.mathbb = class extends MathCommand {
     return optWhitespace
       .then(string('{'))
       .then(optWhitespace)
-      .then(regex(/^[NPZQRCH]/))
+      .then(regex(/^[A-Z0-9]/))
       .skip(optWhitespace)
       .skip(string('}'))
       .map(function (c) {
         // instantiate the class for the matching char
         var cmd = LatexCmds[c];
-        if (isMQNodeClass(cmd)) {
-          return new cmd();
-        } else {
-          return (cmd as MQNodeBuilderNoParam)();
+        if (cmd) {
+          if (isMQNodeClass(cmd)) {
+            return new cmd();
+          } else {
+            return (cmd as MQNodeBuilderNoParam)();
+          }
         }
+        var codepoint =
+          MATHBB_GLYPHS[c] || 0x1d7d8 + c.charCodeAt(0) - 48;
+        return new VanillaSymbol(
+          '\\mathbb{' + c + '}',
+          h.text(String.fromCodePoint(codepoint)),
+          'mathbb ' + c
+        );
       });
   }
 };
@@ -978,3 +1012,286 @@ LatexCmds['∩'] =
   LatexCmds.intersect =
   LatexCmds.intersection =
     bindBinaryOperator('\\cap ', '&cap;', 'intersection');
+
+// ===== Round-trip coverage: more commands real LaTeX emits =====
+// Each entry below previously failed parse and blanked the field.
+
+// Named spacing commands (the \, \: \; \! single-char forms are in
+// basicSymbols). Widths follow LaTeX: enspace .5em, thinspace = \,
+// medspace = \:, thickspace = \;, negative med/thick the negatives.
+function bindSpacingCmd(ctrlSeq: string, ems: number, speak: string) {
+  return () =>
+    new VanillaSymbol(
+      ctrlSeq + ' ',
+      h('span', { style: 'margin-left:' + ems + 'em' }, []),
+      speak
+    );
+}
+LatexCmds.enspace = bindSpacingCmd('\\enspace', 0.5, 'en space');
+LatexCmds.thinspace = bindSpacingCmd('\\thinspace', 0.1667, 'thin space');
+LatexCmds.medspace = bindSpacingCmd('\\medspace', 0.2222, 'medium space');
+LatexCmds.thickspace = bindSpacingCmd('\\thickspace', 0.2778, 'thick space');
+LatexCmds.negmedspace = bindSpacingCmd('\\negmedspace', -0.2222, 'negative medium space');
+LatexCmds.negthickspace = bindSpacingCmd(
+  '\\negthickspace',
+  -0.2778,
+  'negative thick space'
+);
+
+// Spacing/phantom commands that take a {size or content} block — the
+// argument is kept verbatim; rendered zero-width/invisible.
+function bindInvisibleBlockCmd(ctrlSeq: string, cls: string) {
+  return () =>
+    new MathCommand(
+      ctrlSeq,
+      new DOMView(1, (blocks) =>
+        h('span', { class: 'mq-non-leaf ' + cls }, [
+          h.block('span', {}, blocks[0])
+        ])
+      )
+    );
+}
+LatexCmds.hspace = bindInvisibleBlockCmd('\\hspace', 'mq-invisible');
+LatexCmds.mspace = bindInvisibleBlockCmd('\\mspace', 'mq-invisible');
+LatexCmds.kern = bindInvisibleBlockCmd('\\kern', 'mq-invisible');
+LatexCmds.mkern = bindInvisibleBlockCmd('\\mkern', 'mq-invisible');
+LatexCmds.phantom = bindInvisibleBlockCmd('\\phantom', 'mq-phantom');
+LatexCmds.vphantom = bindInvisibleBlockCmd('\\vphantom', 'mq-phantom');
+LatexCmds.hphantom = bindInvisibleBlockCmd('\\hphantom', 'mq-phantom');
+// equation-numbering commands — meaningless in a cell but keep the text
+LatexCmds.tag = bindInvisibleBlockCmd('\\tag', 'mq-invisible');
+LatexCmds.notag = bindStyleModifier('\\notag ', 'no tag');
+LatexCmds.nonumber = bindStyleModifier('\\nonumber ', 'no number');
+
+// \mathord/\mathbin/\mathop/\mathrel/\mathopen/\mathclose/\mathpunct/
+// \mathinner/\mathnormal — atom-type wrappers; the wrapper is kept in
+// the serialization, content passes through visually.
+function bindMathWrap(cmd: string) {
+  var ctrlSeq = '\\' + cmd;
+  LatexCmds[cmd] = () =>
+    new MathCommand(
+      ctrlSeq,
+      new DOMView(1, (blocks) =>
+        h('span', { class: 'mq-non-leaf' }, [
+          h.block('span', {}, blocks[0])
+        ])
+      )
+    );
+}
+[
+  'mathord',
+  'mathbin',
+  'mathop',
+  'mathrel',
+  'mathopen',
+  'mathclose',
+  'mathpunct',
+  'mathinner',
+  'mathnormal'
+].forEach(bindMathWrap);
+
+// Text-style accents usable in math mode: above accents \v \u \r
+// (caron, breve, ring — \r is the ring accent; \H is already \mathbb{H}
+// so the double-acute form is not registered), below accents \d \b \c.
+LatexCmds.v = () =>
+  new DiacriticAbove('\\v', h.text('ˇ'), ['check(', ')']);
+LatexCmds.u = () =>
+  new DiacriticAbove('\\u', h.text('˘'), ['breve(', ')']);
+LatexCmds.r = () => new DiacriticAbove('\\r', h.text('˚'), ['ring(', ')']);
+LatexCmds.d = () =>
+  new DiacriticBelow('\\d', h.text('&#803;'), ['dot below(', ')']);
+LatexCmds.b = () =>
+  new DiacriticBelow('\\b', h.text('&#818;'), ['bar below(', ')']);
+LatexCmds.c = () =>
+  new DiacriticBelow('\\c', h.text('¸'), ['cedilla(', ')']);
+
+LatexCmds.widehat = () =>
+  new DiacriticAbove('\\widehat', h.text('^'), ['widehat(', ')']);
+LatexCmds.widetilde = () =>
+  new DiacriticAbove('\\widetilde', h.text('~'), ['widetilde(', ')']);
+
+// Relations missing from the table.
+LatexCmds['⊊'] = LatexCmds.subsetneq = bindBinaryOperator(
+  '\\subsetneq ',
+  '&#8842;',
+  'subset of, not equal to'
+);
+LatexCmds['⊋'] = LatexCmds.supsetneq = bindBinaryOperator(
+  '\\supsetneq ',
+  '&#8843;',
+  'superset of, not equal to'
+);
+LatexCmds['⫋'] = LatexCmds.subsetneqq = bindBinaryOperator(
+  '\\subsetneqq ',
+  '&#10955;',
+  'subset of, not equal to'
+);
+LatexCmds['⫌'] = LatexCmds.supsetneqq = bindBinaryOperator(
+  '\\supsetneqq ',
+  '&#10956;',
+  'superset of, not equal to'
+);
+LatexCmds['⊊'] = LatexCmds.varsubsetneq = LatexCmds.varsubsetneqq =
+  bindBinaryOperator('\\varsubsetneq ', '&#8842;', 'subset of, not equal to');
+LatexCmds['⊋'] = LatexCmds.varsupsetneq = LatexCmds.varsupsetneqq =
+  bindBinaryOperator('\\varsupsetneq ', '&#8843;', 'superset of, not equal to');
+LatexCmds['≲'] = LatexCmds.lesssim = bindBinaryOperator(
+  '\\lesssim ',
+  '&#8818;',
+  'less than or similar'
+);
+LatexCmds['≳'] = LatexCmds.gtrsim = bindBinaryOperator(
+  '\\gtrsim ',
+  '&#8819;',
+  'greater than or similar'
+);
+LatexCmds['≾'] = LatexCmds.precsim = bindBinaryOperator(
+  '\\precsim ',
+  '&#8830;',
+  'precedes or similar'
+);
+LatexCmds['≿'] = LatexCmds.succsim = bindBinaryOperator(
+  '\\succsim ',
+  '&#8831;',
+  'succeeds or similar'
+);
+LatexCmds['≶'] = LatexCmds.lessgtr = bindBinaryOperator(
+  '\\lessgtr ',
+  '&#8822;',
+  'less than or greater than'
+);
+LatexCmds['≷'] = LatexCmds.gtrless = bindBinaryOperator(
+  '\\gtrless ',
+  '&#8823;',
+  'greater than or less than'
+);
+LatexCmds['≊'] = LatexCmds.approxeq = bindBinaryOperator(
+  '\\approxeq ',
+  '&#8778;',
+  'approximately equal to'
+);
+LatexCmds['≑'] = LatexCmds.doteqdot = LatexCmds.Doteq = bindBinaryOperator(
+  '\\doteqdot ',
+  '&#8785;',
+  'geometrically equal to'
+);
+LatexCmds['≓'] = LatexCmds.risingdotseq = bindBinaryOperator(
+  '\\risingdotseq ',
+  '&#8787;',
+  'rising dot equals'
+);
+LatexCmds['≒'] = LatexCmds.fallingdotseq = bindBinaryOperator(
+  '\\fallingdotseq ',
+  '&#8786;',
+  'falling dot equals'
+);
+LatexCmds['≖'] = LatexCmds.eqcirc = bindBinaryOperator(
+  '\\eqcirc ',
+  '&#8790;',
+  'equals with circle'
+);
+LatexCmds['≗'] = LatexCmds.circeq = bindBinaryOperator(
+  '\\circeq ',
+  '&#8791;',
+  'circled equals'
+);
+LatexCmds['≜'] = LatexCmds.triangleq = bindBinaryOperator(
+  '\\triangleq ',
+  '&#8796;',
+  'triangle equals'
+);
+LatexCmds['≎'] = LatexCmds.bumpeq = LatexCmds.Bumpeq = bindBinaryOperator(
+  '\\bumpeq ',
+  '&#8782;',
+  'bump equals'
+);
+LatexCmds['⊨'] = LatexCmds.vDash = bindBinaryOperator(
+  '\\vDash ',
+  '&#8872;',
+  'double vertical bar'
+);
+LatexCmds['⊩'] = LatexCmds.Vdash = bindBinaryOperator(
+  '\\Vdash ',
+  '&#8873;',
+  'vertical bar double bar'
+);
+LatexCmds['⊪'] = LatexCmds.Vvdash = bindBinaryOperator(
+  '\\Vvdash ',
+  '&#8874;',
+  'triple vertical bar'
+);
+LatexCmds['≔'] = LatexCmds.coloneqq = LatexCmds.colonequals =
+  LatexCmds.assign =
+    bindBinaryOperator('\\coloneqq ', '&#8788;', 'colon equals');
+LatexCmds['≕'] = LatexCmds.eqqcolon = LatexCmds.equalscolon =
+  bindBinaryOperator('\\eqqcolon ', '&#8789;', 'equals colon');
+
+// More letter/misc symbols.
+LatexCmds['ı'] = LatexCmds.imath = bindVanillaSymbol(
+  '\\imath ',
+  '&#305;',
+  'dotless i'
+);
+LatexCmds['ȷ'] = LatexCmds.jmath = bindVanillaSymbol(
+  '\\jmath ',
+  '&#567;',
+  'dotless j'
+);
+LatexCmds['ב'] = LatexCmds.beth = bindVanillaSymbol(
+  '\\beth ',
+  '&#1489;',
+  'beth'
+);
+LatexCmds['ג'] = LatexCmds.gimel = LatexCmds.gimmel = bindVanillaSymbol(
+  '\\gimel ',
+  '&#1490;',
+  'gimel'
+);
+LatexCmds['ד'] = LatexCmds.daleth = LatexCmds.dalethsym = bindVanillaSymbol(
+  '\\daleth ',
+  '&#1491;',
+  'daleth'
+);
+LatexCmds['ð'] = LatexCmds.eth = bindVanillaSymbol('\\eth ', '&eth;', 'eth');
+LatexCmds['℧'] = LatexCmds.mho = bindVanillaSymbol('\\mho ', '&#8487;', 'mho');
+LatexCmds['Ⅎ'] = LatexCmds.Finv = bindVanillaSymbol('\\Finv ', '&#8498;', 'Finv');
+LatexCmds['⅁'] = LatexCmds.Game = bindVanillaSymbol('\\Game ', '&#8513;', 'Game');
+LatexCmds['∍'] = LatexCmds.backepsilon = bindVanillaSymbol(
+  '\\backepsilon ',
+  '&#8717;',
+  'back epsilon'
+);
+LatexCmds['∁'] = LatexCmds.complement = bindVanillaSymbol(
+  '\\complement ',
+  '&#8705;',
+  'complement'
+);
+LatexCmds['∢'] = LatexCmds.sphericalangle = bindVanillaSymbol(
+  '\\sphericalangle ',
+  '&#8738;',
+  'spherical angle'
+);
+LatexCmds['§'] = LatexCmds.S = LatexCmds.sect = bindVanillaSymbol(
+  '\\S ',
+  '&sect;',
+  'section'
+);
+LatexCmds['†'] = LatexCmds.dag = LatexCmds.dagger = bindVanillaSymbol(
+  '\\dag ',
+  '&dagger;',
+  'dagger'
+);
+LatexCmds['‡'] = LatexCmds.ddag = LatexCmds.ddagger = bindVanillaSymbol(
+  '\\ddag ',
+  '&Dagger;',
+  'double dagger'
+);
+LatexCmds['©'] = LatexCmds.copyright = bindVanillaSymbol(
+  '\\copyright ',
+  '&copy;',
+  'copyright'
+);
+LatexCmds['¥'] = LatexCmds.yen = bindVanillaSymbol('\\yen ', '&yen;', 'yen');
+LatexCmds['€'] = LatexCmds.euro = bindVanillaSymbol('\\euro ', '&euro;', 'euro');
+LatexCmds.LaTeX = bindVanillaSymbol('\\LaTeX ', 'LaTeX', 'LaTeX');
+LatexCmds.TeX = bindVanillaSymbol('\\TeX ', 'TeX', 'TeX');
