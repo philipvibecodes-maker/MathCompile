@@ -10735,13 +10735,16 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             var rightFrag = rightStart
                 ? new Fragment(rightStart, rightEnd)
                 : new Fragment(0, 0);
-            var newCell = new MatrixCell(cell.row + 1, this);
+            // Bump later rows before constructing the new cell — its ctor adopts
+            // it as a child, so it must not be seen by the increment pass or its
+            // row lands one too high (colliding with the row after it).
             this.eachChild(function (child) {
                 var c = child;
                 if (c.row > cell.row)
                     c.row += 1;
                 return undefined;
             });
+            var newCell = new MatrixCell(cell.row + 1, this);
             this.blocks.splice(this.cells.indexOf(cell) + 1, 0, newCell);
             rightFrag.disown();
             rightFrag.adopt(newCell, 0, 0);
@@ -11196,6 +11199,36 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         // at the caret itself when it sits directly inside the line block.
         var splitAfter = atomInLine || cursor[L];
         if (Controller.isControllerRoot(lineBlock)) {
+            // A lone top-level \displaylines env owns the whole cell. Enter typed
+            // beside it (e.g. after mq.latex() hydrates the caret at baseline
+            // right of the env, or after arrows walk out of an edge row) must
+            // split a row inside that env — wrapping it produces a nested
+            // \displaylines{...} inside a single row.
+            var only = lineBlock.getEnd(L);
+            if (only instanceof DisplayLines &&
+                only === lineBlock.getEnd(R) &&
+                (cursor[R] === only || cursor[L] === only)) {
+                var cells = only.cells;
+                var edgeCell;
+                if (cursor[R] === only) {
+                    // left of the env: splitRowBelow(0) moves the first row down into
+                    // a new row — the emptied first cell is the new top row
+                    edgeCell = cells[0];
+                    only.splitRowBelow(edgeCell, 0, cursor);
+                }
+                else {
+                    var lastCell = cells[cells.length - 1];
+                    edgeCell = only.splitRowBelow(lastCell, lastCell.getEnd(R), cursor);
+                }
+                only.bubble(function (n) {
+                    n.reflow();
+                    return undefined;
+                });
+                cursor.insAtLeftEnd(edgeCell);
+                ctrlr.notify('edit');
+                ctrlr.scrollHoriz();
+                return;
+            }
             // Wrap the root's whole content in a two-row \displaylines.
             var env = new DisplayLines();
             var cellL = new MatrixCell(0, env);
@@ -14122,6 +14155,20 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 mq.insertLineBreak();
                 mq.typedText('y');
                 assert.equal(mq.latex(), '\\displaylines{x\\\\ y+1}');
+            });
+            test('at the right edge of a lone displaylines env appends a row inside it', function () {
+                mq.latex('\\displaylines{x\\\\ y}');
+                mq.moveToRightEnd();
+                mq.insertLineBreak();
+                assert.equal(mq.latex(), '\\displaylines{x\\\\ y\\\\ }');
+            });
+            test('at the left edge of a lone displaylines env inserts a row above', function () {
+                mq.latex('\\displaylines{x\\\\ y}');
+                mq.moveToLeftEnd();
+                mq.insertLineBreak();
+                assert.equal(mq.latex(), '\\displaylines{\\\\ x\\\\ y}');
+                mq.typedText('w');
+                assert.equal(mq.latex(), '\\displaylines{w\\\\ x\\\\ y}');
             });
         });
         suite('matrix editing', function () {
