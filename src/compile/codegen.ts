@@ -1102,6 +1102,29 @@ class Emitter {
           const peeled = tail.length !== body.length - 1;
           if (peeled)
             body = tail.length === 1 ? tail[0] : ['Multiply', ...tail];
+          // CE flattens `f(x)` inside an integral to plain factors —
+          // `Multiply(f, x, d, x)` loses the call marker. Fold a
+          // function-name factor fused with the next name back into a
+          // call so `∫f(x)dx` isn't emitted `∫f·x dx`.
+          if (isHead(body, 'Multiply')) {
+            const parts: MathJson[] = [body[0]];
+            for (let i = 1; i < body.length; i++) {
+              const a = body[i];
+              const b = body[i + 1];
+              if (
+                isStr(a) &&
+                this.scope.functions.has(a) &&
+                isStr(b)
+              ) {
+                parts.push(['call', a, b]);
+                i++;
+              } else parts.push(a);
+            }
+            body =
+              parts.length === 2
+                ? (parts[1] as MathJson)
+                : (parts as MathJson);
+          }
           if (peeled && missing(v) && extraVars.length > 0) {
             v = extraVars[0];
             extraVars = extraVars.slice(1);
@@ -1642,7 +1665,11 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
 
   // Names first needed in this cell (not already bound in earlier ones).
   const newSyms = [...scope.symbols].filter(([raw]) => !preDefined.has(raw));
-  const newFns = [...scope.functions].filter(([raw]) => !preDefined.has(raw));
+  // Function-bound names (Def/`f:`) sit in `functions` for call-fold
+  // detection but declare themselves — no `sp.Function` def for them.
+  const newFns = [...scope.functions].filter(
+    ([raw]) => !preDefined.has(raw) && !scope.defined.has(raw),
+  );
   const newMats = [...scope.matrices].filter(
     ([raw]) => !preDefined.has(raw),
   );
@@ -1746,6 +1773,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     const body = emitter.emit(node[3]);
     emitter.scope.bound = saved;
     emitter.scope.defined.add(name);
+    emitter.scope.functions.set(name, pyIdent(name));
     if (emitter.scope.errorCount > before) return { lines: [] };
     const idents = params.map(pyIdent).join(', ');
     // `f(x) = body` rendered via an undefined function — the def'd python
@@ -1781,6 +1809,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       const before = emitter.scope.errorCount;
       const rhs = emitter.emit(['Function', node[1], sig]);
       emitter.scope.defined.add(name);
+      emitter.scope.functions.set(name, pyIdent(name));
       if (emitter.scope.errorCount > before) return { lines: [] };
       return {
         lines: [`${pyIdent(name)} = ${rhs}`],
@@ -1798,6 +1827,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     const before = emitter.scope.errorCount;
     const rhs = emitter.emit(node[3]);
     emitter.scope.defined.add(name);
+    emitter.scope.functions.set(name, pyIdent(name));
     if (emitter.scope.errorCount > before) return { lines: [] };
     return {
       lines: [`${pyIdent(name)} = ${rhs}`],

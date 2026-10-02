@@ -473,6 +473,27 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
       ).toBe(true);
     }
   });
+
+  it('restores f(x) calls inside integrals for defined functions', () => {
+    // CE flattens `f(x)` inside `\int` to `f·x` factors — a defined
+    // `f` must fold back into a call or `∫f(x)dx` integrates `f·x`.
+    expect(
+      calc('\\displaylines{f: x \\mapsto x^{2} \\\\ \\int f(x)\\text{d}x}')
+        .statements[1].code,
+    ).toBe('sp.integrate(f(x), x) + sp.Symbol("C")');
+    expect(
+      calc('\\displaylines{f(x) = x^{2} \\\\ \\int f(x)\\text{d}x}')
+        .statements[1].code,
+    ).toBe('sp.integrate(f(x), x) + sp.Symbol("C")');
+    // A scalar binding is not a call — `a x` stays `a*x`.
+    expect(
+      calc('\\displaylines{a = 5 \\\\ \\int a x\\text{d}x}').statements[1].code,
+    ).toBe('sp.integrate(a * x, x) + sp.Symbol("C")');
+    // An undefined `f` reads as `f·x` (Desmos convention).
+    expect(calc('\\int f(x)\\text{d}x').statements[0].code).toBe(
+      'sp.integrate(f * x, x) + sp.Symbol("C")',
+    );
+  });
 });
 
 describe('toNerdamerInput (latex → nerdamer calls)', () => {
