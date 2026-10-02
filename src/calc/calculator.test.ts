@@ -777,6 +777,20 @@ describe('toNerdamerInput (latex → nerdamer calls)', () => {
     expect(p.statements[0]?.code).not.toContain('diff(f(0), 0)');
   });
 
+  it('treats the typed `f\\prime` form identically to `f\'`', () => {
+    // `f\prime(2)` (typed \prime) and `f^{\prime}(2)` parse to the same
+    // Apply(Derivative(f, 1), 2) as `f'(2)` — the derivative evaluated
+    // at the point, not diff(f(2), 2).
+    for (const l of ['f\\prime(2)', 'f^{\\prime}(2)']) {
+      const p = calc(l);
+      expect(p.statements[0]?.code).toContain('diff(f(x), x)');
+      expect(p.statements[0]?.code).toContain('.subs(x, 2)');
+    }
+    expect(calc('f\\prime\\prime(2)').statements[0]?.code).toBe(
+      'sp.diff(f(x), x, 2).subs(x, 2)',
+    );
+  });
+
   it("keeps f'(x) as the derivative in x", () => {
     const p = calc("f'(x)");
     expect(p.statements[0]?.code).toContain('diff(f(x), x)');
