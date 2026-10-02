@@ -43,7 +43,6 @@ LatexCmds.begin = class extends MathCommand {
           h.text('\\begin{' + env + '}'),
           'begin ' + env
         );
-      beginNode.setDOM(beginNode.domFrag().children().lastElement());
       beginNode.remove();
       if (beginNode[R]) cursor.insLeftOf(beginNode[R] as MQNode);
       else cursor.insAtRightEnd(beginNode.parent);

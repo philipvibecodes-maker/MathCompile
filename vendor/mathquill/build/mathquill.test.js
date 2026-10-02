@@ -12746,7 +12746,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     Environments[env.replace(/\*/g, '')]();
                 var node = grid ||
                     new VanillaSymbol('\\begin{' + env + '} ', h.text('\\begin{' + env + '}'), 'begin ' + env);
-                beginNode.setDOM(beginNode.domFrag().children().lastElement());
                 beginNode.remove();
                 if (beginNode[R])
                     cursor.insLeftOf(beginNode[R]);
