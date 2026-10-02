@@ -478,6 +478,9 @@ suite('latex', function () {
     assertParsesLatex('\\maltese', '\\maltese');
     assertParsesLatex('\\glqq', '\\glqq');
     assertParsesLatex('\\textemdash', '\\textemdash');
+    // an overlap command with no following block stays a bare leaf
+    assertParsesLatex('\\mathclap', '\\mathclap');
+    assertParsesLatex('x\\smash', 'x\\smash');
   });
 
   test('\\operatorname* consumes the star', function () {

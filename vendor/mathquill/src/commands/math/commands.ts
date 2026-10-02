@@ -1959,14 +1959,38 @@ LatexCmds.cmidrule = () =>
 // \llap \rlap \clap \smash — overlap boxes; content renders inline.
 function bindOverlapCmd(ctrlSeq: string, cls: string) {
   return () =>
-    new MathCommand(
-      ctrlSeq,
-      new DOMView(1, (blocks) =>
-        h('span', { class: 'mq-non-leaf ' + cls }, [
-          h.block('span', {}, blocks[0])
-        ])
-      )
-    );
+    new (class extends MathCommand {
+      constructor() {
+        super(
+          ctrlSeq,
+          new DOMView(1, (blocks) =>
+            h('span', { class: 'mq-non-leaf ' + cls }, [
+              h.block('span', {}, blocks[0])
+            ])
+          )
+        );
+      }
+      // An overlap command with no following block degrades to a bare
+      // \name leaf instead of failing the parse.
+      parser() {
+        var self = this;
+        return latexMathParser.block
+          .map(function (b: MathBlock) {
+            self.blocks = [b];
+            b.adopt(self, 0, 0);
+            return self;
+          })
+          .or(
+            Parser.succeed(
+              new VanillaSymbol(
+                ctrlSeq + ' ',
+                h.text(ctrlSeq),
+                ctrlSeq.replace(/\\/g, '')
+              ) as MQNode | Fragment
+            )
+          );
+      }
+    })();
 }
 LatexCmds.llap = bindOverlapCmd('\\llap', 'mq-llap');
 LatexCmds.rlap = bindOverlapCmd('\\rlap', 'mq-rlap');

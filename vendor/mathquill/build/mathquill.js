@@ -10572,11 +10572,29 @@ var __assign = (this && this.__assign) || function () {
     // \llap \rlap \clap \smash \u2014 overlap boxes; content renders inline.
     function bindOverlapCmd(ctrlSeq, cls) {
         return function () {
-            return new MathCommand(ctrlSeq, new DOMView(1, function (blocks) {
-                return h('span', { class: 'mq-non-leaf ' + cls }, [
-                    h.block('span', {}, blocks[0])
-                ]);
-            }));
+            return new (/** @class */ (function (_super) {
+                __extends(class_22, _super);
+                function class_22() {
+                    return _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
+                        return h('span', { class: 'mq-non-leaf ' + cls }, [
+                            h.block('span', {}, blocks[0])
+                        ]);
+                    })) || this;
+                }
+                // An overlap command with no following block degrades to a bare
+                // \name leaf instead of failing the parse.
+                class_22.prototype.parser = function () {
+                    var self = this;
+                    return latexMathParser.block
+                        .map(function (b) {
+                        self.blocks = [b];
+                        b.adopt(self, 0, 0);
+                        return self;
+                    })
+                        .or(Parser.succeed(new VanillaSymbol(ctrlSeq + ' ', h.text(ctrlSeq), ctrlSeq.replace(/\\/g, ''))));
+                };
+                return class_22;
+            }(MathCommand)))();
         };
     }
     LatexCmds.llap = bindOverlapCmd('\\llap', 'mq-llap');
@@ -11077,17 +11095,17 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.tfrac = LatexCmds.frac;
     LatexCmds.dbinom = LatexCmds.tbinom = LatexCmds.binom;
     LatexCmds.choose = /** @class */ (function (_super) {
-        __extends(class_22, _super);
-        function class_22() {
+        __extends(class_23, _super);
+        function class_23() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_22.prototype.createLeftOf = function (cursor) {
+        class_23.prototype.createLeftOf = function (cursor) {
             LiveFraction.prototype.createLeftOf.call(this, cursor);
         };
-        class_22.prototype.parser = function () {
+        class_23.prototype.parser = function () {
             return _super.prototype.parser.call(this).or(Parser.succeed(new VanillaSymbol('\\choose ', h.text('\\choose'), 'choose')));
         };
-        return class_22;
+        return class_23;
     }(Binomial));
     var MathFieldNode = /** @class */ (function (_super) {
         __extends(MathFieldNode, _super);
@@ -11373,8 +11391,8 @@ var __assign = (this && this.__assign) || function () {
      *************************************************/
     var Environments = {};
     LatexCmds.begin = /** @class */ (function (_super) {
-        __extends(class_23, _super);
-        function class_23() {
+        __extends(class_24, _super);
+        function class_24() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.ctrlSeq = '\\begin';
             _this_1.domView = new DOMView(1, function (blocks) {
@@ -11386,7 +11404,7 @@ var __assign = (this && this.__assign) || function () {
             });
             return _this_1;
         }
-        class_23.prototype.parser = function () {
+        class_24.prototype.parser = function () {
             var string = Parser.string;
             var regex = Parser.regex;
             return string('{')
@@ -11401,7 +11419,7 @@ var __assign = (this && this.__assign) || function () {
                     : Parser.fail('unknown environment type: ' + env)).skip(string('\\end{' + env + '}'));
             });
         };
-        return class_23;
+        return class_24;
     }(MathCommand));
     // A MathCommand whose children ("cells") are laid out in a grid:
     // the matrix family (N columns, optional bracket delimiters) and
