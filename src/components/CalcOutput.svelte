@@ -109,7 +109,9 @@
         </div>
       {/each}
     </div>
-  {:else}
+  {:else if pending}
+    <!-- Empty cells and complete-but-empty results render nothing — a
+         bare '…' reads as "still evaluating" forever. -->
     <span class="calc-status">{statusLabel}</span>
   {/if}
 </div>
