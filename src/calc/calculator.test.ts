@@ -474,6 +474,32 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     }
   });
 
+  it('chains comparisons pairwise — sympy relationals take two operands', () => {
+    // `Lt(x,y,z)` is a TypeError in sympy; the honest form is And(pairs).
+    expect(calc('x < y < z').statements[0].code).toBe(
+      'sp.And(sp.Lt(x, y), sp.Lt(y, z))',
+    );
+    expect(calc('a < b < c < d').statements[0].code).toBe(
+      'sp.And(sp.Lt(a, b), sp.Lt(b, c), sp.Lt(c, d))',
+    );
+    // Mixed chains normalize as relation-inside-relation — pairwise And.
+    expect(calc('1 < x \\le 2').statements[0].code).toBe(
+      'sp.And(sp.Lt(1, x), sp.Le(x, 2))',
+    );
+    expect(calc('x > y > z').statements[0].code).toBe(
+      'sp.And(sp.Gt(x, y), sp.Gt(y, z))',
+    );
+    expect(calc('2 \\ge x > 0').statements[0].code).toBe(
+      'sp.And(sp.Ge(2, x), sp.Gt(x, 0))',
+    );
+    expect(calc('x \\ne 0 \\ne 1').statements[0].code).toBe(
+      'sp.And(sp.Ne(x, 0), sp.Ne(0, 1))',
+    );
+    expect(calc('x < y = z').statements[0].code).toBe(
+      'sp.And(sp.Lt(x, y), sp.Eq(y, z))',
+    );
+  });
+
   it('restores f(x) calls inside integrals for defined functions', () => {
     // CE flattens `f(x)` inside `\int` to `f·x` factors — a defined
     // `f` must fold back into a call or `∫f(x)dx` integrates `f·x`.

@@ -143,6 +143,9 @@ const SP_FUNCS: Record<string, string> = {
 
 // Statement-position heads that only lower to Python.
 const STATEMENT_HEADS = new Set(['Assign', 'Def', 'Block', 'Which', 'Piecewise']);
+const CMP_NESTABLE_HEADS = new Set([
+  'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
+]);
 const STATEMENT_CALL_HEADS = new Set(['solve', 'Solve', 'piecewise', 'Piecewise']);
 
 // `call` heads that are real SymPy functions — keep emitting `sp.<name>`
@@ -505,6 +508,41 @@ class Emitter {
       : `${this.sp}FiniteSet(${this.emit(n)})`;
   }
 
+  /** Comparison chains. `x < y < z` arrives flat as `Less(x, y, z)`
+   * (emit natively chained — `Lt(x, y, z)` is `And(x<y, y<z)`), but
+   * mixed chains nest: `1 < x ≤ 2` is `LessEqual(Less(1,x), 2)` and
+   * `x > y > z` is `Greater(x, Greater(y,z))` — a nested relation
+   * reads pairwise as `And`. */
+  private cmpChain(
+    rel: 'Lt' | 'Le' | 'Gt' | 'Ge' | 'Ne' | 'Eq',
+    args: MathJson[],
+  ): [string, number] {
+    const isCmp = (n: MathJson | undefined): n is MathJson[] =>
+      isArr(n) && CMP_NESTABLE_HEADS.has(headOf(n) ?? '');
+    const [a, b] = args;
+    if (isCmp(a)) {
+      // Left-nested: `LessEqual(Less(1,x), 2…)` → And(inner, rel(last,…))
+      const [tail] = this.cmpChain(rel, [a[a.length - 1], ...args.slice(1)]);
+      return [`${this.sp}And(${this.emit(a)}, ${tail})`, PREC_ATOM];
+    }
+    if (args.length > 2) {
+      // SymPy relationals take exactly two operands — chain via And.
+      const pairs = args
+        .slice(0, -1)
+        .map(
+          (n, i) =>
+            `${this.sp}${rel}(${this.emit(n)}, ${this.emit(args[i + 1])})`,
+        );
+      return [`${this.sp}And(${pairs.join(', ')})`, PREC_ATOM];
+    }
+    if (isCmp(b)) {
+      // Right-nested: `Greater(x, Greater(y,z))` → And(rel(x,y), inner)
+      const [head] = this.cmpChain(rel, [a, b[1]]);
+      return [`${this.sp}And(${head}, ${this.emit(b)})`, PREC_ATOM];
+    }
+    return [`${this.sp}${rel}(${this.emit(a)}, ${this.emit(b)})`, PREC_ATOM];
+  }
+
   /** Emit `node`, wrapping in parens when its precedence is below minPrec. */
   emit(node: MathJson | undefined, minPrec = PREC_LOW): string {
     if (node === undefined || node === null) {
@@ -631,28 +669,18 @@ class Emitter {
           : [`${this.sp}log(${this.emit(args[0])}, 10)`, PREC_ATOM];
       case 'Factorial':
         return [`${this.sp}factorial(${this.emit(args[0])})`, PREC_ATOM];
-      case 'Equal': {
-        if (args.length === 2)
-          return [
-            `${this.sp}Eq(${this.emit(args[0])}, ${this.emit(args[1])})`,
-            PREC_ATOM,
-          ];
-        // a = b = c -> ${this.sp}And(${this.sp}Eq(a, b), ${this.sp}Eq(b, c))
-        const pairs = args
-          .slice(0, -1)
-          .map((a, i) => `${this.sp}Eq(${this.emit(a)}, ${this.emit(args[i + 1])})`);
-        return [`${this.sp}And(${pairs.join(', ')})`, PREC_ATOM];
-      }
-      case 'NotEqual':
-        return [`${this.sp}Ne(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM];
+      case 'Equal':
+        return this.cmpChain('Eq', args);
       case 'Less':
-        return [`${this.sp}Lt(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM];
+        return this.cmpChain('Lt', args);
       case 'LessEqual':
-        return [`${this.sp}Le(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM];
+        return this.cmpChain('Le', args);
       case 'Greater':
-        return [`${this.sp}Gt(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM];
+        return this.cmpChain('Gt', args);
       case 'GreaterEqual':
-        return [`${this.sp}Ge(${this.emit(args[0])}, ${this.emit(args[1])})`, PREC_ATOM];
+        return this.cmpChain('Ge', args);
+      case 'NotEqual':
+        return this.cmpChain('Ne', args);
       // Negated relations — SymPy has no \nless-family builtins, so emit
       // the faithful Not(<rel>) rather than collapsing to the inverse.
       case 'NotLess':
