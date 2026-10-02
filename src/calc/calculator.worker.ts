@@ -57,81 +57,6 @@ def _mc_eval_stmt(stmt, ns):
     exec(stmt['code'], ns)
     return eval(disp, ns)
 
-def _mc_deg(term, gens):
-    # Bare capital letters are constants of integration — they go last.
-    if term.is_Symbol and len(term.name) == 1 and term.name.isupper():
-        return -1
-    if getattr(term, 'is_number', False):
-        return 0
-    try:
-        return int(sp.Poly(term, *gens).total_degree())
-    except Exception:
-        return 0
-
-# The mc_* helpers below are the calculator's result pipeline, and the
-# emitted program itself calls them — codegen wraps every evaluated
-# expression as mc_order(mc_simplify(mc_doit(...))) so the shown code
-# is the code that produced the row. Each degrades to its input on
-# failure, like the per-stage try/except they replace.
-
-def mc_order(val):
-    # Write sums with terms in decreasing degree (constants last).
-    try:
-        if val.is_Add:
-            gens = sorted(val.free_symbols, key=lambda s: s.name)
-            terms = sorted(val.args, key=lambda t: -_mc_deg(t, gens))
-            return sp.Add(*terms, evaluate=False)
-        if val.args:
-            # A sum nested inside a product/fraction/function keeps
-            # sympy's canonical order (constant first) — rebuild
-            # containers around re-ordered args, evaluate=False so the
-            # sort survives.
-            args = [mc_order(a) for a in val.args]
-            try:
-                return val.func(*args, evaluate=False)
-            except Exception:
-                try:
-                    return val.func(*args)
-                except Exception:
-                    return val
-        return val
-    except Exception:
-        return val
-
-def mc_doit(val):
-    # Relations and booleans doit per-side: Eq.doit() collapses the
-    # equation to lhs - rhs = 0, losing the displayed form.
-    try:
-        if getattr(val, 'is_Relational', False) or getattr(val, 'is_Boolean', False):
-            sides = [mc_doit(a) for a in val.args]
-            # Eq(Symbol, Matrix|Set) collapses to literal False — keep
-            # the equation displayed when a side is matrix- or
-            # set-valued.
-            if any(getattr(a, 'is_Matrix', False) or isinstance(a, sp.Set)
-                   for a in sides):
-                return val.func(*sides, evaluate=False)
-            return val.func(*sides)
-        return val.doit()
-    except Exception:
-        return val
-
-def mc_simplify(val):
-    # Relations and booleans simplify side-by-side: a blanket
-    # sp.simplify(Eq) routes through the solver and rewrites x + 1 = 2
-    # as x = 1.
-    try:
-        if getattr(val, 'is_Boolean', False):
-            return val.func(*[mc_simplify(a) for a in val.args])
-        if getattr(val, 'is_Relational', False):
-            sides = [sp.simplify(a) for a in val.args]
-            if any(getattr(a, 'is_Matrix', False) or isinstance(a, sp.Set)
-                   for a in sides):
-                return val.func(*sides, evaluate=False)
-            return val.func(*sides)
-        return sp.simplify(val)
-    except Exception:
-        return val
-
 def _mc_row(val):
     try:
         # inv_trig_style='full' prints inverse trig with their arc- names
@@ -158,19 +83,20 @@ def mc_run(prog_json):
     # Each cell is a standalone program: prelude (import + Symbol/Function
     # defs) execs once, then every statement yields one result row.
     prog = json.loads(prog_json)
-    # Statement code calls the pipeline helpers directly (each row's
-    # shown code is what was evaluated), so they live in the namespace.
-    ns = {'sp': sp, 'mc_doit': mc_doit,
-          'mc_simplify': mc_simplify, 'mc_order': mc_order}
+    # The prelude defines the mc_* pipeline helpers the statements call
+    # (emitted per cell so the program is self-contained) — exec brings
+    # them into the namespace.
+    ns = {'sp': sp}
     try:
         exec('\\n'.join(prog['prelude']), ns)
     except Exception as e:
         return json.dumps([{'ok': False, 'error': str(e)}])
     prelude = list(prog['prelude'])
-    # 'import ...' lines are program boilerplate — show them only in the
-    # first row's code block; later rows keep the Symbol/Function defs.
+    # Boilerplate — import lines and the comment-headed runtime block —
+    # shows only in the first row's code block; later rows keep the
+    # Symbol/Function defs.
     tail = [l for l in prelude
-            if not l.startswith(('import ', 'from '))]
+            if not l.startswith(('import ', 'from ', '# '))]
     out = []
     for i, stmt in enumerate(prog['statements']):
         try:

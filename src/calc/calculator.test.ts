@@ -18,6 +18,9 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(prog.issues).toEqual([]);
     expect(prog.prelude).toEqual([
       'import sympy as sp',
+      // The emitted program defines its own pipeline helpers so the
+      // shown code runs standalone.
+      expect.stringContaining('def mc_order'),
       'x = sp.Symbol("x")',
     ]);
     expect(prog.statements).toEqual([{ code: F('x + 1'), display: undefined }]);
@@ -34,7 +37,10 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
   it('gives an assignment a display equation', () => {
     const prog = calc('a = 5');
     // Assignments bind a python name — no Symbol def is emitted.
-    expect(prog.prelude).toEqual(['import sympy as sp']);
+    expect(prog.prelude).toEqual([
+      'import sympy as sp',
+      expect.stringContaining('def mc_order'),
+    ]);
     expect(prog.statements).toEqual([
       { code: 'a = 5', display: F('sp.Eq(sp.Symbol("a"), 5)') },
     ]);
@@ -210,6 +216,21 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // Bare `sp` is juxtaposed s·p — an equation, never a `def` of the
     // InvisibleOperator head.
     expect(calc('sp=5').statements[0].code).toBe(F('sp.Eq(s * p, 5)'));
+  });
+
+  it('mangles user names colliding with the mc_* pipeline helpers', () => {
+    // A symbol named like a pipeline helper would shadow it in the eval
+    // namespace — every wrapped expression then calls a Symbol instead.
+    const prog = calc('\\text{mc_order}+1');
+    expect(prog.prelude).toContain('mc_order_ = sp.Symbol("mc_order")');
+    expect(prog.statements[0].code).toBe(F('mc_order_ + 1'));
+    // Equations and call names take the same mangle.
+    expect(calc('\\text{mc_simplify}=2').statements[0].code).toBe(
+      F('sp.Eq(mc_simplify_, 2)'),
+    );
+    expect(calc('\\text{mc_doit}(x)=x^{2}').statements[0].code).toBe(
+      F('sp.Eq(mc_doit_(x), x**2)'),
+    );
   });
 
   it('lowers \\setminus, \\emptyset, and \\pmod congruences', () => {

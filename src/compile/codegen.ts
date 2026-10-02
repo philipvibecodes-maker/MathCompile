@@ -17,6 +17,7 @@
 
 import type { Issue, MathJson, NormResult } from './ir';
 import { normalizeIR } from './ir';
+import { CALC_RUNTIME_PY } from './calc-runtime';
 
 export interface CellInput {
   json?: MathJson;
@@ -51,12 +52,22 @@ const PY_KEYWORDS = new Set([
   'None', 'True', 'False',
 ]);
 
+// Names the emitted program itself defines: `sp` is the module alias
+// (`import sympy as sp`) and the mc_* helpers come from CALC_RUNTIME_PY
+// in the calc prelude — a user name colliding with any of them would
+// clobber the machinery, so each mangles to a trailing-underscore form.
+const RESERVED_IDENTS = new Set([
+  'sp',
+  'mc_deg',
+  'mc_doit',
+  'mc_simplify',
+  'mc_order',
+]);
+
 // Mangle an arbitrary symbol name (e.g. `a_{n+1}`) into a valid python
 // identifier that consistently refers to that symbol.
 function pyIdent(name: string): string {
-  // `sp` is taken by `import sympy as sp` — a user name colliding with
-  // the module alias would clobber every subsequent sp.* reference.
-  if (name === 'sp') return 'sp_';
+  if (RESERVED_IDENTS.has(name)) return `${name}_`;
   if (/^[A-Za-z_]\w*$/.test(name) && !PY_KEYWORDS.has(name)) return name;
   // Prime ticks are meaningful (x' is a distinct variable, not x) —
   // translate them to _prime before the generic strip eats them.
@@ -66,7 +77,7 @@ function pyIdent(name: string): string {
     .replace(/^_+|_+$/g, '');
   if (out === '') out = 'sym';
   if (/^\d/.test(out)) out = `_${out}`;
-  if (PY_KEYWORDS.has(out)) out += '_';
+  if (PY_KEYWORDS.has(out) || RESERVED_IDENTS.has(out)) out += '_';
   return out;
 }
 
@@ -2486,7 +2497,10 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
   // the program issue list so they aren't also appended at the end.
   const consumed = new Set(parts.flatMap(({ errs }) => errs));
   return {
-    prelude: ['import sympy as sp', ...defs],
+    // The CALC_RUNTIME_PY block defines the mc_* helpers the statements
+    // call — it execs as part of the program (self-contained) and shows
+    // once in the first row's code block, like the import line.
+    prelude: ['import sympy as sp', CALC_RUNTIME_PY, ...defs],
     statements,
     issues: issues.filter((i) => !consumed.has(i)),
   };
