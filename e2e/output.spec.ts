@@ -218,7 +218,9 @@ test('latex output round-trips fonts, negations, mod, boxed, overset', async ({
     ['\\left(x\\middle|y\\right)', '\\left(x\\middle|y\\right)'],
     ['\\underbrace{x+y}_{n}', '\\underbrace{x+y}_{n}'],
     ['\\begin{gathered}a\\\\b\\end{gathered}', '\\begin{gathered}a\\\\ b\\end{gathered}'],
-    ['x\\\\y', 'x\\\\y'],
+    // a bare \\ in the field is a line break — the output column
+    // displays it as a newline (normalized to a space by toHaveText)
+    ['x\\\\y', 'x\\\\ y'],
   ];
   const mf = cell(page, 0);
   const out = page.locator('.cell-latex').first();
