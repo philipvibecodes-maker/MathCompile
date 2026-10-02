@@ -501,7 +501,26 @@ class Emitter {
     if (!isArr(n)) return false;
     // \{1,2\} arrives call-wrapped as ['call', 'Set', ...] since Set
     // isn't a KNOWN_HEAD — check the callee name too.
-    if (isHead(n, 'call')) return isStr(n[1]) && SETISH_HEADS.has(n[1]);
+    if (isHead(n, 'call')) {
+      if (!isStr(n[1])) return false;
+      if (SETISH_HEADS.has(n[1])) return true;
+      // The \mathbb{S}^±/^*/_0 callees all emit a set when their
+      // operand is a set (`S^-` → S ∩ (−∞,0), `S*` → S∖{0}) —
+      // otherwise they fold to conjugate/pseudoinverse, not a set.
+      if (
+        n[1] === 'Superminus' ||
+        n[1] === 'Superplus' ||
+        n[1] === 'PseudoInverse' ||
+        n[1] === 'Superstar'
+      )
+        return (
+          this.isSetish(n[2]) ||
+          (isStr(n[2]) &&
+            SETISH_SYMBOLS.has(n[2].replace(/_\{?0\}?$/, '')) &&
+            /_\{?0\}?$/.test(n[2]))
+        );
+      return false;
+    }
     return SETISH_HEADS.has(headOf(n) ?? '');
   }
 
@@ -1481,21 +1500,47 @@ class Emitter {
         // \mathbb{S}^- / \mathbb{S}^+ — the negative/positive half of
         // S, i.e. S ∩ (−∞,0) / S ∩ (0,∞): \mathbb{Z}^- needs the
         // intersection (it isn't an interval), \mathbb{R}^± reduces to
-        // the open interval anyway.
+        // the open interval anyway. `\mathbb{S}_{0}^±` (S₀⁺, non-
+        // negative/-positive) closes the 0-end, and `^{+}` on a `_0`
+        // operand arrives as PseudoInverse.
         if (
-          (name === 'Superminus' || name === 'Superplus') &&
-          args.length === 2 &&
-          this.isSetish(args[1])
+          (name === 'Superminus' ||
+            name === 'Superplus' ||
+            name === 'PseudoInverse') &&
+          args.length === 2
         ) {
-          const range =
-            name === 'Superminus'
-              ? `${this.sp}Interval.open(-${this.sp}oo, 0)`
-              : `${this.sp}Interval.open(0, ${this.sp}oo)`;
-          return [
-            `${this.sp}Intersection(${this.emit(args[1])}, ${range})`,
-            PREC_ATOM,
-          ];
+          const a = args[1];
+          // `RealNumbers_{0}`-style names — `_0`/`_{0}` subscript on a
+          // number set marks the ±0 variant.
+          const zeroed =
+            isStr(a) &&
+            SETISH_SYMBOLS.has(a.replace(/_\{?0\}?$/, '')) &&
+            /_\{?0\}?$/.test(a);
+          if (this.isSetish(a) || zeroed) {
+            const base = zeroed
+              ? this.emit(a.replace(/_\{?0\}?$/, '') as MathJson)
+              : this.emit(a);
+            const halfOpen = name === 'Superminus';
+            const range =
+              name === 'PseudoInverse' ||
+              (zeroed && name === 'Superplus')
+                ? `${this.sp}Interval(0, ${this.sp}oo)`
+                : halfOpen && !zeroed
+                  ? `${this.sp}Interval.open(-${this.sp}oo, 0)`
+                  : name === 'Superminus'
+                    ? `${this.sp}Interval(-${this.sp}oo, 0)`
+                    : `${this.sp}Interval.open(0, ${this.sp}oo)`;
+            return [
+              `${this.sp}Intersection(${base}, ${range})`,
+              PREC_ATOM,
+            ];
+          }
         }
+        // `A^{+}` on a non-set operand is the Moore–Penrose
+        // pseudoinverse — sp.pinv, not the bare PseudoInverse call CE
+        // uses for the `^{+}` superscript.
+        if (name === 'PseudoInverse' && args.length === 2)
+          return [`${this.sp}pinv(${this.emit(args[1])})`, PREC_ATOM];
         // \bar{x} — the complex-conjugate convention (as \overline{x});
         // SymPy's mean lives in stats and takes a random variable.
         if (name === 'Mean' && args.length === 2)

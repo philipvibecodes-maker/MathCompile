@@ -523,6 +523,25 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
   });
 
+  it('lowers \mathbb{S}^±/^*/_0 variants to set operations', () => {
+    // `x ∈ Z^-` emitted Contains(x, FiniteSet(Intersection(...))) —
+    // membership of a singleton-holding-a-set, always False.
+    expect(calc('x \\in \\mathbb{Z}^{-}').statements[0].code).toBe(
+      'sp.Contains(x, sp.Intersection(sp.S.Integers, sp.Interval.open(-sp.oo, 0)))',
+    );
+    expect(calc('x \\in \\mathbb{Z}_{0}^{+}').statements[0].code).toBe(
+      'sp.Contains(x, sp.Intersection(sp.S.Integers, sp.Interval(0, sp.oo)))',
+    );
+    expect(calc('x \\in \\mathbb{R}_{0}^{-}').statements[0].code).toBe(
+      'sp.Contains(x, sp.Intersection(sp.S.Reals, sp.Interval(-sp.oo, 0)))',
+    );
+    expect(calc('x \\in \\mathbb{Z}^{*}').statements[0].code).toBe(
+      'sp.Contains(x, sp.Complement(sp.S.Integers, sp.FiniteSet(0)))',
+    );
+    // `A^{+}` — Moore–Penrose pseudoinverse, not a stray call.
+    expect(calc('A^{+}').statements[0].code).toBe('sp.pinv(A)');
+  });
+
   it('restores f(x) calls inside integrals for defined functions', () => {
     // CE flattens `f(x)` inside `\int` to `f·x` factors — a defined
     // `f` must fold back into a call or `∫f(x)dx` integrates `f·x`.
