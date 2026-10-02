@@ -32,6 +32,9 @@ export type MathJson =
 export interface Issue {
   severity: 'error' | 'note';
   message: string;
+  /** 0-based input line (displayline index) the issue was raised at,
+   * when codegen can place it — where a line-anchored indicator pins. */
+  line?: number;
 }
 
 export interface NormResult {

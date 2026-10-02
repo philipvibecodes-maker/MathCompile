@@ -4,12 +4,12 @@
   import { loadPrefs } from '../state/persistence';
   import { appStore, type Cell } from '../state/store.svelte';
 
-  // This cell's issue messages in the input column: markers show
-  // instantly under the field, then each message mounts as a chip pinned
+  // This cell's issue messages in the input column: once typing has
+  // paused for debounceMs, each message mounts as a chip pinned
   // horizontally next to its own input line (inline tail — the chip
-  // starts where the line's math ends). Lines without issues keep
-  // nothing painted over them. CalcOutput publishes the issues into
-  // cellIssues as evals land.
+  // starts where the line's math ends, and same-line issues stack
+  // downward). Lines without issues keep nothing painted over them.
+  // CalcOutput publishes the issues into cellIssues as evals land.
   let { cell }: { cell: Cell } = $props();
 
   const animPrefs = loadPrefs();
@@ -50,8 +50,12 @@
     cell.latex;
     anchors = appStore.fields.get(cell.id)?.lineAnchors() ?? [];
   });
+  // The anchor row a line-bound issue pins to (clamp to the rendered
+  // lines; unbound issues pin to line 0).
+  const anchorRow = (line: number | undefined): number =>
+    Math.min(line ?? 0, anchors.length - 1);
   const anchorFor = (line: number | undefined): Anchor | undefined =>
-    anchors[Math.min(line ?? 0, anchors.length - 1)];
+    anchors[anchorRow(line)];
 </script>
 
 {#if issues.length > 0}
@@ -64,10 +68,14 @@
       >
         {#each issues as iss, j (j)}
           {@const a = anchorFor(iss.line)}
+          {@const stack = issues
+            .slice(0, j)
+            .filter((o) => anchorRow(o.line) === anchorRow(iss.line)).length}
           {#if a}
             <li
               class="issue-{iss.severity}"
-              style="top: {a.top + a.height / 2}px; left: {a.right + 6}px"
+              style="top: {a.top + a.height / 2 + stack * 22}px; left: {a.right +
+                6}px"
               title={iss.message}
             >
               {#if iss.severity === 'error'}<span class="parse-error-icon"
@@ -93,15 +101,5 @@
         {/each}
       </ul>
     {/if}
-  {:else}
-    <div class="calc-issue-markers">
-      {#each issues as iss, j (j)}
-        {#if iss.severity === 'error'}
-          <span class="parse-error-icon" title={iss.message}>!</span>
-        {:else}
-          <span class="note-icon" title={iss.message}>i</span>
-        {/if}
-      {/each}
-    </div>
   {/if}
 {/if}

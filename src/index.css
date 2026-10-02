@@ -181,13 +181,6 @@ body {
   position: relative;
 }
 
-/* Markers shown under the field before the issue panel debounces in. */
-.calc-issue-markers {
-  display: flex;
-  gap: 4px;
-  padding: 0 2px;
-}
-
 .expr-row math-field {
   flex: 1;
   min-width: 0;

@@ -1934,8 +1934,14 @@ interface CellBody {
   defs: string[];
   /** Emitted top-level statements, in order (pre-collapse). `errs`
    * carries the emission errors of a statement that produced no lines —
-   * the calculator target turns those into in-place error rows. */
-  parts: { stmt: MathJson; out: StatementOut; errs: Issue[] }[];
+   * the calculator target turns those into in-place error rows. `emitted`
+   * is every issue raised during that statement (line-binding data). */
+  parts: {
+    stmt: MathJson;
+    out: StatementOut;
+    errs: Issue[];
+    emitted: Issue[];
+  }[];
   /** Symbol/function names first bound in this cell. */
   newNames: Set<string>;
 }
@@ -2039,13 +2045,16 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   const parts = nodes.map((stmt) => {
     const issuesAt = scope.issues.length;
     const out = emitStatement(stmt, emitter);
+    // Every issue raised while emitting this statement — notes included,
+    // so unbound issues can anchor at the line that produced them.
+    const emitted = scope.issues.slice(issuesAt);
     // A statement dropped by an emission error keeps its row as an
     // in-place error so multi-statement cells keep written order.
     const errs =
       out.lines.length === 0
-        ? scope.issues.slice(issuesAt).filter((i) => i.severity === 'error')
+        ? emitted.filter((i) => i.severity === 'error')
         : [];
-    return { stmt, out, errs };
+    return { stmt, out, errs, emitted };
   });
 
   // Names first needed in this cell (not already bound in earlier ones).
@@ -2468,6 +2477,9 @@ export interface CalcProgram {
   /** 0-based line of the first statement that failed to emit — where
    * unbound issues (which carry no line of their own) anchor. */
   errorLine?: number;
+  /** Input-line index of each `statements` entry — the row ordering
+   * key for interleaving issue rows in the output. */
+  statementLines: number[];
 }
 
 // Wrap an evaluated expression in the worker's result pipeline so the
@@ -2482,7 +2494,8 @@ const calcEval = (expr: string): string =>
 // expressions so each top-level statement yields its own result row.
 export function compileCellForCalc(cell: CellInput): CalcProgram {
   const { ir, issues } = normalizeIR(cell.json);
-  if (ir === undefined) return { prelude: [], statements: [], issues };
+  if (ir === undefined)
+    return { prelude: [], statements: [], issues, statementLines: [] };
 
   const declared = new Set<string>();
   const declaredFns = new Set<string>();
@@ -2495,6 +2508,7 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
   // the normalizer's diagnostic already reports the problem, so a
   // statement left with no code and no real error yields no row.
   let errorLine: number | undefined;
+  const statementLines: number[] = [];
   const statements = parts
     .map(({ out, errs }, i) => {
       if (errs.length > 0 && errorLine === undefined) errorLine = i;
@@ -2508,7 +2522,13 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
             .join('; ') || undefined,
       };
     })
-    .filter(({ out, error }) => out.lines.length > 0 || error !== undefined)
+    .filter(({ out, error, line }) => {
+      if (out.lines.length === 0 && error === undefined) return false;
+      // The surviving statements' part indices, in order — parallel to
+      // `statements`, for placing issue rows between result rows.
+      statementLines.push(line);
+      return true;
+    })
     .map(({ out, error, line }) => ({
       // The worker evals each statement as written, so the result
       // pipeline (doit -> simplify -> decreasing-degree order) is
@@ -2524,6 +2544,13 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
       // Line anchors only matter where an error points back at input.
       ...(error !== undefined ? { line } : {}),
     }));
+  // Every issue's input line, from the statement that raised it — lets
+  // unbound issues (notes like "no differential") anchor to their own
+  // line instead of falling back to the cell top or the first error.
+  const issueLine = new Map<Issue, number>();
+  parts.forEach(({ emitted }, i) =>
+    emitted.forEach((iss) => issueLine.set(iss, i)),
+  );
   // Statement-bound errors are reported by their rows — drop them from
   // the program issue list so they aren't also appended at the end.
   const consumed = new Set(parts.flatMap(({ errs }) => errs));
@@ -2533,7 +2560,10 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
     // once in the first row's code block, like the import line.
     prelude: ['import sympy as sp', CALC_RUNTIME_PY, ...defs],
     statements,
-    issues: issues.filter((i) => !consumed.has(i)),
+    issues: issues
+      .filter((i) => !consumed.has(i))
+      .map((i) => (issueLine.has(i) ? { ...i, line: issueLine.get(i) } : i)),
     errorLine,
+    statementLines,
   };
 }

@@ -145,16 +145,17 @@ export function evaluate(cell: {
     ]);
   }
   // Issues not bound to a statement (errors plus advisory notes, like
-  // the python overlay's list) become trailing rows of the output.
+  // the python overlay's list) become error rows interleaved by line.
   const issueRows = prog.issues.map(
     (i) =>
       ({
         ok: false as const,
         error: i.message,
         severity: i.severity,
-        // Unbound issues anchor at the first failed statement's line.
-        line: prog.errorLine,
-      }) as CalcRow,
+        // Issues anchor at the line that raised them; anything still
+        // unbound falls back to the first failed statement's line.
+        line: i.line ?? prog.errorLine,
+      }) as CalcRowErr,
   );
   if (prog.statements.length === 0)
     return Promise.resolve([
@@ -163,20 +164,27 @@ export function evaluate(cell: {
       ...issueRows,
     ]);
   // A multi-statement cell keeps its good rows when a sibling statement
-  // is broken — the issues append after the valid results.
+  // is broken — and issue rows interleave at their own input line, not
+  // at the bottom of the output.
   const w = ensureWorker();
   const id = nextId++;
   return new Promise<CalcRow[]>((resolve, reject) => {
     pending.set(id, {
       resolve: (r) => {
         clearTimeout(timer);
-        resolve([
-          // Statement errors anchor at their own input line.
-          ...r.map((row, i) =>
-            row.ok ? row : { ...row, line: prog.statements[i]?.line },
-          ),
-          ...issueRows,
-        ]);
+        const merged = [
+          ...r.map((row, i) => ({ row, line: prog.statementLines[i] })),
+          ...issueRows.map((row) => ({ row, line: row.line })),
+        ]
+          .sort(
+            (a, b) =>
+              (a.line ?? Number.MAX_SAFE_INTEGER) -
+              (b.line ?? Number.MAX_SAFE_INTEGER),
+          )
+          .map(({ row, line }) =>
+            row.ok || line === undefined ? row : { ...row, line },
+          );
+        resolve(merged);
       },
       reject: (e) => {
         clearTimeout(timer);
