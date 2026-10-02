@@ -153,10 +153,17 @@ export function latexToStatementStrings(latex: string): string[] {
   // \limits/\nolimits/\displaylimits are display hints, not semantics —
   // CE chokes on `\sum\limits_{i=1}^{n}` while `\sum_{i=1}^{n}` parses
   // fine, so they are stripped before parsing.
-  const inner = outputLatex(latex).replace(
-    /\\(?:limits|nolimits|displaylimits)(?![a-zA-Z])/g,
-    '',
-  );
+  const inner = outputLatex(latex)
+    .replace(/\\(?:limits|nolimits|displaylimits)(?![a-zA-Z])/g, '')
+    // `\partial_{x}` is the partial operator applied as a subscript —
+    // CE glues it to the next factor (`\partial_{x}x^{2}` → x**x*2).
+    // The \frac{\partial}{\partial x} form routes through D() cleanly
+    // for every operand.
+    .replace(
+      /\\partial_(?:\{([^}]*)\}|([a-zA-Z]))(?!\s*\^)/g,
+      (_m, braced: string | undefined, bare: string | undefined) =>
+        `\\frac{\\partial}{\\partial ${braced ?? bare}}`,
+    );
   const statements: string[] = [];
   let depth = 0;
   let envDepth = 0;

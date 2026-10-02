@@ -411,6 +411,17 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
   });
 
+  it('routes \\partial_{v} subscript form through D() instead of gluing factors', () => {
+    // `\partial_{x}x^{2}` parsed to `x**x * 2` — CE dropped the
+    // operator and glued the subscript var onto the next factor.
+    expect(calc('\\partial_{x}x^{2}').statements[0].code).toBe(
+      'sp.diff(x**2, x)',
+    );
+    expect(calc('\\partial_{t}y').statements[0].code).toBe(
+      'sp.diff(y(t), t)',
+    );
+  });
+
   it('flags a symbolic derivative order instead of emitting 0 or crashing', () => {
     // `f^{(n)}` in sympy is `diff(f, x, n)` (differentiates by n too —
     // → 0) or `diff(f, (x, n))` — which hard-aborts this pyodide's
