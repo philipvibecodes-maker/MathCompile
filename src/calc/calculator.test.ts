@@ -500,6 +500,21 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
   });
 
+  it('fuses bare sgn into sign(next) inside products', () => {
+    // `\operatorname{sgn}x` flattens to Multiply(Sign, x) — `Sign` is a
+    // name, not signum, so `a sgn b` must emit a * sign(b), not a*S·b.
+    expect(calc('\\operatorname{sgn}x').statements[0].code).toBe('sp.sign(x)');
+    expect(calc('a \\operatorname{sgn} b').statements[0].code).toBe(
+      'a * sp.sign(b)',
+    );
+    expect(calc('x \\operatorname{sgn} y').statements[0].code).toBe(
+      'x * sp.sign(y)',
+    );
+    expect(calc('2 \\operatorname{sgn}(x+1)').statements[0].code).toBe(
+      '2 * sp.sign(x + 1)',
+    );
+  });
+
   it('restores f(x) calls inside integrals for defined functions', () => {
     // CE flattens `f(x)` inside `\int` to `f·x` factors — a defined
     // `f` must fold back into a call or `∫f(x)dx` integrates `f·x`.

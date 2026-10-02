@@ -623,11 +623,24 @@ class Emitter {
           `${this.emit(args[0], PREC_ADD)} - ${this.emit(args[1], PREC_ADD)}`,
           PREC_ADD,
         ];
-      case 'Multiply':
+      case 'Multiply': {
+        // `\operatorname{sgn}x` flattens to `Multiply(Sign, x)` — the
+        // bare `Sign` factor reads as a name, not the signum function.
+        // Fuse `Sign`+next-factor back into sign(next): `a sgn b` →
+        // `a * sign(b)`. A trailing bare `Sign` stays a symbol.
+        const parts: MathJson[] = [];
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === 'Sign' && i + 1 < args.length) {
+            parts.push(['Sign', args[++i]]);
+            continue;
+          }
+          parts.push(args[i]);
+        }
         return [
-          args.map((a) => this.emit(a, PREC_MUL)).join(' * '),
+          parts.map((a) => this.emit(a, PREC_MUL)).join(' * '),
           PREC_MUL,
         ];
+      }
       case 'Divide':
         // int-valued expressions divide to a Python float — keep them
         // exact as Rational (`10^6/3` -> Rational(10**6, 3)).
