@@ -328,6 +328,7 @@
               class="engine-status"
               class:engine-error={calcEngine.status === 'error'}
               role="status"
+              transition:fade={{ duration: 300 }}
             >
               {#if calcEngine.status === 'loading'}
                 <span class="engine-spinner" aria-hidden="true"></span>
