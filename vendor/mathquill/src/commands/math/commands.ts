@@ -1515,9 +1515,9 @@ class Bracket extends DelimsNode {
   }
   getSymbol(side: BracketSide) {
     var ch = this.sides[side || R].ch as keyof typeof SVG_SYMBOLS;
-    // Unknown delimiters (e.g. the '.' in \left./\right.) render as
-    // invisible zero-width marks.
-    return SVG_SYMBOLS[ch] || { width: '0', html: () => h('span') };
+    // a delimiter with no glyph (the invisible `\left.`/`\right.` null
+    // delimiter) renders as a zero-width span
+    return SVG_SYMBOLS[ch] || { width: '0', html: () => h.text('') };
   }
   latexRecursive(ctx: LatexContext) {
     this.checkCursorContextOpen(ctx);
@@ -1799,7 +1799,8 @@ var OPP_BRACKS = {
 var BRACKET_NAMES = {
   '&lang;': 'angle-bracket',
   '&rang;': 'angle-bracket',
-  '|': 'pipe'
+  '|': 'pipe',
+  '.': 'null-delimiter'
 };
 
 function bindCharBracketPair(
@@ -1844,7 +1845,11 @@ LatexCmds.left = class extends MathCommand {
     var optWhitespace = Parser.optWhitespace;
 
     return optWhitespace
-      .then(regex(/^(?:[([|.]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z]))/))
+      .then(
+        regex(
+          /^(?:[([|.]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z])|\\\|)/
+        )
+      )
       .then(function (ctrlSeq) {
         var open = ctrlSeq.replace(/^\\/, '');
         if (ctrlSeq == '\\langle') {
@@ -1855,11 +1860,16 @@ LatexCmds.left = class extends MathCommand {
           open = '&#8741;';
           ctrlSeq = ctrlSeq + ' ';
         }
+        if (ctrlSeq == '\\|') {
+          open = '&#8741;';
+        }
         return latexMathParser.then(function (block) {
           return string('\\right')
             .skip(optWhitespace)
             .then(
-              regex(/^(?:[\])|.]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z]))/)
+              regex(
+                /^(?:[\])|.]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z])|\\\|)/
+              )
             )
             .map(function (end) {
               var close = end.replace(/^\\/, '');
@@ -1870,6 +1880,9 @@ LatexCmds.left = class extends MathCommand {
               if (end == '\\rVert') {
                 close = '&#8741;';
                 end = end + ' ';
+              }
+              if (end == '\\|') {
+                close = '&#8741;';
               }
               var cmd = new Bracket(0, open, close, ctrlSeq, end);
               cmd.blocks = [block];

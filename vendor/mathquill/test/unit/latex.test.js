@@ -162,6 +162,24 @@ suite('latex', function () {
     });
   });
 
+  test('invisible \\left./\\right. null delimiters (evaluation bars)', function () {
+    assertParsesLatex('\\left.x\\right|', '\\left.x\\right|');
+    assertParsesLatex('\\left|x\\right.', '\\left|x\\right.');
+    assertParsesLatex('\\left.x\\right.', '\\left.x\\right.');
+    assertParsesLatex(
+      '\\left.\\frac{a}{b}\\right|_{x=1}',
+      '\\left.\\frac{a}{b}\\right|_{x=1}'
+    );
+    assertParsesLatex('\\left\\|x\\right\\|', '\\left\\|x\\right\\|');
+    assertParsesLatex('\\left\\|x\\right.', '\\left\\|x\\right.');
+
+    var tree = latexMathParser.parse('\\left.x\\right|');
+    var brack = tree.ends[L];
+    assert.ok(brack instanceof Bracket);
+    assert.equal(brack.sides[L].ch, '.');
+    assert.equal(brack.sides[R].ch, '|');
+  });
+
   test('parens with whitespace', function () {
     assertParsesLatex('\\left ( 123 \\right ) ', '\\left(123\\right)');
   });

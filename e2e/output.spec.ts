@@ -202,6 +202,30 @@ test('latex output shows \\antid and \\iint as \\int', async ({ page }) => {
   );
 });
 
+// \left.…\right| evaluation bars use the invisible null delimiter — the
+// field must parse them (not wipe) and keep the bar's latex verbatim.
+test('latex output round-trips \\left. evaluation bars', async ({ page }) => {
+  const mf = cell(page, 0);
+  await mf.evaluate(
+    (el) =>
+      ((el as { value: string }).value =
+        '\\left.\\frac{a}{b}\\right|_{x=1}'),
+  );
+  await expect(page.locator('.cell-latex').first()).toHaveText(
+    '\\left.\\frac{a}{b}\\right|_{x=1}',
+  );
+
+  // The left null delimiter renders zero-width; the right pipe shows.
+  const dims = await mf.evaluate((el) => {
+    const l = el.querySelector('.mq-bracket-l');
+    const r = el.querySelector('.mq-bracket-r');
+    const rect = (n: Element | null) => n?.getBoundingClientRect().width;
+    return { left: rect(l), right: rect(r) };
+  });
+  expect(dims.left).toBe(0);
+  expect(dims.right).toBeGreaterThan(0);
+});
+
 test('latex output shows multi-line cells as separate lines', async ({
   page,
 }) => {
