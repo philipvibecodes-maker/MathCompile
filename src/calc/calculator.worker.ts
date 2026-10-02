@@ -68,68 +68,71 @@ def _mc_deg(term, gens):
     except Exception:
         return 0
 
-def _mc_order(val):
-    # Write sums with terms in decreasing degree (constants last).
-    if val.is_Add:
-        gens = sorted(val.free_symbols, key=lambda s: s.name)
-        terms = sorted(val.args, key=lambda t: -_mc_deg(t, gens))
-        return sp.Add(*terms, evaluate=False)
-    if val.args:
-        # A sum nested inside a product/fraction/function keeps sympy's
-        # canonical order (constant first) — rebuild containers around
-        # re-ordered args, evaluate=False so the sort survives.
-        args = [_mc_order(a) for a in val.args]
-        try:
-            return val.func(*args, evaluate=False)
-        except Exception:
-            try:
-                return val.func(*args)
-            except Exception:
-                return val
-    return val
+# The mc_* helpers below are the calculator's result pipeline, and the
+# emitted program itself calls them — codegen wraps every evaluated
+# expression as mc_order(mc_simplify(mc_doit(...))) so the shown code
+# is the code that produced the row. Each degrades to its input on
+# failure, like the per-stage try/except they replace.
 
-def _mc_doit(val):
+def mc_order(val):
+    # Write sums with terms in decreasing degree (constants last).
+    try:
+        if val.is_Add:
+            gens = sorted(val.free_symbols, key=lambda s: s.name)
+            terms = sorted(val.args, key=lambda t: -_mc_deg(t, gens))
+            return sp.Add(*terms, evaluate=False)
+        if val.args:
+            # A sum nested inside a product/fraction/function keeps
+            # sympy's canonical order (constant first) — rebuild
+            # containers around re-ordered args, evaluate=False so the
+            # sort survives.
+            args = [mc_order(a) for a in val.args]
+            try:
+                return val.func(*args, evaluate=False)
+            except Exception:
+                try:
+                    return val.func(*args)
+                except Exception:
+                    return val
+        return val
+    except Exception:
+        return val
+
+def mc_doit(val):
     # Relations and booleans doit per-side: Eq.doit() collapses the
     # equation to lhs - rhs = 0, losing the displayed form.
-    if getattr(val, 'is_Relational', False) or getattr(val, 'is_Boolean', False):
-        sides = [_mc_doit(a) for a in val.args]
-        # Eq(Symbol, Matrix|Set) collapses to literal False — keep the
-        # equation displayed when a side is matrix- or set-valued.
-        if any(getattr(a, 'is_Matrix', False) or isinstance(a, sp.Set)
-               for a in sides):
-            return val.func(*sides, evaluate=False)
-        return val.func(*sides)
-    return val.doit()
+    try:
+        if getattr(val, 'is_Relational', False) or getattr(val, 'is_Boolean', False):
+            sides = [mc_doit(a) for a in val.args]
+            # Eq(Symbol, Matrix|Set) collapses to literal False — keep
+            # the equation displayed when a side is matrix- or
+            # set-valued.
+            if any(getattr(a, 'is_Matrix', False) or isinstance(a, sp.Set)
+                   for a in sides):
+                return val.func(*sides, evaluate=False)
+            return val.func(*sides)
+        return val.doit()
+    except Exception:
+        return val
 
-def _mc_simplify(val):
-    # Relations simplify side-by-side: a blanket sp.simplify(Eq) routes
-    # through the solver and rewrites x + 1 = 2 as x = 1.
-    if getattr(val, 'is_Relational', False):
-        sides = [sp.simplify(a) for a in val.args]
-        if any(getattr(a, 'is_Matrix', False) or isinstance(a, sp.Set)
-               for a in sides):
-            return val.func(*sides, evaluate=False)
-        return val.func(*sides)
-    return sp.simplify(val)
+def mc_simplify(val):
+    # Relations and booleans simplify side-by-side: a blanket
+    # sp.simplify(Eq) routes through the solver and rewrites x + 1 = 2
+    # as x = 1.
+    try:
+        if getattr(val, 'is_Boolean', False):
+            return val.func(*[mc_simplify(a) for a in val.args])
+        if getattr(val, 'is_Relational', False):
+            sides = [sp.simplify(a) for a in val.args]
+            if any(getattr(a, 'is_Matrix', False) or isinstance(a, sp.Set)
+                   for a in sides):
+                return val.func(*sides, evaluate=False)
+            return val.func(*sides)
+        return sp.simplify(val)
+    except Exception:
+        return val
 
 def _mc_row(val):
-    try:
-        val = _mc_doit(val)
-    except Exception:
-        pass
-    try:
-        # Booleans (And/Or of equations) keep their structure — the
-        # relational args simplify per-side, never solved.
-        if getattr(val, 'is_Boolean', False):
-            val = val.func(*[_mc_simplify(a) for a in val.args])
-        else:
-            val = _mc_simplify(val)
-    except Exception:
-        pass
-    try:
-        val = _mc_order(val)
-    except Exception:
-        pass
     try:
         # inv_trig_style='full' prints inverse trig with their arc- names
         # (arctan, operatorname{arcsec}) instead of the default a- forms
@@ -155,7 +158,10 @@ def mc_run(prog_json):
     # Each cell is a standalone program: prelude (import + Symbol/Function
     # defs) execs once, then every statement yields one result row.
     prog = json.loads(prog_json)
-    ns = {'sp': sp}
+    # Statement code calls the pipeline helpers directly (each row's
+    # shown code is what was evaluated), so they live in the namespace.
+    ns = {'sp': sp, 'mc_doit': mc_doit,
+          'mc_simplify': mc_simplify, 'mc_order': mc_order}
     try:
         exec('\\n'.join(prog['prelude']), ns)
     except Exception as e:
@@ -176,10 +182,12 @@ def mc_run(prog_json):
                 continue
             row = _mc_row(_mc_eval_stmt(stmt, ns))
             row['ok'] = True
-            # Show code = the emitted program for this row (prelude defs
-            # + statement source), not the result's python() repr. The
-            # 'e = ...' capture lines exist only to drive row rendering —
-            # display plumbing, split out so the UI can hide it by default.
+            # Show code = the emitted program for this row (prelude
+            # defs + statement source, which itself applies the
+            # mc_doit/mc_simplify/mc_order pipeline), not the result's
+            # python() repr. The 'e = ...' capture lines exist only to
+            # drive row rendering — display plumbing, split out so the
+            # UI can hide it by default.
             pre = prelude if i == 0 else tail
             disp = stmt.get('display')
             row['code'] = '\\n'.join(pre + [stmt['code']])

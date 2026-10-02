@@ -2446,6 +2446,12 @@ export interface CalcProgram {
   issues: Issue[];
 }
 
+// Wrap an evaluated expression in the worker's result pipeline so the
+// emitted program itself applies doit -> simplify -> degree-order —
+// auditing the shown code explains the shown result.
+const calcEval = (expr: string): string =>
+  `mc_order(mc_simplify(mc_doit(${expr})))`;
+
 // Compile a single cell for the calculator target: same pipeline as
 // compileWorksheet (always `sp.`-qualified — the worker execs against
 // `import sympy as sp`), but keeps the statement split and display
@@ -2464,8 +2470,16 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
   const statements = parts
     .filter(({ out, errs }) => out.lines.length > 0 || errs.length > 0)
     .map(({ out, errs }) => ({
-      code: out.lines.join('\n'),
-      display: out.display,
+      // The worker evals each statement as written, so the result
+      // pipeline (doit -> simplify -> decreasing-degree order) is
+      // emitted INTO the program — Show code then displays exactly
+      // the code that produced the row. The mc_* helpers are the
+      // worker runtime in calculator.worker.ts.
+      code:
+        out.display === undefined && out.lines.length === 1
+          ? calcEval(out.lines[0])
+          : out.lines.join('\n'),
+      display: out.display === undefined ? undefined : calcEval(out.display),
       error: errs.map((i) => i.message).join('; ') || undefined,
     }));
   // Statement-bound errors are reported by their rows — drop them from
