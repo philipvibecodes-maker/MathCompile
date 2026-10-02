@@ -1562,5 +1562,19 @@ suite('latex', function () {
     assertParsesLatex('\\genfrac\\langle\\rangle{0}{}{a}{b}', '\\genfrac\\langle\\rangle{0}{}{a}{b}');
     // text blocks tolerate nested braces up to depth 3
     assertParsesLatex('\\textbf{a{b{c}d}e}', '\\textbf{a{b{c}d}e}');
+    // \verb<delim>text<delim> keeps its delimiter + star
+    assertParsesLatex('\\verb|x|', '\\verb|x|');
+    assertParsesLatex('\\verb*|x y|', '\\verb*|x y|');
+    // \cfrac[lcr] optional alignment is consumed, not misparsed as
+    // a { [ } { l ] fraction; canonical emit is \frac
+    assertParsesLatex('\\cfrac[l]{a}{b}', '\\frac{a}{b}');
+    // \smash[tb] keeps its optional arg
+    assertParsesLatex('\\smash[b]{x}', '\\smash[b]{x}');
+    assertParsesLatex('\\smash{x}', '\\smash{x}');
+    // multi-group text commands stay verbatim
+    assertParsesLatex('\\prescript{a}{b}{c}', '\\prescript{a}{b}{c}');
+    assertParsesLatex('\\mathchoice{a}{b}{c}{d}', '\\mathchoice{a}{b}{c}{d}');
+    assertParsesLatex('\\includegraphics[width=1cm]{x}', '\\includegraphics[width=1cm]{x}');
+    assertParsesLatex('\\path{x}', '\\path{x}');
   });
 });

@@ -2234,3 +2234,92 @@ LatexCmds.dotsm = bindLiteralCmd('\\dotsm', 'dots m');
 LatexCmds.dotso = bindLiteralCmd('\\dotso', 'dots o');
 LatexCmds.ldotp = bindLiteralCmd('\\ldotp', 'l dot p');
 LatexCmds.cdotp = bindLiteralCmd('\\cdotp', 'c dot p');
+
+// \verb|text| / \verb*|text| — a delimiter-character verbatim span.
+LatexCmds.verb = () =>
+  new (class extends MathCommand {
+    starred = false;
+    verbDelim = '';
+    verbText = '';
+    constructor() {
+      super(
+        '\\verb',
+        new DOMView(0, () =>
+          h('span', { class: 'mq-non-leaf mq-verb' }, [h.text('\\verb')])
+        )
+      );
+    }
+    parser() {
+      var self = this;
+      return Parser.string('*')
+        .or(Parser.succeed(''))
+        .then(function (star: string) {
+          self.starred = star === '*';
+          return Parser.regex(/^[^a-zA-Z\s]/);
+        })
+        .then(function (delim: string) {
+          self.verbDelim = delim;
+          var escaped = delim.replace(/[\\\]\[^-]/g, '\\$&');
+          return Parser.regex(
+            new RegExp('^(?:[^' + escaped + '\\\\])*')
+          ).skip(Parser.string(delim));
+        })
+        .then(function (text: string) {
+          self.verbText = text;
+          return Parser.succeed(self as MQNode | Fragment);
+        });
+    }
+    latexRecursive(ctx: LatexContext) {
+      this.checkCursorContextOpen(ctx);
+      ctx.uncleanedLatex +=
+        '\\verb' +
+        (this.starred ? '*' : '') +
+        this.verbDelim +
+        this.verbText +
+        this.verbDelim;
+      this.checkCursorContextClose(ctx);
+    }
+  })();
+
+// Multi-group commands kept verbatim — their full argument signature
+// survives even though the field can't structure them.
+LatexCmds.prescript = () =>
+  new RawArgCommand(
+    '\\prescript',
+    new RegExp('^' + RAW_GROUP + RAW_GROUP + RAW_GROUP),
+    'prescript'
+  );
+LatexCmds.mathpalette = () =>
+  new RawArgCommand(
+    '\\mathpalette',
+    new RegExp('^' + RAW_GROUP + RAW_GROUP),
+    'math palette'
+  );
+LatexCmds.mathchoice = () =>
+  new RawArgCommand(
+    '\\mathchoice',
+    new RegExp('^' + RAW_GROUP + RAW_GROUP + RAW_GROUP + RAW_GROUP),
+    'math choice'
+  );
+LatexCmds.splitfrac = () =>
+  new RawArgCommand(
+    '\\splitfrac',
+    new RegExp('^' + RAW_GROUP + RAW_GROUP),
+    'split frac'
+  );
+LatexCmds.subfrac = () =>
+  new RawArgCommand(
+    '\\subfrac',
+    new RegExp('^' + RAW_GROUP + RAW_GROUP),
+    'sub frac'
+  );
+bindMathWrap('path');
+// \includegraphics[width=1cm]{file}
+LatexCmds.includegraphics = bindOptBracketCmd(
+  '\\includegraphics',
+  1,
+  'include graphics'
+);
+// \bmod already parses; \mod variants \pmod/\pod covered. More
+// starred text-modifier commands.
+LatexCmds.tagcurve = bindLiteralCmd('\\tagcurve', 'tag curve');

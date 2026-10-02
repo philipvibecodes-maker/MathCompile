@@ -1160,7 +1160,6 @@ LatexCmds['∰'] = LatexCmds.oiiint = boundlessIntegral(
 var Fraction =
   (LatexCmds.frac =
   LatexCmds.dfrac =
-  LatexCmds.cfrac =
   LatexCmds.fraction =
     class FracNode extends MathCommand {
       ctrlSeq = '\\frac';
@@ -1299,6 +1298,20 @@ var Fraction =
         return walkUp(this, level);
       }
     });
+
+// \cfrac[lcr] takes an optional alignment arg before the two
+// fraction blocks — consume it so [l] can't parse as a { [ } { l ]
+// "fraction". Serialized canonically as \frac like \dfrac/\tfrac.
+LatexCmds.cfrac = class extends Fraction {
+  parser() {
+    var self = this;
+    return Parser.regex(/^\[(?:[lcr])\]/)
+      .or(Parser.succeed(''))
+      .then(function () {
+        return Fraction.prototype.parser.call(self);
+      });
+  }
+};
 
 var LiveFraction =
   (LatexCmds.over =
@@ -2032,9 +2045,10 @@ LatexCmds.cmidrule = () =>
   );
 
 // \llap \rlap \clap \smash — overlap boxes; content renders inline.
-function bindOverlapCmd(ctrlSeq: string, cls: string) {
+function bindOverlapCmd(ctrlSeq: string, cls: string, optRegex?: string) {
   return () =>
     new (class extends MathCommand {
+      optText = '';
       constructor() {
         super(
           ctrlSeq,
@@ -2049,7 +2063,16 @@ function bindOverlapCmd(ctrlSeq: string, cls: string) {
       // \name leaf instead of failing the parse.
       parser() {
         var self = this;
-        return latexMathParser.block
+        return (
+          optRegex
+            ? Parser.regex(new RegExp('^' + optRegex))
+                .or(Parser.succeed(''))
+                .then(function (opt: string) {
+                  self.optText = opt;
+                  return latexMathParser.block;
+                })
+            : latexMathParser.block
+        )
           .map(function (b: MathBlock) {
             self.blocks = [b];
             b.adopt(self, 0, 0);
@@ -2065,12 +2088,19 @@ function bindOverlapCmd(ctrlSeq: string, cls: string) {
             )
           );
       }
+      latexRecursive(ctx: LatexContext) {
+        this.checkCursorContextOpen(ctx);
+        ctx.uncleanedLatex += this.ctrlSeq + this.optText + '{';
+        this.blocks![0].latexRecursive(ctx);
+        ctx.uncleanedLatex += '}';
+        this.checkCursorContextClose(ctx);
+      }
     })();
 }
 LatexCmds.llap = bindOverlapCmd('\\llap', 'mq-llap');
 LatexCmds.rlap = bindOverlapCmd('\\rlap', 'mq-rlap');
 LatexCmds.clap = bindOverlapCmd('\\clap', 'mq-clap');
-LatexCmds.smash = bindOverlapCmd('\\smash', 'mq-smash');
+LatexCmds.smash = bindOverlapCmd('\\smash', 'mq-smash', '\\[(?:[tb])\\]');
 LatexCmds.mathllap = bindOverlapCmd('\\mathllap', 'mq-llap');
 LatexCmds.mathrlap = bindOverlapCmd('\\mathrlap', 'mq-rlap');
 LatexCmds.mathclap = bindOverlapCmd('\\mathclap', 'mq-clap');
