@@ -202,6 +202,103 @@ test('latex output shows \\antid and \\iint as \\int', async ({ page }) => {
   );
 });
 
+// \left.…\right| evaluation bars use the invisible null delimiter — the
+// field must parse them (not wipe) and keep the bar's latex verbatim.
+test('latex output round-trips \\left. evaluation bars', async ({ page }) => {
+  const mf = cell(page, 0);
+  await mf.evaluate(
+    (el) =>
+      ((el as { value: string }).value =
+        '\\left.\\frac{a}{b}\\right|_{x=1}'),
+  );
+  await expect(page.locator('.cell-latex').first()).toHaveText(
+    '\\left.\\frac{a}{b}\\right|_{x=1}',
+  );
+
+  // The left null delimiter renders zero-width; the right pipe shows.
+  const dims = await mf.evaluate((el) => {
+    const l = el.querySelector('.mq-bracket-l');
+    const r = el.querySelector('.mq-bracket-r');
+    const rect = (n: Element | null) => n?.getBoundingClientRect().width;
+    return { left: rect(l), right: rect(r) };
+  });
+  expect(dims.left).toBe(0);
+  expect(dims.right).toBeGreaterThan(0);
+});
+
+// \begin{cases} is a real environment — the field must parse it (not
+// wipe) and the output column keeps the latex verbatim.
+test('latex output round-trips \\begin{cases}', async ({ page }) => {
+  const mf = cell(page, 0);
+  await mf.evaluate(
+    (el) =>
+      ((el as { value: string }).value =
+        '\\begin{cases}x&x>0\\\\-x&x\\le0\\end{cases}'),
+  );
+  await expect(page.locator('.cell-latex').first()).toHaveText(
+    '\\begin{cases}x&x>0\\\\\n-x&x\\le0\\end{cases}',
+  );
+});
+
+// `\,` `\;` `\:` `\!` spacing commands parse (previously `\,` degraded
+// to a literal comma and the rest wiped the field).
+test('latex output round-trips \\, \\; \\: \\! spacing', async ({ page }) => {
+  const mf = cell(page, 0);
+  await mf.evaluate(
+    (el) => ((el as { value: string }).value = '\\int_{a}^{b}x\\,dx'),
+  );
+  await expect(page.locator('.cell-latex').first()).toHaveText(
+    '\\int_{a}^{b}x\\, dx',
+  );
+});
+
+// Escaped delimiters and standalone angle/norm delimiters parse
+// (previously each wiped the whole field to a blank cell).
+test('latex output round-trips escaped delimiters and set literals', async ({
+  page,
+}) => {
+  const mf = cell(page, 0);
+  await mf.evaluate(
+    (el) =>
+      ((el as { value: string }).value =
+        '\\{x\\in\\mathbb{R}:\\lVert x\\rVert\\ge0\\}'),
+  );
+  await expect(page.locator('.cell-latex').first()).toHaveText(
+    '\\{ x\\in\\mathbb{R}:\\lVert x\\rVert\\ge0\\} ',
+  );
+});
+
+// Common latex constructs that previously blanked the field now
+// round-trip: fonts/accents, negated relations, mod, boxed, overset.
+test('latex output round-trips fonts, negations, mod, boxed, overset', async ({
+  page,
+}) => {
+  const cases: [string, string][] = [
+    ['\\mathcal{F}x', '\\mathcal{F}x'],
+    ['x\\not\\in A', 'x\\notin A'],
+    ['x\\pmod{m}', 'x\\pmod{m}'],
+    ['\\boxed{x=1}', '\\boxed{x=1}'],
+    ['\\sum\\limits_{i=0}^{n}x', '\\sum\\limits_{i=0}^{n}x'],
+    ['\\bigl(x\\bigr)', '\\bigl(x\\bigr)'],
+    ['\\mathbb{F}', '\\mathbb{F}'],
+    ['\\left(x\\middle|y\\right)', '\\left(x\\middle|y\\right)'],
+    ['\\underbrace{x+y}_{n}', '\\underbrace{x+y}_{n}'],
+    ['\\begin{gathered}a\\\\b\\end{gathered}', '\\begin{gathered}a\\\\ b\\end{gathered}'],
+    // a bare \\ in the field is a line break — the output column
+    // displays it as a newline (normalized to a space by toHaveText)
+    ['x\\\\y', 'x\\\\ y'],
+  ];
+  const mf = cell(page, 0);
+  const out = page.locator('.cell-latex').first();
+  for (const [input, expected] of cases) {
+    await mf.evaluate(
+      (el, latex) => ((el as { value: string }).value = latex),
+      input,
+    );
+    await expect(out).toHaveText(expected);
+  }
+});
+
 test('latex output shows multi-line cells as separate lines', async ({
   page,
 }) => {
