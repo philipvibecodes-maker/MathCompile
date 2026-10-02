@@ -93,14 +93,22 @@ def _mc_doit(val):
     # Relations and booleans doit per-side: Eq.doit() collapses the
     # equation to lhs - rhs = 0, losing the displayed form.
     if getattr(val, 'is_Relational', False) or getattr(val, 'is_Boolean', False):
-        return val.func(*[_mc_doit(a) for a in val.args])
+        sides = [_mc_doit(a) for a in val.args]
+        # Eq(Symbol, Matrix) collapses to literal False — keep the
+        # equation displayed when a side is matrix-valued.
+        if any(getattr(a, 'is_Matrix', False) for a in sides):
+            return val.func(*sides, evaluate=False)
+        return val.func(*sides)
     return val.doit()
 
 def _mc_simplify(val):
     # Relations simplify side-by-side: a blanket sp.simplify(Eq) routes
     # through the solver and rewrites x + 1 = 2 as x = 1.
     if getattr(val, 'is_Relational', False):
-        return val.func(*[sp.simplify(a) for a in val.args])
+        sides = [sp.simplify(a) for a in val.args]
+        if any(getattr(a, 'is_Matrix', False) for a in sides):
+            return val.func(*sides, evaluate=False)
+        return val.func(*sides)
     return sp.simplify(val)
 
 def _mc_row(val):
