@@ -19,8 +19,12 @@
   let rows = $state<CalcRow[]>([]);
   let pending = $state(false);
   let failed = $state('');
-  // Per-row opt-in to the `e = ...` display plumbing lines in .calc-code.
-  let plumbing = $state<boolean[]>([]);
+  // Per-cell opt-in to the `e = ...` display plumbing lines in .calc-code.
+  let showPlumbing = $state(false);
+  const hasPlumbing = $derived(
+    appStore.showCode &&
+      rows.some((r) => r.ok && r.displayCode && r.displayCode !== r.code),
+  );
 
   const statusLabel = $derived(
     calcEngine.status === 'loading'
@@ -98,7 +102,7 @@
             </div>
             {#if appStore.showCode && row.code}
               {@const shown =
-                plumbing[i] && row.displayCode ? row.displayCode : row.code}
+                showPlumbing && row.displayCode ? row.displayCode : row.code}
               {@const toks = highlightPython(shown)}
               <pre class="calc-code"><code
                   >{#each toks as tok, j (j)}<span
@@ -106,12 +110,6 @@
                       >{tok.text}</span
                     >{/each}</code
                 ></pre>
-              {#if row.displayCode && row.displayCode !== row.code}
-                <label class="calc-plumbing"
-                  ><input type="checkbox" bind:checked={plumbing[i]} />
-                  display plumbing</label
-                >
-              {/if}
             {/if}
           {:else}
             <code class="calc-error" title={row.error}>{row.error}</code>
@@ -123,5 +121,36 @@
     <!-- Empty cells and complete-but-empty results render nothing — a
          bare '…' reads as "still evaluating" forever. -->
     <span class="calc-status">{statusLabel}</span>
+  {/if}
+  {#if hasPlumbing}
+    <div class="calc-plumbing">
+      <label
+        ><input type="checkbox" bind:checked={showPlumbing} /> display
+        plumbing</label
+      >
+      <button
+        type="button"
+        class="info-icon"
+        aria-label="Display plumbing is the 'e = …' code MathCompile inserts to capture each statement's value for rendering — hidden by default since it isn't part of the calculation."
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <line x1="12" y1="11" x2="12" y2="16.5" />
+          <circle cx="12" cy="7.5" r="0.75" fill="currentColor" />
+        </svg>
+        <span class="info-tip" role="tooltip" aria-hidden="true">
+          Extra code MathCompile adds to capture each statement's value for
+          rendering (the "e = …" lines). Not part of the calculation —
+          hidden by default.
+        </span>
+      </button>
+    </div>
   {/if}
 </div>
