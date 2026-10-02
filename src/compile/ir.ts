@@ -127,7 +127,7 @@ const KNOWN_HEADS = new Set([
   'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
   'NotLess', 'NotGreater', 'NotLessEqual', 'NotGreaterEqual', 'NotDivides',
   'Implies', 'Equivalent', 'IdenticallyEqual', 'Degrees',
-  'Minimum', 'Maximum', 'Interval', 'Open',
+  'Minimum', 'Maximum', 'Interval', 'Open', 'IntegerRange',
   // set operators — codegen emits real SymPy when operands are set-like,
   // and the same flagged Function stub as before otherwise.
   'Element', 'NotElement', 'Union', 'Intersection', 'SetMinus',
@@ -352,7 +352,8 @@ function underVarDomain(under: MathJson): { v: MathJson; domain?: MathJson } {
   if (uh === 'Element' && under.length === 3)
     return { v: under[1], domain: under[2] };
   // \min_{i=lo}^{hi}: the underscript `i=lo` and overscript `hi` fold
-  // into Power(Equal(i, lo), hi) — recover (v, [lo, hi]).
+  // into Power(Equal(i, lo), hi) — recover (v, [lo, hi]). This is an
+  // integer index range (like \sum bounds), NOT a real interval.
   if (
     uh === 'Power' &&
     isArray(under[1]) &&
@@ -360,7 +361,7 @@ function underVarDomain(under: MathJson): { v: MathJson; domain?: MathJson } {
     under[1].length === 3 &&
     isSymbolString(under[1][1])
   )
-    return { v: under[1][1], domain: ['Interval', under[1][2], under[2]] };
+    return { v: under[1][1], domain: ['IntegerRange', under[1][2], under[2]] };
   if (
     uh === 'Less' ||
     uh === 'LessEqual' ||
@@ -765,13 +766,6 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
         false,
       );
       const { v, domain } = underVarDomain(under);
-      // `_{i=lo}^{hi}` folds into Power(Equal(i, lo), hi) — emitted as a
-      // real interval since symbolic sp.Range can't be minimized over.
-      if (isArray(under) && head(under) === 'Power')
-        pushIssue(
-          'note',
-          `${h} over an i=lo..hi range is emitted as a real interval`,
-        );
       const head2 = h === 'Min' ? 'Minimum' : h === 'Max' ? 'Maximum' : h;
       return domain === undefined
         ? [head2, bodyN, normalize(v, false, false, true)]

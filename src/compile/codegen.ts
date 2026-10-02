@@ -334,6 +334,17 @@ const isNum = (v: MathJson | undefined): boolean =>
   typeof v === 'number' ||
   (typeof v === 'object' && v !== null && 'num' in v);
 
+// Concrete integer value of a numeric literal, else undefined.
+const asInt = (v: MathJson | undefined): number | undefined => {
+  const n =
+    typeof v === 'number'
+      ? v
+      : isNum(v)
+        ? Number(numText(v as MathJson))
+        : NaN;
+  return Number.isInteger(n) ? n : undefined;
+};
+
 // Python precedence levels for parenthesization.
 const PREC_LOW = 0; // expression statements, call args
 const PREC_ADD = 10;
@@ -727,6 +738,7 @@ class Emitter {
         // elementwise sp.Min that \min(x, y) emits. A third arg is the
         // domain (\min_{x \in S} f / \min_{x \ge 0} f -> Interval).
         const fn = h === 'Minimum' ? 'minimum' : 'maximum';
+        const mx = h === 'Minimum' ? 'Min' : 'Max';
         const [body, v, dom] = args;
         // SymPy's minimum/maximum can't bound an undefined function's
         // range — call/Apply bodies raise NotImplementedError at eval.
@@ -737,6 +749,24 @@ class Emitter {
             `${this.sp}${fn}(${this.emit(body)}, ${this.emit(v)})`,
             PREC_ATOM,
           ];
+        // \min_{i=lo}^{hi}: i is an integer index (like \sum bounds),
+        // not a real interval. Concrete integer bounds emit Min/Max
+        // over the explicit substitutions; sympy can't iterate a
+        // symbolic sp.Range, so those degrade to a flagged stub.
+        if (isHead(dom, 'IntegerRange')) {
+          const lo = asInt(dom[1]);
+          const hi = asInt(dom[2]);
+          if (lo !== undefined && hi !== undefined)
+            return [
+              `${this.sp}${mx}(*[${this.emit(body, PREC_ATOM)}.subs(${this.emit(v)}, _i) for _i in range(${lo}, ${hi + 1})])`,
+              PREC_ATOM,
+            ];
+          this.scope.flag(
+            'note',
+            `${fn} over a symbolic i=lo..hi range — sympy can't iterate a symbolic sp.Range; emitted as a ${h} stub`,
+          );
+          return this.unknownCall(h, args);
+        }
         if (!this.isSetish(dom)) {
           this.scope.flag(
             'note',
@@ -757,6 +787,14 @@ class Emitter {
         // No `sp.Supremum`/`sp.Infimum` exists — keep the readable stub
         // (Function, valid python) instead of an AttributeError.
         return this.unknownCall(h, args);
+      case 'IntegerRange': {
+        // i=lo..hi index bounds — sp.Range's upper bound is exclusive.
+        const hi = asInt(args[1]);
+        return [
+          `${this.sp}Range(${this.emit(args[0])}, ${hi !== undefined ? String(hi + 1) : `${this.emit(args[1])} + 1`})`,
+          PREC_ATOM,
+        ];
+      }
       case 'Interval': {
         // (a,b] / [a,b) — CE marks open ends with Open(x). A fully
         // closed [a,b] parses as List, not Interval.

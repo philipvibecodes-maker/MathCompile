@@ -813,13 +813,26 @@ const FIXTURES: {
   },
   {
     // \min_{i=1}^{n}: the sub+sup underscript folds into
-    // Power(Equal(i,1),n) — emitting it crashed (Eq**n TypeError).
+    // Power(Equal(i,1),n) — an integer index range (like \sum bounds),
+    // NOT a real interval. Symbolic bounds can't be iterated by sympy,
+    // so it degrades to a flagged Minimum stub over sp.Range.
     latex: '\\min_{i=1}^{n} i^{2}',
     expectedPython: [
       "i, n = sp.symbols('i n')",
-      'sp.minimum(i**2, i, sp.Interval(1, n))',
+      'Minimum = sp.Function("Minimum")',
+      'Minimum(i**2, i, sp.Range(1, n + 1))',
     ],
-    issues: ['interval'],
+    issues: ['symbolic i=lo..hi range'],
+  },
+  {
+    // \min_{i=1}^{10}: concrete integer bounds emit Min over the
+    // substituted values — the integer-domain minimum, not the
+    // continuous sp.minimum over a real interval.
+    latex: '\\min_{i=1}^{10} i^{2}',
+    expectedPython: [
+      'i = sp.Symbol("i")',
+      'sp.Min(*[(i**2).subs(i, _i) for _i in range(1, 11)])',
+    ],
   },
   {
     // (x,y) = (1,2): a symbol-tuple target unpacks — previously emitted
