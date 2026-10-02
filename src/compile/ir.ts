@@ -766,7 +766,18 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     }
 
     if (h === 'Subscript' && node.length === 3) {
-      return `${flattenSubscript(node[1])}_{${flattenSubscript(node[2])}}`;
+      const base = flattenSubscript(node[1]);
+      const sub = flattenSubscript(node[2]);
+      // A non-name base (\binom{n}{k}_{n=3}) or a subscript position
+      // that isn't name-able flattens to '?' — a '?'-riddled name
+      // mangles to `sym`/strips silently. Emit the base instead.
+      if (base.includes('?') || sub.includes('?')) {
+        issues.push(
+          issue('note', 'complex subscript — showing the base'),
+        );
+        return normalize(node[1], false);
+      }
+      return `${base}_{${sub}}`;
     }
 
     if (h === 'Function') {
