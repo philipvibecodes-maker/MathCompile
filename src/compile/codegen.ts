@@ -122,6 +122,11 @@ const SP_FUNCS: Record<string, string> = {
   Difference: 'Complement', // sp.Difference(A, B) == Complement(A, B)
   SetMinus: 'Complement', // CE's \setminus — A \ B == Complement(A, B)
   SymmetricDifference: 'SymmetricDifference',
+  // `x!!` — CE's double-factorial head lands in the 'call' escape hatch,
+  // where only lowercase `sp.factorial2` exists.
+  Factorial2: 'factorial2',
+  // `\deg` — sympy's polynomial degree is lowercase.
+  Degree: 'degree',
 };
 
 // \sin^{-1} — CE emits Apply(InverseFunction(<name>), arg); sympy names
@@ -159,6 +164,13 @@ const SET_ASSUMPTIONS: Record<string, string> = {
   NonNegativeIntegers: 'integer=True, nonnegative=True',
 };
 
+// Set-valued expression heads — `setReady` treats a node with one of
+// these heads as a real sympy set.
+const SET_HEADS = new Set([
+  'Set', 'Interval', 'Union', 'Intersection', 'Complement', 'SetMinus',
+  'Difference', 'SymmetricDifference', 'ConditionSet', 'ImageSet',
+]);
+
 // Statement-position heads that only lower to Python.
 const STATEMENT_HEADS = new Set(['Assign', 'Def', 'Block', 'Which', 'Piecewise']);
 const STATEMENT_CALL_HEADS = new Set(['solve', 'Solve', 'piecewise', 'Piecewise']);
@@ -187,6 +199,9 @@ interface Scope {
   symbols: Map<string, string>;
   /** Names used as functions (f'(x), Apply callees) -> sp.Function lines. */
   functions: Map<string, string>;
+  /** Names used as matrices (\det A, \operatorname{tr}(A)) ->
+   * sp.MatrixSymbol lines. */
+  matrices: Map<string, string>;
   issues: Issue[];
   /** Unprefixed issues bucketed per cell (parallel to the inputs). */
   cellIssues: Issue[][];
@@ -257,7 +272,8 @@ class Emitter {
     const used = (v: string) =>
       this.scope.symbols.has(v) ||
       [...this.scope.symbols.values()].includes(v) ||
-      [...this.scope.functions.values()].includes(v);
+      [...this.scope.functions.values()].includes(v) ||
+      [...this.scope.matrices.values()].includes(v);
     while (used(ident)) ident = `${userIdent(this.scope.qualified, name)}_${n++}`;
     map.set(name, ident);
     return ident;
@@ -286,6 +302,65 @@ class Emitter {
   private fn(name: string): string {
     if (this.scope.defined.has(name)) return userIdent(this.scope.qualified, name);
     return this.alloc(this.scope.functions, name);
+  }
+
+  // A name used as a matrix (\det A) needs sp.MatrixSymbol — det/trace
+  // of a bare Symbol raises in the worker. Names already bound (an
+  // earlier `A = …` assignment) reuse their own ident instead.
+  private mat(name: string): string {
+    if (this.scope.defined.has(name)) return userIdent(this.scope.qualified, name);
+    return this.alloc(this.scope.matrices, name);
+  }
+
+  // Would `node` emit to a real sympy Set? Sympy has no set *variable* —
+  // `Union(A, B)`/`Contains(x, A)` over bare names raises "Input args
+  // must be Sets". Only named set constants, set-valued expressions,
+  // and names already bound by the worksheet qualify; a bare ident is
+  // treated as scalar and the caller degrades to an unevaluated call.
+  private setReady(node: MathJson): boolean {
+    if (isStr(node)) {
+      if (SET_CONSTANTS[node] !== undefined) return true;
+      if (this.scope.defined.has(node)) return true;
+      if (
+        this.scope.symbols.has(node) ||
+        this.scope.functions.has(node) ||
+        this.scope.matrices.has(node)
+      )
+        return false;
+      return false;
+    }
+    return isArr(node) && SET_HEADS.has(headOf(node) ?? '');
+  }
+
+  // Emit `head(a, b)` as a real sympy call when every set operand is
+  // set-valued, else as an unevaluated `Function('head')(a, b)` — the
+  // row shows the notation the user wrote instead of a TypeError.
+  private setOp(head: string, args: MathJson[]): [string, number] {
+    const spHead = SP_FUNCS[head] ?? head;
+    if (args.every((a) => this.setReady(a)))
+      return [
+        `${this.sp}${spHead}(${args.map((a) => this.emit(a)).join(', ')})`,
+        PREC_ATOM,
+      ];
+    return [
+      `${this.sp}Function(${JSON.stringify(spHead)})(${args.map((a) => this.emit(a)).join(', ')})`,
+      PREC_ATOM,
+    ];
+  }
+
+  // Emit the argument of a matrix-valued op (det/trace): a bare
+  // identifier becomes a MatrixSymbol unless it is already a scalar
+  // Symbol/Function here — then flag rather than crash in the worker.
+  private matrixArg(node: MathJson, op: string): string | null {
+    if (!isStr(node)) return this.emit(node, PREC_ATOM);
+    if (
+      this.scope.symbols.has(node) ||
+      this.scope.functions.has(node)
+    ) {
+      this.scope.flag('error', `${op} needs a matrix — ${node} is a scalar here`);
+      return this.emit(node, PREC_ATOM);
+    }
+    return this.mat(node);
   }
 
   private isNegated(node: MathJson): boolean {
@@ -543,13 +618,17 @@ class Emitter {
         ];
       case 'Function': {
         // Anonymous lambda — CE wraps calculus bodies this way. Emitted
-        // directly only when it escapes an operator that unwraps it.
+        // directly only when it escapes an operator that unwraps it
+        // (e.g. `x \mapsto x^2`). A sympy `Lambda` — a raw python lambda
+        // has no latex/repr and displays its own address.
         const params = args.slice(1).map((p) => this.sym(isStr(p) ? p : 'x'));
         const saved = this.scope.bound;
         this.scope.bound = new Set([...saved, ...params]);
         const body = this.emit(args[0]);
         this.scope.bound = saved;
-        return [`(lambda ${params.join(', ')}: ${body})`, PREC_LOW];
+        const sig =
+          params.length === 1 ? params[0] : `(${params.join(', ')})`;
+        return [`${this.sp}Lambda(${sig}, ${body})`, PREC_LOW];
       }
       case 'Integrate': {
         const { body: parsedBody, params } = unwrapLambda(args[0]);
@@ -560,20 +639,27 @@ class Emitter {
         let v = limits?.[0] ?? params[0];
         const lo = limits?.[1];
         const hi = limits?.[2];
+        let extraVars: string[] = [];
         if (missing(v) && isHead(body, 'Multiply') && body.length >= 3) {
           // `\int x^2 \text{d}x` — CE leaves a \text{d} differential as a
           // `d * x` factor pair in the body instead of marking the var.
+          // `\iint`/`\iiint` are single signs, so several pairs park on
+          // one Integrate node — peel them all (leftmost = innermost).
           const tail = body.slice(1);
-          const varName = tail[tail.length - 1];
-          const marker = tail[tail.length - 2];
-          if (
-            isStr(varName) &&
-            isStr(marker) &&
-            (marker === 'd' || marker === 'd_upright')
+          while (
+            tail.length >= 2 &&
+            isStr(tail[tail.length - 1]) &&
+            isStr(tail[tail.length - 2]) &&
+            (tail[tail.length - 2] === 'd' ||
+              tail[tail.length - 2] === 'd_upright')
           ) {
-            v = varName;
-            const rest = tail.slice(0, -2);
-            body = rest.length === 1 ? rest[0] : ['Multiply', ...rest];
+            extraVars.unshift(tail.pop() as string);
+            tail.pop();
+          }
+          if (extraVars.length > 0) {
+            v = extraVars[0];
+            extraVars = extraVars.slice(1);
+            body = tail.length === 1 ? tail[0] : ['Multiply', ...tail];
           }
         }
         if (missing(v)) {
@@ -600,7 +686,7 @@ class Emitter {
         // bound `i` stays a symbol instead of resolving to sp.I).
         const savedBound = this.scope.lambdaBound;
         if (isStr(v))
-          this.scope.lambdaBound = new Set([...savedBound, v]);
+          this.scope.lambdaBound = new Set([...savedBound, v, ...extraVars]);
         const finish = (): [string, number] => {
           const hasLo = !missing(lo);
           const hasHi = !missing(hi);
@@ -610,6 +696,22 @@ class Emitter {
               `${hasLo ? 'upper' : 'lower'} bound is empty — fill it in or delete it`,
             );
             return [`${this.sp}integrate(${this.emit(body)}, ${this.emit(v)})`, PREC_ATOM];
+          }
+          // Several differentials on one sign (`\iint f dx dy`) — an
+          // iterated integral, innermost first. A lone bound pair
+          // applies to every variable (`\iint_a^b` reads as a square).
+          if (extraVars.length > 0) {
+            const vars = [v, ...extraVars].filter(isStr);
+            const specs = hasLo
+              ? vars.map(
+                  (w) =>
+                    `(${this.emit(w)}, ${this.emit(lo)}, ${this.emit(hi)})`,
+                )
+              : vars.map((w) => this.emit(w));
+            return [
+              `${this.sp}integrate(${this.emit(body)}, ${specs.join(', ')})`,
+              PREC_ATOM,
+            ];
           }
           if (hasLo)
             return [
@@ -634,6 +736,21 @@ class Emitter {
         const limits = isHead(args[1], 'Limits') ? args[1].slice(1) : null;
         const eager = h === 'Sum' ? 'summation' : 'product';
         const lazy = h === 'Sum' ? 'Sum' : 'Product';
+        // A stray `d x` under a product/sum (`\prod x^2 dx`) isn't
+        // meaningful — `Product(expr)` raises "specify dummy variables"
+        // in the worker, so flag at compile time instead.
+        if (
+          isHead(body, 'Multiply') &&
+          body.length >= 3 &&
+          isStr(body[body.length - 1]) &&
+          (body[body.length - 2] === 'd' || body[body.length - 2] === 'd_upright')
+        ) {
+          this.scope.flag(
+            'error',
+            `differential ${body[body.length - 2]}${body[body.length - 1]} under \\${h === 'Sum' ? 'sum' : 'prod'} — did you mean \\int?`,
+          );
+          return [`${this.sp}${lazy}(${this.emit(body)})`, PREC_ATOM];
+        }
         const missing = (n: MathJson | undefined): boolean =>
           n === undefined || n === 'Nothing' || isHead(n, 'Error');
         // The index variable is bound for the body's emission (a bound
@@ -812,6 +929,13 @@ class Emitter {
         const [a, s] = args;
         if (isStr(a) && isStr(s) && SET_ASSUMPTIONS[s] !== undefined)
           this.scope.assumptions.set(a, SET_ASSUMPTIONS[s]);
+        // A non-set domain (bare `A`) — `Contains` validates the arg
+        // type, so the whole expression degrades to an unevaluated call.
+        if (!this.setReady(s))
+          return [
+            `${this.sp}Function("Contains")(${this.emit(a)}, ${this.emit(s)})`,
+            PREC_ATOM,
+          ];
         return [
           `${this.sp}Contains(${this.emit(a)}, ${this.emit(s)})`,
           PREC_ATOM,
@@ -819,6 +943,11 @@ class Emitter {
       }
       case 'NotElement':
         // No assumption — `\notin` asserts non-membership, never `real`.
+        if (!this.setReady(args[1]))
+          return [
+            `${this.sp}Function("NotElement")(${this.emit(args[0])}, ${this.emit(args[1])})`,
+            PREC_ATOM,
+          ];
         return [
           `${this.sp}Not(${this.sp}Contains(${this.emit(args[0])}, ${this.emit(args[1])}))`,
           PREC_ATOM,
@@ -836,12 +965,24 @@ class Emitter {
         ];
       }
       case 'Set': {
-        // \{a, b\} -> FiniteSet; \{x : cond\} -> ConditionSet.
-        if (args.length === 2 && isStr(args[0]) && isHead(args[1], 'Condition'))
-          return [
-            `${this.sp}ConditionSet(${this.emit(args[0])}, ${this.emit(args[1][1])})`,
-            PREC_ATOM,
-          ];
+        // \{a, b\} -> FiniteSet; \{x : cond\} -> ConditionSet;
+        // \{x \in S : cond\} -> ConditionSet over the domain, not a
+        // FiniteSet holding a boolean and a nested set.
+        if (args.length === 2 && isHead(args[1], 'Condition')) {
+          const cond = this.emit(args[1][1]);
+          if (isStr(args[0]))
+            return [
+              `${this.sp}ConditionSet(${this.emit(args[0])}, ${cond})`,
+              PREC_ATOM,
+            ];
+          if (isHead(args[0], 'Element') && args[0].length === 3)
+            return [
+              this.setReady(args[0][2])
+                ? `${this.sp}ConditionSet(${this.emit(args[0][1])}, ${cond}, ${this.emit(args[0][2])})`
+                : `${this.sp}Function("ConditionSet")(${this.emit(args[0][1])}, ${cond}, ${this.emit(args[0][2])})`,
+              PREC_ATOM,
+            ];
+        }
         return [
           `${this.sp}FiniteSet(${args.map((a) => this.emit(a)).join(', ')})`,
           PREC_ATOM,
@@ -902,7 +1043,24 @@ class Emitter {
           .join(', ');
         return [`${this.sp}Matrix([${text}])`, PREC_ATOM];
       }
+      case 'Union':
+      case 'Intersection':
+      case 'Complement':
+      case 'SetMinus':
+      case 'Difference':
+      case 'SymmetricDifference':
+        // `A \cup B` over bare names — sympy can't type a set variable,
+        // so operands that aren't sets degrade to an unevaluated call.
+        return this.setOp(h, args);
       case 'Determinant':
+        // `\det A` on a bare name — MatrixSymbol via matrixArg; a
+        // scalar Symbol would raise 'Symbol' has no 'det' in the worker.
+        // Other args (a matrix literal, an assigned matrix) keep .det().
+        if (isStr(args[0]))
+          return [
+            `${this.sp}Determinant(${this.matrixArg(args[0], '\\det') ?? 'None'})`,
+            PREC_ATOM,
+          ];
         return [`${this.emit(args[0], PREC_ATOM)}.det()`, PREC_ATOM];
       case 'Transpose':
         return [`${this.emit(args[0], PREC_ATOM)}.T`, PREC_ATOM];
@@ -922,12 +1080,47 @@ class Emitter {
         // Worksheet-declared names call directly (f(x) = …): a declared
         // but unbound name gets a Function def in this cell.
         const name = isStr(args[0]) ? args[0] : 'unknown';
+        // `f \circ g` — CE's composition head is literally 'Ring', which
+        // getattr would resolve to sympy's ring-domain constructor.
+        if (name === 'Ring' && args.length === 3) {
+          const f = isStr(args[1]) ? this.fn(args[1]) : this.emit(args[1]);
+          const g = isStr(args[2]) ? this.fn(args[2]) : this.emit(args[2]);
+          const t = `${this.sp}Symbol("x")`;
+          return [
+            `${this.sp}Lambda(${t}, ${f}(${g}(${t})))`,
+            PREC_LOW,
+          ];
+        }
+        // `\operatorname{tr}(A)` — sp.Trace exists but rejects a bare
+        // Symbol, the same 'Symbol' has no 'det' crash class.
+        if (name === 'Trace' && args.length === 2)
+          return [
+            `${this.sp}Trace(${this.matrixArg(args[1], '\\operatorname{tr}') ?? 'None'})`,
+            PREC_ATOM,
+          ];
+        // `\|x\|`/Vmatrix — no top-level `sp.Norm`; a bare name reads as
+        // a scalar magnitude, a matrix value keeps `.norm()`.
+        if (name === 'Norm' && args.length === 2) {
+          const a = args[1];
+          if (isStr(a) && !this.scope.matrices.has(a))
+            return [`${this.sp}Abs(${this.emit(a)})`, PREC_ATOM];
+          if (isStr(a))
+            return [
+              `${this.sp}Function("Norm")(${this.emit(a)})`,
+              PREC_ATOM,
+            ];
+          return [`${this.emit(a, PREC_ATOM)}.norm()`, PREC_ATOM];
+        }
         const rendered = args
           .slice(1)
           .map((a) => this.emit(a))
           .join(', ');
         if (this.scope.declared.has(name))
           return [`${this.fn(name)}(${rendered})`, PREC_ATOM];
+        // The same head may exist under a longer CE name than sympy's
+        // (`x!!` -> Factorial2 but `sp.factorial2`).
+        if (SP_FUNCS[name])
+          return [`${this.sp}${SP_FUNCS[name]}(${rendered})`, PREC_ATOM];
         const callee = this.scope.qualified
           ? `getattr(sp, ${JSON.stringify(pyIdent(name))}, ${this.sp}Function(${JSON.stringify(name)}))`
           : `globals().get(${JSON.stringify(pyIdent(name))}, ${this.sp}Function(${JSON.stringify(name)}))`;
@@ -1067,7 +1260,12 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   // Names first needed in this cell (not already bound in earlier ones).
   const newSyms = [...scope.symbols].filter(([raw]) => !preDefined.has(raw));
   const newFns = [...scope.functions].filter(([raw]) => !preDefined.has(raw));
-  const newNames = new Set([...newSyms, ...newFns].map(([raw]) => raw));
+  const newMats = [...scope.matrices].filter(
+    ([raw]) => !preDefined.has(raw),
+  );
+  const newNames = new Set(
+    [...newSyms, ...newFns, ...newMats].map(([raw]) => raw),
+  );
   for (const raw of newNames) scope.defined.add(raw);
 
   const defs: string[] = [];
@@ -1093,6 +1291,10 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   }
   for (const [raw, ident] of newFns)
     defs.push(`${ident} = ${sp}Function(${JSON.stringify(raw)})`);
+  for (const [raw, ident] of newMats)
+    defs.push(
+      `${ident} = ${sp}MatrixSymbol(${JSON.stringify(raw)}, ${sp}Symbol("n", integer=True, positive=True), ${sp}Symbol("n", integer=True, positive=True))`,
+    );
 
   return { defs, parts, newNames };
 }
@@ -1315,6 +1517,7 @@ function buildScope(
     assumptions: new Map(),
     symbols: new Map(),
     functions: new Map(),
+    matrices: new Map(),
     issues,
     cellIssues,
     cell,

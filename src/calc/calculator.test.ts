@@ -219,6 +219,56 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
       calc('\\int_{0}^{1}\\int_{0}^{x}y\\text{d}y\\text{d}x').statements[0].code,
     ).toBe('sp.integrate(sp.integrate(y, (y, 0, x)), (x, 0, 1))');
   });
+
+  it('folds multiple differentials on one sign into an iterated integral', () => {
+    // \iint is a single Integrate node — the `d v` pairs all sit in its
+    // body; leftmost is the innermost variable.
+    expect(calc('\\iint xy\\text{d}x\\text{d}y').statements[0].code).toBe(
+      'sp.integrate(x * y, x, y)',
+    );
+    expect(
+      calc('\\iiint x\\text{d}x\\text{d}y\\text{d}z').statements[0].code,
+    ).toBe('sp.integrate(x, x, y, z)');
+  });
+
+  it('declares MatrixSymbol for \\det/\\tr on a bare name', () => {
+    const det = calc('\\det A');
+    expect(det.prelude).toContain(
+      'A = sp.MatrixSymbol("A", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
+    );
+    expect(det.statements[0].code).toBe('sp.Determinant(A)');
+    expect(calc('\\operatorname{tr}(A)').statements[0].code).toBe(
+      'sp.Trace(A)',
+    );
+  });
+
+  it('lowers \\mapsto to sp.Lambda, not a raw python lambda', () => {
+    expect(calc('x\\mapsto x^{2}').statements[0].code).toBe(
+      'sp.Lambda(x, x**2)',
+    );
+  });
+
+  it('emits a ConditionSet for \\{x \\in S : cond\\}', () => {
+    expect(
+      calc('\\{x\\in\\mathbb{R}:x>0\\}').statements[0].code,
+    ).toBe('sp.ConditionSet(x, sp.Gt(x, 0), sp.S.Reals)');
+  });
+
+  it('lowers `x!!` to sp.factorial2 and `f \\circ g` to composition', () => {
+    expect(calc('x!!').statements[0].code).toBe('sp.factorial2(x)');
+    const prog = calc('f\\circ g');
+    expect(prog.statements[0].code).toBe(
+      'sp.Lambda(sp.Symbol("x"), f(g(sp.Symbol("x"))))',
+    );
+    expect(prog.prelude).toContain('f = sp.Function("f")');
+    expect(prog.prelude).toContain('g = sp.Function("g")');
+  });
+
+  it('flags a stray differential under \\prod at compile time', () => {
+    const prog = calc('\\prod x^{2}\\text{d}x');
+    expect(prog.issues.some((i) => i.severity === 'error')).toBe(true);
+    expect(prog.statements).toHaveLength(0);
+  });
 });
 
 describe('toNerdamerInput (latex → nerdamer calls)', () => {
