@@ -192,7 +192,6 @@ const FIXTURES: {
     latex: '\\mathrm{solve}(x^2 = 4, x)',
     expectedIR: ['call', 'solve', ['Equal', ['Power', 'x', 2], 4], 'x'],
     expectedPython: ['x = sp.Symbol("x")', 'sp.solve(sp.Eq(x**2, 4), x)'],
-    issues: ['unknown head "solve"'],
   },
   {
     latex: '\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}',
@@ -332,7 +331,12 @@ const FIXTURES: {
     // SyntaxError or wrong answer; Determinant(...) displays the form
     // and flags that it can't evaluate.
     latex: '\\det(3)',
-    expectedPython: ['sp.Determinant(3)'],
+    // sp.Determinant(non-matrix) raises TypeError at eval — a Function
+    // stub displays the intended form and stays valid python.
+    expectedPython: [
+      'Determinant = sp.Function("Determinant")',
+      'Determinant(3)',
+    ],
     issues: ['determinant needs a matrix'],
   },
   {
@@ -360,12 +364,10 @@ const FIXTURES: {
     // n!! is factorial2 in SymPy, not a `Factorial2` unknown head.
     latex: 'n!!',
     expectedPython: ['n = sp.Symbol("n")', 'sp.factorial2(n)'],
-    issues: ['unknown head "Factorial2"'],
   },
   {
     latex: '\\{1, 2, 3\\}',
     expectedPython: ['sp.FiniteSet(1, 2, 3)'],
-    issues: ['unknown head "Set"'],
   },
   {
     latex: '\\operatorname{sign}(x)',
@@ -437,9 +439,11 @@ const FIXTURES: {
     // stripped and the lone | wraps as \left. \right|, and an Equal bound
     // substitutes the point rather than the equation.
     latex: '\\frac{dy}{dx}\\bigg|_{x=0}',
+    // dy/dx on two independent symbols stays unevaluated (sp.diff would
+    // diff y w.r.t. x to 0) — the eval bar still substitutes the point.
     expectedPython: [
       "y, x = sp.symbols('y x')",
-      '(sp.diff(y, x)).subs(x, 0)',
+      '(sp.Derivative(y, x)).subs(x, 0)',
     ],
   },
   {
@@ -501,11 +505,11 @@ const FIXTURES: {
     // \min_{x} f minimizes f over x — used to emit sp.Min(_ * x * f)
     // with a garbage `_` symbol that raised NameError at runtime.
     latex: '\\min_{x} f',
-    expectedPython: ["x, f = sp.symbols('x f')", 'sp.minimum(f, x)'],
+    expectedPython: ["f, x = sp.symbols('f x')", 'sp.minimum(f, x)'],
   },
   {
     latex: '\\max_{x} f',
-    expectedPython: ["x, f = sp.symbols('x f')", 'sp.maximum(f, x)'],
+    expectedPython: ["f, x = sp.symbols('f x')", 'sp.maximum(f, x)'],
   },
   {
     // \min(x,y) keeps the elementwise sp.Min.
@@ -614,6 +618,287 @@ const FIXTURES: {
   {
     latex: 'A^{\\dagger}',
     expectedPython: ['A = sp.Symbol("A")', 'sp.Adjoint(A)'],
+  },
+  {
+    // Nested application used to re-wrap the inner call as
+    // ['call', 'call', 'f', 'x'] and emit 'call(f)'-shaped garbage.
+    latex: 'g(f(x))',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+      'g = sp.Function("g")',
+      'g(f(x))',
+    ],
+  },
+  {
+    // \mathbb{P} — sp.S.Primes doesn't exist; the primes set is a
+    // ConditionSet, and x still picks up prime=True.
+    latex: 'x \\in \\mathbb{P}',
+    expectedPython: [
+      'x = sp.Symbol("x", prime=True)',
+      'sp.Contains(x, sp.ConditionSet(sp.Symbol("p"), sp.Q.prime(sp.Symbol("p")), sp.S.Naturals))',
+    ],
+  },
+  {
+    // \mathbb{Z}^+ — CE names it PositiveIntegers; the naturals.
+    latex: 'x \\in \\mathbb{Z}^{+}',
+    expectedPython: [
+      'x = sp.Symbol("x", integer=True, positive=True)',
+      'sp.Contains(x, sp.S.Naturals)',
+    ],
+  },
+  {
+    // \mathbb{R}_+ — positive reals are an open interval, not an S.* set.
+    latex: 'x \\in \\mathbb{R}_{+}',
+    expectedPython: [
+      'x = sp.Symbol("x", positive=True)',
+      'sp.Contains(x, sp.Interval.open(0, sp.oo))',
+    ],
+  },
+  {
+    // (x, y) \in \mathbb{R}^2 — the member is a Tuple (a python list
+    // isn't a SymPy arg) and S.Reals**2 is a real ProductSet.
+    latex: '(x, y) \\in \\mathbb{R}^{2}',
+    expectedPython: [
+      "x, y = sp.symbols('x y')",
+      'sp.Contains(sp.Tuple(x, y), sp.S.Reals**2)',
+    ],
+  },
+  {
+    // A \in \mathbb{R}^{2\times2} — no SymPy matrix space exists; the
+    // member becomes a MatrixSymbol and the membership a readable stub.
+    latex: 'A \\in \\mathbb{R}^{2\\times2}',
+    expectedPython: [
+      'A = sp.MatrixSymbol("A", 2, 2)',
+      'Element = sp.Function("Element")',
+      'MatrixSpace = sp.Function("MatrixSpace")',
+      'Element(A, MatrixSpace(sp.S.Reals, 2, 2))',
+    ],
+    issues: ['matrix space'],
+  },
+  {
+    // Set-builder: {x | p} filters, {x ∈ D | p} a ConditionSet with base
+    // set, {f(x) | x ∈ D} an ImageSet.
+    latex: '\\{x : x > 0\\}',
+    expectedPython: ['x = sp.Symbol("x")', 'sp.ConditionSet(x, sp.Gt(x, 0))'],
+  },
+  {
+    latex: '\\{x \\in \\mathbb{R} : x > 0\\}',
+    expectedPython: [
+      'x = sp.Symbol("x", real=True)',
+      'sp.ConditionSet(x, sp.Gt(x, 0), sp.S.Reals)',
+    ],
+  },
+  {
+    latex: '\\{x^{2} : x \\in \\mathbb{Z}\\}',
+    expectedPython: [
+      'x = sp.Symbol("x", integer=True)',
+      'sp.ImageSet(sp.Lambda(x, x**2), sp.S.Integers)',
+    ],
+  },
+  {
+    // f'(0)/f'(\pi): sp.diff can't take a literal/constant as its
+    // variable — diff at a fresh symbol, then substitute the point.
+    latex: "f'(0)",
+    expectedPython: [
+      '_ev0 = sp.Symbol("_ev0")',
+      'f = sp.Function("f")',
+      '(sp.diff(f(_ev0), _ev0)).subs(_ev0, 0)',
+    ],
+  },
+  {
+    latex: "f'(\\pi)",
+    expectedPython: [
+      '_ev0 = sp.Symbol("_ev0")',
+      'f = sp.Function("f")',
+      '(sp.diff(f(_ev0), _ev0)).subs(_ev0, sp.pi)',
+    ],
+  },
+  {
+    // Chained relations emit the pairwise And — a right-nested
+    // Less(x, Less(y, z)) used to emit Lt(x, Lt(y, z)) and raise
+    // TypeError inside SymPy's argsort.
+    latex: 'x < y < z',
+    expectedPython: [
+      "x, y, z = sp.symbols('x y z')",
+      'sp.And(sp.Lt(x, y), sp.Lt(y, z))',
+    ],
+  },
+  {
+    latex: 'a \\ne b \\ne c',
+    expectedPython: [
+      "a, b, c = sp.symbols('a b c')",
+      'sp.And(sp.Ne(a, b), sp.Ne(b, c))',
+    ],
+  },
+  {
+    latex: '1 \\le x < 3',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.And(sp.Le(1, x), sp.Lt(x, 3))',
+    ],
+  },
+  {
+    // \sup_{x} f — no sp.Supremum exists; keep the readable stub.
+    latex: '\\sup_{x} f',
+    expectedPython: [
+      "f, x = sp.symbols('f x')",
+      'Supremum = sp.Function("Supremum")',
+      'Supremum(f, x)',
+    ],
+    issues: ['Supremum'],
+  },
+  {
+    // \min_{x \ge 0} x^2 — a relational underscript becomes the
+    // optimization domain Interval.
+    latex: '\\min_{x \\ge 0} x^{2}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.minimum(x**2, x, sp.Interval(0, sp.oo))',
+    ],
+  },
+  {
+    // \min_{x} f(x) on an undefined function — sp.minimum can't bound
+    // its range (NotImplementedError) so it keeps the stub.
+    latex: '\\min_{x} f(x)',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'Minimum = sp.Function("Minimum")',
+      'f = sp.Function("f")',
+      'Minimum(f(x), x)',
+    ],
+    issues: ['Minimum'],
+  },
+  {
+    // \dot{x} parses as D(x, t) — sp.diff(x, t) is 0 (independence);
+    // unevaluated Derivative keeps the Newtonian notation. Provisional.
+    latex: '\\dot{x}',
+    expectedPython: [
+      "x, t = sp.symbols('x t')",
+      'sp.Derivative(x, t)',
+    ],
+  },
+  {
+    // Nested indefinite integrals take +C only on the outermost sign —
+    // an inner constant integrates into the result.
+    latex: '\\int\\int f dx dx',
+    expectedPython: [
+      "f, x = sp.symbols('f x')",
+      'sp.integrate(sp.integrate(f, x), x) + sp.Symbol("C")',
+    ],
+  },
+  {
+    // \overline{z} maps onto sp.conjugate — not a Conjugate stub.
+    latex: '\\overline{z}',
+    expectedPython: ['z = sp.Symbol("z")', 'sp.conjugate(z)'],
+  },
+  {
+    // \Re / \Im / \arg operator names hit the sp.re/im/arg builtins.
+    latex: '\\Re z',
+    expectedPython: ['z = sp.Symbol("z")', 'sp.re(z)'],
+  },
+  {
+    latex: '\\overbrace{a+b}^{c}',
+    expectedPython: ["a, b = sp.symbols('a b')", 'a + b'],
+  },
+  {
+    // \tilde{t}: CE calls the accent OverTilde — the suffix map's
+    // lowercase 'Overtilde' key never matched and emitted a stub.
+    latex: '\\tilde{t}',
+    expectedPython: ['t_tilde = sp.Symbol("t_tilde")'],
+  },
+  {
+    latex: 'e^{i\\pi}',
+    expectedPython: ['sp.E**(sp.I * sp.pi)'],
+  },
+  {
+    // \min_{i=1}^{n}: the sub+sup underscript folds into
+    // Power(Equal(i,1),n) — emitting it crashed (Eq**n TypeError).
+    latex: '\\min_{i=1}^{n} i^{2}',
+    expectedPython: [
+      "i, n = sp.symbols('i n')",
+      'sp.minimum(i**2, i, sp.Interval(1, n))',
+    ],
+    issues: ['interval'],
+  },
+  {
+    // (x,y) = (1,2): a symbol-tuple target unpacks — previously emitted
+    // sp.Eq([x,y],[1,2]) which SympifyError'd on the python lists.
+    latex: '(x,y) = (1,2)',
+    expectedPython: ['x, y = [1, 2]'],
+  },
+  {
+    // \widehat{AB}: CE reads the decoration as Arc(A,B); previously the
+    // two-arg form emitted the bare product A*B with no mark.
+    latex: '\\widehat{AB}',
+    expectedPython: ['AB_arc = sp.Symbol("AB_arc")'],
+  },
+  {
+    // A matrix integrand can't take + C — Matrix + Symbol is a TypeError.
+    latex: '\\int \\begin{pmatrix} x & 0 \\\\ 0 & x \\end{pmatrix} dx',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.integrate(sp.Matrix([[x, 0], [0, x]]), x)',
+    ],
+    issues: ['matrix integrand'],
+  },
+  {
+    // x' = 1 assigns a primed variable — functionDefShape used to match
+    // the Prime(x) shape and emit `def Prime(x): return 1`.
+    latex: "x' = 1",
+    expectedPython: ['x_prime = 1'],
+  },
+  {
+    // S^{-} / S^{*} / S^{\times}: decorated standard sets map to real
+    // SymPy — Intersect/Complement — not Adjoint or call stubs.
+    latex: 'x \\in \\mathbb{Z}^{-}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.Contains(x, sp.Intersection(sp.S.Integers, sp.Interval.open(-sp.oo, 0)))',
+    ],
+  },
+  {
+    latex: 'x \\in \\mathbb{Z}^{*}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.Contains(x, sp.Complement(sp.S.Integers, sp.FiniteSet(0)))',
+    ],
+  },
+  {
+    latex: 'x \\in \\mathbb{R}^{\\times}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.Contains(x, sp.Complement(sp.S.Reals, sp.FiniteSet(0)))',
+    ],
+  },
+  {
+    // x := y := 5 — a nested Assign isn't a value (sp.Assign doesn't
+    // exist); it flattens to sequential statements.
+    latex: 'x := y := 5',
+    expectedPython: ['y = 5', 'x = y'],
+  },
+  {
+    // \dot{x} = f(x) is an ODE — the D operator must not read as a
+    // function name in functionDefShape (`def D(x,t): return f(x)`).
+    latex: '\\dot{x} = f(x)',
+    expectedPython: [
+      "x, t = sp.symbols('x t')",
+      'f = sp.Function("f")',
+      'sp.Eq(sp.Derivative(x, t), f(x))',
+    ],
+  },
+  {
+    latex: '\\frac{dy}{dx} = 0',
+    expectedPython: [
+      "y, x = sp.symbols('y x')",
+      'sp.Eq(sp.Derivative(y, x), 0)',
+    ],
+  },
+  {
+    // \operatorname{sqrt}/factorial/etc. resolve to real SymPy builtins
+    // rather than worksheet-Function stubs.
+    latex: '\\operatorname{sqrt}(2)',
+    expectedPython: ['sp.sqrt(2)'],
   },
 ];
 
