@@ -422,6 +422,20 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
   });
 
+  it('singleton-wraps a bare name in \\in/\\notin like the set ops', () => {
+    // `x \in S` echoed a `Element(x, S)` call stub; `x \in {S}` is the
+    // honest reading and matches `x \cup y` -> `{x, y}`.
+    expect(calc('x \\in S').statements[0].code).toBe(
+      'sp.Contains(x, sp.FiniteSet(S))',
+    );
+    expect(calc('x \\notin S').statements[0].code).toBe(
+      'sp.Not(sp.Contains(x, sp.FiniteSet(S)))',
+    );
+    expect(calc('x \\in \\mathbb{R}').statements[0].code).toBe(
+      'sp.Contains(x, sp.S.Reals)',
+    );
+  });
+
   it('names greek-variant symbols after their glyph, not the CE id', () => {
     // `\varepsilon` emitted `Symbol("epsilonSymbol")` — the row showed
     // the word "epsilonSymbol".

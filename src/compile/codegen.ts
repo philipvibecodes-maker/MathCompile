@@ -808,22 +808,20 @@ class Emitter {
         return [this.emit(args[0]), PREC_ATOM];
       case 'Element': {
         // x \in S — sp.Contains requires a real Set (a bare Symbol raises
-        // TypeError), so map only when the operand is provably set-like;
-        // otherwise keep the readable Element(...) stub + flag. A
-        // first-referenced member also picks up the set's domain as
-        // Symbol kwargs (\mathbb{R} -> real=True); \notin asserts the
-        // opposite, so NotElement intentionally skips this.
-        if (!this.isSetish(args[1])) return this.unknownCall(h, args);
-        this.assumeFrom(args[0], args[1]);
+        // TypeError); a non-set operand is wrapped as a singleton like
+        // the Union operands (`x \in S` -> `x \in {S}`). A first-referenced
+        // member also picks up the set's domain as Symbol kwargs
+        // (\mathbb{R} -> real=True); \notin asserts the opposite, so
+        // NotElement intentionally skips this.
+        if (this.isSetish(args[1])) this.assumeFrom(args[0], args[1]);
         return [
-          `${this.sp}Contains(${this.emit(args[0])}, ${this.emit(args[1])})`,
+          `${this.sp}Contains(${this.emit(args[0])}, ${this.setArg(args[1])})`,
           PREC_ATOM,
         ];
       }
       case 'NotElement': {
-        if (!this.isSetish(args[1])) return this.unknownCall(h, args);
         return [
-          `${this.sp}Not(${this.sp}Contains(${this.emit(args[0])}, ${this.emit(args[1])}))`,
+          `${this.sp}Not(${this.sp}Contains(${this.emit(args[0])}, ${this.setArg(args[1])}))`,
           PREC_ATOM,
         ];
       }
