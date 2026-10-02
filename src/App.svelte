@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fade } from 'svelte/transition';
+  import { fade, slide } from 'svelte/transition';
   import MathField from './components/MathField.svelte';
   import CalcOutput from './components/CalcOutput.svelte';
   import { TARGETS } from './compile/targets';
@@ -328,6 +328,7 @@
               class="engine-status"
               class:engine-error={calcEngine.status === 'error'}
               role="status"
+              transition:slide={{ duration: 350 }}
             >
               {#if calcEngine.status === 'loading'}
                 <span class="engine-spinner" aria-hidden="true"></span>
