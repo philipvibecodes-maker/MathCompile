@@ -612,6 +612,21 @@ class Emitter {
     const args = node.slice(1);
     switch (h) {
       case 'Add': {
+        // `\int x³+x²+x+1 dx` — CE files the integral as Add's first
+        // term with the integrand as siblings:
+        // Add(Integrate(Nothing, L), t1.., tn·d·x). Rebuild the real
+        // Integrate so the differential peel can run on the sum.
+        if (
+          isHead(args[0], 'Integrate') &&
+          (args[0][1] === 'Nothing' || args[0][1] === undefined)
+        ) {
+          const integ = args[0];
+          return this.inner([
+            'Integrate',
+            ['Add', ...args.slice(1)],
+            integ[2],
+          ] as MathJson);
+        }
         // Add emits x + y - z, folding Negate children and negative
         // literals into subtraction for readable output.
         const parts = args.map((a) => {
