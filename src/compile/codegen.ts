@@ -162,6 +162,7 @@ const SET_ASSUMPTIONS: Record<string, string> = {
   PositiveIntegers: 'integer=True, positive=True',
   NonnegativeIntegers: 'integer=True, nonnegative=True',
   NonNegativeIntegers: 'integer=True, nonnegative=True',
+  ComplexNumbers: 'complex=True',
 };
 
 // Set-valued expression heads — `setReady` treats a node with one of
@@ -651,7 +652,9 @@ class Emitter {
             isStr(tail[tail.length - 1]) &&
             isStr(tail[tail.length - 2]) &&
             (tail[tail.length - 2] === 'd' ||
-              tail[tail.length - 2] === 'd_upright')
+              tail[tail.length - 2] === 'd_upright' ||
+              tail[tail.length - 2] === "'d'" ||
+              tail[tail.length - 2] === "'d_upright'")
           ) {
             extraVars.unshift(tail.pop() as string);
             tail.pop();
@@ -708,10 +711,15 @@ class Emitter {
                     `(${this.emit(w)}, ${this.emit(lo)}, ${this.emit(hi)})`,
                 )
               : vars.map((w) => this.emit(w));
-            return [
-              `${this.sp}integrate(${this.emit(body)}, ${specs.join(', ')})`,
-              PREC_ATOM,
-            ];
+            const call = `${this.sp}integrate(${this.emit(body)}, ${specs.join(', ')})`;
+            // One +C for the whole iterated antiderivative — same
+            // convention as the single-variable path.
+            return hasLo
+              ? [call, PREC_ATOM]
+              : [
+                  `${call} + ${this.sp}Symbol(${JSON.stringify(nextConstName(this.scope))})`,
+                  PREC_ADD,
+                ];
           }
           if (hasLo)
             return [
@@ -743,7 +751,10 @@ class Emitter {
           isHead(body, 'Multiply') &&
           body.length >= 3 &&
           isStr(body[body.length - 1]) &&
-          (body[body.length - 2] === 'd' || body[body.length - 2] === 'd_upright')
+          (body[body.length - 2] === 'd' ||
+            body[body.length - 2] === 'd_upright' ||
+            body[body.length - 2] === "'d'" ||
+            body[body.length - 2] === "'d_upright'")
         ) {
           this.scope.flag(
             'error',
@@ -1063,6 +1074,13 @@ class Emitter {
           ];
         return [`${this.emit(args[0], PREC_ATOM)}.det()`, PREC_ATOM];
       case 'Transpose':
+        // `A^T` — `.T` on a scalar Symbol is an AttributeError; a bare
+        // name reads as a matrix (same convention as \det A).
+        if (isStr(args[0]))
+          return [
+            `${this.sp}Transpose(${this.matrixArg(args[0], '^T') ?? 'None'})`,
+            PREC_ATOM,
+          ];
         return [`${this.emit(args[0], PREC_ATOM)}.T`, PREC_ATOM];
       case 'Inverse':
         return [`${this.emit(args[0], PREC_ATOM)}**-1`, PREC_ATOM];
@@ -1080,6 +1098,11 @@ class Emitter {
         // Worksheet-declared names call directly (f(x) = …): a declared
         // but unbound name gets a Function def in this cell.
         const name = isStr(args[0]) ? args[0] : 'unknown';
+        // `\varphi(n)` parses as GoldenRatio applied to n — sympy's
+        // GoldenRatio isn't callable and the textbook reading is
+        // Euler's totient.
+        if (name === 'GoldenRatio' && args.length === 2)
+          return [`${this.sp}totient(${this.emit(args[1])})`, PREC_ATOM];
         // `f \circ g` — CE's composition head is literally 'Ring', which
         // getattr would resolve to sympy's ring-domain constructor.
         if (name === 'Ring' && args.length === 3) {

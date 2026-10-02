@@ -43,10 +43,105 @@ export interface NormResult {
 let engine: ComputeEngine | undefined;
 const ce = (): ComputeEngine => (engine ??= new ComputeEngine());
 
-const isArray = (v: MathJson): v is MathJson[] => Array.isArray(v);
-const isString = (v: MathJson): v is string => typeof v === 'string';
-const head = (v: MathJson): string | undefined =>
+const isArray = (v: MathJson | undefined): v is MathJson[] => Array.isArray(v);
+const isString = (v: MathJson | undefined): v is string => typeof v === 'string';
+const head = (v: MathJson | undefined): string | undefined =>
   isArray(v) && isString(v[0]) ? v[0] : undefined;
+
+// Differential marks: plain `d`/`d_upright` symbols and the quoted
+// `'d'` string literal that `\text{d}` produces.
+const DIFF_MARKS = new Set(['d', 'd_upright', "'d'", "'d_upright'"]);
+const isDiffMark = (v: MathJson | undefined): boolean =>
+  v !== undefined && isString(v) && DIFF_MARKS.has(v);
+
+// A `d`-power: `d`, `d^2`, or the same inside a Power node.
+const diffPower = (
+  v: MathJson | undefined,
+): { is: boolean; order: MathJson | undefined } => {
+  if (isDiffMark(v)) return { is: true, order: undefined };
+  if (isArray(v) && head(v) === 'Power' && v.length === 3 && isDiffMark(v[1]))
+    return { is: true, order: v[2] };
+  return { is: false, order: undefined };
+};
+
+// `\frac{d f}{d x}` written with \text{d} (or d_upright) never becomes
+// CE's `D` — it survives as Divide('d', Multiply('d', x)) and the calc
+// pipeline would emit `d / (d * x) * f` = f/x — silently wrong. Match
+// the quotient shape so the caller can fold it to D(body, x[, order]).
+const dQuotient = (
+  num: MathJson,
+  den: MathJson,
+):
+  | { body?: MathJson; x: MathJson; order: MathJson | undefined }
+  | null => {
+  if (!isArray(den) || (head(den) !== 'Multiply' && head(den) !== 'InvisibleOperator'))
+    return null;
+  const dp = diffPower(den[1]);
+  if (!dp.is || den.length !== 3) return null;
+  let order = dp.order;
+  let x: MathJson;
+  if (isArray(den[2]) && head(den[2]) === 'Power' && den[2].length === 3) {
+    x = den[2][1];
+    if (order !== undefined && JSON.stringify(order) !== JSON.stringify(den[2][2]))
+      return null;
+    order = den[2][2];
+  } else {
+    x = den[2];
+    if (order !== undefined) return null; // d^2 / (d x) — not a clean
+    // nth-order quotient; leave it a fraction.
+  }
+  const np = diffPower(num);
+  if (np.is) {
+    if (np.order !== undefined && order !== undefined &&
+        JSON.stringify(np.order) !== JSON.stringify(order))
+      return null;
+    return { x, order: order ?? np.order };
+  }
+  if (
+    isArray(num) &&
+    (head(num) === 'Multiply' || head(num) === 'InvisibleOperator')
+  ) {
+    const nq = diffPower(num[1]);
+    if (!nq.is) return null;
+    if (nq.order !== undefined && order !== undefined &&
+        JSON.stringify(nq.order) !== JSON.stringify(order))
+      return null;
+    const tail = num.slice(2);
+    return {
+      body: tail.length === 1 ? tail[0] : ['Multiply', ...tail],
+      x,
+      order: order ?? nq.order,
+    };
+  }
+  return null;
+};
+
+// Scan a product's normalized factors for a d-quotient and fold it to
+// `D(body, x[, order])` — returns the rewritten factor list, or null.
+const foldDQuotient = (args: MathJson[]): MathJson[] | null => {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (!isArray(a) || head(a) !== 'Divide' || a.length !== 3) continue;
+    const q = dQuotient(a[1], a[2]);
+    if (!q) continue;
+    const rest = args.filter((_, j) => j !== i);
+    if (q.body !== undefined) {
+      // `\frac{df}{dx} g` — g stays a factor outside the derivative.
+      const d: MathJson =
+        q.order !== undefined
+          ? ['D', q.body, q.x, q.order]
+          : ['D', q.body, q.x];
+      return [...args.slice(0, i), d, ...args.slice(i + 1)];
+    }
+    if (rest.length === 0) return null; // `\frac{d}{dx}` alone — leave it.
+    const body: MathJson =
+      rest.length === 1 ? rest[0] : ['Multiply', ...rest];
+    return [
+      q.order !== undefined ? ['D', body, q.x, q.order] : ['D', body, q.x],
+    ];
+  }
+  return null;
+};
 
 // A cell's LaTeX may hold multiple statements: MathQuill wraps multi-line
 // content as \displaylines{a \\ b \\ c}. CE cannot parse that wrapper (it
@@ -460,6 +555,10 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
         return ['Apply', normalize(fn, false), ...mid, ...callArgs];
       }
       const args = items.map((n) => normalize(n, false));
+      const folded = foldDQuotient(args);
+      if (folded) {
+        return folded.length === 1 ? folded[0] : ['Multiply', ...folded];
+      }
       // `2i` (number times bare i) means the imaginary unit — matches the
       // canonical Complex-node output. `xi`/`ij` keep i as a symbol.
       const imaginary =
@@ -468,6 +567,28 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
         'Multiply',
         ...args.map((a) => (imaginary && a === 'i' ? 'ImaginaryUnit' : a)),
       ];
+    }
+
+    // A canonical Multiply can still carry a `\text{d}` quotient — same
+    // fold as the InvisibleOperator path above.
+    if (h === 'Multiply') {
+      const args = node.slice(1).map((n) => normalize(n, false));
+      const folded = foldDQuotient(args);
+      if (folded)
+        return folded.length === 1 ? folded[0] : ['Multiply', ...folded];
+    }
+
+    // A standalone `\frac{df}{dx}` (no surrounding product) — the same
+    // quotient fold, directly on the Divide node.
+    if (h === 'Divide' && node.length === 3) {
+      const q = dQuotient(
+        normalize(node[1], false),
+        normalize(node[2], false),
+      );
+      if (q && q.body !== undefined)
+        return q.order !== undefined
+          ? ['D', q.body, q.x, q.order]
+          : ['D', q.body, q.x];
     }
 
     // Non-canonical \int/\sum/\prod take Tuple bounds (or a bare variable
@@ -496,13 +617,24 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
           while (
             vars.length < chain.length &&
             factors.length >= 2 &&
-            (factors[factors.length - 2] === 'd' ||
-              factors[factors.length - 2] === 'd_upright') &&
+            isDiffMark(factors[factors.length - 2]) &&
             isString(factors[factors.length - 1]) &&
             factors[factors.length - 1] !== 'Nothing'
           ) {
             vars.push(factors.pop() as string);
             factors.pop();
+          }
+          if (
+            vars.length === chain.length &&
+            chain.every((n) => n[2] === 'Nothing' || n[2] === undefined)
+          ) {
+            // Boundless chain — repark every pair innermost-first on one
+            // Integrate node so codegen emits a single iterated integral
+            // with ONE +C (nested nodes would each append their own).
+            const pairs: MathJson[] = [];
+            for (let i = vars.length - 1; i >= 0; i--)
+              pairs.push('d', vars[i]);
+            return ['Integrate', ['Multiply', ...factors, ...pairs], 'Nothing'];
           }
           if (vars.length === chain.length) {
             // vars[k] is chain[k]'s variable (vars[0] = outermost).

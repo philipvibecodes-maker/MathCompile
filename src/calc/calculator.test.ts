@@ -224,11 +224,11 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // \iint is a single Integrate node — the `d v` pairs all sit in its
     // body; leftmost is the innermost variable.
     expect(calc('\\iint xy\\text{d}x\\text{d}y').statements[0].code).toBe(
-      'sp.integrate(x * y, x, y)',
+      'sp.integrate(x * y, x, y) + sp.Symbol("C")',
     );
     expect(
       calc('\\iiint x\\text{d}x\\text{d}y\\text{d}z').statements[0].code,
-    ).toBe('sp.integrate(x, x, y, z)');
+    ).toBe('sp.integrate(x, x, y, z) + sp.Symbol("C")');
   });
 
   it('declares MatrixSymbol for \\det/\\tr on a bare name', () => {
@@ -262,6 +262,47 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
     expect(prog.prelude).toContain('f = sp.Function("f")');
     expect(prog.prelude).toContain('g = sp.Function("g")');
+  });
+
+  it('folds \\text{d} quotients into D() instead of dividing by d', () => {
+    // \frac{\text{d}}{\text{d}t}t^2 was emitted as `d / (d*t) * t**2`
+    // — the `d` factors cancel and the result is `t`, not `2t`.
+    expect(calc('\\frac{\\text{d}}{\\text{d}t}t^{2}').statements[0].code).toBe(
+      'sp.diff(t**2, t)',
+    );
+    expect(calc('\\frac{\\text{d}f}{\\text{d}x}').statements[0].code).toBe(
+      'sp.diff(f, x)',
+    );
+    expect(
+      calc('\\frac{\\text{d}^{2}}{\\text{d}x^{2}}x^{3}').statements[0].code,
+    ).toBe('sp.diff(x**3, x, 2)');
+  });
+
+  it('lowers A^T to Transpose on a MatrixSymbol, not the crashing .T', () => {
+    const prog = calc('A^{T}');
+    expect(prog.prelude).toContain(
+      'A = sp.MatrixSymbol("A", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
+    );
+    expect(prog.statements[0].code).toBe('sp.Transpose(A)');
+  });
+
+  it('lowers \\varphi(n) to totient, not the uncallable GoldenRatio', () => {
+    expect(calc('\\varphi(n)').statements[0].code).toBe('sp.totient(n)');
+  });
+
+  it('collapses nested boundless integrals into one iterated call', () => {
+    // \int\int\int nested three Integrate nodes — each appended its own
+    // +C, integrating the inner constants into bogus terms.
+    expect(
+      calc('\\int\\int\\int xyz\\text{d}x\\text{d}y\\text{d}z').statements[0]
+        .code,
+    ).toBe('sp.integrate(x * y * z, x, y, z) + sp.Symbol("C")');
+  });
+
+  it('gives \\mathbb{C} membership a complex=True assumption', () => {
+    expect(calc('x\\in\\mathbb{C}').prelude).toContain(
+      'x = sp.Symbol("x", complex=True)',
+    );
   });
 
   it('flags a stray differential under \\prod at compile time', () => {
