@@ -314,6 +314,20 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
   });
 
+  it('lowers \\operatorname{arsinh}-family calls to a-prefixed sympy', () => {
+    // `arsinh(x)`/`Arsinh(x)` showed an unevaluated Function stub —
+    // sympy spells them asinh/acosh/atanh.
+    expect(calc('\\operatorname{arsinh}(x)').statements[0].code).toBe(
+      'sp.asinh(x)',
+    );
+    expect(calc('\\operatorname{asinh}(x)').statements[0].code).toBe(
+      'sp.asinh(x)',
+    );
+    expect(calc('\\operatorname{acosh}(x)').statements[0].code).toBe(
+      'sp.acosh(x)',
+    );
+  });
+
   it('lowers \\Re/\\Im/\\arg/\\operatorname{erf} to real sympy names', () => {
     // These parse to Real/Imaginary/Argument/Erf — `sp.<Head>` doesn't
     // exist, so each row raised 'module sympy has no attribute'.
