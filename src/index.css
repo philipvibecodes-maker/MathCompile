@@ -564,6 +564,15 @@ body {
   color: var(--danger);
 }
 
+/* Live readout of the input column's width share in the output header —
+   updates while the .col-resize divider is dragged. */
+.col-width-label {
+  font-size: 11px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .engine-spinner {
   flex: 0 0 auto;
   width: 10px;

@@ -32,7 +32,7 @@
 
   // Output column width (% of the row's flex width) — shared by every
   // row and the column header; the .col-resize divider drags it.
-  let outputPct = $state(34);
+  let outputPct = $state(40);
 
   function startColDrag(e: PointerEvent) {
     const handle = e.currentTarget as HTMLElement;
@@ -338,7 +338,8 @@
             >
               {#if calcEngine.status === 'loading'}
                 <span class="engine-spinner" aria-hidden="true"></span>
-                SymPy loading…
+                SymPy engine loading — interim results are less accurate
+                estimates
               {:else if calcEngine.status === 'error'}
                 SymPy failed to load
               {:else}
@@ -346,6 +347,9 @@
               {/if}
             </span>
           {/if}
+          <!-- Live readout of the input column's width share — a tuning
+               aid for picking the divider's default position. -->
+          <span class="col-width-label">input {100 - outputPct}%</span>
           {#if compiled && appStore.target === 'python'}
             <label class="option-checkbox output-import-all">
               <input
