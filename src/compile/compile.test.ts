@@ -128,7 +128,12 @@ const FIXTURES: {
   },
   {
     latex: '\\lim_{x\\to 0} \\frac{\\sin x}{x}',
-    expectedPython: ['x = sp.Symbol("x")', 'sp.limit(sp.sin(x) / x, x, 0)'],
+    // A bare \lim is two-sided — sympy's dir='+' default would silently
+    // right-hand it (1/x at 0 gives oo instead of zoo).
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      "sp.limit(sp.sin(x) / x, x, 0, dir='+-')",
+    ],
   },
   {
     latex: '\\frac{d}{dx} x^2',
@@ -191,7 +196,11 @@ const FIXTURES: {
   {
     latex: '\\mathrm{solve}(x^2 = 4, x)',
     expectedIR: ['call', 'solve', ['Equal', ['Power', 'x', 2], 4], 'x'],
-    expectedPython: ['x = sp.Symbol("x")', 'sp.solve(sp.Eq(x**2, 4), x)'],
+    // `solve` is a real SymPy builtin — the call tier emits it sp.-bound.
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.solve(sp.Eq(x**2, 4), x)',
+    ],
     issues: ['unknown head "solve"'],
   },
   {
@@ -337,7 +346,10 @@ const FIXTURES: {
   },
   {
     latex: 'A^T',
-    expectedPython: ['A = sp.Symbol("A")', 'sp.Transpose(A)'],
+    expectedPython: [
+      'A = sp.MatrixSymbol("A", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
+      'sp.Transpose(A)',
+    ],
   },
   {
     // \left. f \right|_{lo}^{hi}: folded to EvaluateAt — the
@@ -365,7 +377,6 @@ const FIXTURES: {
   {
     latex: '\\{1, 2, 3\\}',
     expectedPython: ['sp.FiniteSet(1, 2, 3)'],
-    issues: ['unknown head "Set"'],
   },
   {
     latex: '\\operatorname{sign}(x)',
@@ -415,7 +426,7 @@ const FIXTURES: {
   {
     // CE can't parse \underset — rewritten to \lim_{x\to0} before parse.
     latex: '\\underset{x\\to0}{\\lim} f',
-    expectedPython: ["f, x = sp.symbols('f x')", 'sp.limit(f, x, 0)'],
+    expectedPython: ["f, x = sp.symbols('f x')", "sp.limit(f, x, 0, dir='+-')"],
   },
   {
     // \Big( ... \Big) sizes are dropped — the parens stay an implicit
@@ -438,8 +449,9 @@ const FIXTURES: {
     // substitutes the point rather than the equation.
     latex: '\\frac{dy}{dx}\\bigg|_{x=0}',
     expectedPython: [
-      "y, x = sp.symbols('y x')",
-      '(sp.diff(y, x)).subs(x, 0)',
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+      '(sp.diff(y(x), x)).subs(x, 0)',
     ],
   },
   {
@@ -599,13 +611,14 @@ const FIXTURES: {
     ],
   },
   {
+    // A bare symbol is not provably a set — `x \in S` reads it as a
+    // singleton `x \in {S}` rather than a TypeError or a flagged stub,
+    // the same convention the set ops use (`x \cup y` -> `{x, y}`).
     latex: 'x \\in S',
     expectedPython: [
       "x, S = sp.symbols('x S')",
-      'Element = sp.Function("Element")',
-      'Element(x, S)',
+      'sp.Contains(x, sp.FiniteSet(S))',
     ],
-    issues: ['unknown head "Element"'],
   },
   {
     latex: '\\emptyset \\cup \\mathbb{Z}',
@@ -613,7 +626,10 @@ const FIXTURES: {
   },
   {
     latex: 'A^{\\dagger}',
-    expectedPython: ['A = sp.Symbol("A")', 'sp.Adjoint(A)'],
+    expectedPython: [
+      'A = sp.MatrixSymbol("A", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
+      'sp.Adjoint(A)',
+    ],
   },
 ];
 

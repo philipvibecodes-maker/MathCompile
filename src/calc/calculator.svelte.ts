@@ -1,6 +1,5 @@
-import { outputLatex } from '../compile/latex';
 import { compileCellForCalc } from '../compile/codegen';
-import type { MathJson } from '../compile/ir';
+import { latexToStatementStrings, type MathJson } from '../compile/ir';
 import { toNerdamerInput } from './nerdamer-latex';
 import { arcTrigNames } from './result-latex';
 
@@ -10,6 +9,9 @@ export interface CalcRowOk {
   text?: string;
   approx?: string;
   code?: string;
+  // The emitted program with display plumbing (the `e = ...` capture
+  // lines that exist only to drive row rendering). Hidden by default.
+  displayCode?: string;
 }
 export interface CalcRowErr {
   ok: false;
@@ -63,6 +65,10 @@ function ensureWorker(): Worker {
       calcEngine.status = 'error';
       calcEngine.error = m.error ?? 'failed to load the SymPy engine';
       failAll(calcEngine.error);
+      // The engineless worker is dead weight — drop it so the next eval
+      // retries the boot instead of stalling on the 30s watchdog.
+      if (worker === w) worker = undefined;
+      w.terminate();
       return;
     }
     const p = pending.get(m.id);
@@ -93,6 +99,8 @@ function ensureWorker(): Worker {
     calcEngine.status = 'error';
     calcEngine.error = e.message || 'calculator worker failed';
     failAll(calcEngine.error);
+    if (worker === w) worker = undefined;
+    w.terminate();
   };
   worker = w;
   return w;
@@ -106,17 +114,54 @@ export function evaluate(cell: {
   latex: string;
   json?: MathJson;
 }): Promise<CalcRow[]> {
-  const prog = compileCellForCalc(cell);
+  let prog: ReturnType<typeof compileCellForCalc>;
+  try {
+    prog = compileCellForCalc(cell);
+  } catch (e) {
+    // The compiler reports issues instead of throwing — a hard throw
+    // must still not leave the cell stuck on '…' forever.
+    return Promise.resolve([
+      {
+        ok: false as const,
+        error: `compile failed — ${e instanceof Error ? e.message : String(e)}`,
+      },
+    ]);
+  }
   const errors = prog.issues.filter((i) => i.severity === 'error');
-  if (errors.length > 0)
-    return Promise.resolve(
-      errors.map((i) => ({ ok: false as const, error: i.message })),
-    );
-  if (prog.statements.length === 0) return Promise.resolve([]);
+  if (prog.statements.length === 0)
+    return Promise.resolve([
+      // Uncompileable cells show their issues; a cell with none at all
+      // (empty, or only notes) shows nothing.
+      ...errors.map((i) => ({ ok: false as const, error: i.message })),
+    ]);
+  // A multi-statement cell keeps its good rows when a sibling statement
+  // is broken — the errors append after the valid results.
+  const errRows = errors.map(
+    (i) => ({ ok: false as const, error: i.message }) as CalcRow,
+  );
   const w = ensureWorker();
   const id = nextId++;
   return new Promise<CalcRow[]>((resolve, reject) => {
-    pending.set(id, { resolve, reject });
+    pending.set(id, {
+      resolve: (r) => {
+        clearTimeout(timer);
+        resolve([...r, ...errRows]);
+      },
+      reject: (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    });
+    // A hung SymPy call (pathological simplify/integrate) would block
+    // every cell's results forever — the worker is single-threaded.
+    // Past the deadline, kill it; the next eval reboots (~4s).
+    const timer = setTimeout(() => {
+      if (!pending.has(id)) return;
+      w.terminate();
+      worker = undefined;
+      calcEngine.status = 'idle';
+      failAll('calculation timed out — the SymPy engine is restarting');
+    }, 30000);
     w.postMessage({
       id,
       program: { prelude: prog.prelude, statements: prog.statements },
@@ -142,25 +187,32 @@ let nerdamerP: Promise<typeof import('nerdamer/all')> | undefined;
 // don't translate stay empty until the real engine lands. Dynamically
 // imported so its ~440KB never enters the main bundle.
 export async function interimEvaluate(latex: string): Promise<CalcRow[]> {
-  const src = outputLatex(latex).trim();
-  if (src === '') return [];
   try {
     const nerdamer = (await (nerdamerP ??= import('nerdamer/all'))).default;
-    return src
-      .split(/\\\\/)
-      .map((s) => s.trim())
-      .filter((s) => s !== '')
-      // MathQuill doesn't need \limits — bounds render under/over anyway.
-      .map((p) => ({
-        ok: true as const,
-        // nerdamer writes inverse trig as \mathrm{atan} — MathQuill
-        // renders that "a tan"; arcTrigNames maps to the arc- form.
-        latex: arcTrigNames(
-          nerdamer(toNerdamerInput(p, nerdamer))
-            .toTeX()
-            .replace(/\\limits/g, ''),
-        ),
-      }));
+    // latexToStatementStrings tracks environment depth — a plain
+    // /\\\\/ split would break every interim row for a cell holding a
+    // matrix (its \\ row separators look like statement breaks).
+    return latexToStatementStrings(latex)
+      .map((p): CalcRow | null => {
+        try {
+          const input = toNerdamerInput(p, nerdamer);
+          if (input === '') return null;
+          const tex = arcTrigNames(
+            // MathQuill doesn't need \limits — bounds render under/over
+            // anyway. nerdamer writes inverse trig as \mathrm{atan},
+            // which MathQuill renders "a tan"; arcTrigNames maps to arc-.
+            nerdamer(input)
+              .toTeX()
+              .replace(/\\limits/g, ''),
+          );
+          return tex === '' ? null : ({ ok: true as const, latex: tex });
+        } catch {
+          // A statement nerdamer can't read (an environment, a CE-only
+          // command) shouldn't sink the other rows' interim results.
+          return null;
+        }
+      })
+      .filter((r): r is CalcRow => r !== null);
   } catch {
     return [];
   }

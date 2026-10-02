@@ -216,13 +216,20 @@ test('show code toggle reveals highlighted SymPy code under the result', async (
   await expect(toggle).toBeVisible();
   await toggle.check();
 
-  // python(x + 1) emits the symbol decl then the expression assignment.
+  // The code block shows the emitted program: symbol decl then the bare
+  // expression. The `e = ...` display plumbing sits behind its checkbox.
   const code = page.locator('.calc-code').first();
   await expect(code).toBeVisible();
-  await expect(code).toContainText("Symbol('x')");
-  await expect(code).toContainText('e = x + 1');
+  await expect(code).toContainText('Symbol("x")');
+  await expect(code).toContainText('x + 1');
+  await expect(code).not.toContainText('e = ');
   await expect(code.locator('.tok-call').first()).toBeAttached();
   await expect(code.locator('.tok-str').first()).toBeAttached();
+
+  const plumbing = page.getByLabel('display plumbing').first();
+  await expect(plumbing).toBeVisible();
+  await plumbing.check();
+  await expect(code).toContainText('e = x + 1');
 
   await toggle.uncheck();
   await expect(page.locator('.calc-code')).toHaveCount(0);

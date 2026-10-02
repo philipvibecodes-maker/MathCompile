@@ -19,6 +19,12 @@
   let rows = $state<CalcRow[]>([]);
   let pending = $state(false);
   let failed = $state('');
+  // Per-cell opt-in to the `e = ...` display plumbing lines in .calc-code.
+  let showPlumbing = $state(false);
+  const hasPlumbing = $derived(
+    appStore.showCode &&
+      rows.some((r) => r.ok && r.displayCode && r.displayCode !== r.code),
+  );
 
   const statusLabel = $derived(
     calcEngine.status === 'loading'
@@ -39,13 +45,17 @@
       return;
     }
     pending = true;
+    // A stale error belongs to the old latex — drop it up front.
+    failed = '';
     const timer = setTimeout(() => {
       if (mine !== seq) return;
       // While the engine boots, show nerdamer's instant best-effort
       // result — rendered dimmed since the real eval is still pending.
+      // The `pending` guard keeps a late interim from overwriting real
+      // rows that already landed.
       if (calcEngine.status !== 'ready') {
         interimEvaluate(latex).then((r) => {
-          if (mine === seq && r.length > 0) rows = r;
+          if (mine === seq && pending && r.length > 0) rows = r;
         });
       }
       evaluate(cell).then(
@@ -91,7 +101,9 @@
               {/if}
             </div>
             {#if appStore.showCode && row.code}
-              {@const toks = highlightPython(row.code)}
+              {@const shown =
+                showPlumbing && row.displayCode ? row.displayCode : row.code}
+              {@const toks = highlightPython(shown)}
               <pre class="calc-code"><code
                   >{#each toks as tok, j (j)}<span
                       class={tok.cls ? `tok-${tok.cls}` : undefined}
@@ -105,7 +117,40 @@
         </div>
       {/each}
     </div>
-  {:else}
+  {:else if pending}
+    <!-- Empty cells and complete-but-empty results render nothing — a
+         bare '…' reads as "still evaluating" forever. -->
     <span class="calc-status">{statusLabel}</span>
+  {/if}
+  {#if hasPlumbing}
+    <div class="calc-plumbing">
+      <label
+        ><input type="checkbox" bind:checked={showPlumbing} /> display
+        plumbing</label
+      >
+      <button
+        type="button"
+        class="info-icon"
+        aria-label="Display plumbing is the 'e = …' code MathCompile inserts to capture each statement's value for rendering — hidden by default since it isn't part of the calculation."
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <line x1="12" y1="11" x2="12" y2="16.5" />
+          <circle cx="12" cy="7.5" r="0.75" fill="currentColor" />
+        </svg>
+        <span class="info-tip" role="tooltip" aria-hidden="true">
+          Extra code MathCompile adds to capture each statement's value for
+          rendering (the "e = …" lines). Not part of the calculation —
+          hidden by default.
+        </span>
+      </button>
+    </div>
   {/if}
 </div>

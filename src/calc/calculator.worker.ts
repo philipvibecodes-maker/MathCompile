@@ -74,17 +74,56 @@ def _mc_order(val):
         gens = sorted(val.free_symbols, key=lambda s: s.name)
         terms = sorted(val.args, key=lambda t: -_mc_deg(t, gens))
         return sp.Add(*terms, evaluate=False)
-    if val.is_Relational:
-        return val.func(*[_mc_order(a) for a in val.args])
+    if val.args:
+        # A sum nested inside a product/fraction/function keeps sympy's
+        # canonical order (constant first) — rebuild containers around
+        # re-ordered args, evaluate=False so the sort survives.
+        args = [_mc_order(a) for a in val.args]
+        try:
+            return val.func(*args, evaluate=False)
+        except Exception:
+            try:
+                return val.func(*args)
+            except Exception:
+                return val
     return val
+
+def _mc_doit(val):
+    # Relations and booleans doit per-side: Eq.doit() collapses the
+    # equation to lhs - rhs = 0, losing the displayed form.
+    if getattr(val, 'is_Relational', False) or getattr(val, 'is_Boolean', False):
+        sides = [_mc_doit(a) for a in val.args]
+        # Eq(Symbol, Matrix|Set) collapses to literal False — keep the
+        # equation displayed when a side is matrix- or set-valued.
+        if any(getattr(a, 'is_Matrix', False) or isinstance(a, sp.Set)
+               for a in sides):
+            return val.func(*sides, evaluate=False)
+        return val.func(*sides)
+    return val.doit()
+
+def _mc_simplify(val):
+    # Relations simplify side-by-side: a blanket sp.simplify(Eq) routes
+    # through the solver and rewrites x + 1 = 2 as x = 1.
+    if getattr(val, 'is_Relational', False):
+        sides = [sp.simplify(a) for a in val.args]
+        if any(getattr(a, 'is_Matrix', False) or isinstance(a, sp.Set)
+               for a in sides):
+            return val.func(*sides, evaluate=False)
+        return val.func(*sides)
+    return sp.simplify(val)
 
 def _mc_row(val):
     try:
-        val = val.doit()
+        val = _mc_doit(val)
     except Exception:
         pass
     try:
-        val = sp.simplify(val)
+        # Booleans (And/Or of equations) keep their structure — the
+        # relational args simplify per-side, never solved.
+        if getattr(val, 'is_Boolean', False):
+            val = val.func(*[_mc_simplify(a) for a in val.args])
+        else:
+            val = _mc_simplify(val)
     except Exception:
         pass
     try:
@@ -99,7 +138,14 @@ def _mc_row(val):
     except Exception:
         out = {'text': sp.sstr(val, order='none')}
     try:
-        if getattr(val, 'is_number', False) and not val.is_Integer:
+        # is_number alone also admits oo/zoo/nan and unevaluated
+        # Sum/Product/Integral/Limit trees — an approx on those renders
+        # meaningless garbage (approx zoo, approx 9e-1067).
+        if (
+            getattr(val, 'is_number', False)
+            and val.is_finite
+            and not val.is_Integer
+        ):
             out['approx'] = str(sp.N(val, 12))
     except Exception:
         pass
@@ -114,21 +160,36 @@ def mc_run(prog_json):
         exec('\\n'.join(prog['prelude']), ns)
     except Exception as e:
         return json.dumps([{'ok': False, 'error': str(e)}])
+    prelude = list(prog['prelude'])
+    # 'import ...' lines are program boilerplate — show them only in the
+    # first row's code block; later rows keep the Symbol/Function defs.
+    tail = [l for l in prelude
+            if not l.startswith(('import ', 'from '))]
     out = []
-    for stmt in prog['statements']:
+    for i, stmt in enumerate(prog['statements']):
         try:
+            # A statement that failed to compile keeps its row as an
+            # in-place error instead of vanishing (rows keep order).
+            err = stmt.get('error')
+            if err is not None:
+                out.append({'ok': False, 'error': err})
+                continue
             row = _mc_row(_mc_eval_stmt(stmt, ns))
             row['ok'] = True
             # Show code = the emitted program for this row (prelude defs
-            # + e = <eval'd source>), not the result's python() repr.
-            lines = list(prog['prelude'])
+            # + statement source), not the result's python() repr. The
+            # 'e = ...' capture lines exist only to drive row rendering —
+            # display plumbing, split out so the UI can hide it by default.
+            pre = prelude if i == 0 else tail
             disp = stmt.get('display')
+            row['code'] = '\\n'.join(pre + [stmt['code']])
+            plumb = list(pre)
             if disp is None:
-                lines.append('e = ' + stmt['code'])
+                plumb.append('e = ' + stmt['code'])
             else:
-                lines.append(stmt['code'])
-                lines.append('e = ' + disp)
-            row['code'] = '\\n'.join(lines)
+                plumb.append(stmt['code'])
+                plumb.append('e = ' + disp)
+            row['displayCode'] = '\\n'.join(plumb)
             out.append(row)
         except Exception as e:
             out.append({'ok': False, 'error': str(e)})
