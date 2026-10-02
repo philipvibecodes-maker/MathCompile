@@ -143,11 +143,28 @@ const KNOWN_HEADS = new Set([
   // already escaped by this pass — without it a nested g(f(x)) re-wraps
   // into ['call', 'call', ...].
   'Set', 'Condition', 'call',
+  // MatrixMethod lowers `trace(A)`-style word applications on a matrix
+  // literal (CE fuses `\mathrm{trace}(M)` into Multiply or an
+  // InvisibleOperator call) to `(<matrix>).trace()` in codegen.
+  'MatrixMethod',
 ]);
 
 // CE string literals arrive as "'text'" (e.g. \text{...}); unwrap to the
 // inner name so it can be treated as a symbol with a note.
 const TEXT_LITERAL = /^'(.*)'$/;
+
+// Words that read as matrix operations when juxtaposed with a matrix
+// literal: `\mathrm{trace}(A)` etc. — codegen lowers them to method
+// calls on the emitted Matrix.
+const MATRIX_WORD_OPS = new Set([
+  'trace',
+  'rank',
+  'eigenvals',
+  'eigenvects',
+  'inverse',
+  'transpose',
+  'norm',
+]);
 
 // CE marks unparseable atoms as the *quoted* symbol 'unexpected-command'
 // (a string literal), e.g. `['Power', "'unexpected-command'", LatexString]
@@ -399,6 +416,14 @@ const CALL_RENAMED = new Set([
   'Imaginary',
   'Argument',
   'Superstar',
+  'Congruent',
+  'nCk',
+  'nCr',
+  'nPr',
+  'perm',
+  'Pi',
+  'Trace',
+  'trace',
   // The lowercase names codegen's SP_BUILTIN_CALL table maps — mirrors
   // codegen.ts (kept in sync manually; \operatorname{erf}/solve/... get
   // here as call heads too).
@@ -412,8 +437,11 @@ const CALL_RENAMED = new Set([
     'gegenbauer jacobi laguerre assoc_laguerre fibonacci lucas ' +
     'tribonacci bernoulli euler bell catalan harmonic genocchi ' +
     'partition primepi mobius totient reduced_totient divisor_sigma ' +
+    'nextprime prevprime prime isprime factorint divisors ' +
+    'divisor_count proper_divisor_count primefactors integer_nthroot ' +
+    'cbrt gcdex trace ' +
     'legendre_symbol jacobi_symbol kronecker_symbol rf ff factorial2 ' +
-    'subfactorial stirling multinomial nC nP nT Piecewise piecewise ' +
+    'subfactorial Piecewise ' +
     'sign ceiling conjugate arg re im ' +
     'gcd lcm binomial sqrt floor factorial ' +
     'solve solveset linsolve nonlinsolve simplify factor expand cancel ' +
@@ -506,7 +534,20 @@ function normalizeStatementEqual(
 
 export function normalizeIR(json: MathJson | undefined): NormResult {
   const issues: Issue[] = [];
+  // Identical repeated messages render as identical overlay rows — one
+  // report covers every occurrence in the cell.
+  const pushIssue = (severity: Issue['severity'], message: string) => {
+    if (!issues.some((i) => i.severity === severity && i.message === message))
+      issues.push(issue(severity, message));
+  };
   if (json === undefined) return { ok: true, ir: undefined, issues };
+
+  // Names declared callable by statements seen so far, in cell order —
+  // `f(x) = …`, `f(x) := …`, `f: x \mapsto …`, `g: (x,y) \mapsto …`.
+  // Calls to one of these aren't "unknown head" (the flag at the tail
+  // consults this), and a forward reference still flags because the
+  // declaration hasn't been scanned yet.
+  const declaredFns = new Set<string>();
 
   const normalize = (
     node: MathJson,
@@ -523,14 +564,12 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
         // Bare marker outside a Power/Subscript pair (the quoted source is
         // recovered there) — flag generically and keep it an Error node so
         // codegen drops the statement.
-        issues.push(issue('error', 'incomplete or unsupported command'));
+        pushIssue('error', 'incomplete or unsupported command');
         return ['Error', "'unexpected-command'"];
       }
       const text = TEXT_LITERAL.exec(node);
       if (text) {
-        issues.push(
-          issue('note', `text literal "${text[1]}" treated as a symbol`),
-        );
+        pushIssue('note', `text literal "${text[1]}" treated as a symbol`);
         return text[1];
       }
       if (node === 'Nothing') {
@@ -538,7 +577,7 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
         // means an indefinite operator (\int f dx) — legitimate input, not
         // a hole — so it is only an error elsewhere.
         if (!allowNothing)
-          issues.push(issue('error', 'empty slot — fill it in or delete it'));
+          pushIssue('error', 'empty slot — fill it in or delete it');
         return node;
       }
       // Non-canonical parse leaves `e` as a bare symbol; it is always
@@ -555,7 +594,7 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       ) {
         // {str: "..."} wrapper — same handling as a text literal.
         const inner = String((node as { str: unknown }).str);
-        issues.push(issue('note', `text literal "${inner}" treated as a symbol`));
+        pushIssue('note', `text literal "${inner}" treated as a symbol`);
         return inner;
       }
       return node;
@@ -563,7 +602,7 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
 
     const h = head(node);
     if (h === undefined) {
-      issues.push(issue('error', 'malformed node without a head'));
+      pushIssue('error', 'malformed node without a head');
       return node;
     }
 
@@ -580,7 +619,7 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     if (node.length === 1) return 'Nothing';
 
     if (h === 'Error') {
-      issues.push(issue('error', describeError(node)));
+      pushIssue('error', describeError(node));
       return node;
     }
 
@@ -593,13 +632,11 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
         isArray(node[2]) && head(node[2]) === 'LatexString' && isString(node[2][1])
           ? node[2][1].replace(/^'(.*)'$/s, '$1').trim()
           : '';
-      issues.push(
-        issue(
-          'error',
-          src === '\\int'
-            ? 'integral sign with no integrand — type the integrand after ∫'
-            : `incomplete or unsupported command${src ? ` "${src}"` : ''}`,
-        ),
+      pushIssue(
+        'error',
+        src === '\\int'
+          ? 'integral sign with no integrand — type the integrand after ∫'
+          : `incomplete or unsupported command${src ? ` "${src}"` : ''}`,
       );
       return ['Error', "'unexpected-command'"];
     }
@@ -608,7 +645,7 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     // fragment — anything reaching normal normalization is a fragment of
     // a broken expression; flag rather than emit a LatexString symbol.
     if (h === 'LatexString') {
-      issues.push(issue('error', 'incomplete or unsupported command'));
+      pushIssue('error', 'incomplete or unsupported command');
       return ['Error', "'unexpected-command'"];
     }
 
@@ -724,11 +761,9 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       // `_{i=lo}^{hi}` folds into Power(Equal(i, lo), hi) — emitted as a
       // real interval since symbolic sp.Range can't be minimized over.
       if (isArray(under) && head(under) === 'Power')
-        issues.push(
-          issue(
-            'note',
-            `${h} over an i=lo..hi range is emitted as a real interval`,
-          ),
+        pushIssue(
+          'note',
+          `${h} over an i=lo..hi range is emitted as a real interval`,
         );
       const head2 = h === 'Min' ? 'Minimum' : h === 'Max' ? 'Maximum' : h;
       return domain === undefined
@@ -778,6 +813,37 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
           ),
         ];
       node = [h, ...args];
+    }
+
+    // Declaration pre-scan: statement-level shapes that bind a callable
+    // name (function def, mapsto declaration, `f := (x \mapsto …)`) —
+    // recorded before the statement normalizes so the name is visible to
+    // calls inside it (recursion) and in later statements.
+    if (atStatement) {
+      let decl: string | undefined;
+      if (h === 'Equal' && isArray(node[1]))
+        decl = functionDefShape(node[1])?.name;
+      else if (
+        h === 'Colon' &&
+        isString(node[1]) &&
+        isArray(node[2]) &&
+        head(node[2]) === 'Function'
+      )
+        decl = node[1];
+      else if (
+        h === 'Function' &&
+        isArray(node[2]) &&
+        head(node[2]) === 'Typed'
+      )
+        decl = paramName(node[2][1]);
+      else if (
+        h === 'Assign' &&
+        isString(node[1]) &&
+        isArray(node[2]) &&
+        head(node[2]) === 'Function'
+      )
+        decl = node[1];
+      if (decl !== undefined) declaredFns.add(decl);
     }
 
     if (atStatement && h === 'Equal') {
@@ -882,6 +948,23 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
         return ['Apply', normalize(fn, false), ...mid, ...callArgs];
       }
       const args = node.slice(1).map((n) => normalize(n, false));
+      // `\mathrm{trace}(M)`-style word ops fused to a matrix literal
+      // arrive as InvisibleOperator(word, Matrix) — a method call, not
+      // a product (the Delimiter-less pmatrix shape).
+      if (args.length === 2) {
+        const [w, m] =
+          isString(args[0]) && MATRIX_WORD_OPS.has(args[0])
+            ? ([args[0], args[1]] as const)
+            : isString(args[1]) && MATRIX_WORD_OPS.has(args[1])
+              ? ([args[1], args[0]] as const)
+              : [undefined, undefined];
+        if (
+          w !== undefined &&
+          isArray(m) &&
+          head(m as MathJson) === 'Matrix'
+        )
+          return ['MatrixMethod', w, m as MathJson];
+      }
       // `2i` — and `\pi i`, `e^{i\pi}` (i alongside a number or a named
       // constant) — mean the imaginary unit, matching the canonical
       // Complex-node output. `xi`/`ij` keep i as a symbol.
@@ -1071,14 +1154,54 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       return ['SetMinus', node[1], ['Set', 0]];
     }
 
+    // `\text{if }x` (common in \begin{cases} conditions) fuses the
+    // label into an InvisibleOperator application — the operator has no
+    // sympy meaning; unwrap to the operand.
+    if (h === 'InvisibleOperator' && node.length === 2)
+      return normalize(node[1], atStatement, allowNothing);
+
+    // M^{\mathrm{T}} / M^{\mathrm{H}}: CE wraps the superscript text as
+    // a `__unit__` node — read it as transpose / adjoint rather than an
+    // unknown-unit call.
+    if (
+      h === 'Power' &&
+      node.length === 3 &&
+      isArray(node[2]) &&
+      head(node[2]) === '__unit__' &&
+      isString(node[2][1])
+    ) {
+      const unit = node[2][1];
+      if (unit === 'T') return ['Transpose', normalize(node[1], false)];
+      if (unit === 'H' || unit === '\u2020')
+        return ['ConjugateTranspose', normalize(node[1], false)];
+      if (unit === 'C')
+        return ['call', 'Conjugate', normalize(node[1], false)];
+    }
+
+    // `\mathrm{trace}(A)`, `\mathrm{rank}(A)`, ... on a matrix literal:
+    // CE fuses the operator word and the matrix into a bare product.
+    // Only fold when the operand is literally a Matrix — a word *
+    // symbol stays a product (and `\mathrm{trace}(M)` on a symbol
+    // reaches sp.trace through the call path).
+    if (h === 'Multiply' && node.length === 3) {
+      const [w, m] =
+        isString(node[1]) && MATRIX_WORD_OPS.has(node[1])
+          ? ([node[1], node[2]] as const)
+          : isString(node[2]) && MATRIX_WORD_OPS.has(node[2])
+            ? ([node[2], node[1]] as const)
+            : [undefined, undefined];
+      if (w !== undefined && isArray(m) && head(m) === 'Matrix')
+        return ['MatrixMethod', w, normalize(m as MathJson, false)];
+    }
+
     if (!KNOWN_HEADS.has(h)) {
       // Heads codegen remaps to real SymPy functions (sp.conjugate,
       // sp.factorial2, ...) aren't "unknown" — flagging them would warn
-      // about a stub that never reaches the output.
-      if (!CALL_RENAMED.has(h))
-        issues.push(
-          issue('note', `unknown head "${h}" — emitted as ${h}(...)`),
-        );
+      // about a stub that never reaches the output. A worksheet-declared
+      // name isn't unknown either — `f(3)` after `f(x) = …` calls the
+      // def the cell already made.
+      if (!CALL_RENAMED.has(h) && !declaredFns.has(h))
+        pushIssue('note', `unknown head "${h}" — emitted as ${h}(...)`);
       return ['call', h, ...node.slice(1).map((n) => normalize(n, false))];
     }
 

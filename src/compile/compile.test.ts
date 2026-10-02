@@ -925,7 +925,166 @@ const FIXTURES: {
     expectedPython: ["x, y = sp.symbols('x y')", '(x + y).subs(x, 0)'],
     issues: ['evaluated w.r.t. x'],
   },
+  {
+    // Calling a name the cell itself declares isn't "unknown head" —
+    // suppression follows source order (f(3) after the def is clean).
+    latex: '\\displaylines{f(x) = x^2 \\\\ f(3)}',
+    expectedPython: ['def f(x):', '    return x**2', 'f(3)'],
+  },
+  {
+    // A forward reference still flags — g(3) precedes the def and
+    // NameErrors at exec, so the note is honest.
+    latex: '\\displaylines{g(3) \\\\ g(x) = x+1}',
+    expectedPython: [
+      'g = sp.Function("g")',
+      'g(3)',
+      'def g(x):',
+      '    return x + 1',
+    ],
+    issues: ['unknown head "g"'],
+  },
+  {
+    // sp.gcd takes exactly two terms — a third arg lands in *gens and
+    // raises on numbers. The list form folds over all terms.
+    latex: '\\gcd(6,9,15)',
+    expectedPython: ['sp.gcd([6, 9, 15])'],
+  },
+  {
+    // sp.multinomial doesn't exist — degrade to a worksheet Function
+    // stub (flagged) instead of an AttributeError.
+    latex: '\\mathrm{multinomial}(2,3,1)',
+    expectedPython: [
+      'multinomial = sp.Function("multinomial")',
+      'multinomial(2, 3, 1)',
+    ],
+    issues: ['unknown head "multinomial"'],
+  },
+  {
+    // a \equiv b \pmod{m} — SymPy has no congruence relation;
+    // Eq(Mod(a, m), b) states it faithfully.
+    latex: '5 \\equiv 2 \\pmod{3}',
+    expectedPython: ['sp.Eq(sp.Mod(5, 3), 2)'],
+  },
+  {
+    // \mathrm{otherwise} in a cases condition is the default branch —
+    // emit True, not a symbolic condition that can never fire.
+    latex:
+      'f(x) = \\begin{cases} x^2 & x > 0 \\\\ 0 & \\mathrm{otherwise} \\end{cases}',
+    expectedPython: [
+      'def f(x):',
+      '    return sp.Piecewise((x**2, sp.Gt(x, 0)), (0, True))',
+    ],
+  },
+  {
+    // \text{if } inside a cases condition fuses into an InvisibleOperator
+    // application — unwrap it so the condition is the plain relation.
+    latex:
+      '\\begin{cases} x & \\text{if } x > 0 \\\\ -x & \\text{otherwise} \\end{cases}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.Piecewise((x, sp.Gt(x, 0)), (-x, True))',
+    ],
+  },
+  {
+    // sp.multinomial doesn't exist — degrade to a worksheet Function
+    // stub (flagged) instead of an AttributeError.
+    latex: '\\mathrm{multinomial}(2,3,1)',
+    expectedPython: [
+      'multinomial = sp.Function("multinomial")',
+      'multinomial(2, 3, 1)',
+    ],
+    issues: ['unknown head "multinomial"'],
+  },
+  {
+    // \operatorname{nCk}(n,k) is unambiguous — real SymPy binomial.
+    latex: '\\mathrm{nCk}(5,2)',
+    expectedPython: ['sp.binomial(5, 2)'],
+  },
+  {
+    // \operatorname{perm}(n,k) / nPr — falling factorial.
+    latex: '\\mathrm{perm}(5,2)',
+    expectedPython: ['sp.ff(5, 2)'],
+  },
+  {
+    // Real SymPy functions reach through \operatorname: sp.nextprime etc.
+    latex: '\\mathrm{nextprime}(5)',
+    expectedPython: ['sp.nextprime(5)'],
+  },
+  {
+    // A matrix bound by an earlier statement supports .det()/.norm()/
+    // .trace() — Determinant(A) on a scalar would be wrong, but A is a
+    // worksheet-declared Matrix.
+    latex:
+      'A = \\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix} \\\\ \\det(A) \\\\ \\mathrm{trace}(A)',
+    expectedPython: [
+      'A = sp.Matrix([[1, 2], [3, 4]])',
+      'A.det()',
+      '(A).trace()',
+    ],
+  },
+  {
+    // \mathrm{trace}(A) fused to a matrix literal is a method call, not
+    // `trace * Matrix`. A symbol operand is an honest stub — sp.trace
+    // raises TypeError on non-matrices.
+    latex: '\\mathrm{trace}(\\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix})',
+    expectedPython: ['(sp.Matrix([[1, 2], [3, 4]])).trace()'],
+  },
+  {
+    latex: '\\mathrm{rank}(\\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix})',
+    expectedPython: ['(sp.Matrix([[1, 2], [3, 4]])).rank()'],
+  },
+  {
+    latex: '\\mathrm{trace}(M)',
+    expectedPython: [
+      'M = sp.Symbol("M")',
+      'trace = sp.Function("trace")',
+      'trace(M)',
+    ],
+    issues: ['trace needs a matrix'],
+  },
+  {
+    // M^{\mathrm{T}} reads as transpose — CE wraps the text superscript
+    // as a __unit__ node.
+    latex: 'M^{\\mathrm{T}}',
+    expectedPython: ['M = sp.Symbol("M")', 'sp.Transpose(M)'],
+  },
 ];
+
+describe('issue deduplication', () => {
+  it('identical normalize errors collapse to one issue', () => {
+    const out = compileWorksheet(
+      [
+        {
+          json: parseCellLatex(
+            '\\displaylines{ \\perm(5,2) \\\\ \\perm(7,3) \\\\ \\perm(9,1) }',
+          ),
+        },
+      ],
+      'python',
+    );
+    const perms = out.cellIssues[0].filter(
+      (i) => i.message === 'incomplete or unsupported command "\\perm"',
+    );
+    expect(perms).toHaveLength(1);
+  });
+
+  it('identical codegen flags collapse to one issue', () => {
+    const out = compileWorksheet(
+      [
+        {
+          json: parseCellLatex(
+            '\\displaylines{ \\mathrm{trace}(x) \\\\ \\mathrm{trace}(y) }',
+          ),
+        },
+      ],
+      'python',
+    );
+    const traceNotes = out.cellIssues[0].filter(
+      (i) => i.message === 'trace needs a matrix — the argument isn\'t one',
+    );
+    expect(traceNotes).toHaveLength(1);
+  });
+});
 
 describe('latexToStatementStrings', () => {
   it('splits \\displaylines rows at depth 0', () => {

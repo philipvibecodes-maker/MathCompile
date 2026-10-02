@@ -142,8 +142,11 @@ const SP_BUILTIN_CALL = new Set(
     'gegenbauer jacobi laguerre assoc_laguerre fibonacci lucas ' +
     'tribonacci bernoulli euler bell catalan harmonic genocchi ' +
     'partition primepi mobius totient reduced_totient divisor_sigma ' +
+    'nextprime prevprime prime isprime factorint divisors ' +
+    'divisor_count proper_divisor_count primefactors integer_nthroot ' +
+    'cbrt gcdex ' +
     'legendre_symbol jacobi_symbol kronecker_symbol rf ff factorial2 ' +
-    'subfactorial stirling multinomial nC nP nT Piecewise piecewise ' +
+    'subfactorial Piecewise ' +
     'sign ceiling conjugate arg re im ' +
     'gcd lcm binomial sqrt floor factorial ' +
     'solve solveset linsolve nonlinsolve simplify factor expand cancel ' +
@@ -152,7 +155,7 @@ const SP_BUILTIN_CALL = new Set(
   ).split(' '),
 );
 
-// Minimum arity for SP_FUNCS entries — a lone `\gcd(10)` or `a\bmod` `
+// Minimum arity for SP_FUNCS entries — a lone `\gcd(10)` or `a\bmod`
 // otherwise emits a call SymPy raises TypeError on at eval time.
 const SP_FUNC_MIN_ARGS: Record<string, number> = {
   gcd: 2,
@@ -232,6 +235,16 @@ const CALL_RENAMES: Record<string, string> = {
   Imaginary: 'im',
   Argument: 'arg',
   Superstar: 'Adjoint',
+  // Combinatorics/number-theory operator notations with exactly one
+  // reading: \operatorname{nCk}(n,k) = C(n,k), nPr/perm = P(n,k) =
+  // falling factorial, π(n) = the prime-counting function. Bare Greek
+  // letters (σ(x), μ(n)…) stay Function stubs — they can be user-
+  // defined functions, not necessarily the arithmetic functions.
+  nCk: 'binomial',
+  nCr: 'binomial',
+  nPr: 'ff',
+  perm: 'ff',
+  Pi: 'primepi',
 };
 
 // \sin^{-1}(x) etc.: CE wraps the base name as ['InverseFunction', 'Sin'].
@@ -266,6 +279,9 @@ interface Scope {
   /** Names whose membership pins them to a matrix space
    * (`A \in \mathbb{R}^{2\times2}`) -> emitted `sp.MatrixSymbol` dims. */
   matrixDims: Map<string, [string, string]>;
+  /** Names the worksheet bound to a Matrix literal (`A = \begin{pmatrix}
+   * …`) — usable as matrices by `.det()`/`.norm()` etc. */
+  matrixNames: Set<string>;
   issues: Issue[];
   /** Unprefixed issues bucketed per cell (parallel to the inputs). */
   cellIssues: Issue[][];
@@ -324,6 +340,15 @@ class Emitter {
   /** `sp.` qualifier prefix — empty under `from sympy import *`. */
   private get sp(): string {
     return this.scope.qualified ? 'sp.' : '';
+  }
+
+  /** Does this node name a worksheet-declared matrix? A Matrix literal
+   * is already handled by `isHead(…, 'Matrix')` at the call site. */
+  private matrixRef(node: MathJson | undefined): boolean {
+    return (
+      isStr(node) &&
+      (this.scope.matrixNames.has(node) || this.scope.matrixDims.has(node))
+    );
   }
 
   /** SymPy constant: qualified in `import sympy as sp` mode; Python
@@ -880,22 +905,31 @@ class Emitter {
       case 'Not':
         return [`${this.sp}Not(${this.emit(args[0])})`, PREC_ATOM];
       case 'Which': {
-        // CE: (cond, expr) pairs, odd tail is the else value.
+        // CE: (cond, expr) pairs, odd tail is the else value. An
+        // `\mathrm{otherwise}`/`\mathrm{else}` condition arrives as a
+        // bare symbol — it means the default branch (True), not a
+        // symbolic condition that can never fire.
+        const cond = (a: MathJson): string =>
+          a === 'otherwise' || a === 'else' || a === 'True'
+            ? 'True'
+            : this.emit(a);
         const pieces: string[] = [];
         for (let i = 0; i + 1 < args.length; i += 2)
-          pieces.push(
-            `(${this.emit(args[i + 1])}, ${this.emit(args[i])})`,
-          );
+          pieces.push(`(${this.emit(args[i + 1])}, ${cond(args[i])})`);
         if (args.length % 2 === 1)
           pieces.push(`(${this.emit(args[args.length - 1])}, True)`);
         return [`${this.sp}Piecewise(${pieces.join(', ')})`, PREC_ATOM];
       }
       case 'Piecewise': {
         // CE also emits ["Piecewise", ["List", expr, cond], ...]
+        const cond = (a: MathJson): string =>
+          a === 'otherwise' || a === 'else' || a === 'True'
+            ? 'True'
+            : this.emit(a);
         const pieces = args
           .map((a) =>
             isHead(a, 'List') && a.length === 3
-              ? `(${this.emit(a[1])}, ${this.emit(a[2])})`
+              ? `(${this.emit(a[1])}, ${cond(a[2])})`
               : `(${this.emit(a)}, True)`,
           )
           .join(', ');
@@ -1160,6 +1194,11 @@ class Emitter {
         // at eval — a Function stub displays the intended form and runs.
         if (isHead(args[0], 'Matrix'))
           return [`${this.emit(args[0], PREC_ATOM)}.det()`, PREC_ATOM];
+        // A name the worksheet assigned a Matrix (or a \in R^{mxn}
+        // MatrixSymbol) is a matrix too — `A.det()` runs where
+        // Determinant(A) on a scalar would not.
+        if (this.matrixRef(args[0]))
+          return [`${this.emit(args[0], PREC_ATOM)}.det()`, PREC_ATOM];
         this.scope.flag(
           'note',
           "determinant needs a matrix — the argument isn't one",
@@ -1210,9 +1249,27 @@ class Emitter {
       }
       case 'Inverse':
         return [`${this.emit(args[0], PREC_ATOM)}**-1`, PREC_ATOM];
+      case 'MatrixMethod': {
+        // `\mathrm{trace}(A)`-style word ops fused onto a matrix literal
+        // — method calls on the emitted Matrix.
+        const method: Record<string, string> = {
+          trace: 'trace()',
+          rank: 'rank()',
+          eigenvals: 'eigenvals()',
+          eigenvects: 'eigenvects()',
+          inverse: 'inv()',
+          transpose: 'T',
+          norm: 'norm()',
+        };
+        const w = isStr(args[0]) ? args[0] : 'trace';
+        const m = method[w] ?? `${w}()`;
+        return [`(${this.emit(args[1])}).${m}`, PREC_ATOM];
+      }
       case 'Norm':
         // \|v\|: Abs for scalars, .norm() for matrices.
         if (isHead(args[0], 'Matrix'))
+          return [`(${this.emit(args[0])}).norm()`, PREC_ATOM];
+        if (this.matrixRef(args[0]))
           return [`(${this.emit(args[0])}).norm()`, PREC_ATOM];
         return [`${this.sp}Abs(${this.emit(args[0])})`, PREC_ATOM];
       case 'Divides':
@@ -1239,6 +1296,25 @@ class Emitter {
           .slice(1)
           .map((a) => this.emit(a))
           .join(', ');
+        // `\mathrm{trace}(M)`/`\mathrm{tr}(M)`: sp.trace raises
+        // TypeError on a non-matrix — only a literal or worksheet-
+        // declared matrix is safe; anything else gets an honest stub.
+        if ((name === 'trace' || name === 'Trace') && args.length === 2) {
+          if (isHead(args[1], 'Matrix') || this.matrixRef(args[1]))
+            return [`(${this.emit(args[1])}).trace()`, PREC_ATOM];
+          this.scope.flag(
+            'note',
+            "trace needs a matrix — the argument isn't one",
+          );
+          return [`${this.fn('trace')}(${this.emit(args[1])})`, PREC_ATOM];
+        }
+        // `a \equiv b \pmod{m}` — SymPy has no modular-congruence
+        // relation, but Eq(Mod(a, m), b) states it faithfully.
+        if (name === 'Congruent' && args.length === 4)
+          return [
+            `${this.sp}Eq(${this.sp}Mod(${this.emit(args[1])}, ${this.emit(args[3])}), ${this.emit(args[2])})`,
+            PREC_ATOM,
+          ];
         if (CALL_RENAMES[name])
           return [`${this.sp}${CALL_RENAMES[name]}(${rendered})`, PREC_ATOM];
         if (this.scope.declared.has(name) || !SP_BUILTIN_CALL.has(name))
@@ -1255,6 +1331,16 @@ class Emitter {
               `${fnName} needs at least ${minArgs} arguments`,
             );
             return [`${this.sp}${fnName}(${args.map((a) => this.emit(a)).join(', ')})`, PREC_ATOM];
+          }
+          // gcd/lcm take exactly two terms — a third arg lands in *gens
+          // (polynomial generators) and SymPy raises
+          // AttributeError/'int' object has no attribute 'is_commutative'
+          // on numbers. The list form folds over all terms.
+          if ((fnName === 'gcd' || fnName === 'lcm') && args.length > 2) {
+            return [
+              `${this.sp}${fnName}([${args.map((a) => this.emit(a)).join(', ')}])`,
+              PREC_ATOM,
+            ];
           }
           return [
             `${this.sp}${fnName}(${args.map((a) => this.emit(a)).join(', ')})`,
@@ -1584,14 +1670,18 @@ export function compileWorksheet(
   }
 
   const declared = new Set<string>();
+  const matrixNames = new Set<string>();
   for (const r of perCell)
-    if (r.ir !== undefined) collectDeclared(r.ir, declared);
+    if (r.ir !== undefined) {
+      collectDeclared(r.ir, declared);
+      collectMatrices(r.ir, matrixNames);
+    }
 
   // Each cell emits with fresh defined/symbols/functions state — cells
   // are independent, so a name used in a cell is always defined there.
   const genIssues: Issue[][] = cells.map(() => []);
   const makeScope = (cell: number): Scope =>
-    buildScope(qualified, declared, issues, genIssues, cell);
+    buildScope(qualified, declared, matrixNames, issues, genIssues, cell);
   const cellBodies = perCell.map((r, i) =>
     r.ir === undefined ? [] : cellStatements(r.ir, makeScope(i + 1)),
   );
@@ -1631,9 +1721,23 @@ function collectDeclared(ir: MathJson, declared: Set<string>): void {
   collect(ir);
 }
 
+// Names bound to a Matrix literal anywhere in the IR — `A.det()`,
+// `A.norm()` etc. are valid on the emitted `A = sp.Matrix(...)`.
+function collectMatrices(ir: MathJson, matrixNames: Set<string>): void {
+  const collect = (n: MathJson) => {
+    if (!isArr(n)) return;
+    const h = headOf(n);
+    if (h === 'Assign' && isStr(n[1]) && isHead(n[2], 'Matrix'))
+      matrixNames.add(n[1]);
+    if (h === 'Block') n.slice(1).forEach(collect);
+  };
+  collect(ir);
+}
+
 function buildScope(
   qualified: boolean,
   declared: Set<string>,
+  matrixNames: Set<string>,
   issues: Issue[],
   cellIssues: Issue[][],
   cell: number,
@@ -1641,6 +1745,7 @@ function buildScope(
   return {
     qualified,
     declared,
+    matrixNames,
     defined: new Set(),
     bound: new Set(),
     symbols: new Map(),
@@ -1654,11 +1759,23 @@ function buildScope(
     matrixDims: new Map(),
     flag(severity, message) {
       if (severity === 'error') this.errorCount += 1;
+      // A repeated identical note/error in one cell renders as identical
+      // overlay rows — one report covers every occurrence.
+      if (this.cell > 0) {
+        const bucket = this.cellIssues[this.cell - 1];
+        if (
+          bucket.some((i) => i.severity === severity && i.message === message)
+        )
+          return;
+        bucket.push({ severity, message });
+      } else if (
+        this.issues.some((i) => i.severity === severity && i.message === message)
+      )
+        return;
       this.issues.push({
         severity,
         message: this.cell > 0 ? `cell ${this.cell}: ${message}` : message,
       });
-      if (this.cell > 0) this.cellIssues[this.cell - 1].push({ severity, message });
     },
   };
 }
@@ -1690,8 +1807,10 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
   if (ir === undefined) return { prelude: [], statements: [], issues };
 
   const declared = new Set<string>();
+  const matrixNames = new Set<string>();
   collectDeclared(ir, declared);
-  const scope = buildScope(true, declared, issues, [[]], 0);
+  collectMatrices(ir, matrixNames);
+  const scope = buildScope(true, declared, matrixNames, issues, [[]], 0);
   const { defs, parts } = cellBody(ir, scope);
   // Statements dropped by an emission error (lines: []) produce no row —
   // the compile issue already reports the problem.
