@@ -26,13 +26,9 @@ export type EngineStatus = 'idle' | 'loading' | 'ready' | 'error';
 export const calcEngine = $state<{
   status: EngineStatus;
   error: string;
-  // Testing aid: when true the UI presents 'loading' even after the
-  // engine is ready — the chip, dimming, and interim tags stay up.
-  debugLoading: boolean;
 }>({
   status: 'idle',
   error: '',
-  debugLoading: false,
 });
 
 interface WorkerReply {

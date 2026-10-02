@@ -30,15 +30,9 @@
   let fadeOutMs = $state(animPrefs.fadeOutMs ?? 150);
   let settingsOpen = $state(false);
 
-  // What the chip/cells present — the debug pin overrides the real
-  // engine status (see the 'pin loading' testing aid below).
-  const engineShown = $derived(
-    calcEngine.debugLoading ? 'loading' : calcEngine.status,
-  );
-
   // Output column width (% of the row's flex width) — shared by every
   // row and the column header; the .col-resize divider drags it.
-  let outputPct = $state(40);
+  let outputPct = $state(50);
 
   function startColDrag(e: PointerEvent) {
     const handle = e.currentTarget as HTMLElement;
@@ -334,28 +328,50 @@
                  unmounting, so the header row never changes size. -->
             <span
               class="engine-chip"
-              class:engine-error={engineShown === 'error'}
+              class:engine-error={calcEngine.status === 'error'}
               role="status"
-              title={engineShown === 'loading'
-                ? 'The SymPy engine is still loading — interim results use a faster, less accurate engine.'
-                : engineShown === 'error'
+              title={calcEngine.status === 'loading'
+                ? 'The SymPy engine is still loading — interim results come from nerdamer, a faster but less accurate engine.'
+                : calcEngine.status === 'error'
                   ? calcEngine.error
                   : 'SymPy engine ready'}
             >
-              {#if engineShown === 'loading'}
+              {#if calcEngine.status === 'loading'}
                 <span class="engine-spinner" aria-hidden="true"></span>
-                SymPy engine loading — interim results are less accurate
-                estimates
-              {:else if engineShown === 'error'}
+                SymPy engine loading — interim results use nerdamer, a
+                faster but less accurate engine
+              {:else if calcEngine.status === 'error'}
                 SymPy failed to load
               {:else}
                 SymPy ready
               {/if}
+              <button
+                type="button"
+                class="info-icon"
+                aria-label="Why interim results use a different engine"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="12" r="9" />
+                  <line x1="12" y1="11" x2="12" y2="16.5" />
+                  <circle cx="12" cy="7.5" r="0.75" fill="currentColor" />
+                </svg>
+                <span class="info-tip" role="tooltip" aria-hidden="true">
+                  Answers come from SymPy, a full computer-algebra system
+                  running as WebAssembly (Pyodide), which takes a while
+                  to download and boot. Until it's ready, results come
+                  from nerdamer — a lightweight JavaScript engine that's
+                  faster but less accurate — and are marked "estimate".
+                </span>
+              </button>
             </span>
           {/if}
-          <!-- Live readout of the input column's width share — a tuning
-               aid for picking the divider's default position. -->
-          <span class="col-width-label">input {100 - outputPct}%</span>
           {#if compiled && appStore.target === 'python'}
             <label class="option-checkbox output-import-all">
               <input
@@ -528,16 +544,5 @@
       <HowToGuide />
     </section>
   </div>
-  {#if appStore.target === 'calculator'}
-    <!-- Testing aid: keeps the loading presentation up after the
-         engine is ready so it can be inspected. -->
-    <label
-      class="pin-loading"
-      title="Keep showing the loading state after the SymPy engine is ready"
-    >
-      <input type="checkbox" bind:checked={calcEngine.debugLoading} />
-      pin loading
-    </label>
-  {/if}
   <CommandPalette {commands} />
 </div>

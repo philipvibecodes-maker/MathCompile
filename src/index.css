@@ -564,39 +564,6 @@ body {
   color: var(--danger);
 }
 
-/* Live readout of the input column's width share in the output header —
-   updates while the .col-resize divider is dragged. */
-.col-width-label {
-  font-size: 11px;
-  color: var(--faint);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-/* Testing aid pinned to the page corner — keeps the loading
-   presentation up after the engine is ready. */
-.pin-loading {
-  position: fixed;
-  right: 12px;
-  bottom: 12px;
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  font-size: 11px;
-  color: var(--faint);
-  background: var(--panel-bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  cursor: pointer;
-  user-select: none;
-}
-
-.pin-loading input {
-  accent-color: var(--accent);
-  cursor: pointer;
-}
 
 .engine-spinner {
   flex: 0 0 auto;

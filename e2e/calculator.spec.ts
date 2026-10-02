@@ -172,49 +172,24 @@ test('flags interim results and the engine-loading banner while SymPy boots', as
   await mf.pressSequentially('2+2', { delay: 40 });
 
   // While Pyodide boots, the output column header's engine chip says
-  // it's still loading, and each interim row is tagged as an estimate.
+  // it's still loading and names the interim engine, and each interim
+  // row is tagged as an estimate.
   const chip = page.locator('.engine-chip');
   await expect(chip).toContainText('SymPy engine loading');
+  await expect(chip).toContainText('nerdamer');
   await expect(page.locator('.calc-interim').first()).toBeVisible({
     timeout: 10_000,
   });
+
+  // The chip's info icon explains on hover why an interim engine runs.
+  await chip.locator('.info-icon').hover();
+  await expect(chip.locator('.info-tip')).toBeVisible();
+  await expect(chip.locator('.info-tip')).toContainText('nerdamer');
 
   // The chip flips to ready and the tag clears once the real SymPy
   // result lands.
   await expect(chip).toContainText('SymPy ready', { timeout: 90_000 });
   await expect(page.locator('.calc-interim')).toHaveCount(0);
-  await expect(page.locator('.calc-row').first()).toContainText('4');
-});
-
-test('pin loading keeps the loading presentation after the engine is ready', async ({
-  page,
-}) => {
-  test.setTimeout(120_000);
-  await setTarget(page, 'calculator');
-  await page.getByLabel('pin loading').check();
-
-  const mf = cell(page, 0);
-  await mf.click();
-  await mf.pressSequentially('2+2', { delay: 40 });
-
-  const chip = page.locator('.engine-chip');
-  await expect(chip).toContainText('SymPy engine loading');
-  await expect(page.locator('.calc-interim').first()).toBeVisible({
-    timeout: 10_000,
-  });
-
-  // Well past the engine boot — the pinned UI must still show loading.
-  await page.waitForTimeout(20_000);
-  await expect(chip).toContainText('SymPy engine loading');
-  await expect(page.locator('.calc-interim').first()).toBeVisible();
-
-  // Unpinning applies the deferred real result and flips the chip.
-  await page.getByLabel('pin loading').uncheck();
-  await expect(chip).toContainText('SymPy ready');
-  await expect(page.locator('.calc-interim')).toHaveCount(0);
-  await expect(
-    page.locator('.calc-rows').first(),
-  ).not.toHaveClass(/pending/);
   await expect(page.locator('.calc-row').first()).toContainText('4');
 });
 
