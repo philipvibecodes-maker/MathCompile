@@ -128,24 +128,29 @@ class MathCommand extends MathElement {
     });
   }
 
-  parser(): Parser<MQNode | Fragment> {
+  // the bare block-counting parse, without the verbatim-leaf fallback
+  strictParser(): Parser<MQNode | Fragment> {
     var block = latexMathParser.block;
+
+    return block.times(this.numBlocks()).map((blocks) => {
+      this.blocks = blocks;
+
+      for (var i = 0; i < blocks.length; i += 1) {
+        blocks[i].adopt(this, this.getEnd(R), 0);
+      }
+
+      return this;
+    });
+  }
+
+  parser(): Parser<MQNode | Fragment> {
     var self = this;
 
-    return block
-      .times(this.numBlocks())
-      .map((blocks) => {
-        this.blocks = blocks;
-
-        for (var i = 0; i < blocks.length; i += 1) {
-          blocks[i].adopt(this, this.getEnd(R), 0);
-        }
-
-        return this;
-      })
-      .or(
-        // a command missing its braces degrades to a verbatim leaf
-        // instead of blanking the surrounding content
+    return this.strictParser().or(
+      // a command missing its braces degrades to a verbatim leaf
+      // instead of blanking the surrounding content — but only when
+      // non-space input follows: a lone trailing \frac still fails
+      Parser.regex(/^(?=\S)/).then(() =>
         Parser.succeed(
           new VanillaSymbol(
             self.ctrlSeq + ' ',
@@ -153,7 +158,8 @@ class MathCommand extends MathElement {
             self.ctrlSeq
           ) as MQNode | Fragment
         )
-      );
+      )
+    );
   }
 
   // createLeftOf(cursor) and the methods it calls

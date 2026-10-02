@@ -4113,12 +4113,30 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             return new VanillaSymbol(c);
         });
         var controlSequence = regex(/^[^\\a-eg-zA-Z]/) // hotfix #164; match MathBlock::write
-            .or(string('\\').then(regex(/^[a-z]+/i)
+            .map(function (ch) {
+            return { cs: ch, isCommand: false };
+        })
+            .or(string('\\')
+            .then(regex(/^[a-z]+/i)
             .or(regex(/^\s+/).result(' '))
-            .or(any)))
-            .then(function (ctrlSeq) {
+            // \<char> escapes keep a distinguishing '\x' ctrlSeq so their
+            // commands (e.g. \{, \|, \;) never shadow the bare char — the
+            // same LatexCmds map resolves single chars via the branch above.
+            .or(any.map(function (c) {
+            return '\\' + c;
+        })))
+            .map(function (cs) {
+            return { cs: cs, isCommand: true };
+        }))
+            .then(function (info) {
             // TODO - is Parser<MQNode> correct?
+            var ctrlSeq = info.cs;
             var cmdKlass = LatexCmds[ctrlSeq];
+            if (!cmdKlass && ctrlSeq.charAt(0) === '\\') {
+                // '\<char>' with no dedicated escape command falls back to the
+                // bare char's command (previous behavior: \% -> %, \. -> .).
+                cmdKlass = LatexCmds[ctrlSeq.slice(1)];
+            }
             if (cmdKlass) {
                 if (cmdKlass.constructor) {
                     var actualClass = cmdKlass; // TODO - figure out how to know the difference
@@ -4128,6 +4146,14 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     var builder = cmdKlass; // TODO - figure out how to know the difference
                     return builder(ctrlSeq).parser();
                 }
+            }
+            else if (info.isCommand) {
+                // unknown \command: degrade to a verbatim leaf so one
+                // unrecognized \ctrlseq doesn't blank the whole field
+                var latexName = /^[a-z]+$/i.test(ctrlSeq)
+                    ? '\\' + ctrlSeq + ' '
+                    : '\\' + ctrlSeq;
+                return succeed(new VanillaSymbol(latexName, h.text(latexName.replace(/ $/, '')), ctrlSeq));
             }
             else {
                 return fail('unknown command: \\' + ctrlSeq);
@@ -5304,7 +5330,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 return isEmpty && child.isEmpty();
             });
         };
-        MathCommand.prototype.parser = function () {
+        // the bare block-counting parse, without the verbatim-leaf fallback
+        MathCommand.prototype.strictParser = function () {
             var _this_1 = this;
             var block = latexMathParser.block;
             return block.times(this.numBlocks()).map(function (blocks) {
@@ -5314,6 +5341,16 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 }
                 return _this_1;
             });
+        };
+        MathCommand.prototype.parser = function () {
+            var self = this;
+            return this.strictParser().or(
+            // a command missing its braces degrades to a verbatim leaf
+            // instead of blanking the surrounding content — but only when
+            // non-space input follows: a lone trailing \frac still fails
+            Parser.regex(/^(?=\S)/).then(function () {
+                return Parser.succeed(new VanillaSymbol(self.ctrlSeq + ' ', h.text(self.ctrlSeq || ''), self.ctrlSeq));
+            }));
         };
         // createLeftOf(cursor) and the methods it calls
         MathCommand.prototype.createLeftOf = function (cursor) {
@@ -5983,9 +6020,11 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             var string = Parser.string;
             var regex = Parser.regex;
             var optWhitespace = Parser.optWhitespace;
+            // text content tolerates nested braces up to depth 3 (\textit{x_{2}},
+            // \textbf{a{b{c}d}e}) so pasted text-mode latex doesn't fail the cell.
             return optWhitespace
                 .then(string('{'))
-                .then(regex(/^[^}]*/))
+                .then(regex(/^(?:[^{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*/))
                 .skip(string('}'))
                 .map(function (text) {
                 if (text.length === 0)
@@ -6007,9 +6046,26 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             var contents = this.textContents();
             if (contents.length > 0) {
                 ctx.uncleanedLatex += this.ctrlSeq + '{';
-                ctx.uncleanedLatex += contents
-                    .replace(/\\/g, '\\backslash ')
-                    .replace(/[{}]/g, '\\$&');
+                var backslashed = contents.replace(/\\/g, '\\backslash ');
+                // balanced braces round-trip raw (nested text like \textit{x_{2}});
+                // unbalanced ones must stay escaped to parse at all
+                var depth = 0;
+                var balanced = true;
+                for (var i = 0; i < backslashed.length; i += 1) {
+                    var ch = backslashed[i];
+                    if (ch === '{')
+                        depth += 1;
+                    else if (ch === '}')
+                        depth -= 1;
+                    if (depth < 0) {
+                        balanced = false;
+                        break;
+                    }
+                }
+                ctx.uncleanedLatex +=
+                    balanced && depth === 0
+                        ? backslashed
+                        : backslashed.replace(/[{}]/g, '\\$&');
                 ctx.uncleanedLatex += '}';
             }
             this.checkCursorContextClose(ctx);
@@ -6366,8 +6422,46 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         LatexCmds.bold =
             LatexCmds.textbf =
                 makeTextBlock('\\textbf', 'Bold', 'b', { class: 'mq-text-mode' });
-    LatexCmds.sf = LatexCmds.textsf = makeTextBlock('\\textsf', 'Sans serif font', 'span', { class: 'mq-sans-serif mq-text-mode' });
-    LatexCmds.tt = LatexCmds.texttt = makeTextBlock('\\texttt', 'Mono space font', 'span', { class: 'mq-monospace mq-text-mode' });
+    LatexCmds.textsf = makeTextBlock('\\textsf', 'Sans serif font', 'span', { class: 'mq-sans-serif mq-text-mode' });
+    // \sf — old-style declaration form of \textsf: parses a braced group
+    // as sans-serif text, or a bare font switch like \it when unbraced.
+    LatexCmds.sf = (function () {
+        var Base = makeTextBlock('\\sf', 'Sans serif font', 'span', {
+            class: 'mq-sans-serif mq-text-mode'
+        });
+        return /** @class */ (function (_super) {
+            __extends(class_3, _super);
+            function class_3() {
+                return _super !== null && _super.apply(this, arguments) || this;
+            }
+            class_3.prototype.parser = function () {
+                return _super.prototype.parser.call(this)
+                    .or(Parser.succeed(new VanillaSymbol('\\sf ', h.text('\\sf'), 'sans serif font')));
+            };
+            return class_3;
+        }(Base));
+    })();
+    LatexCmds.texttt = makeTextBlock('\\texttt', 'Mono space font', 'span', { class: 'mq-monospace mq-text-mode' });
+    // \tt — same: braced group or bare font switch.
+    LatexCmds.tt = (function () {
+        var Base = makeTextBlock('\\tt', 'Mono space font', 'span', {
+            class: 'mq-monospace mq-text-mode'
+        });
+        return /** @class */ (function (_super) {
+            __extends(class_4, _super);
+            function class_4() {
+                return _super !== null && _super.apply(this, arguments) || this;
+            }
+            class_4.prototype.parser = function () {
+                return _super.prototype.parser.call(this)
+                    .or(Parser.succeed(new VanillaSymbol('\\tt ', h.text('\\tt'), 'mono space font')));
+            };
+            return class_4;
+        }(Base));
+    })();
+    LatexCmds.mbox = makeTextBlock('\\mbox', 'Box', 'span', {
+        class: 'mq-text-mode'
+    });
     LatexCmds.textsc = makeTextBlock('\\textsc', 'Variable font', 'span', {
         style: 'font-variant:small-caps',
         class: 'mq-text-mode'
@@ -6581,38 +6675,68 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                                                     LatexCmds.notsuperseteq =
                                                         bindBinaryOperator('\\not\\supseteq ', '&#8841;', 'not superset or equal to');
     //the canonical sets of numbers
+    // Unicode codepoints for double-struck capitals without a dedicated
+    // LatexCmds class (the letterlike-symbol letters C/H/N/P/Q/R/Z have
+    // their own classes below). Digits use the 𝟘-𝟡 block.
+    var MATHBB_GLYPHS = {
+        A: 0x1d538,
+        B: 0x1d539,
+        D: 0x1d53b,
+        E: 0x1d53c,
+        F: 0x1d53d,
+        G: 0x1d53e,
+        I: 0x1d540,
+        J: 0x1d541,
+        K: 0x1d542,
+        L: 0x1d543,
+        M: 0x1d544,
+        O: 0x1d546,
+        S: 0x1d54a,
+        T: 0x1d54b,
+        U: 0x1d54c,
+        V: 0x1d54d,
+        W: 0x1d54e,
+        X: 0x1d54f,
+        Y: 0x1d550
+    };
     LatexCmds.mathbb = /** @class */ (function (_super) {
-        __extends(class_3, _super);
-        function class_3() {
+        __extends(class_5, _super);
+        function class_5() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_3.prototype.createLeftOf = function (_cursor) { };
-        class_3.prototype.numBlocks = function () {
+        class_5.prototype.createLeftOf = function (_cursor) { };
+        class_5.prototype.numBlocks = function () {
             return 1;
         };
-        class_3.prototype.parser = function () {
+        class_5.prototype.parser = function () {
             var string = Parser.string;
             var regex = Parser.regex;
             var optWhitespace = Parser.optWhitespace;
             return optWhitespace
                 .then(string('{'))
                 .then(optWhitespace)
-                .then(regex(/^[NPZQRCH]/))
+                .then(regex(/^[A-Z0-9]/))
                 .skip(optWhitespace)
                 .skip(string('}'))
                 .map(function (c) {
                 // instantiate the class for the matching char
                 var cmd = LatexCmds[c];
-                if (isMQNodeClass(cmd)) {
-                    return new cmd();
+                if (cmd) {
+                    if (isMQNodeClass(cmd)) {
+                        return new cmd();
+                    }
+                    else {
+                        return cmd();
+                    }
                 }
-                else {
-                    return cmd();
-                }
+                var codepoint = MATHBB_GLYPHS[c] || 0x1d7d8 + c.charCodeAt(0) - 48;
+                return new VanillaSymbol('\\mathbb{' + c + '}', h.text(String.fromCodePoint(codepoint)), 'mathbb ' + c);
             });
         };
-        return class_3;
+        return class_5;
     }(MathCommand));
+    // \Bbb{R} and \mathds{F} are old/amsmath spellings of \mathbb
+    LatexCmds.Bbb = LatexCmds.mathds = LatexCmds.mathbb;
     LatexCmds['ℕ'] =
         LatexCmds.N =
             LatexCmds.naturals =
@@ -6661,6 +6785,18 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     //spacing
     LatexCmds.quad = LatexCmds.emsp = bindVanillaSymbol('\\quad ', '    ', '4 spaces');
     LatexCmds.qquad = bindVanillaSymbol('\\qquad ', '        ', '8 spaces');
+    // style switches (\displaystyle … \nolimits) — invisible atoms that
+    // serialize their command verbatim. \limits/\nolimits sit between an
+    // operator and its bounds; the bound then attaches to this zero-width
+    // atom, so `\sum\limits_{i}` renders like `\sum_{i}` and round-trips.
+    // (bindStyleModifier itself is defined in commands.ts — hoisted across
+    // the concatenated bundle — so mathquill-basic gets it too.)
+    LatexCmds.displaystyle = bindStyleModifier('\\displaystyle ', 'displaystyle');
+    LatexCmds.textstyle = bindStyleModifier('\\textstyle ', 'textstyle');
+    LatexCmds.scriptstyle = bindStyleModifier('\\scriptstyle ', 'scriptstyle');
+    LatexCmds.scriptscriptstyle = bindStyleModifier('\\scriptscriptstyle ', 'scriptscriptstyle');
+    LatexCmds.limits = bindStyleModifier('\\limits ', 'limits');
+    LatexCmds.nolimits = bindStyleModifier('\\nolimits ', 'no limits');
     /* spacing special characters, gonna have to implement this in LatexCommandInput::onText somehow
     case ',':
       return VanillaSymbol('\\, ',' ', 'comma');
@@ -6714,6 +6850,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds['⊣'] = LatexCmds.dashv = bindVanillaSymbol('\\dashv ', '&#8867;', 'dash v');
     LatexCmds['≮'] = LatexCmds.nless = bindVanillaSymbol('\\nless ', '&#8814;', 'not less than');
     LatexCmds['≯'] = LatexCmds.ngtr = bindVanillaSymbol('\\ngtr ', '&#8815;', 'not greater than');
+    LatexCmds['≰'] = LatexCmds.nleq = LatexCmds.nle = bindVanillaSymbol('\\nleq ', '&#8816;', 'not less than or equal to');
+    LatexCmds['≱'] = LatexCmds.ngeq = LatexCmds.nge = bindVanillaSymbol('\\ngeq ', '&#8817;', 'not greater than or equal to');
+    LatexCmds['≍'] = LatexCmds.asymp = bindVanillaSymbol('\\asymp ', '&#8781;', 'asymptotically equal to');
     //arrows
     LatexCmds.longleftarrow = bindVanillaSymbol('\\longleftarrow ', '&#8592;', 'left arrow');
     LatexCmds.longrightarrow = bindVanillaSymbol('\\longrightarrow ', '&#8594;', 'right arrow');
@@ -6788,12 +6927,18 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         LatexCmds.AA =
             LatexCmds.Angstrom =
                 LatexCmds.angstrom =
-                    bindVanillaSymbol('\\text\\AA ', '&#8491;', 'AA');
+                    bindVanillaSymbol('\\AA ', '&#8491;', 'AA');
     LatexCmds['∘'] =
-        LatexCmds.ring =
-            LatexCmds.circ =
-                LatexCmds.circle =
-                    bindVanillaSymbol('\\circ ', '&#8728;', 'circle');
+        LatexCmds.circ =
+            LatexCmds.circle =
+                bindVanillaSymbol('\\circ ', '&#8728;', 'circle');
+    // \ring/\mathring are LaTeX ring accents (˚ above), not the ∘ operator
+    LatexCmds.ring = function () {
+        return new DiacriticAbove('\\ring', h.text('˚'), ['ring(', ')']);
+    };
+    LatexCmds.mathring = function () {
+        return new DiacriticAbove('\\mathring', h.text('˚'), ['ring(', ')']);
+    };
     LatexCmds['•'] =
         LatexCmds.bull =
             LatexCmds.bullet =
@@ -6802,10 +6947,77 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         LatexCmds.setminus =
             LatexCmds.smallsetminus =
                 bindVanillaSymbol('\\setminus ', '&#8726;', 'set minus');
-    LatexCmds.not = //bind(MQSymbol,'\\not ','<span class="not">/</span>', 'not');
+    LatexCmds.lnot = // plain negation
         LatexCmds['¬'] =
             LatexCmds.neg =
                 bindVanillaSymbol('\\neg ', '&not;', 'not');
+    // `\not` + a relation produces the negated relation glyph:
+    // `\not\in` → ∉, `\not=` → ≠, `\not\subset` → ⊄. Relations without a
+    // known negation keep a standalone \not (∕) so the text round-trips.
+    var NOT_RELATIONS = {
+        '=': 'ne',
+        '<': 'nless',
+        '>': 'ngtr',
+        '\\in': 'notin',
+        '\\ni': 'notni',
+        '\\exists': 'nexists',
+        '\\subset': 'nsubset',
+        '\\supset': 'nsupset',
+        '\\subseteq': 'nsubseteq',
+        '\\supseteq': 'nsupseteq',
+        '\\cong': 'ncong',
+        '\\sim': 'nsim',
+        '\\parallel': 'nparallel',
+        '\\approx': 'napprox',
+        '\\equiv': 'nequiv',
+        '\\mid': 'nmid',
+        '\\le': 'nleq',
+        '\\leq': 'nleq',
+        '\\ge': 'ngeq',
+        '\\geq': 'ngeq',
+        '\\vdash': 'nvdash',
+        '\\prec': 'nprec',
+        '\\succ': 'nsucc',
+        '\\preceq': 'npreceq',
+        '\\succeq': 'nsucceq'
+    };
+    LatexCmds.not = /** @class */ (function (_super) {
+        __extends(class_6, _super);
+        function class_6() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        class_6.prototype.createLeftOf = function () { };
+        class_6.prototype.numBlocks = function () {
+            return 1;
+        };
+        class_6.prototype.parser = function () {
+            return Parser.optWhitespace
+                .then(latexMathParser.block)
+                .then(function (block) {
+                var first = block.getEnd(L);
+                var key = (first && first.ctrlSeq ? first.ctrlSeq : '').replace(/\s+$/, '');
+                var target = key ? NOT_RELATIONS[key] : undefined;
+                var cmd = target ? LatexCmds[target] : undefined;
+                if (cmd) {
+                    return Parser.succeed(isMQNodeClass(cmd)
+                        ? new cmd()
+                        : cmd());
+                }
+                return Parser.fail('not a negatable relation');
+            })
+                .or(Parser.succeed(new VanillaSymbol('\\not ', h.text('∕'))));
+        };
+        return class_6;
+    }(MathCommand));
+    // negated relations needed by the \not mapping (and parsed on their own)
+    LatexCmds['≉'] = LatexCmds.napprox = bindBinaryOperator('\\not\\approx ', '&#8777;', 'not approximately');
+    LatexCmds['≢'] = LatexCmds.nequiv = bindBinaryOperator('\\not\\equiv ', '&#8802;', 'not equivalent to');
+    LatexCmds['∤'] = LatexCmds.nmid = bindBinaryOperator('\\not\\mid ', '&#8740;', 'does not divide');
+    LatexCmds['⊬'] = LatexCmds.nvdash = bindBinaryOperator('\\not\\vdash ', '&#8876;', 'does not prove');
+    LatexCmds['⊀'] = LatexCmds.nprec = bindBinaryOperator('\\not\\prec ', '&#8832;', 'does not precede');
+    LatexCmds['⊁'] = LatexCmds.nsucc = bindBinaryOperator('\\not\\succ ', '&#8833;', 'does not succeed');
+    LatexCmds['⋠'] = LatexCmds.npreceq = bindBinaryOperator('\\not\\preceq ', '&#8928;', 'not precede or equal');
+    LatexCmds['⋡'] = LatexCmds.nsucceq = bindBinaryOperator('\\not\\succeq ', '&#8929;', 'not succeed or equal');
     LatexCmds['…'] =
         LatexCmds.dots =
             LatexCmds.ellip =
@@ -6836,7 +7048,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             LatexCmds.Uparrow =
                 bindVanillaSymbol('\\Uparrow ', '&uArr;', 'up arrow');
     LatexCmds.rarr = LatexCmds.rightarrow = bindVanillaSymbol('\\rightarrow ', '&rarr;', 'right arrow');
-    LatexCmds.implies = bindBinaryOperator('\\Rightarrow ', '&rArr;', 'implies');
+    LatexCmds.implies = bindBinaryOperator('\\implies ', '&rArr;', 'implies');
     LatexCmds['⇒'] =
         LatexCmds.rArr =
             LatexCmds.Rightarrow =
@@ -6846,7 +7058,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         LatexCmds.larr =
             LatexCmds.leftarrow =
                 bindVanillaSymbol('\\leftarrow ', '&larr;', 'left arrow');
-    LatexCmds.impliedby = bindBinaryOperator('\\Leftarrow ', '&lArr;', 'implied by');
+    LatexCmds.impliedby = bindBinaryOperator('\\impliedby ', '&lArr;', 'implied by');
     LatexCmds['⇐'] =
         LatexCmds.lArr =
             LatexCmds.Leftarrow =
@@ -6856,7 +7068,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             LatexCmds.lrarr =
                 LatexCmds.leftrightarrow =
                     bindVanillaSymbol('\\leftrightarrow ', '&harr;', 'left and right arrow');
-    LatexCmds.iff = bindBinaryOperator('\\Leftrightarrow ', '&hArr;', 'if and only if');
+    LatexCmds.iff = bindBinaryOperator('\\iff ', '&hArr;', 'if and only if');
     LatexCmds['⇔'];
     LatexCmds.hArr =
         LatexCmds.lrArr =
@@ -6924,6 +7136,1132 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             LatexCmds.intersect =
                 LatexCmds.intersection =
                     bindBinaryOperator('\\cap ', '&cap;', 'intersection');
+    // ===== Round-trip coverage: more commands real LaTeX emits =====
+    // Each entry below previously failed parse and blanked the field.
+    // Named spacing commands (the \, \: \; \! single-char forms are in
+    // basicSymbols). Widths follow LaTeX: enspace .5em, thinspace = \,
+    // medspace = \:, thickspace = \;, negative med/thick the negatives.
+    function bindSpacingCmd(ctrlSeq, ems, speak) {
+        return function () {
+            return new VanillaSymbol(ctrlSeq + ' ', h('span', { style: 'margin-left:' + ems + 'em' }, []), speak);
+        };
+    }
+    LatexCmds.enspace = bindSpacingCmd('\\enspace', 0.5, 'en space');
+    LatexCmds.thinspace = bindSpacingCmd('\\thinspace', 0.1667, 'thin space');
+    LatexCmds.medspace = bindSpacingCmd('\\medspace', 0.2222, 'medium space');
+    LatexCmds.thickspace = bindSpacingCmd('\\thickspace', 0.2778, 'thick space');
+    LatexCmds.negmedspace = bindSpacingCmd('\\negmedspace', -0.2222, 'negative medium space');
+    LatexCmds.negthickspace = bindSpacingCmd('\\negthickspace', -0.2778, 'negative thick space');
+    // Spacing/phantom commands that take a {size or content} block — the
+    // argument is kept verbatim; rendered zero-width/invisible.
+    function bindInvisibleBlockCmd(ctrlSeq, cls) {
+        return function () {
+            return new MathCommand(ctrlSeq, new DOMView(1, function (blocks) {
+                return h('span', { class: 'mq-non-leaf ' + cls }, [
+                    h.block('span', {}, blocks[0])
+                ]);
+            }));
+        };
+    }
+    LatexCmds.hspace = bindInvisibleBlockCmd('\\hspace', 'mq-invisible');
+    LatexCmds.mspace = bindInvisibleBlockCmd('\\mspace', 'mq-invisible');
+    LatexCmds.kern = bindInvisibleBlockCmd('\\kern', 'mq-invisible');
+    LatexCmds.mkern = bindInvisibleBlockCmd('\\mkern', 'mq-invisible');
+    LatexCmds.phantom = bindInvisibleBlockCmd('\\phantom', 'mq-phantom');
+    LatexCmds.vphantom = bindInvisibleBlockCmd('\\vphantom', 'mq-phantom');
+    LatexCmds.hphantom = bindInvisibleBlockCmd('\\hphantom', 'mq-phantom');
+    // equation-numbering commands — meaningless in a cell but keep the text
+    // \tag{1} and the starred variant \tag*{1} (unparenthesized tag).
+    LatexCmds.tag = /** @class */ (function (_super) {
+        __extends(class_7, _super);
+        function class_7() {
+            var _this_1 = _super.call(this, '\\tag', new DOMView(1, function (blocks) {
+                return h('span', { class: 'mq-non-leaf mq-invisible' }, [
+                    h.block('span', {}, blocks[0])
+                ]);
+            })) || this;
+            _this_1.starred = false;
+            return _this_1;
+        }
+        class_7.prototype.parser = function () {
+            var self = this;
+            return Parser.optWhitespace
+                .then(Parser.string('*').or(Parser.succeed('')))
+                .then(function (star) {
+                self.starred = !!star;
+                return latexMathParser.block;
+            })
+                .map(function (b) {
+                self.blocks = [b];
+                b.adopt(self, 0, 0);
+                return self;
+            });
+        };
+        class_7.prototype.latexRecursive = function (ctx) {
+            this.checkCursorContextOpen(ctx);
+            ctx.uncleanedLatex += '\\tag' + (this.starred ? '*' : '') + '{';
+            this.blocks[0].latexRecursive(ctx);
+            ctx.uncleanedLatex += '}';
+            this.checkCursorContextClose(ctx);
+        };
+        return class_7;
+    }(MathCommand));
+    LatexCmds.notag = bindStyleModifier('\\notag ', 'no tag');
+    LatexCmds.nonumber = bindStyleModifier('\\nonumber ', 'no number');
+    // \mathord/\mathbin/\mathop/\mathrel/\mathopen/\mathclose/\mathpunct/
+    // \mathinner/\mathnormal — atom-type wrappers; the wrapper is kept in
+    // the serialization, content passes through visually.
+    function bindMathWrap(cmd) {
+        var ctrlSeq = '\\' + cmd;
+        LatexCmds[cmd] = function () {
+            return new MathCommand(ctrlSeq, new DOMView(1, function (blocks) {
+                return h('span', { class: 'mq-non-leaf' }, [
+                    h.block('span', {}, blocks[0])
+                ]);
+            }));
+        };
+    }
+    [
+        'mathord',
+        'mathbin',
+        'mathop',
+        'mathrel',
+        'mathopen',
+        'mathclose',
+        'mathpunct',
+        'mathinner',
+        'mathnormal'
+    ].forEach(bindMathWrap);
+    // Text-style accents usable in math mode: above accents \v \u \r
+    // (caron, breve, ring — \r is the ring accent; \H is already \mathbb{H}
+    // so the double-acute form is not registered), below accents \d \b \c.
+    LatexCmds.v = function () {
+        return new DiacriticAbove('\\v', h.text('ˇ'), ['check(', ')']);
+    };
+    LatexCmds.u = function () {
+        return new DiacriticAbove('\\u', h.text('˘'), ['breve(', ')']);
+    };
+    LatexCmds.r = function () { return new DiacriticAbove('\\r', h.text('˚'), ['ring(', ')']); };
+    LatexCmds.d = function () {
+        return new DiacriticBelow('\\d', h.text('&#803;'), ['dot below(', ')']);
+    };
+    LatexCmds.b = function () {
+        return new DiacriticBelow('\\b', h.text('&#818;'), ['bar below(', ')']);
+    };
+    LatexCmds.c = function () {
+        return new DiacriticBelow('\\c', h.text('¸'), ['cedilla(', ')']);
+    };
+    LatexCmds.widehat = function () {
+        return new DiacriticAbove('\\widehat', h.text('^'), ['widehat(', ')']);
+    };
+    LatexCmds.widetilde = function () {
+        return new DiacriticAbove('\\widetilde', h.text('~'), ['widetilde(', ')']);
+    };
+    // Relations missing from the table.
+    LatexCmds['⊊'] = LatexCmds.subsetneq = bindBinaryOperator('\\subsetneq ', '&#8842;', 'subset of, not equal to');
+    LatexCmds['⊋'] = LatexCmds.supsetneq = bindBinaryOperator('\\supsetneq ', '&#8843;', 'superset of, not equal to');
+    LatexCmds['⫋'] = LatexCmds.subsetneqq = bindBinaryOperator('\\subsetneqq ', '&#10955;', 'subset of, not equal to');
+    LatexCmds['⫌'] = LatexCmds.supsetneqq = bindBinaryOperator('\\supsetneqq ', '&#10956;', 'superset of, not equal to');
+    LatexCmds['⊊'] = LatexCmds.varsubsetneq = LatexCmds.varsubsetneqq =
+        bindBinaryOperator('\\varsubsetneq ', '&#8842;', 'subset of, not equal to');
+    LatexCmds['⊋'] = LatexCmds.varsupsetneq = LatexCmds.varsupsetneqq =
+        bindBinaryOperator('\\varsupsetneq ', '&#8843;', 'superset of, not equal to');
+    LatexCmds['≲'] = LatexCmds.lesssim = bindBinaryOperator('\\lesssim ', '&#8818;', 'less than or similar');
+    LatexCmds['≳'] = LatexCmds.gtrsim = bindBinaryOperator('\\gtrsim ', '&#8819;', 'greater than or similar');
+    LatexCmds['≾'] = LatexCmds.precsim = bindBinaryOperator('\\precsim ', '&#8830;', 'precedes or similar');
+    LatexCmds['≿'] = LatexCmds.succsim = bindBinaryOperator('\\succsim ', '&#8831;', 'succeeds or similar');
+    LatexCmds['≶'] = LatexCmds.lessgtr = bindBinaryOperator('\\lessgtr ', '&#8822;', 'less than or greater than');
+    LatexCmds['≷'] = LatexCmds.gtrless = bindBinaryOperator('\\gtrless ', '&#8823;', 'greater than or less than');
+    LatexCmds['≊'] = LatexCmds.approxeq = bindBinaryOperator('\\approxeq ', '&#8778;', 'approximately equal to');
+    LatexCmds['≑'] = LatexCmds.doteqdot = LatexCmds.Doteq = bindBinaryOperator('\\doteqdot ', '&#8785;', 'geometrically equal to');
+    LatexCmds['≓'] = LatexCmds.risingdotseq = bindBinaryOperator('\\risingdotseq ', '&#8787;', 'rising dot equals');
+    LatexCmds['≒'] = LatexCmds.fallingdotseq = bindBinaryOperator('\\fallingdotseq ', '&#8786;', 'falling dot equals');
+    LatexCmds['≖'] = LatexCmds.eqcirc = bindBinaryOperator('\\eqcirc ', '&#8790;', 'equals with circle');
+    LatexCmds['≗'] = LatexCmds.circeq = bindBinaryOperator('\\circeq ', '&#8791;', 'circled equals');
+    LatexCmds['≜'] = LatexCmds.triangleq = bindBinaryOperator('\\triangleq ', '&#8796;', 'triangle equals');
+    LatexCmds['≏'] = LatexCmds.bumpeq = bindBinaryOperator('\\bumpeq ', '&#8781;', 'bump equals');
+    LatexCmds['≎'] = LatexCmds.Bumpeq = bindBinaryOperator('\\Bumpeq ', '&#8782;', 'Bump equals');
+    LatexCmds['⊨'] = LatexCmds.vDash = bindBinaryOperator('\\vDash ', '&#8872;', 'double vertical bar');
+    LatexCmds['⊩'] = LatexCmds.Vdash = bindBinaryOperator('\\Vdash ', '&#8873;', 'vertical bar double bar');
+    LatexCmds['⊪'] = LatexCmds.Vvdash = bindBinaryOperator('\\Vvdash ', '&#8874;', 'triple vertical bar');
+    LatexCmds['≔'] = LatexCmds.coloneqq = LatexCmds.colonequals =
+        LatexCmds.assign =
+            bindBinaryOperator('\\coloneqq ', '&#8788;', 'colon equals');
+    LatexCmds['≕'] = LatexCmds.eqqcolon = LatexCmds.equalscolon =
+        bindBinaryOperator('\\eqqcolon ', '&#8789;', 'equals colon');
+    // More letter/misc symbols.
+    LatexCmds['ı'] = LatexCmds.imath = bindVanillaSymbol('\\imath ', '&#305;', 'dotless i');
+    LatexCmds['ȷ'] = LatexCmds.jmath = bindVanillaSymbol('\\jmath ', '&#567;', 'dotless j');
+    LatexCmds['ב'] = LatexCmds.beth = bindVanillaSymbol('\\beth ', '&#1489;', 'beth');
+    LatexCmds['ג'] = LatexCmds.gimel = LatexCmds.gimmel = bindVanillaSymbol('\\gimel ', '&#1490;', 'gimel');
+    LatexCmds['ד'] = LatexCmds.daleth = LatexCmds.dalethsym = bindVanillaSymbol('\\daleth ', '&#1491;', 'daleth');
+    LatexCmds['ð'] = LatexCmds.eth = bindVanillaSymbol('\\eth ', '&eth;', 'eth');
+    LatexCmds['℧'] = LatexCmds.mho = bindVanillaSymbol('\\mho ', '&#8487;', 'mho');
+    LatexCmds['Ⅎ'] = LatexCmds.Finv = bindVanillaSymbol('\\Finv ', '&#8498;', 'Finv');
+    LatexCmds['⅁'] = LatexCmds.Game = bindVanillaSymbol('\\Game ', '&#8513;', 'Game');
+    LatexCmds['∍'] = LatexCmds.backepsilon = bindVanillaSymbol('\\backepsilon ', '&#8717;', 'back epsilon');
+    LatexCmds['∁'] = LatexCmds.complement = bindVanillaSymbol('\\complement ', '&#8705;', 'complement');
+    LatexCmds['∢'] = LatexCmds.sphericalangle = bindVanillaSymbol('\\sphericalangle ', '&#8738;', 'spherical angle');
+    LatexCmds['§'] = LatexCmds.S = LatexCmds.sect = bindVanillaSymbol('\\S ', '&sect;', 'section');
+    LatexCmds['†'] = LatexCmds.dag = LatexCmds.dagger = bindVanillaSymbol('\\dag ', '&dagger;', 'dagger');
+    LatexCmds['‡'] = LatexCmds.ddag = LatexCmds.ddagger = bindVanillaSymbol('\\ddag ', '&Dagger;', 'double dagger');
+    LatexCmds['©'] = LatexCmds.copyright = bindVanillaSymbol('\\copyright ', '&copy;', 'copyright');
+    LatexCmds['¥'] = LatexCmds.yen = bindVanillaSymbol('\\yen ', '&yen;', 'yen');
+    LatexCmds['€'] = LatexCmds.euro = bindVanillaSymbol('\\euro ', '&euro;', 'euro');
+    LatexCmds.LaTeX = bindVanillaSymbol('\\LaTeX ', 'LaTeX', 'LaTeX');
+    LatexCmds.TeX = bindVanillaSymbol('\\TeX ', 'TeX', 'TeX');
+    // ===== Honest verbatim leaves for constructs the field can't structure =====
+    // Infix operators (\choose/\atop/\above/\overwithdelims/\genfrac),
+    // macro definitions (\newcommand/\def/\DeclareMathOperator), and the tie
+    // accent previously blanked the whole expression. Each parses as a leaf
+    // that shows the literal \name and serializes back verbatim, so pasted
+    // latex survives as its own text instead of wiping the cell.
+    // A command that consumes its arguments raw (brace groups / single
+    // tokens) so unknown macro names inside them can't fail the parse.
+    var RawArgCommand = /** @class */ (function (_super) {
+        __extends(RawArgCommand, _super);
+        function RawArgCommand(cmdName, argRe, speak) {
+            var _this_1 = _super.call(this, cmdName, h.text(cmdName + '…'), speak) || this;
+            _this_1.argRe = argRe;
+            return _this_1;
+        }
+        RawArgCommand.prototype.parser = function () {
+            var self = this;
+            return Parser.optWhitespace
+                .then(Parser.regex(self.argRe))
+                .map(function (args) {
+                self.ctrlSeq = self.ctrlSeq + args;
+                return self;
+            })
+                .or(Parser.succeed(self));
+        };
+        return RawArgCommand;
+    }(MQSymbol));
+    // One brace group with a single level of nesting allowed.
+    var RAW_GROUP = '\\{(?:[^{}]|\\{[^{}]*\\})*\\}';
+    LatexCmds.newcommand = function () {
+        return new RawArgCommand('\\newcommand', new RegExp('^' + RAW_GROUP + '(?:\\[[0-9]\\])?(?:' + RAW_GROUP + ')?'), 'new command');
+    };
+    LatexCmds.renewcommand = function () {
+        return new RawArgCommand('\\renewcommand', new RegExp('^' + RAW_GROUP + '(?:\\[[0-9]\\])?(?:' + RAW_GROUP + ')?'), 'renew command');
+    };
+    LatexCmds.providecommand = function () {
+        return new RawArgCommand('\\providecommand', new RegExp('^' + RAW_GROUP + '(?:\\[[0-9]\\])?(?:' + RAW_GROUP + ')?'), 'provide command');
+    };
+    LatexCmds.DeclareMathOperator = function () {
+        return new RawArgCommand('\\DeclareMathOperator', new RegExp('^\\*?' + RAW_GROUP + '(?:' + RAW_GROUP + ')?'), 'declare math operator');
+    };
+    LatexCmds.def = function () {
+        return new RawArgCommand('\\def', new RegExp('^(?:\\\\[a-zA-Z]+|\\S)(?:#[0-9])*(?:' + RAW_GROUP + ')?'), 'def');
+    };
+    // Literal-marker symbols: a visible \name leaf so a\choose b keeps its
+    // text and shows the command rather than blanking or silently dropping it.
+    function bindLiteralCmd(ctrlSeq, speak) {
+        return function () {
+            return new VanillaSymbol(ctrlSeq + ' ', h.text(ctrlSeq), speak);
+        };
+    }
+    LatexCmds.choose = bindLiteralCmd('\\choose', 'choose');
+    LatexCmds.atop = bindLiteralCmd('\\atop', 'atop');
+    LatexCmds.above = bindLiteralCmd('\\above', 'above');
+    LatexCmds.overwithdelims = bindLiteralCmd('\\overwithdelims', 'over with delims');
+    // \genfrac{l}{r}{thick}{style}{num}{denom}: consume the 6 args raw so
+    // the full signature survives; each arg is a brace group or a single
+    // delimiter token like ( ) [ ] | .
+    // The bare-token alternative only accepts a single non-brace char or
+    // an actual delimiter command — an arbitrary \foo would swallow
+    // structural sequences (\right \middle \end \Bigg\rangle \\) that
+    // delimit the enclosing \left(… / environment body.
+    var RAW_ARG = '(?:' +
+        RAW_GROUP +
+        '|\\\\(?:langle|rangle|lVert|rVert|vert|Vert|lfloor|rfloor|lceil|rceil' +
+        '|ulcorner|urcorner|llcorner|lrcorner|lmoustache|rmoustache|lbrace|rbrace' +
+        '|uparrow|downarrow|updownarrow|Uparrow|Downarrow|Updownarrow|backslash|surd)' +
+        '|[^\\s{}\\\\])';
+    LatexCmds.genfrac = function () {
+        return new RawArgCommand('\\genfrac', new RegExp('^((?:\\s*' + RAW_ARG + '){1,8})'), 'gen frac');
+    };
+    LatexCmds.brace = bindLiteralCmd('\\brace', 'brace');
+    LatexCmds.brack = bindLiteralCmd('\\brack', 'brack');
+    // Text-mode super/subscripts and the tie accent — kept verbatim.
+    bindMathWrap('textsuperscript');
+    bindMathWrap('textsubscript');
+    // \t{oo}: double inverted breve (tie) over its argument.
+    LatexCmds.t = function () {
+        return new (/** @class */ (function (_super) {
+            __extends(class_8, _super);
+            function class_8() {
+                return _super.call(this, '\\t', new DOMView(1, function (blocks) {
+                    return h('span', { class: 'mq-non-leaf' }, [
+                        h('span', { class: 'mq-diacritic-above' }, [h.entityText('&#865;')]),
+                        h.block('span', { class: 'mq-diacritic-stem' }, blocks[0]),
+                    ]);
+                })) || this;
+            }
+            return class_8;
+        }(MathCommand)))();
+    };
+    // Document-level reference commands — kept verbatim as visible leaves
+    // rather than blanking the cell (they have no math meaning here, but the
+    // text survives the round-trip).
+    var RAW_OPT_GROUP = '(?:\\[[^\\]]*\\])?';
+    [
+        'ref',
+        'eqref',
+        'pageref',
+        'autoref',
+        'label',
+        'url',
+        'footnote',
+        'cite',
+        'index'
+    ].forEach(function (name) {
+        LatexCmds[name] = function () {
+            return new RawArgCommand('\\' + name, new RegExp('^' + RAW_OPT_GROUP + RAW_GROUP + '(?:' + RAW_GROUP + ')?'), name);
+        };
+    });
+    // \intertext / \shortintertext — text-mode material between aligned
+    // lines; render like \text but keep the command name on emit.
+    LatexCmds.intertext = makeTextBlock('\\intertext', 'Inter text', 'span', {
+        class: 'mq-text-mode'
+    });
+    LatexCmds.shortintertext = makeTextBlock('\\shortintertext', 'Short inter text', 'span', { class: 'mq-text-mode' });
+    // \vspace{len} — vertical analogue of \hspace: keep the arg, show a
+    // gap-ish wrapper rather than dropping the cell.
+    bindMathWrap('vspace');
+    // Missing leaves: relations, ellipsis variants, misc glyphs, latin
+    // letters/ligatures, quotes and dashes.
+    LatexCmds.lll = LatexCmds.llless = bindBinaryOperator('\\lll ', '&#8810;', 'much less than');
+    LatexCmds.ggg = LatexCmds.gggtr = bindBinaryOperator('\\ggg ', '&#8811;', 'much greater than');
+    LatexCmds.subseteqq = bindBinaryOperator('\\subseteqq ', '&#10949;', 'subset of or equal to variant');
+    LatexCmds.supseteqq = bindBinaryOperator('\\supseteqq ', '&#10950;', 'superset of or equal to variant');
+    LatexCmds.subsetneqq = bindBinaryOperator('\\subsetneqq ', '&#10955;', 'subset of not equal to variant');
+    LatexCmds.supsetneqq = bindBinaryOperator('\\supsetneqq ', '&#10956;', 'superset of not equal to variant');
+    LatexCmds.eqsim = bindBinaryOperator('\\eqsim ', '&#8770;', 'equivalent to');
+    LatexCmds.intercal = bindBinaryOperator('\\intercal ', '&#8890;', 'intercal');
+    LatexCmds.dotsc = bindBinaryOperator('\\dotsc ', '&#8230;', 'dots c');
+    LatexCmds.dotsb = bindBinaryOperator('\\dotsb ', '&#8230;', 'dots b');
+    LatexCmds.dotsm = bindBinaryOperator('\\dotsm ', '&#8230;', 'dots m');
+    LatexCmds.dotsi = bindBinaryOperator('\\dotsi ', '&#8230;', 'dots i');
+    LatexCmds.dotso = bindBinaryOperator('\\dotso ', '&#8230;', 'dots o');
+    LatexCmds.iddots = bindBinaryOperator('\\iddots ', '&#8944;', 'inverse dots');
+    LatexCmds.hslash = bindVanillaSymbol('\\hslash ', '&#8463;', 'h slash');
+    LatexCmds.Bbbk = bindVanillaSymbol('\\Bbbk ', '&#120107;', 'bbb k');
+    LatexCmds.blacktriangledown = bindVanillaSymbol('\\blacktriangledown ', '&#9660;', 'black triangle down');
+    LatexCmds.lozenge = bindVanillaSymbol('\\lozenge ', '&#9674;', 'lozenge');
+    LatexCmds.blacklozenge = bindVanillaSymbol('\\blacklozenge ', '&#10731;', 'black lozenge');
+    LatexCmds.bigstar = bindVanillaSymbol('\\bigstar ', '&#9733;', 'big star');
+    LatexCmds.varclubsuit = bindVanillaSymbol('\\varclubsuit ', '&#9831;', 'var club suit');
+    LatexCmds.vardiamondsuit = bindVanillaSymbol('\\vardiamondsuit ', '&#9830;', 'var diamond suit');
+    LatexCmds.varheartsuit = bindVanillaSymbol('\\varheartsuit ', '&#9829;', 'var heart suit');
+    LatexCmds.varspadesuit = bindVanillaSymbol('\\varspadesuit ', '&#9828;', 'var spade suit');
+    LatexCmds.maltese = bindVanillaSymbol('\\maltese ', '&#10016;', 'maltese');
+    // Latin letters and ligatures that real LaTeX produces (\o/\O stay the
+    // fork's \varnothing alias by design).
+    LatexCmds.ae = bindVanillaSymbol('\\ae ', '&#230;', 'ae');
+    LatexCmds.AE = bindVanillaSymbol('\\AE ', '&#198;', 'AE');
+    LatexCmds.oe = bindVanillaSymbol('\\oe ', '&#339;', 'oe');
+    LatexCmds.OE = bindVanillaSymbol('\\OE ', '&#338;', 'OE');
+    LatexCmds.aa = bindVanillaSymbol('\\aa ', '&#229;', 'aa');
+    LatexCmds.l = bindVanillaSymbol('\\l ', '&#322;', 'l');
+    LatexCmds.L = bindVanillaSymbol('\\L ', '&#321;', 'L');
+    LatexCmds.ss = bindVanillaSymbol('\\ss ', '&#223;', 'ss');
+    LatexCmds.i = bindVanillaSymbol('\\i ', '&#305;', 'dotless i');
+    LatexCmds.j = bindVanillaSymbol('\\j ', '&#567;', 'dotless j');
+    // Quote and dash glyphs.
+    LatexCmds.glqq = bindVanillaSymbol('\\glqq ', '&#8222;', 'glqq');
+    LatexCmds.grqq = bindVanillaSymbol('\\grqq ', '&#8220;', 'grqq');
+    LatexCmds.glq = bindVanillaSymbol('\\glq ', '&#8218;', 'glq');
+    LatexCmds.lq = bindVanillaSymbol('\\lq ', '&#8216;', 'left quote');
+    LatexCmds.rq = bindVanillaSymbol('\\rq ', '&#8217;', 'right quote');
+    LatexCmds.flqq = bindVanillaSymbol('\\flqq ', '&#171;', 'flqq');
+    LatexCmds.frqq = bindVanillaSymbol('\\frqq ', '&#187;', 'frqq');
+    LatexCmds.flq = bindVanillaSymbol('\\flq ', '&#8249;', 'flq');
+    LatexCmds.frq = bindVanillaSymbol('\\frq ', '&#8250;', 'frq');
+    LatexCmds.textemdash = bindVanillaSymbol('\\textemdash ', '&#8212;', 'em dash');
+    LatexCmds.textendash = bindVanillaSymbol('\\textendash ', '&#8211;', 'en dash');
+    // Arrow family (amssymb/unicode-math).
+    var ARROWS = [
+        ['leftrightharpoons', '&#8651;', 'left right harpoons'],
+        ['rightleftharpoons', '&#8652;', 'right left harpoons'],
+        ['upuparrows', '&#8648;', 'up up arrows'],
+        ['downdownarrows', '&#8650;', 'down down arrows'],
+        ['leftleftarrows', '&#8647;', 'left left arrows'],
+        ['rightrightarrows', '&#8649;', 'right right arrows'],
+        ['leftrightarrows', '&#8646;', 'left right arrows'],
+        ['rightleftarrows', '&#8644;', 'right left arrows'],
+        ['Lleftarrow', '&#8666;', 'L left arrow'],
+        ['Rrightarrow', '&#8667;', 'R right arrow'],
+        ['twoheadrightarrow', '&#8608;', 'two head right arrow'],
+        ['twoheadleftarrow', '&#8606;', 'two head left arrow'],
+        ['rightarrowtail', '&#8611;', 'right arrow tail'],
+        ['leftarrowtail', '&#8610;', 'left arrow tail'],
+        ['looparrowleft', '&#8619;', 'loop arrow left'],
+        ['looparrowright', '&#8620;', 'loop arrow right'],
+        ['leftrightsquigarrow', '&#8621;', 'left right squig arrow'],
+        ['rightsquigarrow', '&#8601;', 'right squig arrow'],
+        ['leadsto', '&#8669;', 'leads to'],
+        ['curvearrowleft', '&#8630;', 'curve arrow left'],
+        ['curvearrowright', '&#8631;', 'curve arrow right'],
+        ['circlearrowleft', '&#8634;', 'circle arrow left'],
+        ['circlearrowright', '&#8635;', 'circle arrow right'],
+        ['dashrightarrow', '&#8674;', 'dash right arrow'],
+        ['dashleftarrow', '&#8672;', 'dash left arrow'],
+        ['Lsh', '&#8624;', 'L sh'],
+        ['Rsh', '&#8625;', 'R sh'],
+        ['upharpoonleft', '&#8638;', 'up harpoon left'],
+        ['upharpoonright', '&#8639;', 'up harpoon right'],
+        ['downharpoonleft', '&#8642;', 'down harpoon left'],
+        ['downharpoonright', '&#8643;', 'down harpoon right']
+    ];
+    ARROWS.forEach(function (a) {
+        LatexCmds[a[0]] = bindBinaryOperator('\\' + a[0] + ' ', a[1], a[2]);
+    });
+    // Relation family: stacked comparisons, curly/n-approx negations,
+    // n-triangle, n-dash variants, and the amssymb binary ops.
+    var RELS = [
+        ['lesseqgtr', '&#8922;', 'less equal greater'],
+        ['gtreqless', '&#8923;', 'greater equal less'],
+        ['lesseqqgtr', '&#8924;', 'less equal equal greater'],
+        ['gtreqqless', '&#8925;', 'greater equal equal less'],
+        ['curlyeqprec', '&#8926;', 'curly equal precedes'],
+        ['curlyeqsucc', '&#8927;', 'curly equal succeeds'],
+        ['preccurlyeq', '&#8828;', 'precedes curly equal'],
+        ['succcurlyeq', '&#8829;', 'succeeds curly equal'],
+        ['precnapprox', '&#10937;', 'precedes not approximately'],
+        ['succnapprox', '&#10938;', 'succeeds not approximately'],
+        ['lnapprox', '&#10889;', 'less not approximately'],
+        ['gnapprox', '&#10890;', 'greater not approximately'],
+        ['lneqq', '&#8808;', 'less not equal equal'],
+        ['gneqq', '&#8809;', 'greater not equal equal'],
+        ['lnsim', '&#8934;', 'less not similar'],
+        ['gnsim', '&#8935;', 'greater not similar'],
+        ['precnsim', '&#8936;', 'precedes not similar'],
+        ['succnsim', '&#8937;', 'succeeds not similar'],
+        ['ntriangleleft', '&#8938;', 'not triangle left'],
+        ['ntriangleright', '&#8939;', 'not triangle right'],
+        ['ntrianglelefteq', '&#8940;', 'not triangle left equal'],
+        ['ntrianglerighteq', '&#8941;', 'not triangle right equal'],
+        ['nvDash', '&#8877;', 'not v dash'],
+        ['nVdash', '&#8878;', 'not V dash'],
+        ['nVDash', '&#8879;', 'not V Dash']
+    ];
+    RELS.forEach(function (a) {
+        LatexCmds[a[0]] = bindBinaryOperator('\\' + a[0] + ' ', a[1], a[2]);
+    });
+    var BINOPS = [
+        ['circledcirc', '&#8858;', 'circled circle'],
+        ['circledast', '&#8859;', 'circled asterisk'],
+        ['circleddash', '&#8861;', 'circled dash'],
+        ['divideontimes', '&#8903;', 'divide on times'],
+        ['dotplus', '&#8724;', 'dot plus'],
+        ['boxplus', '&#8862;', 'box plus'],
+        ['boxminus', '&#8863;', 'box minus'],
+        ['boxtimes', '&#8864;', 'box times'],
+        ['boxdot', '&#8865;', 'box dot'],
+        ['boxbar', '&#9531;', 'box bar'],
+        ['merge', '&#x2A24;', 'merge'],
+        ['Cap', '&#8914;', 'cap'],
+        ['Cup', '&#8915;', 'cup'],
+        ['doublecap', '&#8914;', 'double cap'],
+        ['doublecup', '&#8915;', 'double cup'],
+        ['barwedge', '&#8892;', 'bar wedge'],
+        ['veebar', '&#8891;', 'vee bar'],
+        ['curlywedge', '&#8910;', 'curly wedge'],
+        ['curlyvee', '&#8911;', 'curly vee'],
+        ['ltimes', '&#8905;', 'left times'],
+        ['rtimes', '&#8906;', 'right times'],
+        ['centerdot', '&#8901;', 'center dot'],
+        ['smallsetminus', '&#8726;', 'small set minus']
+    ];
+    BINOPS.forEach(function (a) {
+        LatexCmds[a[0]] = bindBinaryOperator('\\' + a[0] + ' ', a[1], a[2]);
+    });
+    // Old-style environment names kept as visible leaves (the \begin{...}
+    // dispatch for the same names lives at the end of environments.ts).
+    LatexCmds.eqnarray = bindLiteralCmd('\\eqnarray', 'eqn array');
+    LatexCmds.eqalign = bindLiteralCmd('\\eqalign', 'eq align');
+    // \varGamma ... \varOmega — the slanted/italic variant capitals; kept
+    // under their own names so the var spelling round-trips.
+    var VARGREEK = [
+        ['varGamma', '&#915;', 'var Gamma'],
+        ['varDelta', '&#916;', 'var Delta'],
+        ['varTheta', '&#920;', 'var Theta'],
+        ['varLambda', '&#923;', 'var Lambda'],
+        ['varXi', '&#926;', 'var Xi'],
+        ['varPi', '&#928;', 'var Pi'],
+        ['varSigma', '&#931;', 'var Sigma'],
+        ['varUpsilon', '&#933;', 'var Upsilon'],
+        ['varPhi', '&#934;', 'var Phi'],
+        ['varPsi', '&#936;', 'var Psi'],
+        ['varOmega', '&#937;', 'var Omega']
+    ];
+    VARGREEK.forEach(function (a) {
+        LatexCmds[a[0]] = bindVanillaSymbol('\\' + a[0] + ' ', a[1], a[2]);
+    });
+    // More relation/symbol leaves: amssymb comparisons, colon ops
+    // (mathtools), triangles, Join, and \And.
+    var RELS2 = [
+        ['leqslant', '&#x2A7D;', 'less than or slant equal'],
+        ['geqslant', '&#x2A7E;', 'greater than or slant equal'],
+        ['lessapprox', '&#x2A85;', 'less than or approximately'],
+        ['gtrapprox', '&#x2A86;', 'greater than or approximately'],
+        ['lessdot', '&#x22D6;', 'less dot'],
+        ['gtrdot', '&#x22D7;', 'greater dot'],
+        ['eqslantless', '&#x2A95;', 'equal slant less'],
+        ['eqslantgtr', '&#x2A96;', 'equal slant greater'],
+        ['backsim', '&#x223D;', 'back similar'],
+        ['backsimeq', '&#x22CD;', 'back similar equal'],
+        ['Subset', '&#x22D0;', 'subset'],
+        ['Supset', '&#x22D1;', 'superset'],
+        ['between', '&#x226C;', 'between'],
+        ['blacktriangle', '&#x25B2;', 'black triangle'],
+        ['blacktriangleleft', '&#x25C0;', 'black triangle left'],
+        ['blacktriangleright', '&#x25B6;', 'black triangle right'],
+        ['thickapprox', '&#x2248;', 'thick approximately'],
+        ['thicksim', '&#x223C;', 'thick similar'],
+        ['vartriangle', '&#x25B3;', 'var triangle'],
+        ['trianglelefteq', '&#x22B4;', 'triangle left equal'],
+        ['trianglerighteq', '&#x22B5;', 'triangle right equal'],
+        ['shortmid', '&#x2223;', 'short mid'],
+        ['shortparallel', '&#x2225;', 'short parallel'],
+        ['nshortmid', '&#x2224;', 'not short mid'],
+        ['nshortparallel', '&#x2226;', 'not short parallel'],
+        ['smallsmile', '&#x2323;', 'small smile'],
+        ['smallfrown', '&#x2322;', 'small frown'],
+        ['Join', '&#x22C8;', 'join'],
+        ['coloneq', '&#x2254;', 'colon equal'],
+        ['eqcolon', '&#x2255;', 'equal colon'],
+        ['dblcolon', '&#x2237;', 'double colon'],
+        ['colonsim', '&#x3A;&#x223C;', 'colon similar'],
+        ['Colonsim', '&#x2237;&#x223C;', 'double colon similar'],
+        ['colonapprox', '&#x3A;&#x2248;', 'colon approximately'],
+        ['Colonapprox', '&#x2237;&#x2248;', 'double colon approximately']
+    ];
+    RELS2.forEach(function (a) {
+        LatexCmds[a[0]] = bindBinaryOperator('\\' + a[0] + ' ', a[1], a[2]);
+    });
+    LatexCmds.And = bindLiteralCmd('\\And', 'and');
+    // Font-size declarations — like \displaystyle, a visible style
+    // modifier leaf so the command round-trips.
+    LatexCmds.tiny = bindStyleModifier('\\tiny ', 'tiny');
+    LatexCmds.scriptsize = bindStyleModifier('\\scriptsize ', 'script size');
+    LatexCmds.footnotesize = bindStyleModifier('\\footnotesize ', 'footnote size');
+    LatexCmds.small = bindStyleModifier('\\small ', 'small');
+    LatexCmds.normalsize = bindStyleModifier('\\normalsize ', 'normal size');
+    LatexCmds.large = bindStyleModifier('\\large ', 'large');
+    LatexCmds.Large = bindStyleModifier('\\Large ', 'Large');
+    LatexCmds.LARGE = bindStyleModifier('\\LARGE ', 'LARGE');
+    LatexCmds.huge = bindStyleModifier('\\huge ', 'huge');
+    LatexCmds.Huge = bindStyleModifier('\\Huge ', 'Huge');
+    // Old-style font declarations (\it, \bf, ... apply to the rest of the
+    // current scope). \sf/\tt have text-block variants in text.ts; these
+    // stay visible verbatim leaves so pasted declarations keep their text.
+    var OLDSTYLE = [
+        ['it', 'italic'],
+        ['bf', 'bold'],
+        ['rm', 'roman'],
+        ['sc', 'small caps'],
+        ['sl', 'slanted'],
+        ['cal', 'calligraphic'],
+        ['frak', 'fraktur'],
+        ['goth', 'gothic']
+    ];
+    OLDSTYLE.forEach(function (a) {
+        LatexCmds[a[0]] = bindLiteralCmd('\\' + a[0], a[1]);
+    });
+    // \ensuremath{...} — math-wrapper passthrough (self-registers).
+    bindMathWrap('ensuremath');
+    // \newenvironment{name}{beg}{end} — macro env definition; keep args
+    // verbatim like \newcommand.
+    LatexCmds.newenvironment = function () {
+        return new RawArgCommand('\\newenvironment', new RegExp('^' + RAW_GROUP + '(?:' + RAW_GROUP + '){0,2}'), 'new environment');
+    };
+    LatexCmds.renewenvironment = function () {
+        return new RawArgCommand('\\renewenvironment', new RegExp('^' + RAW_GROUP + '(?:' + RAW_GROUP + '){0,2}'), 'renew environment');
+    };
+    // \sideset{^a_b}{^c_d}\sum — prescripted large operator; keep args raw.
+    LatexCmds.sideset = function () {
+        return new RawArgCommand('\\sideset', new RegExp('^' + RAW_GROUP + RAW_GROUP), 'sideset');
+    };
+    // Circled letters and plain-TeX rules/tags.
+    LatexCmds.circledR = bindVanillaSymbol('\\circledR ', '&#xAE;', 'circled R');
+    LatexCmds.circledS = bindVanillaSymbol('\\circledS ', '&#x24C8;', 'circled S');
+    LatexCmds.vrule = bindLiteralCmd('\\vrule', 'vertical rule');
+    LatexCmds.hrule = bindLiteralCmd('\\hrule', 'horizontal rule');
+    LatexCmds.eqno = bindLiteralCmd('\\eqno', 'equation number');
+    LatexCmds.leqno = bindLiteralCmd('\\leqno', 'left equation number');
+    // \lhd \rhd \unlhd \unrhd — (un)normal-subgroup triangles.
+    LatexCmds.lhd = bindBinaryOperator('\\lhd ', '&#x22B2;', 'lhd');
+    LatexCmds.rhd = bindBinaryOperator('\\rhd ', '&#x22B3;', 'rhd');
+    LatexCmds.unlhd = bindBinaryOperator('\\unlhd ', '&#x22B4;', 'unlhd');
+    LatexCmds.unrhd = bindBinaryOperator('\\unrhd ', '&#x22B5;', 'unrhd');
+    // \colon — the short relation colon (versus \dblcolon and friends).
+    LatexCmds.colon = bindBinaryOperator('\\colon ', '&#x3A;', 'colon');
+    // \hdots — dots family member; \hdotsfor{n} spans columns inside
+    // grids (1-block command so the count round-trips).
+    LatexCmds.hdots = bindVanillaSymbol('\\hdots ', '&#8230;', 'hdots');
+    LatexCmds.hdotsfor = function () {
+        return new MathCommand('\\hdotsfor', new DOMView(1, function (blocks) {
+            return h('span', { class: 'mq-non-leaf mq-invisible' }, [
+                h.block('span', {}, blocks[0])
+            ]);
+        }));
+    };
+    // \hfill/\hfil — fill glue; \noalign keeps a braced group verbatim;
+    // \centerline/{...} centers its content in plain TeX.
+    LatexCmds.hfill = bindLiteralCmd('\\hfill', 'horizontal fill');
+    LatexCmds.hfil = bindLiteralCmd('\\hfil', 'horizontal fil');
+    LatexCmds.centerline = function () {
+        return new MathCommand('\\centerline', new DOMView(1, function (blocks) {
+            return h('span', { class: 'mq-non-leaf' }, [h.block('span', {}, blocks[0])]);
+        }));
+    };
+    LatexCmds.noalign = function () {
+        return new MathCommand('\\noalign', new DOMView(1, function (blocks) {
+            return h('span', { class: 'mq-non-leaf mq-invisible' }, [
+                h.block('span', {}, blocks[0])
+            ]);
+        }));
+    };
+    // \multicolumn{cols}{spec}{content} — grid-cell command; keep args raw.
+    LatexCmds.multicolumn = function () {
+        return new RawArgCommand('\\multicolumn', new RegExp('^' + RAW_GROUP + RAW_GROUP + RAW_GROUP), 'multi column');
+    };
+    // \buildrel f \over b and the remaining delim-infix ops — visible
+    // leaves so the infix text is preserved.
+    LatexCmds.buildrel = bindLiteralCmd('\\buildrel', 'build rel');
+    LatexCmds.atopwithdelims = bindLiteralCmd('\\atopwithdelims', 'atop with delims');
+    LatexCmds.abovewithdelims = bindLiteralCmd('\\abovewithdelims', 'above with delims');
+    // \newtheorem{thm}{Theorem}[like] — env definitions verbatim.
+    LatexCmds.newtheorem = function () {
+        return new RawArgCommand('\\newtheorem', new RegExp('^' + RAW_OPT_GROUP + RAW_GROUP + RAW_GROUP + '(?:' + RAW_OPT_GROUP + ')?'), 'new theorem');
+    };
+    // Counter/length bookkeeping commands — args verbatim.
+    LatexCmds.setcounter = function () {
+        return new RawArgCommand('\\setcounter', new RegExp('^' + RAW_GROUP + RAW_GROUP), 'set counter');
+    };
+    LatexCmds.addtocounter = function () {
+        return new RawArgCommand('\\addtocounter', new RegExp('^' + RAW_GROUP + RAW_GROUP), 'add to counter');
+    };
+    LatexCmds.setlength = function () {
+        return new RawArgCommand('\\setlength', new RegExp('^' + RAW_GROUP + RAW_GROUP), 'set length');
+    };
+    LatexCmds.addtolength = function () {
+        return new RawArgCommand('\\addtolength', new RegExp('^' + RAW_GROUP + RAW_GROUP), 'add to length');
+    };
+    ['arabic', 'Roman', 'roman', 'alph', 'Alph', 'fnsymbol', 'value'].forEach(function (name) {
+        LatexCmds[name] = function () {
+            return new RawArgCommand('\\' + name, new RegExp('^' + RAW_GROUP), name);
+        };
+    });
+    // bindOptBracketCmd is defined in commands.ts so the mathquill-basic
+    // bundle (which skips this file) can use it for \framebox.
+    LatexCmds.makebox = bindOptBracketCmd('\\makebox', 2, 'make box');
+    // (\framebox lives in commands.ts, which applies the same
+    // bindOptBracketCmd helper; \raisebox needs a raw dim arg first.)
+    LatexCmds.raisebox = /** @class */ (function (_super) {
+        __extends(class_9, _super);
+        function class_9() {
+            var _this_1 = _super.call(this, '\\raisebox', new DOMView(1, function (blocks) {
+                return h('span', { class: 'mq-non-leaf' }, [
+                    h.block('span', {}, blocks[0])
+                ]);
+            })) || this;
+            _this_1.dim = '';
+            _this_1.optText = '';
+            return _this_1;
+        }
+        class_9.prototype.parser = function () {
+            var self = this;
+            return Parser.regex(new RegExp('^' + RAW_GROUP))
+                .then(function (dim) {
+                self.dim = dim;
+                return Parser.regex(/^(?:\[[^\]]*\]){0,2}/);
+            })
+                .then(function (opt) {
+                self.optText = opt;
+                return latexMathParser.block;
+            })
+                .map(function (b) {
+                self.blocks = [b];
+                b.adopt(self, 0, 0);
+                return self;
+            });
+        };
+        class_9.prototype.latexRecursive = function (ctx) {
+            this.checkCursorContextOpen(ctx);
+            ctx.uncleanedLatex += '\\raisebox' + this.dim + this.optText + '{';
+            this.blocks[0].latexRecursive(ctx);
+            ctx.uncleanedLatex += '}';
+            this.checkCursorContextClose(ctx);
+        };
+        return class_9;
+    }(MathCommand));
+    // \hspace*{1em} / \vspace*{1em} — starred (unbreakable) spacing; the
+    // star is kept in the serialization.
+    function bindStarBlockCmd(ctrlSeq) {
+        return /** @class */ (function (_super) {
+            __extends(class_10, _super);
+            function class_10() {
+                var _this_1 = _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
+                    return h('span', { class: 'mq-non-leaf mq-invisible' }, [
+                        h.block('span', {}, blocks[0])
+                    ]);
+                })) || this;
+                _this_1.starred = false;
+                return _this_1;
+            }
+            class_10.prototype.parser = function () {
+                var self = this;
+                return Parser.optWhitespace
+                    .then(Parser.string('*').or(Parser.succeed('')))
+                    .then(function (star) {
+                    self.starred = !!star;
+                    return latexMathParser.block;
+                })
+                    .map(function (b) {
+                    self.blocks = [b];
+                    b.adopt(self, 0, 0);
+                    return self;
+                });
+            };
+            class_10.prototype.latexRecursive = function (ctx) {
+                this.checkCursorContextOpen(ctx);
+                ctx.uncleanedLatex +=
+                    this.ctrlSeq + (this.starred ? '*' : '') + '{';
+                this.blocks[0].latexRecursive(ctx);
+                ctx.uncleanedLatex += '}';
+                this.checkCursorContextClose(ctx);
+            };
+            return class_10;
+        }(MathCommand));
+    }
+    LatexCmds.hspace = bindStarBlockCmd('\\hspace');
+    LatexCmds.vspace = bindStarBlockCmd('\\vspace');
+    // \textvisiblespace \backprime \tabularnewline.
+    LatexCmds.textvisiblespace = bindVanillaSymbol('\\textvisiblespace ', '&#x2423;', 'visible space');
+    LatexCmds.backprime = bindVanillaSymbol('\\backprime ', '&#x2035;', 'back prime');
+    LatexCmds.tabularnewline = bindLiteralCmd('\\tabularnewline', 'table new line');
+    // \k: ogonek below — completes the text-accent set (\v \u \r above,
+    // \d \b \c below).
+    LatexCmds.k = function () {
+        return new DiacriticBelow('\\k', h.text('&#808;'), ['ogonek(', ')']);
+    };
+    // More definition commands — same raw-args shape as \def.
+    LatexCmds.gdef = function () {
+        return new RawArgCommand('\\gdef', new RegExp('^(?:\\\\[a-zA-Z]+|\\S)(?:#[0-9])*(?:' + RAW_GROUP + ')?'), 'g def');
+    };
+    LatexCmds.edef = function () {
+        return new RawArgCommand('\\edef', new RegExp('^(?:\\\\[a-zA-Z]+|\\S)(?:#[0-9])*(?:' + RAW_GROUP + ')?'), 'e def');
+    };
+    LatexCmds.xdef = function () {
+        return new RawArgCommand('\\xdef', new RegExp('^(?:\\\\[a-zA-Z]+|\\S)(?:#[0-9])*(?:' + RAW_GROUP + ')?'), 'x def');
+    };
+    // \let\foo\bar / \let\foo=\bar — two unbraced macro-name args.
+    LatexCmds['let'] = function () {
+        return new RawArgCommand('\\let', new RegExp('^(?:\\\\[a-zA-Z]+|[^\\s])(?:\\s*=\\s*)?(?:\\\\[a-zA-Z]+|[^\\s])?'), 'let');
+    };
+    LatexCmds.chardef = function () {
+        return new RawArgCommand('\\chardef', new RegExp('^(?:\\\\[a-zA-Z]+|[^\\s])(?:\\s*=\\s*)?[^\\s{}]*'), 'char def');
+    };
+    LatexCmds.mathchardef = function () {
+        return new RawArgCommand('\\mathchardef', new RegExp('^(?:\\\\[a-zA-Z]+|[^\\s])(?:\\s*=\\s*)?[^\\s{}]*'), 'math char def');
+    };
+    // Sectioning and other one-brace-group text commands — the argument
+    // stays an editable block.
+    [
+        'section',
+        'subsection',
+        'subsubsection',
+        'chapter',
+        'paragraph',
+        'subparagraph',
+        'caption',
+        'title',
+        'author',
+        'date',
+        'thanks',
+        'bibliography',
+        'bibliographystyle',
+        'newcounter',
+        'stepcounter',
+        'refstepcounter',
+        'usecounter',
+        'value',
+        'pagestyle',
+        'thispagestyle',
+        'pagenumbering'
+    ].forEach(bindMathWrap);
+    // \documentclass[opts]{class} and \usepackage[opts]{pkg}.
+    LatexCmds.documentclass = bindOptBracketCmd('\\documentclass', 1, 'document class');
+    LatexCmds.usepackage = bindOptBracketCmd('\\usepackage', 1, 'use package');
+    // \item has no required group — visible leaf; an optional [label]
+    // parses as ordinary bracket content after it.
+    LatexCmds.item = bindLiteralCmd('\\item', 'item');
+    // Document-level commands with no arguments — visible verbatim leaves.
+    LatexCmds.long = bindLiteralCmd('\\long', 'long');
+    LatexCmds.outer = bindLiteralCmd('\\outer', 'outer');
+    LatexCmds['global'] = bindLiteralCmd('\\global', 'global');
+    LatexCmds['protected'] = bindLiteralCmd('\\protected', 'protected');
+    LatexCmds.maketitle = bindLiteralCmd('\\maketitle', 'make title');
+    LatexCmds.tableofcontents = bindLiteralCmd('\\tableofcontents', 'table of contents');
+    LatexCmds.appendix = bindLiteralCmd('\\appendix', 'appendix');
+    LatexCmds.frontmatter = bindLiteralCmd('\\frontmatter', 'front matter');
+    LatexCmds.mainmatter = bindLiteralCmd('\\mainmatter', 'main matter');
+    LatexCmds.backmatter = bindLiteralCmd('\\backmatter', 'back matter');
+    LatexCmds.centering = bindLiteralCmd('\\centering', 'centering');
+    LatexCmds.raggedright = bindLiteralCmd('\\raggedright', 'ragged right');
+    LatexCmds.raggedleft = bindLiteralCmd('\\raggedleft', 'ragged left');
+    LatexCmds.sloppy = bindLiteralCmd('\\sloppy', 'sloppy');
+    LatexCmds.fussy = bindLiteralCmd('\\fussy', 'fussy');
+    LatexCmds.noindent = bindLiteralCmd('\\noindent', 'no indent');
+    LatexCmds.indent = bindLiteralCmd('\\indent', 'indent');
+    LatexCmds.par = bindLiteralCmd('\\par', 'par');
+    LatexCmds.newline = bindLiteralCmd('\\newline', 'new line');
+    LatexCmds.newpage = bindLiteralCmd('\\newpage', 'new page');
+    LatexCmds.clearpage = bindLiteralCmd('\\clearpage', 'clear page');
+    LatexCmds.pagebreak = bindLiteralCmd('\\pagebreak', 'page break');
+    LatexCmds.nopagebreak = bindLiteralCmd('\\nopagebreak', 'no page break');
+    LatexCmds.linebreak = bindLiteralCmd('\\linebreak', 'line break');
+    LatexCmds.nolinebreak = bindLiteralCmd('\\nolinebreak', 'no line break');
+    LatexCmds.vfill = bindLiteralCmd('\\vfill', 'vertical fill');
+    LatexCmds.vfil = bindLiteralCmd('\\vfil', 'vertical fil');
+    LatexCmds.today = bindLiteralCmd('\\today', 'today');
+    LatexCmds.dotsv = bindLiteralCmd('\\dotsv', 'dots v');
+    LatexCmds.dotsb = bindLiteralCmd('\\dotsb', 'dots b');
+    LatexCmds.dotsi = bindLiteralCmd('\\dotsi', 'dots i');
+    LatexCmds.dotsm = bindLiteralCmd('\\dotsm', 'dots m');
+    LatexCmds.dotso = bindLiteralCmd('\\dotso', 'dots o');
+    LatexCmds.ldotp = bindLiteralCmd('\\ldotp', 'l dot p');
+    LatexCmds.cdotp = bindLiteralCmd('\\cdotp', 'c dot p');
+    // \verb|text| / \verb*|text| — a delimiter-character verbatim span.
+    LatexCmds.verb = function () {
+        return new (/** @class */ (function (_super) {
+            __extends(class_11, _super);
+            function class_11() {
+                var _this_1 = _super.call(this, '\\verb', new DOMView(0, function () {
+                    return h('span', { class: 'mq-non-leaf mq-verb' }, [h.text('\\verb')]);
+                })) || this;
+                _this_1.starred = false;
+                _this_1.verbDelim = '';
+                _this_1.verbText = '';
+                return _this_1;
+            }
+            class_11.prototype.parser = function () {
+                var self = this;
+                return Parser.string('*')
+                    .or(Parser.succeed(''))
+                    .then(function (star) {
+                    self.starred = star === '*';
+                    return Parser.regex(/^[^a-zA-Z\s]/);
+                })
+                    .then(function (delim) {
+                    self.verbDelim = delim;
+                    var escaped = delim.replace(/[\\\]\[^-]/g, '\\$&');
+                    return Parser.regex(new RegExp('^(?:[^' + escaped + '\\\\])*')).skip(Parser.string(delim));
+                })
+                    .then(function (text) {
+                    self.verbText = text;
+                    return Parser.succeed(self);
+                });
+            };
+            class_11.prototype.latexRecursive = function (ctx) {
+                this.checkCursorContextOpen(ctx);
+                ctx.uncleanedLatex +=
+                    '\\verb' +
+                        (this.starred ? '*' : '') +
+                        this.verbDelim +
+                        this.verbText +
+                        this.verbDelim;
+                this.checkCursorContextClose(ctx);
+            };
+            return class_11;
+        }(MathCommand)))();
+    };
+    // Multi-group commands kept verbatim — their full argument signature
+    // survives even though the field can't structure them.
+    LatexCmds.prescript = function () {
+        return new RawArgCommand('\\prescript', new RegExp('^' + RAW_GROUP + RAW_GROUP + RAW_GROUP), 'prescript');
+    };
+    LatexCmds.mathpalette = function () {
+        return new RawArgCommand('\\mathpalette', new RegExp('^' + RAW_GROUP + RAW_GROUP), 'math palette');
+    };
+    LatexCmds.mathchoice = function () {
+        return new RawArgCommand('\\mathchoice', new RegExp('^' + RAW_GROUP + RAW_GROUP + RAW_GROUP + RAW_GROUP), 'math choice');
+    };
+    LatexCmds.splitfrac = function () {
+        return new RawArgCommand('\\splitfrac', new RegExp('^' + RAW_GROUP + RAW_GROUP), 'split frac');
+    };
+    LatexCmds.subfrac = function () {
+        return new RawArgCommand('\\subfrac', new RegExp('^' + RAW_GROUP + RAW_GROUP), 'sub frac');
+    };
+    bindMathWrap('path');
+    // \includegraphics[width=1cm]{file}
+    LatexCmds.includegraphics = bindOptBracketCmd('\\includegraphics', 1, 'include graphics');
+    // \bmod already parses; \mod variants \pmod/\pod covered. More
+    // starred text-modifier commands.
+    LatexCmds.tagcurve = bindLiteralCmd('\\tagcurve', 'tag curve');
+    // Text-mode symbols and misc commands — visible verbatim.
+    bindMathWrap('oldstylenums');
+    LatexCmds.texteuro = bindLiteralCmd('\\texteuro', 'euro');
+    LatexCmds.textsterling = bindLiteralCmd('\\textsterling', 'sterling');
+    LatexCmds.textyen = bindLiteralCmd('\\textyen', 'yen');
+    LatexCmds.textcent = bindLiteralCmd('\\textcent', 'cent');
+    LatexCmds.textcurrency = bindLiteralCmd('\\textcurrency', 'currency');
+    LatexCmds.textdollar = bindLiteralCmd('\\textdollar', 'dollar');
+    LatexCmds.textdegree = bindLiteralCmd('\\textdegree', 'degree');
+    LatexCmds.textasciitilde = bindLiteralCmd('\\textasciitilde', 'asciitilde');
+    LatexCmds.textasciicircum = bindLiteralCmd('\\textasciicircum', 'asciicircum');
+    LatexCmds.textbackslash = bindLiteralCmd('\\textbackslash', 'backslash');
+    LatexCmds.textbar = bindLiteralCmd('\\textbar', 'bar');
+    LatexCmds.textunderscore = bindLiteralCmd('\\textunderscore', 'underscore');
+    LatexCmds.textbraceleft = bindLiteralCmd('\\textbraceleft', 'brace left');
+    LatexCmds.textbraceright = bindLiteralCmd('\\textbraceright', 'brace right');
+    LatexCmds.textperiodcentered = bindLiteralCmd('\\textperiodcentered', 'period centered');
+    LatexCmds.textasteriskcentered = bindLiteralCmd('\\textasteriskcentered', 'asterisk centered');
+    LatexCmds.textbullet = bindLiteralCmd('\\textbullet', 'bullet');
+    LatexCmds.textordfeminine = bindLiteralCmd('\\textordfeminine', 'ord feminine');
+    LatexCmds.textordmasculine = bindLiteralCmd('\\textordmasculine', 'ord masculine');
+    LatexCmds.textregistered = bindLiteralCmd('\\textregistered', 'registered');
+    LatexCmds.textcopyright = bindLiteralCmd('\\textcopyright', 'copyright');
+    LatexCmds.texttrademark = bindLiteralCmd('\\texttrademark', 'trademark');
+    LatexCmds.textellipsis = bindLiteralCmd('\\textellipsis', 'ellipsis');
+    LatexCmds.textquestiondown = bindLiteralCmd('\\textquestiondown', 'question down');
+    LatexCmds.textexclamdown = bindLiteralCmd('\\textexclamdown', 'exclam down');
+    LatexCmds.textquotedblleft = bindLiteralCmd('\\textquotedblleft', 'quote dbl left');
+    LatexCmds.textquotedblright = bindLiteralCmd('\\textquotedblright', 'quote dbl right');
+    LatexCmds.textquoteleft = bindLiteralCmd('\\textquoteleft', 'quote left');
+    LatexCmds.textquoteright = bindLiteralCmd('\\textquoteright', 'quote right');
+    LatexCmds.textservicemark = bindLiteralCmd('\\textservicemark', 'service mark');
+    LatexCmds.LaTeXe = bindLiteralCmd('\\LaTeXe', 'LaTeX 2e');
+    LatexCmds.AmS = bindLiteralCmd('\\AmS', 'AMS');
+    LatexCmds.BibTeX = bindLiteralCmd('\\BibTeX', 'BibTeX');
+    LatexCmds.MF = bindLiteralCmd('\\MF', 'Metafont');
+    LatexCmds.MP = bindLiteralCmd('\\MP', 'Metapost');
+    // siunitx: value/unit commands keep their argument signature verbatim.
+    bindMathWrap('si');
+    bindMathWrap('unit');
+    bindMathWrap('num');
+    bindMathWrap('ang');
+    LatexCmds.SI = function () {
+        return new RawArgCommand('\\SI', new RegExp('^' + RAW_GROUP + RAW_GROUP), 'SI');
+    };
+    LatexCmds.qty = function () {
+        return new RawArgCommand('\\qty', new RegExp('^' + RAW_GROUP + RAW_GROUP), 'qty');
+    };
+    LatexCmds.numrange = function () {
+        return new RawArgCommand('\\numrange', new RegExp('^' + RAW_GROUP + RAW_GROUP), 'num range');
+    };
+    LatexCmds.SIrange = function () {
+        return new RawArgCommand('\\SIrange', new RegExp('^' + RAW_GROUP + RAW_GROUP + RAW_GROUP), 'SI range');
+    };
+    LatexCmds.angrange = function () {
+        return new RawArgCommand('\\angrange', new RegExp('^' + RAW_GROUP + RAW_GROUP), 'ang range');
+    };
+    // unit names / prefixes used standalone or inside \si args
+    [
+        'celsius',
+        'micro',
+        'ohm',
+        'percent',
+        'kilogram',
+        'gram',
+        'metre',
+        'meter',
+        'second',
+        'ampere',
+        'kelvin',
+        'mole',
+        'candela',
+        'joule',
+        'watt',
+        'volt',
+        'hertz',
+        'newton',
+        'pascal',
+        'farad',
+        'henry',
+        'tesla',
+        'weber',
+        'becquerel',
+        'sievert',
+        'gray',
+        'katal',
+        'lumen',
+        'lux',
+        'electronvolt',
+        'minute',
+        'hour',
+        'day',
+        'litre',
+        'liter',
+        'tonne',
+        'hectare',
+        'arcminute',
+        'arcsecond',
+        'astronomicalunit',
+        'per',
+        'square',
+        'cubic',
+        'tothe',
+        'raisetothe',
+        'lowertothe',
+        'of',
+        'kilo',
+        'mega',
+        'giga',
+        'tera',
+        'milli',
+        'centi',
+        'deci',
+        'deca',
+        'hecto',
+        'nano',
+        'pico',
+        'femto',
+        'atto',
+        'zepto',
+        'yocto',
+        'exa',
+        'peta'
+    ].forEach(function (n) {
+        LatexCmds[n] = bindLiteralCmd('\\' + n, n);
+    });
+    // Skip commands taking a dimension.
+    bindMathWrap('hskip');
+    bindMathWrap('vskip');
+    bindMathWrap('mskip');
+    bindMathWrap('kern');
+    bindMathWrap('mkern');
+    // hspace/vspace already registered star-aware via bindStarBlockCmd above
+    // TeX boxes: optional 'to <dim>' before the braced content.
+    LatexCmds.hbox = function () {
+        return new RawArgCommand('\\hbox ', new RegExp('^(?:to\\s+[^\\s{]+)?' + RAW_GROUP), 'h box');
+    };
+    LatexCmds.vbox = function () {
+        return new RawArgCommand('\\vbox ', new RegExp('^(?:to\\s+[^\\s{]+)?' + RAW_GROUP), 'v box');
+    };
+    LatexCmds.vtop = function () {
+        return new RawArgCommand('\\vtop ', new RegExp('^(?:to\\s+[^\\s{]+)?' + RAW_GROUP), 'v top');
+    };
+    LatexCmds.vcenter = function () {
+        return new RawArgCommand('\\vcenter ', new RegExp('^(?:to\\s+[^\\s{]+)?' + RAW_GROUP), 'v center');
+    };
+    // Extra math fonts + \cases leaf (the begin-env form is \begin{cases}).
+    bindMathWrap('mathbfsf');
+    bindMathWrap('mathbold');
+    bindMathWrap('mathfrak');
+    bindMathWrap('mathscr');
+    LatexCmds.cases = bindLiteralCmd('\\cases', 'cases');
+    // unicode-math \sym* font aliases.
+    ['symbf', 'symrm', 'symit', 'symsf', 'symtt', 'symbb', 'symcal', 'symfrak',
+        'symsfup', 'symsfit', 'symbfup', 'symbfit'].forEach(bindMathWrap);
+    // \cprime \csecond \cthird — back/2nd/3rd primes.
+    LatexCmds.cprime = bindVanillaSymbol('\\cprime ', '&#8245;', 'back prime');
+    LatexCmds.csecond = bindVanillaSymbol('\\csecond ', '&#8243;', 'double prime');
+    LatexCmds.cthird = bindVanillaSymbol('\\cthird ', '&#8244;', 'triple prime');
+    // \sslash (double-slash relation, U+2AFD).
+    LatexCmds.sslash = bindBinaryOperator('\\sslash ', '&#10973;', 'sslash');
+    // fancybox + ulem: one braced group.
+    ['ovalbox', 'Ovalbox', 'shadowbox', 'doublebox', 'sout', 'uwave',
+        'xout', 'dashuline', 'dotuline', 'uline', 'uuline', 'st'].forEach(bindMathWrap);
+    // colortbl color commands — optional [model] then {color}.
+    LatexCmds.rowcolor = bindOptBracketCmd('\\rowcolor', 1, 'row color');
+    LatexCmds.cellcolor = bindOptBracketCmd('\\cellcolor', 1, 'cell color');
+    LatexCmds.columncolor = bindOptBracketCmd('\\columncolor', 1, 'column color');
+    // \dashbox{d}(w,h)[pos]{content}
+    LatexCmds.dashbox = function () {
+        return new RawArgCommand('\\dashbox', new RegExp('^' + RAW_GROUP + '(?:\\([0-9.,]*\\))?(?:\\[[a-z]*\\])?' + RAW_GROUP), 'dash box');
+    };
+    // \definecolor{name}{model}{spec}
+    LatexCmds.definecolor = function () {
+        return new RawArgCommand('\\definecolor', new RegExp('^' + RAW_GROUP + RAW_GROUP + RAW_GROUP), 'define color');
+    };
+    bindMathWrap('cdashline');
+    LatexCmds.checkmark = bindVanillaSymbol('\\checkmark ', '&#10003;', 'check mark');
+    // Declaration-style font switches + remaining sizes (no argument).
+    [
+        'bfseries',
+        'mdseries',
+        'upshape',
+        'itshape',
+        'slshape',
+        'scshape',
+        'swshape',
+        'rmfamily',
+        'sffamily',
+        'ttfamily',
+        'normalfont',
+        'mit',
+        'selectfont',
+        'HUGE',
+        'Tiny',
+        'eqalignno',
+        'leqalignno'
+    ].forEach(function (name) {
+        LatexCmds[name] = bindLiteralCmd('\\' + name + ' ', name);
+    });
+    // \usefont{enc}{fam}{ser}{shape}, \fontsize{sz}{bl}, \fontfamily{..},
+    // \fontseries{..}, \fontshape{..}, \setmainfont{..}, \setsansfont{..},
+    // \setmonofont{..}, \setmathfont{..}
+    LatexCmds.usefont = function () {
+        return new RawArgCommand('\\usefont', new RegExp('^' + RAW_OPT_GROUP + RAW_GROUP + RAW_GROUP + RAW_GROUP + RAW_GROUP), 'use font');
+    };
+    ['fontsize', 'setmainfont', 'setsansfont', 'setmonofont', 'setmathfont',
+        'setmathrm', 'setmathsf', 'setmathtt', 'setboldmathrm', 'fontspec',
+        'newfontfamily', 'newfontface', 'defaultfontfeatures'].forEach(function (name) {
+        var groups = name === 'fontsize' ? 2 : 1;
+        LatexCmds[name] = function () {
+            return new RawArgCommand('\\' + name, new RegExp('^' + RAW_OPT_GROUP + RAW_GROUP + (groups > 1 ? RAW_GROUP : '')), name);
+        };
+    });
+    ['fontfamily', 'fontseries', 'fontshape', 'fontencoding', 'mathversion',
+        'everymath', 'everydisplay'].forEach(bindMathWrap);
+    // TeX primitive keywords + conditionals — verbatim leaves.
+    [
+        'catcode', 'count', 'countdef', 'dimen', 'dimendef', 'skip', 'skipdef',
+        'muskip', 'muskipdef', 'toks', 'toksdef', 'box', 'setbox', 'copy',
+        'lastbox', 'vsplit', 'advance', 'multiply', 'message', 'errmessage',
+        'expandafter', 'noexpand', 'the', 'string', 'number', 'romannumeral',
+        'uppercase', 'lowercase', 'csname', 'endcsname', 'ifx', 'ifnum', 'ifdim',
+        'ifodd', 'ifvmode', 'ifhmode', 'ifmmode', 'ifinner', 'ifvoid', 'ifhbox',
+        'ifvbox', 'ifcat', 'iftrue', 'iffalse', 'ifcase', 'else', 'or', 'fi',
+        'loop', 'repeat', 'bye', 'dump', 'jobname', 'meaning', 'show', 'showthe',
+        'showbox', 'tracingall', 'futurelet', 'afterassignment', 'aftergroup',
+        'global', 'long', 'outer', 'immediate', 'write', 'read', 'openout',
+        'closeout', 'openin', 'closein', 'input', 'endinput', 'include',
+        'shipout', 'mark', 'marks', 'insert', 'vadjust', 'valign', 'halign',
+        'indent', 'noindent', 'unskip', 'unpenalty', 'unkern', 'penalty',
+        'lastpenalty', 'lastskip', 'lastkern', 'ifdefined', 'unless',
+        'unexpanded', 'detokenize', 'scantokens', 'numexpr', 'dimexpr',
+        'glueexpr', 'muexpr', 'protected', 'font', 'fontdimen', 'magnification',
+        'mag', 'parshape', 'hangindent', 'hangafter', 'leftskip', 'rightskip',
+        'baselineskip', 'lineskip', 'parskip', 'topskip', 'tabskip',
+        'spaceskip', 'xspaceskip', 'emergencystretch', 'tolerance',
+        'pretolerance', 'hbadness', 'vbadness', 'hfuzz', 'vfuzz', 'hsize',
+        'vsize', 'maxdepth', 'pagedepth', 'pagetotal', 'pagegoal', 'output',
+        'deadcycles', 'maxdeadcycles', 'batchmode', 'nonstopmode',
+        'scrollmode', 'errorstopmode', 'pausing', 'tracingonline',
+        'tracingmacros', 'tracingstats', 'tracingparagraphs', 'tracingpages',
+        'tracingoutput', 'tracinglostchars', 'tracingcommands',
+        'tracingrestores', 'language', 'uchyph', 'lefthyphenmin',
+        'righthyphenmin', 'defaulthyphenchar', 'defaultskewchar',
+        'hyphenpenalty', 'exhyphenpenalty', 'doublehyphendemerits',
+        'finalhyphendemerits', 'adjdemerits', 'looseness', 'linepenalty',
+        'clubpenalty', 'widowpenalty', 'displaywidowpenalty', 'brokenpenalty',
+        'predisplaypenalty', 'postdisplaypenalty', 'interlinepenalty',
+        'floatingpenalty', 'outputpenalty', 'interfootnotelinepenalty',
+        'delimiterfactor', 'nulldelimiterfurnish', 'defaultdelimiterfactor',
+        'mathsurround', 'nulldelimiterspace', 'scriptspace',
+        'displayindent', 'displaywidth', 'predisplaysize',
+        'abovedisplayskip', 'belowdisplayskip', 'abovedisplayshortskip',
+        'belowdisplayshortskip', 'mathindent', 'everymathdim', 'everyjob',
+        'everycr', 'everyhbox', 'everyvbox', 'everypar', 'outputroutine'
+    ].forEach(function (name) {
+        if (!LatexCmds[name])
+            LatexCmds[name] = bindLiteralCmd('\\' + name + ' ', name);
+    });
     /*********************************
      * Symbols for Basic Mathematics
      ********************************/
@@ -7444,6 +8782,30 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             // check for operator names: at each position from left to right, check
             // substrings from longest to shortest
             outer: for (var i = 0, first = l[R] || this.parent.getEnd(L); first && i < str.length; i += 1, first = first[R]) {
+                // A letter run inside \operatorname{...}/\mathrm{...} (its first
+                // letter's ctrlSeq carries the `\name{` prefix and its last carries
+                // `}`) is already an explicit operator name — keep it whole and
+                // upright. Scanning it for built-in names split e.g.
+                // \operatorname{sign} into "sin" + "g" and \operatorname{atan}
+                // into "a" + "tan".
+                if (first instanceof Letter &&
+                    /^\\(?:operatorname|mathrm|mathsf|mathnormal|mathbf)\{/.test(first.ctrlSeq)) {
+                    var opLetter = first;
+                    var opLen = 0;
+                    while (opLetter instanceof Letter) {
+                        opLetter.italicize(false);
+                        opLen += 1;
+                        var endsRun = opLetter.ctrlSeq.endsWith('}');
+                        opLetter = opLetter[R];
+                        if (endsRun)
+                            break;
+                    }
+                    i += opLen - 1;
+                    first = opLetter instanceof Letter ? opLetter[L] : first;
+                    if (!opLetter)
+                        break;
+                    continue;
+                }
                 for (var len = min(autoOpsLength, str.length - i); len > 0; len -= 1) {
                     var word = str.slice(i, i + len);
                     var last = undefined; // TODO - TS complaining that we use last before assigning to it
@@ -7551,8 +8913,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                                 1;
         }
         // compat with some of the nonstandard LaTeX exported by MathQuill
-        // before #247. None of these are real LaTeX commands so, seems safe
-        var moreNonstandardOps = 'gcf hcf lcm proj span'.split(' ');
+        // before #247. None of these are real LaTeX commands so, seems safe.
+        // 'sign' (not built into LaTeX) exports as \operatorname{sign}, which
+        // MathCompile's compile pipeline lowers to SymPy's sign().
+        var moreNonstandardOps = 'gcf hcf lcm proj span sign'.split(' ');
         for (var i = 0; i < moreNonstandardOps.length; i += 1) {
             AutoOpNames[moreNonstandardOps[i]] = 1;
         }
@@ -7651,16 +9015,22 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             LatexCmds[fn] = OperatorName;
         }
     LatexCmds.operatorname = /** @class */ (function (_super) {
-        __extends(class_4, _super);
-        function class_4() {
+        __extends(class_12, _super);
+        function class_12() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_4.prototype.createLeftOf = function () { };
-        class_4.prototype.numBlocks = function () {
+        class_12.prototype.createLeftOf = function () { };
+        class_12.prototype.numBlocks = function () {
             return 1;
         };
-        class_4.prototype.parser = function () {
-            return latexMathParser.block.map(function (b) {
+        class_12.prototype.parser = function () {
+            // \operatorname* is the limits-form operator — consume the star so
+            // it doesn't surface as a stray literal '*' (previously
+            // \operatorname*{argmin} -> *\arg\min)
+            return Parser.optWhitespace
+                .then(Parser.string('*').or(Parser.succeed('')))
+                .then(latexMathParser.block)
+                .map(function (b) {
                 // Check for the special case of \operatorname{ans}, which has
                 // a special html representation
                 var isAllLetters = true;
@@ -7682,11 +9052,11 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 return children;
             });
         };
-        return class_4;
+        return class_12;
     }(MathCommand));
     LatexCmds.f = /** @class */ (function (_super) {
-        __extends(class_5, _super);
-        function class_5() {
+        __extends(class_13, _super);
+        function class_13() {
             var _this_1 = this;
             var letter = 'f';
             _this_1 = _super.call(this, letter) || this;
@@ -7696,19 +9066,39 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             });
             return _this_1;
         }
-        class_5.prototype.italicize = function (bool) {
+        class_13.prototype.italicize = function (bool) {
             // Why is this necesssary? Does someone replace the `f` at some
             // point?
             this.domFrag().eachElement(function (el) { return (el.textContent = 'f'); });
             this.domFrag().toggleClass('mq-f', bool);
             return _super.prototype.italicize.call(this, bool);
         };
-        return class_5;
+        return class_13;
     }(Letter));
     // VanillaSymbol's
     LatexCmds[' '] = LatexCmds.space = function () {
         return new DigitGroupingChar('\\ ', h('span', {}, [h.text(U_NO_BREAK_SPACE)]), ' ');
     };
+    // \<char> escapes — spacing (\, \: \; \!), braces (\{ \}) and the norm
+    // shorthand (\|). These are keyed with a backslash prefix so they only
+    // resolve through the '\'-prefixed parse branch (see latex.ts): bare
+    // ',', ';', '{', ... keep their literal meaning and '}' still closes
+    // groups.
+    LatexCmds['\\,'] =
+        LatexCmds.thinspace =
+            bindVanillaSymbol('\\, ', U_NO_BREAK_SPACE, 'thin space');
+    LatexCmds['\\:'] =
+        LatexCmds.medspace =
+            bindVanillaSymbol('\\: ', U_NO_BREAK_SPACE, 'medium space');
+    LatexCmds['\\;'] =
+        LatexCmds.thickspace =
+            bindVanillaSymbol('\\; ', U_NO_BREAK_SPACE, 'thick space');
+    LatexCmds['\\!'] = function () {
+        return new VanillaSymbol('\\! ', h('span', { style: 'margin-right:-.2em' }), 'negative thin space');
+    };
+    LatexCmds['\\{'] = bindVanillaSymbol('\\{ ', '{', 'open brace');
+    LatexCmds['\\}'] = bindVanillaSymbol('\\} ', '}', 'close brace');
+    LatexCmds['\\|'] = bindVanillaSymbol('\\| ', '&#8741;', 'norm');
     LatexCmds['.'] = function () {
         return new DigitGroupingChar('.', h('span', { class: 'mq-digit' }, [h.text('.')]), '.');
     };
@@ -7747,12 +9137,18 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds['&'] = function () {
         return new NonSymbolaSymbol('\\&', h.entityText('&amp;'), 'and');
     };
+    // escaped delimiters/specials — the parser passes the backslash
+    // through in ctrlSeq ('\_'), so the bare characters are untouched
+    LatexCmds['\\_'] = function () {
+        return new NonSymbolaSymbol('\\_', h.text('_'), 'underscore');
+    };
+    LatexCmds['\\#'] = function () { return new NonSymbolaSymbol('\\#', h.text('#'), 'hash'); };
     LatexCmds['%'] = /** @class */ (function (_super) {
-        __extends(class_6, _super);
-        function class_6() {
+        __extends(class_14, _super);
+        function class_14() {
             return _super.call(this, '\\%', h.text('%'), 'percent') || this;
         }
-        class_6.prototype.parser = function () {
+        class_14.prototype.parser = function () {
             var optWhitespace = Parser.optWhitespace;
             var string = Parser.string;
             // Parse `\%\operatorname{of}` as special `percentof` node so that
@@ -7763,7 +9159,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             }))
                 .or(_super.prototype.parser.call(this));
         };
-        return class_6;
+        return class_14;
     }(NonSymbolaSymbol));
     LatexCmds['∥'] = LatexCmds.parallel = bindVanillaSymbol('\\parallel ', '&#x2225;', 'parallel');
     LatexCmds['∦'] = LatexCmds.nparallel = bindVanillaSymbol('\\nparallel ', '&#x2226;', 'not parallel');
@@ -8016,23 +9412,23 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         return true;
     }
     var PlusMinus = /** @class */ (function (_super) {
-        __extends(class_7, _super);
-        function class_7(ch, html, mathspeak) {
+        __extends(class_15, _super);
+        function class_15(ch, html, mathspeak) {
             return _super.call(this, ch, html, undefined, mathspeak, true) || this;
         }
-        class_7.prototype.isBinaryOperator = function () {
+        class_15.prototype.isBinaryOperator = function () {
             return plusMinusIsBinaryOperator(this);
         };
-        class_7.prototype.contactWeld = function (cursor, dir) {
+        class_15.prototype.contactWeld = function (cursor, dir) {
             this.sharedSiblingMethod(cursor.options, dir);
         };
-        class_7.prototype.siblingCreated = function (opts, dir) {
+        class_15.prototype.siblingCreated = function (opts, dir) {
             this.sharedSiblingMethod(opts, dir);
         };
-        class_7.prototype.siblingDeleted = function (opts, dir) {
+        class_15.prototype.siblingDeleted = function (opts, dir) {
             this.sharedSiblingMethod(opts, dir);
         };
-        class_7.prototype.sharedSiblingMethod = function (_opts, dir) {
+        class_15.prototype.sharedSiblingMethod = function (_opts, dir) {
             if (dir === R)
                 return; // ignore if sibling only changed on the right
             this.domFrag().oneElement().className = plusMinusIsBinaryOperator(this)
@@ -8040,17 +9436,17 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 : '';
             return this;
         };
-        return class_7;
+        return class_15;
     }(BinaryOperator));
     LatexCmds['+'] = /** @class */ (function (_super) {
-        __extends(class_8, _super);
-        function class_8() {
+        __extends(class_16, _super);
+        function class_16() {
             return _super.call(this, '+', h.text('+')) || this;
         }
-        class_8.prototype.mathspeak = function () {
+        class_16.prototype.mathspeak = function () {
             return plusMinusIsBinaryOperator(this) ? 'plus' : 'positive';
         };
-        return class_8;
+        return class_16;
     }(PlusMinus));
     //yes, these are different dashes, en-dash, em-dash, unicode minus, actual dash
     var MinusNode = /** @class */ (function (_super) {
@@ -8457,6 +9853,19 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds.mathtt = function () {
         return new Style('\\mathtt', 'span', { class: 'mq-monospace mq-font' }, 'Math Text');
     };
+    LatexCmds.mathcal = function () {
+        return new Style('\\mathcal', 'span', { class: 'mq-caligraphic mq-font' }, 'Calligraphic Font');
+    };
+    LatexCmds.mathscr = function () {
+        return new Style('\\mathscr', 'span', { class: 'mq-caligraphic mq-font' }, 'Script Font');
+    };
+    LatexCmds.mathfrak = function () {
+        return new Style('\\mathfrak', 'span', { class: 'mq-fraktur mq-font' }, 'Fraktur Font');
+    };
+    // \bold in math mode is boldmath — serialized canonically as \mathbf
+    LatexCmds.bold = function () {
+        return new Style('\\mathbf', 'b', { class: 'mq-font' }, 'Bold Font');
+    };
     //text-decoration
     LatexCmds.underline = function () {
         return new Style('\\underline', 'span', { class: 'mq-non-leaf mq-underline' }, 'Underline');
@@ -8501,6 +9910,64 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             ]);
         }));
     };
+    // \boxed{...} — content with a drawn frame.
+    LatexCmds.boxed = function () {
+        return new Style('\\boxed', 'span', { class: 'mq-non-leaf mq-boxed' }, 'Boxed');
+    };
+    // \underbrace{x}_{label} / \overbrace{x}^{label} — the label lands as an
+    // ordinary sibling SupSub (same pattern as boundless integral bounds),
+    // so only the grouping command itself is needed here.
+    LatexCmds.underbrace = function () {
+        return new Style('\\underbrace', 'span', { class: 'mq-non-leaf mq-underbrace' }, 'Underbrace');
+    };
+    LatexCmds.overbrace = function () {
+        return new Style('\\overbrace', 'span', { class: 'mq-non-leaf mq-overbrace' }, 'Overbrace');
+    };
+    // \underset{a}{b} renders b with a below it; \overset{a}{b} with a above.
+    var UnderOverSet = /** @class */ (function (_super) {
+        __extends(UnderOverSet, _super);
+        function UnderOverSet(top) {
+            var _this_1 = _super.call(this) || this;
+            _this_1.ctrlSeq = top ? '\\overset' : '\\underset';
+            _this_1.ariaLabel = top ? 'overset' : 'underset';
+            _this_1.domView = new DOMView(2, function (blocks) {
+                return top
+                    ? h('span', { class: 'mq-overunderset mq-non-leaf' }, [
+                        h('span', { class: 'mq-overunderset-label' }, [
+                            h.block('span', {}, blocks[0])
+                        ]),
+                        h.block('span', { class: 'mq-overunderset-main' }, blocks[1])
+                    ])
+                    : h('span', { class: 'mq-overunderset mq-non-leaf' }, [
+                        h.block('span', { class: 'mq-overunderset-main' }, blocks[1]),
+                        h('span', { class: 'mq-overunderset-label' }, [
+                            h.block('span', {}, blocks[0])
+                        ])
+                    ]);
+            });
+            return _this_1;
+        }
+        UnderOverSet.prototype.parser = function () {
+            var self = this;
+            var block = latexMathParser.block;
+            var blocks = (this.blocks = [new MathBlock(), new MathBlock()]);
+            for (var i = 0; i < blocks.length; i += 1) {
+                blocks[i].adopt(self, self.getEnd(R), 0);
+            }
+            return Parser.optWhitespace
+                .then(block)
+                .then(function (b0) {
+                b0.children().adopt(blocks[0], blocks[0].getEnd(R), 0);
+                return Parser.optWhitespace.then(block).then(function (b1) {
+                    b1.children().adopt(blocks[1], blocks[1].getEnd(R), 0);
+                    return Parser.succeed(self);
+                });
+            });
+        };
+        return UnderOverSet;
+    }(MathCommand));
+    LatexCmds.underset = function () { return new UnderOverSet(false); };
+    LatexCmds.overset = function () { return new UnderOverSet(true); };
     // `\textcolor{color}{math}` will apply a color to the given math content, where
     // `color` is any valid CSS Color Value (see [SitePoint docs][] (recommended),
     // [Mozilla docs][], or [W3C spec][]).
@@ -8509,11 +9976,20 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     // [Mozilla docs]: https://developer.mozilla.org/en-US/docs/CSS/color_value#Values
     // [W3C spec]: http://dev.w3.org/csswg/css3-color/#colorunits
     LatexCmds.textcolor = /** @class */ (function (_super) {
-        __extends(class_9, _super);
-        function class_9() {
-            return _super !== null && _super.apply(this, arguments) || this;
+        __extends(class_17, _super);
+        function class_17() {
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.model = '';
+            return _this_1;
         }
-        class_9.prototype.setColor = function (color) {
+        // Parser-only command: typing '\textcolor' in the command input
+        // can't supply a color argument, so typed insertion is a no-op
+        // (same convention as \operatorname / \mathbb).
+        class_17.prototype.createLeftOf = function () { };
+        class_17.prototype.numBlocks = function () {
+            return 1;
+        };
+        class_17.prototype.setColor = function (color) {
             this.color = color;
             this.domView = new DOMView(1, function (blocks) {
                 return h.block('span', { class: 'mq-textcolor', style: 'color:' + color }, blocks[0]);
@@ -8524,43 +10000,256 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 'End ' + this.ariaLabel
             ];
         };
-        class_9.prototype.latexRecursive = function (ctx) {
+        class_17.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
             var blocks0 = this.blocks[0];
-            ctx.uncleanedLatex += '\\textcolor{' + this.color + '}{';
+            ctx.uncleanedLatex +=
+                '\\textcolor' +
+                    (this.model ? '[' + this.model + ']' : '') +
+                    '{' +
+                    this.color +
+                    '}{';
             blocks0.latexRecursive(ctx);
             ctx.uncleanedLatex += '}';
             this.checkCursorContextClose(ctx);
         };
-        class_9.prototype.parser = function () {
+        class_17.prototype.parser = function () {
             var _this_1 = this;
             var optWhitespace = Parser.optWhitespace;
             var string = Parser.string;
             var regex = Parser.regex;
+            var self = this;
             return optWhitespace
-                .then(string('{'))
-                .then(regex(/^[#\w\s.,()%-]*/))
-                .skip(string('}'))
+                .then(regex(/^\[[a-zA-Z]+\]/).or(Parser.succeed('')))
+                .then(function (model) {
+                if (model)
+                    self.model = model.slice(1, -1);
+                return string('{')
+                    .then(regex(/^[#\w\s.,()%-]*/))
+                    .skip(string('}'));
+            })
                 .then(function (color) {
                 _this_1.setColor(color);
                 return _super.prototype.parser.call(_this_1);
             });
         };
-        class_9.prototype.isStyleBlock = function () {
+        class_17.prototype.isStyleBlock = function () {
             return true;
         };
-        return class_9;
+        return class_17;
     }(MathCommand));
+    // \color{color}math is the declaration form of \textcolor — it
+    // canonicalizes to \textcolor{color}{math} (the next block is colored).
+    LatexCmds.color = LatexCmds.textcolor;
+    // \colorbox{color}{math} — a filled box around content; the color arg is
+    // raw text like \textcolor's, emitted back verbatim.
+    LatexCmds.colorbox = /** @class */ (function (_super) {
+        __extends(class_18, _super);
+        function class_18() {
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.color = '';
+            _this_1.model = '';
+            return _this_1;
+        }
+        class_18.prototype.parser = function () {
+            var _this_1 = this;
+            var self = this;
+            return Parser.optWhitespace
+                .then(Parser.regex(/^\[[a-zA-Z]+\]/).or(Parser.succeed('')))
+                .then(function (model) {
+                if (model)
+                    self.model = model.slice(1, -1);
+                return Parser.string('{')
+                    .then(Parser.regex(/^[#\w\s.,()%-]*/))
+                    .skip(Parser.string('}'));
+            })
+                .then(function (color) {
+                self.color = color;
+                self.domView = new DOMView(1, function (blocks) {
+                    return h.block('span', { class: 'mq-colorbox', style: 'background-color:' + color }, blocks[0]);
+                });
+                return _super.prototype.parser.call(_this_1);
+            });
+        };
+        class_18.prototype.latexRecursive = function (ctx) {
+            this.checkCursorContextOpen(ctx);
+            ctx.uncleanedLatex +=
+                '\\colorbox' +
+                    (this.model ? '[' + this.model + ']' : '') +
+                    '{' +
+                    this.color +
+                    '}{';
+            this.blocks[0].latexRecursive(ctx);
+            ctx.uncleanedLatex += '}';
+            this.checkCursorContextClose(ctx);
+        };
+        class_18.prototype.isStyleBlock = function () {
+            return true;
+        };
+        return class_18;
+    }(MathCommand));
+    // \fcolorbox{frame}{bg}{math} — framed + filled box; two raw color args.
+    LatexCmds.fcolorbox = /** @class */ (function (_super) {
+        __extends(class_19, _super);
+        function class_19() {
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.frameColor = '';
+            _this_1.bgColor = '';
+            _this_1.model = '';
+            return _this_1;
+        }
+        class_19.prototype.parser = function () {
+            var _this_1 = this;
+            var self = this;
+            var colorGroup = Parser.string('{')
+                .then(Parser.regex(/^[#\w\s.,()%-]*/))
+                .skip(Parser.string('}'));
+            return Parser.optWhitespace
+                .then(Parser.regex(/^\[[a-zA-Z]+\]/).or(Parser.succeed('')))
+                .then(function (model) {
+                if (model)
+                    self.model = model.slice(1, -1);
+                return colorGroup;
+            })
+                .then(function (frame) {
+                self.frameColor = frame;
+                return colorGroup;
+            })
+                .then(function (bg) {
+                self.bgColor = bg;
+                self.domView = new DOMView(1, function (blocks) {
+                    return h.block('span', {
+                        class: 'mq-fcolorbox',
+                        style: 'border:1px solid ' +
+                            self.frameColor +
+                            ';background-color:' +
+                            bg
+                    }, blocks[0]);
+                });
+                return _super.prototype.parser.call(_this_1);
+            });
+        };
+        class_19.prototype.latexRecursive = function (ctx) {
+            this.checkCursorContextOpen(ctx);
+            ctx.uncleanedLatex +=
+                '\\fcolorbox' +
+                    (this.model ? '[' + this.model + ']' : '') +
+                    '{' +
+                    this.frameColor +
+                    '}{' +
+                    this.bgColor +
+                    '}{';
+            this.blocks[0].latexRecursive(ctx);
+            ctx.uncleanedLatex += '}';
+            this.checkCursorContextClose(ctx);
+        };
+        class_19.prototype.isStyleBlock = function () {
+            return true;
+        };
+        return class_19;
+    }(MathCommand));
+    // \href{url}{math} — link wrapper; the url arg is raw text.
+    LatexCmds.href = /** @class */ (function (_super) {
+        __extends(class_20, _super);
+        function class_20() {
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.url = '';
+            return _this_1;
+        }
+        class_20.prototype.parser = function () {
+            var _this_1 = this;
+            var self = this;
+            return Parser.optWhitespace
+                .then(Parser.string('{'))
+                .then(Parser.regex(/^[^{}]*/))
+                .skip(Parser.string('}'))
+                .then(function (url) {
+                self.url = url;
+                self.domView = new DOMView(1, function (blocks) {
+                    return h.block('span', { class: 'mq-href' }, blocks[0]);
+                });
+                return _super.prototype.parser.call(_this_1);
+            });
+        };
+        class_20.prototype.latexRecursive = function (ctx) {
+            this.checkCursorContextOpen(ctx);
+            ctx.uncleanedLatex += '\\href{' + this.url + '}{';
+            this.blocks[0].latexRecursive(ctx);
+            ctx.uncleanedLatex += '}';
+            this.checkCursorContextClose(ctx);
+        };
+        return class_20;
+    }(MathCommand));
+    // \overset{label}{base} stacks a small label above; \underset below;
+    // \stackrel is the plain-TeX name for \overset
+    LatexCmds.overset = /** @class */ (function (_super) {
+        __extends(class_21, _super);
+        function class_21() {
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.ctrlSeq = '\\overset';
+            _this_1.domView = new DOMView(2, function (blocks) {
+                return h('span', { class: 'mq-non-leaf mq-overunderset' }, [
+                    h.block('span', { class: 'mq-overscript' }, blocks[0]),
+                    h.block('span', {}, blocks[1])
+                ]);
+            });
+            return _this_1;
+        }
+        return class_21;
+    }(MathCommand));
+    LatexCmds.stackrel = LatexCmds.overset;
+    LatexCmds.underset = /** @class */ (function (_super) {
+        __extends(class_22, _super);
+        function class_22() {
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.ctrlSeq = '\\underset';
+            _this_1.domView = new DOMView(2, function (blocks) {
+                return h('span', { class: 'mq-non-leaf mq-overunderset' }, [
+                    h.block('span', {}, blocks[1]),
+                    h.block('span', { class: 'mq-overscript' }, blocks[0])
+                ]);
+            });
+            return _this_1;
+        }
+        return class_22;
+    }(MathCommand));
+    // \pmod{m} / \pod{m} — parenthesized (mod m) / (m); \bmod is the
+    // binary mod operator
+    LatexCmds.pmod = function () {
+        return new MathCommand('\\pmod', new DOMView(1, function (blocks) {
+            return h('span', { class: 'mq-non-leaf' }, [
+                h('span', {}, [h.text('(mod\u00a0')]),
+                h.block('span', {}, blocks[0]),
+                h('span', {}, [h.text(')')])
+            ]);
+        }), ['mod(', ')']);
+    };
+    LatexCmds.pod = function () {
+        return new MathCommand('\\pod', new DOMView(1, function (blocks) {
+            return h('span', { class: 'mq-non-leaf' }, [
+                h('span', {}, [h.text('(')]),
+                h.block('span', {}, blocks[0]),
+                h('span', {}, [h.text(')')])
+            ]);
+        }), ['(', ')']);
+    };
+    LatexCmds.bmod = bindBinaryOperator('\\bmod ', 'mod', 'binary mod');
+    LatexCmds.mod = bindBinaryOperator('\\mod ', 'mod', 'mod');
     // Very similar to the \textcolor command, but will add the given CSS class.
     // Usage: \class{classname}{math}
     // Note regex that whitelists valid CSS classname characters:
     // https://github.com/mathquill/mathquill/pull/191#discussion_r4327442
     var Class = (LatexCmds['class'] = /** @class */ (function (_super) {
-        __extends(class_10, _super);
-        function class_10() {
+        __extends(class_23, _super);
+        function class_23() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_10.prototype.parser = function () {
+        // Parser-only command, see \textcolor.
+        class_23.prototype.createLeftOf = function () { };
+        class_23.prototype.numBlocks = function () {
+            return 1;
+        };
+        class_23.prototype.parser = function () {
             var _this_1 = this;
             var string = Parser.string, regex = Parser.regex;
             return Parser.optWhitespace
@@ -8580,7 +10269,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 return _super.prototype.parser.call(_this_1);
             });
         };
-        class_10.prototype.latexRecursive = function (ctx) {
+        class_23.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
             var blocks0 = this.blocks[0];
             ctx.uncleanedLatex += '\\class{' + this.cls + '}{';
@@ -8588,10 +10277,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             ctx.uncleanedLatex += '}';
             this.checkCursorContextClose(ctx);
         };
-        class_10.prototype.isStyleBlock = function () {
+        class_23.prototype.isStyleBlock = function () {
             return true;
         };
-        return class_10;
+        return class_23;
     }(MathCommand)));
     // This test is used to determine whether an item may be treated as a whole number
     // for shortening the verbalized (mathspeak) forms of some fractions and superscripts.
@@ -9001,7 +10690,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         };
         SummationNotation.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
-            ctx.uncleanedLatex += this.ctrlSeq + '_{';
+            ctx.uncleanedLatex += this.ctrlSeq + (this.limitsCtrlSeq || '') + '_{';
             var beforeLength = ctx.uncleanedLatex.length;
             this.getEnd(L).latexRecursive(ctx);
             var afterLength = ctx.uncleanedLatex.length;
@@ -9041,7 +10730,18 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             for (var i = 0; i < blocks.length; i += 1) {
                 blocks[i].adopt(self, self.getEnd(R), 0);
             }
+            // `\sum\limits_{i}^{n}` — an optional \limits/\nolimits between the
+            // operator and its bounds is kept on the node so serialization
+            // round-trips it instead of dropping it or leaving { } bounds.
+            var optLimits = Parser.regex(/^\\(?:no)?limits(?![a-zA-Z])\s*/)
+                .map(function (limits) {
+                self.limitsCtrlSeq = limits.trim() + ' ';
+                return undefined;
+            })
+                .or(succeed(''));
             return optWhitespace
+                .then(optLimits)
+                .then(optWhitespace)
                 .then(string('_').or(string('^')))
                 .then(function (supOrSub) {
                 var child = blocks[supOrSub === '_' ? 0 : 1];
@@ -9079,8 +10779,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds['∫'] =
         LatexCmds['int'] =
             LatexCmds.integral = /** @class */ (function (_super) {
-                __extends(class_11, _super);
-                function class_11() {
+                __extends(class_24, _super);
+                function class_24() {
                     var _this_1 = _super.call(this, '\\int ', '', 'integral') || this;
                     _this_1.ariaLabel = 'integral';
                     _this_1.domView = new DOMView(2, function (blocks) {
@@ -9099,11 +10799,11 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     });
                     return _this_1;
                 }
-                class_11.prototype.createLeftOf = function (cursor) {
+                class_24.prototype.createLeftOf = function (cursor) {
                     // FIXME: refactor rather than overriding
                     MathCommand.prototype.createLeftOf.call(this, cursor);
                 };
-                return class_11;
+                return class_24;
             }(SummationNotation));
     // Boundless integral signs for indefinite integrals: `\iint` and
     // `\antid` render a bare ∫ — neither carries blocks, so the integrand
@@ -9111,154 +10811,194 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     // grow an ordinary sibling SupSub for bounds. `\antid` is a MathCompile
     // insertion alias: the app maps it to `\int` at compile time; `\iint`
     // parses to Integrate in the compute engine on its own.
+    //
+    // BoundlessIntegral is its own class so left-scanning code (a typed `/`
+    // wrapping the preceding run into a numerator) can stop at the sign —
+    // for a SummationNotation like `\sum` the scan already breaks there, and
+    // a boundless ∫ should behave the same way.
+    var BoundlessIntegral = /** @class */ (function (_super) {
+        __extends(BoundlessIntegral, _super);
+        function BoundlessIntegral() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        return BoundlessIntegral;
+    }(MQSymbol));
     var boundlessIntegral = function (ctrlSeq, glyph, speak) {
         return function () {
-            return new MQSymbol(ctrlSeq, h('span', { class: 'mq-int' }, [
+            return new BoundlessIntegral(ctrlSeq, h('span', { class: 'mq-int' }, [
                 h('big', {}, [h.text(glyph)])
             ]), undefined, speak);
         };
     };
     LatexCmds['∬'] = LatexCmds.iint = boundlessIntegral('\\iint ', U_INTEGRAL, 'indefinite integral');
     LatexCmds.antid = boundlessIntegral('\\antid ', U_INTEGRAL, 'antiderivative');
+    LatexCmds['∯'] = LatexCmds.oiint = boundlessIntegral('\\oiint ', '∯', 'surface integral');
+    LatexCmds['∰'] = LatexCmds.oiiint = boundlessIntegral('\\oiiint ', '∰', 'volume integral');
     var Fraction = (LatexCmds.frac =
         LatexCmds.dfrac =
-            LatexCmds.cfrac =
-                LatexCmds.fraction = /** @class */ (function (_super) {
-                    __extends(FracNode, _super);
-                    function FracNode() {
-                        var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-                        _this_1.ctrlSeq = '\\frac';
-                        _this_1.domView = new DOMView(2, function (blocks) {
-                            return h('span', { class: 'mq-fraction mq-non-leaf' }, [
-                                h.block('span', { class: 'mq-numerator' }, blocks[0]),
-                                h.block('span', { class: 'mq-denominator' }, blocks[1]),
-                                h('span', { style: 'display:inline-block;width:0' }, [
-                                    h.text(U_ZERO_WIDTH_SPACE)
-                                ])
-                            ]);
-                        });
-                        _this_1.textTemplate = ['(', ')/(', ')'];
-                        return _this_1;
+            LatexCmds.fraction = /** @class */ (function (_super) {
+                __extends(FracNode, _super);
+                function FracNode() {
+                    var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+                    _this_1.ctrlSeq = '\\frac';
+                    _this_1.domView = new DOMView(2, function (blocks) {
+                        return h('span', { class: 'mq-fraction mq-non-leaf' }, [
+                            h.block('span', { class: 'mq-numerator' }, blocks[0]),
+                            h.block('span', { class: 'mq-denominator' }, blocks[1]),
+                            h('span', { style: 'display:inline-block;width:0' }, [
+                                h.text(U_ZERO_WIDTH_SPACE)
+                            ])
+                        ]);
+                    });
+                    _this_1.textTemplate = ['(', ')/(', ')'];
+                    return _this_1;
+                }
+                FracNode.prototype.finalizeTree = function () {
+                    var endsL = this.getEnd(L);
+                    var endsR = this.getEnd(R);
+                    this.upInto = endsR.upOutOf = endsL;
+                    this.downInto = endsL.downOutOf = endsR;
+                    endsL.ariaLabel = 'numerator';
+                    endsR.ariaLabel = 'denominator';
+                    if (this.getFracDepth() > 1) {
+                        this.mathspeakTemplate = [
+                            'StartNestedFraction,',
+                            'NestedOver',
+                            ', EndNestedFraction'
+                        ];
                     }
-                    FracNode.prototype.finalizeTree = function () {
-                        var endsL = this.getEnd(L);
-                        var endsR = this.getEnd(R);
-                        this.upInto = endsR.upOutOf = endsL;
-                        this.downInto = endsL.downOutOf = endsR;
-                        endsL.ariaLabel = 'numerator';
-                        endsR.ariaLabel = 'denominator';
-                        if (this.getFracDepth() > 1) {
-                            this.mathspeakTemplate = [
-                                'StartNestedFraction,',
-                                'NestedOver',
-                                ', EndNestedFraction'
-                            ];
+                    else {
+                        this.mathspeakTemplate = ['StartFraction,', 'Over', ', EndFraction'];
+                    }
+                };
+                FracNode.prototype.mathspeak = function (opts) {
+                    var _c;
+                    if (opts && opts.createdLeftOf) {
+                        var cursor = opts.createdLeftOf;
+                        return cursor.parent.mathspeak();
+                    }
+                    var numText = getCtrlSeqsFromBlock(this.getEnd(L));
+                    var denText = getCtrlSeqsFromBlock(this.getEnd(R));
+                    // Shorten mathspeak value for whole number fractions whose denominator has a special spoken form.
+                    if ((!opts || !opts.ignoreShorthand) &&
+                        intRgx.test(numText) &&
+                        intRgx.test(denText)) {
+                        var isSingular = numText === '1' || numText === '-1';
+                        var newDenSpeech = '';
+                        if (denText === '2') {
+                            newDenSpeech = isSingular ? 'half' : 'halves';
                         }
-                        else {
-                            this.mathspeakTemplate = ['StartFraction,', 'Over', ', EndFraction'];
+                        else if (denText === '3') {
+                            newDenSpeech = isSingular ? 'third' : 'thirds';
                         }
-                    };
-                    FracNode.prototype.mathspeak = function (opts) {
-                        var _c;
-                        if (opts && opts.createdLeftOf) {
-                            var cursor = opts.createdLeftOf;
-                            return cursor.parent.mathspeak();
+                        else if (denText === '4') {
+                            newDenSpeech = isSingular ? 'fourth' : 'fourths';
                         }
-                        var numText = getCtrlSeqsFromBlock(this.getEnd(L));
-                        var denText = getCtrlSeqsFromBlock(this.getEnd(R));
-                        // Shorten mathspeak value for whole number fractions whose denominator has a special spoken form.
-                        if ((!opts || !opts.ignoreShorthand) &&
-                            intRgx.test(numText) &&
-                            intRgx.test(denText)) {
-                            var isSingular = numText === '1' || numText === '-1';
-                            var newDenSpeech = '';
-                            if (denText === '2') {
-                                newDenSpeech = isSingular ? 'half' : 'halves';
-                            }
-                            else if (denText === '3') {
-                                newDenSpeech = isSingular ? 'third' : 'thirds';
-                            }
-                            else if (denText === '4') {
-                                newDenSpeech = isSingular ? 'fourth' : 'fourths';
-                            }
-                            else if (denText === '5') {
-                                newDenSpeech = isSingular ? 'fifth' : 'fifths';
-                            }
-                            else if (denText === '6') {
-                                newDenSpeech = isSingular ? 'sixth' : 'sixths';
-                            }
-                            else if (denText === '7') {
-                                newDenSpeech = isSingular ? 'seventh' : 'sevenths';
-                            }
-                            else if (denText === '8') {
-                                newDenSpeech = isSingular ? 'eighth' : 'eighths';
-                            }
-                            else if (denText === '9') {
-                                newDenSpeech = isSingular ? 'ninth' : 'ninths';
-                            }
-                            else if (denText === '10') {
-                                newDenSpeech = isSingular ? 'tenth' : 'tenths';
-                            }
-                            else if (denText === '11') {
-                                newDenSpeech = isSingular ? 'eleventh' : 'elevenths';
-                            }
-                            else if (denText === '12') {
-                                newDenSpeech = isSingular ? 'twelfth' : 'twelfths';
-                            }
-                            else if (denText === '100') {
-                                newDenSpeech = isSingular ? 'hundredth' : 'hundredths';
-                            }
-                            if (newDenSpeech !== '') {
-                                var output = '';
-                                // Handle the case of an integer followed by a simplified fraction such as 1\frac{1}{2}.
-                                // Such combinations should be spoken aloud as "1 and 1 half."
-                                // Start at the left sibling of the fraction and continue leftward until something other than a digit or whitespace is found.
-                                var sawDigit = false;
-                                var sibling = void 0;
-                                // Scan until you see something other than a digit or space
-                                for (sibling = this[L]; sibling &&
-                                    sibling.ctrlSeq &&
-                                    (sibling.ctrlSeq === '\\ ' || intRgx.test((_c = sibling.ctrlSeq) !== null && _c !== void 0 ? _c : '')); sibling = sibling[L]) {
-                                    if (intRgx.test(sibling.ctrlSeq)) {
-                                        sawDigit = true;
-                                    }
+                        else if (denText === '5') {
+                            newDenSpeech = isSingular ? 'fifth' : 'fifths';
+                        }
+                        else if (denText === '6') {
+                            newDenSpeech = isSingular ? 'sixth' : 'sixths';
+                        }
+                        else if (denText === '7') {
+                            newDenSpeech = isSingular ? 'seventh' : 'sevenths';
+                        }
+                        else if (denText === '8') {
+                            newDenSpeech = isSingular ? 'eighth' : 'eighths';
+                        }
+                        else if (denText === '9') {
+                            newDenSpeech = isSingular ? 'ninth' : 'ninths';
+                        }
+                        else if (denText === '10') {
+                            newDenSpeech = isSingular ? 'tenth' : 'tenths';
+                        }
+                        else if (denText === '11') {
+                            newDenSpeech = isSingular ? 'eleventh' : 'elevenths';
+                        }
+                        else if (denText === '12') {
+                            newDenSpeech = isSingular ? 'twelfth' : 'twelfths';
+                        }
+                        else if (denText === '100') {
+                            newDenSpeech = isSingular ? 'hundredth' : 'hundredths';
+                        }
+                        if (newDenSpeech !== '') {
+                            var output = '';
+                            // Handle the case of an integer followed by a simplified fraction such as 1\frac{1}{2}.
+                            // Such combinations should be spoken aloud as "1 and 1 half."
+                            // Start at the left sibling of the fraction and continue leftward until something other than a digit or whitespace is found.
+                            var sawDigit = false;
+                            var sibling = void 0;
+                            // Scan until you see something other than a digit or space
+                            for (sibling = this[L]; sibling &&
+                                sibling.ctrlSeq &&
+                                (sibling.ctrlSeq === '\\ ' || intRgx.test((_c = sibling.ctrlSeq) !== null && _c !== void 0 ? _c : '')); sibling = sibling[L]) {
+                                if (intRgx.test(sibling.ctrlSeq)) {
+                                    sawDigit = true;
                                 }
-                                var lastNodeSeen = sibling;
-                                // `precededByInteger` is true if everything we saw while scanning is digits and spaces, and
-                                // we saw at least one digit.
-                                var precededByInteger = sawDigit && !(lastNodeSeen && lastNodeSeen.ctrlSeq === '.');
-                                if (precededByInteger) {
-                                    output += 'and ';
-                                }
-                                output += this.getEnd(L).mathspeak() + ' ' + newDenSpeech;
-                                return output;
                             }
+                            var lastNodeSeen = sibling;
+                            // `precededByInteger` is true if everything we saw while scanning is digits and spaces, and
+                            // we saw at least one digit.
+                            var precededByInteger = sawDigit && !(lastNodeSeen && lastNodeSeen.ctrlSeq === '.');
+                            if (precededByInteger) {
+                                output += 'and ';
+                            }
+                            output += this.getEnd(L).mathspeak() + ' ' + newDenSpeech;
+                            return output;
                         }
-                        return _super.prototype.mathspeak.call(this);
+                    }
+                    return _super.prototype.mathspeak.call(this);
+                };
+                FracNode.prototype.getFracDepth = function () {
+                    var level = 0;
+                    var walkUp = function (item, level) {
+                        if (item instanceof MQNode &&
+                            item.ctrlSeq &&
+                            item.ctrlSeq.toLowerCase().search('frac') >= 0)
+                            level += 1;
+                        if (item && item.parent)
+                            return walkUp(item.parent, level);
+                        else
+                            return level;
                     };
-                    FracNode.prototype.getFracDepth = function () {
-                        var level = 0;
-                        var walkUp = function (item, level) {
-                            if (item instanceof MQNode &&
-                                item.ctrlSeq &&
-                                item.ctrlSeq.toLowerCase().search('frac') >= 0)
-                                level += 1;
-                            if (item && item.parent)
-                                return walkUp(item.parent, level);
-                            else
-                                return level;
-                        };
-                        return walkUp(this, level);
-                    };
-                    return FracNode;
-                }(MathCommand)));
+                    return walkUp(this, level);
+                };
+                return FracNode;
+            }(MathCommand)));
+    // \cfrac[lcr] takes an optional alignment arg before the two
+    // fraction blocks — consume it so [l] can't parse as a { [ } { l ]
+    // "fraction". Serialized canonically as \frac like \dfrac/\tfrac.
+    LatexCmds.cfrac = /** @class */ (function (_super) {
+        __extends(cfrac, _super);
+        function cfrac() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        cfrac.prototype.parser = function () {
+            var self = this;
+            return Parser.regex(/^\[(?:[lcr])\]/)
+                .or(Parser.succeed(''))
+                .then(function () {
+                return Fraction.prototype.parser.call(self);
+            });
+        };
+        return cfrac;
+    }(Fraction));
     var LiveFraction = (LatexCmds.over =
         CharCmds['/'] = /** @class */ (function (_super) {
-            __extends(class_12, _super);
-            function class_12() {
+            __extends(class_25, _super);
+            function class_25() {
                 return _super !== null && _super.apply(this, arguments) || this;
             }
-            class_12.prototype.createLeftOf = function (cursor) {
+            // Pasted `a\over b` (infix) can't bind `a` — the two-block parse
+            // fails. Fall back to a visible `\over` leaf so the input keeps
+            // its text instead of blanking the field. The typed `\over`→
+            // fraction path is unaffected (it goes through createLeftOf).
+            // MathCommand's strict parser is invoked directly: parser()
+            // falls back to a bare \frac leaf that would shadow \over's.
+            class_25.prototype.parser = function () {
+                return MathCommand.prototype.strictParser.call(this).or(Parser.succeed(new VanillaSymbol('\\over ', h.text('\\over'), 'over')));
+            };
+            class_25.prototype.createLeftOf = function (cursor) {
                 if (!this.replacedFragment) {
                     var leftward = cursor[L];
                     var dontScan = cursor.options.typingSlashCreatesNewFraction &&
@@ -9271,12 +11011,14 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                                     leftward._groupingClass === 'mq-ellipsis-end') ||
                                 leftward instanceof (LatexCmds.text || noop) ||
                                 leftward instanceof SummationNotation ||
+                                leftward instanceof BoundlessIntegral ||
                                 leftward.ctrlSeq === '\\ ' ||
                                 /^[,;:]$/.test(leftward.ctrlSeq)) //lookbehind for operator
                         )
                             leftward = leftward[L];
                     }
-                    if (leftward instanceof SummationNotation &&
+                    if ((leftward instanceof SummationNotation ||
+                        leftward instanceof BoundlessIntegral) &&
                         leftward[R] instanceof SupSub) {
                         // The previous step scanned too far. `\sum_1^5` looks like [SummationNotation,SupSub],
                         // so scan back right
@@ -9298,7 +11040,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 }
                 _super.prototype.createLeftOf.call(this, cursor);
             };
-            return class_12;
+            return class_25;
         }(Fraction)));
     var AnsBuilder = function () {
         return new MQSymbol('\\operatorname{ans}', h('span', { class: 'mq-ans' }, [h.text('ans')]), 'ans');
@@ -9456,6 +11198,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         }
         return Hat;
     }(MathCommand));
+    // \widehat is the wide variant of \hat; render it with the same atom
+    // (serializes back as \hat).
+    LatexCmds.widehat = LatexCmds.hat;
     var NthRoot = /** @class */ (function (_super) {
         __extends(NthRoot, _super);
         function NthRoot() {
@@ -9507,28 +11252,43 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     }(SquareRoot));
     LatexCmds.nthroot = NthRoot;
     LatexCmds.cbrt = /** @class */ (function (_super) {
-        __extends(class_13, _super);
-        function class_13() {
+        __extends(class_26, _super);
+        function class_26() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_13.prototype.createLeftOf = function (cursor) {
+        class_26.prototype.createLeftOf = function (cursor) {
             _super.prototype.createLeftOf.call(this, cursor);
             new Digit('3').createLeftOf(cursor);
             cursor.controller.moveRight();
         };
-        return class_13;
+        return class_26;
     }(NthRoot));
     var DiacriticAbove = /** @class */ (function (_super) {
         __extends(DiacriticAbove, _super);
         function DiacriticAbove(ctrlSeq, html, textTemplate) {
+            var _this_1 = this;
             var domView = new DOMView(1, function (blocks) {
                 return h('span', { class: 'mq-non-leaf' }, [
                     h('span', { class: 'mq-diacritic-above' }, [html]),
                     h.block('span', { class: 'mq-diacritic-stem' }, blocks[0])
                 ]);
             });
-            return _super.call(this, ctrlSeq, domView, textTemplate) || this;
+            _this_1 = _super.call(this, ctrlSeq, domView, textTemplate) || this;
+            _this_1.accentHtml = html;
+            return _this_1;
         }
+        // An accent with no block following degrades to a standalone mark —
+        // `f\'` still parses (as f + a bare ´) instead of failing the field.
+        DiacriticAbove.prototype.parser = function () {
+            var self = this;
+            return latexMathParser.block
+                .map(function (b) {
+                self.blocks = [b];
+                b.adopt(self, 0, 0);
+                return self;
+            })
+                .or(Parser.succeed(new VanillaSymbol(self.ctrlSeq + ' ', self.accentHtml.cloneNode(true))));
+        };
         return DiacriticAbove;
     }(MathCommand));
     LatexCmds.vec = function () {
@@ -9536,6 +11296,527 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     };
     LatexCmds.tilde = function () {
         return new DiacriticAbove('\\tilde', h.text('~'), ['tilde(', ')']);
+    };
+    LatexCmds.ddot = function () {
+        return new DiacriticAbove('\\ddot', h.text('¨'), ['ddot(', ')']);
+    };
+    LatexCmds.dddot = function () {
+        return new DiacriticAbove('\\dddot', h.text('...'), ['dddot(', ')']);
+    };
+    var DiacriticBelow = /** @class */ (function (_super) {
+        __extends(DiacriticBelow, _super);
+        function DiacriticBelow(ctrlSeq, html, textTemplate) {
+            var _this_1 = _super.call(this, ctrlSeq, html, textTemplate) || this;
+            _this_1.domView = new DOMView(1, function (blocks) {
+                return h('span', { class: 'mq-non-leaf' }, [
+                    h.block('span', { class: 'mq-diacritic-stem' }, blocks[0]),
+                    h('span', { class: 'mq-diacritic-below' }, [html])
+                ]);
+            });
+            return _this_1;
+        }
+        return DiacriticBelow;
+    }(DiacriticAbove));
+    // \xrightarrow{label} / \xleftarrow / \xmapsto and friends — a small
+    // label over an extensible-looking arrow; the arrow is a fixed glyph.
+    // \xrightarrow[under]{over} puts a second label below the arrow
+    // (amsmath), parsed like \sqrt[n]{x}'s optional block.
+    var XArrowWithUnder = /** @class */ (function (_super) {
+        __extends(XArrowWithUnder, _super);
+        function XArrowWithUnder(ctrlSeq, arrow) {
+            return _super.call(this, ctrlSeq, new DOMView(2, function (blocks) {
+                return h('span', { class: 'mq-non-leaf mq-overunderset' }, [
+                    h.block('span', { class: 'mq-overscript' }, blocks[1]),
+                    h('span', { class: 'mq-xarrow' }, [h.text(arrow)]),
+                    h.block('span', { class: 'mq-underscript' }, blocks[0])
+                ]);
+            })) || this;
+        }
+        XArrowWithUnder.prototype.latexRecursive = function (ctx) {
+            this.checkCursorContextOpen(ctx);
+            ctx.uncleanedLatex += this.ctrlSeq + '[';
+            this.getEnd(L).latexRecursive(ctx);
+            ctx.uncleanedLatex += ']{';
+            this.getEnd(R).latexRecursive(ctx);
+            ctx.uncleanedLatex += '}';
+            this.checkCursorContextClose(ctx);
+        };
+        return XArrowWithUnder;
+    }(MathCommand));
+    function bindArrowLabelCmd(ctrlSeq, arrow) {
+        return function () {
+            return new (/** @class */ (function (_super) {
+                __extends(class_27, _super);
+                function class_27() {
+                    return _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
+                        return h('span', { class: 'mq-non-leaf mq-overunderset' }, [
+                            h.block('span', { class: 'mq-overscript' }, blocks[0]),
+                            h('span', { class: 'mq-xarrow' }, [h.text(arrow)])
+                        ]);
+                    })) || this;
+                }
+                class_27.prototype.parser = function () {
+                    var self = this;
+                    return latexMathParser.optBlock
+                        .then(function (optBlock) {
+                        return latexMathParser.block.map(function (block) {
+                            var xa = new XArrowWithUnder(ctrlSeq, arrow);
+                            xa.blocks = [optBlock, block];
+                            optBlock.adopt(xa, 0, 0);
+                            block.adopt(xa, optBlock, 0);
+                            return xa;
+                        });
+                    })
+                        .or(_super.prototype.parser.call(this))
+                        .or(Parser.succeed(new VanillaSymbol(ctrlSeq + ' ', h.text(arrow), ctrlSeq.slice(1))));
+                };
+                return class_27;
+            }(MathCommand)))();
+        };
+    }
+    LatexCmds.xrightarrow = bindArrowLabelCmd('\\xrightarrow', '⟶');
+    LatexCmds.xleftarrow = bindArrowLabelCmd('\\xleftarrow', '⟵');
+    LatexCmds.xmapsto = bindArrowLabelCmd('\\xmapsto', '⟼');
+    LatexCmds.xRightarrow = bindArrowLabelCmd('\\xRightarrow', '⟹');
+    LatexCmds.xLeftarrow = bindArrowLabelCmd('\\xLeftarrow', '⟸');
+    LatexCmds.xLeftrightarrow = bindArrowLabelCmd('\\xLeftrightarrow', '⟺');
+    LatexCmds.xleftrightarrow = bindArrowLabelCmd('\\xleftrightarrow', '⟷');
+    LatexCmds.xhookleftarrow = bindArrowLabelCmd('\\xhookleftarrow', '↩');
+    LatexCmds.xhookrightarrow = bindArrowLabelCmd('\\xhookrightarrow', '↪');
+    LatexCmds.xrightharpoondown = bindArrowLabelCmd('\\xrightharpoondown', '⇀');
+    LatexCmds.xrightharpoonup = bindArrowLabelCmd('\\xrightharpoonup', '⇁');
+    LatexCmds.xleftharpoondown = bindArrowLabelCmd('\\xleftharpoondown', '↽');
+    LatexCmds.xleftharpoonup = bindArrowLabelCmd('\\xleftharpoonup', '↼');
+    LatexCmds.xrightleftharpoons = bindArrowLabelCmd('\\xrightleftharpoons', '⇌');
+    LatexCmds.xleftrightharpoons = bindArrowLabelCmd('\\xleftrightharpoons', '⇋');
+    LatexCmds.xhookleftarrow = bindArrowLabelCmd('\\xhookleftarrow', '↩');
+    LatexCmds.xhookrightarrow = bindArrowLabelCmd('\\xhookrightarrow', '↪');
+    LatexCmds.xLongrightarrow = bindArrowLabelCmd('\\xLongrightarrow', '⟶');
+    LatexCmds.xLongleftarrow = bindArrowLabelCmd('\\xLongleftarrow', '⟵');
+    LatexCmds.xtwoheadrightarrow = bindArrowLabelCmd('\\xtwoheadrightarrow', '↠');
+    LatexCmds.xtwoheadleftarrow = bindArrowLabelCmd('\\xtwoheadleftarrow', '↞');
+    LatexCmds.xtofrom = bindArrowLabelCmd('\\xtofrom', '⇄');
+    // \cancel \bcancel \xcancel — struck-through content.
+    function bindCancelCmd(ctrlSeq, cls) {
+        return function () {
+            return new MathCommand(ctrlSeq, new DOMView(1, function (blocks) {
+                return h('span', { class: 'mq-non-leaf mq-cancel ' + cls }, [
+                    h.block('span', {}, blocks[0])
+                ]);
+            }));
+        };
+    }
+    // \cancelto{result}{expr} — content struck through with an arrow
+    // pointing at the result term.
+    LatexCmds.cancelto = function () {
+        return new MathCommand('\\cancelto', new DOMView(2, function (blocks) {
+            return h('span', { class: 'mq-non-leaf mq-cancel mq-cancelto' }, [
+                h.block('span', { class: 'mq-cancelto-arrow' }, blocks[0]),
+                h.block('span', {}, blocks[1])
+            ]);
+        }));
+    };
+    LatexCmds.cancel = bindCancelCmd('\\cancel', 'mq-cancel-forward');
+    LatexCmds.bcancel = bindCancelCmd('\\bcancel', 'mq-cancel-back');
+    LatexCmds.xcancel = bindCancelCmd('\\xcancel', 'mq-cancel-both');
+    // \big \Big \bigg \Bigg sized delimiters (with optional l/r/m suffix)
+    // and \middle — a sized-delimiter prefix consumes the following
+    // delimiter token and renders that glyph, keeping the prefix in the
+    // ctrlSeq so `\bigl(` serializes verbatim.
+    var DELIM_GLYPHS = {
+        '(': '(',
+        ')': ')',
+        '[': '[',
+        ']': ']',
+        '{': '{',
+        '}': '}',
+        '|': '|',
+        '<': '⟨',
+        '>': '⟩',
+        '/': '/',
+        '.': '',
+        '\\{': '{',
+        '\\}': '}',
+        '\\|': '‖',
+        '\\langle': '⟨',
+        '\\rangle': '⟩',
+        '\\lVert': '‖',
+        '\\rVert': '‖',
+        '\\lceil': '⌈',
+        '\\rceil': '⌉',
+        '\\lfloor': '⌊',
+        '\\rfloor': '⌋',
+        '\\backslash': '\\',
+        '\\ulcorner': '⌜',
+        '\\urcorner': '⌝',
+        '\\llcorner': '⌞',
+        '\\lrcorner': '⌟',
+        '\\uparrow': '↑',
+        '\\downarrow': '↓',
+        '\\updownarrow': '↕',
+        '\\Uparrow': '⇑',
+        '\\Downarrow': '⇓',
+        '\\Updownarrow': '⇕'
+    };
+    var SizedDelimiter = /** @class */ (function (_super) {
+        __extends(SizedDelimiter, _super);
+        function SizedDelimiter(prefix) {
+            var _this_1 = _super.call(this) || this;
+            _this_1.prefix = prefix;
+            return _this_1;
+        }
+        SizedDelimiter.prototype.parser = function () {
+            var self = this;
+            return Parser.optWhitespace
+                .then(Parser.regex(/^(?:\\[a-zA-Z]+|\\[^a-zA-Z\s]|[.()[\]{}/|<>])/))
+                .map(function (delim) {
+                // A \langle-style delimiter needs a trailing space in the
+                // emitted ctrlSeq — otherwise `\Bigg\langle x` would serialize
+                // as `\Bigg\langlex` and glue into an unknown command.
+                self.ctrlSeq =
+                    self.prefix + delim + (/^\\[a-zA-Z]+$/.test(delim) ? ' ' : '');
+                var glyph = DELIM_GLYPHS[delim];
+                if (glyph === undefined)
+                    glyph = delim.replace(/^\\/, '');
+                self.domView = new DOMView(0, function () {
+                    return h('span', { class: 'mq-sized-delim' }, [h.text(glyph)]);
+                });
+                return self;
+            });
+        };
+        return SizedDelimiter;
+    }(MQSymbol));
+    (function () {
+        ['big', 'Big', 'bigg', 'Bigg'].forEach(function (size) {
+            ['l', 'r', 'm', ''].forEach(function (side) {
+                LatexCmds[size + side] = function () {
+                    return new SizedDelimiter('\\' + size + side);
+                };
+            });
+        });
+        LatexCmds.middle = function () {
+            return new SizedDelimiter('\\middle');
+        };
+    })();
+    // A bare \\ at any level is a hard line break — the matrix/displaylines
+    // cell-grid parsers consume \\ as a row delimiter before node parsing
+    // reaches it, so this only kicks in outside grids (e.g. pasting `x\\ y`).
+    LatexCmds['\\'] = function () {
+        return new VanillaSymbol('\\\\', h('br', {}, []), 'line break');
+    };
+    // \cr is the plain-TeX row separator — inside a grid it is cell content
+    // (the cellsParser only splits on \\), so it round-trips verbatim and
+    // renders as a line break.
+    LatexCmds.cr = function () {
+        return new VanillaSymbol('\\cr ', h('br', {}, []), 'line break');
+    };
+    // Escaped single-char accents (registered under their backslash-escaped
+    // ctrlSeq). `\'` intentionally falls back to the bare ' prime — TeX's
+    // acute accent is available as \acute.
+    LatexCmds['\\`'] = function () {
+        return new DiacriticAbove('\\`', h.text('`'), ['grave(', ')']);
+    };
+    LatexCmds['\\"'] = function () {
+        return new DiacriticAbove('\\"', h.text('¨'), ['umlaut(', ')']);
+    };
+    LatexCmds['\\~'] = function () {
+        return new DiacriticAbove('\\~', h.text('~'), ['tilde(', ')']);
+    };
+    LatexCmds['\\='] = function () {
+        return new DiacriticAbove('\\=', h.text('¯'), ['bar(', ')']);
+    };
+    LatexCmds['\\.'] = function () {
+        return new DiacriticAbove('\\.', h.text('˙'), ['dot(', ')']);
+    };
+    LatexCmds['\\^'] = function () {
+        return new DiacriticAbove('\\^', h.text('^'), ['hat(', ')']);
+    };
+    // Arrow/segment diacritics and group marks.
+    LatexCmds.overleftharpoon = function () {
+        return new DiacriticAbove('\\overleftharpoon', h.text('↼'), ['overleft harpoon(', ')']);
+    };
+    LatexCmds.overrightharpoon = function () {
+        return new DiacriticAbove('\\overrightharpoon', h.text('⇀'), ['overright harpoon(', ')']);
+    };
+    LatexCmds.overlinesegment = function () {
+        return new DiacriticAbove('\\overlinesegment', h.text('―'), ['overline segment(', ')']);
+    };
+    LatexCmds.underleftarrow = function () {
+        return new DiacriticBelow('\\underleftarrow', h.text('←'), ['underleftarrow(', ')']);
+    };
+    LatexCmds.underrightarrow = function () {
+        return new DiacriticBelow('\\underrightarrow', h.text('→'), ['underrightarrow(', ')']);
+    };
+    // One-block under/over marks that draw an arc glyph above or below
+    // their argument (\overgroup, \overbracket, \wideparen, …).
+    // \underbrace/\overbrace are NOT registered here — the Style-based
+    // versions near the top own those names.
+    var UnderOverBrace = /** @class */ (function (_super) {
+        __extends(UnderOverBrace, _super);
+        function UnderOverBrace(ctrlSeq, below, glyph) {
+            var _this_1 = _super.call(this) || this;
+            _this_1.ctrlSeq = ctrlSeq;
+            var mark = h('span', { class: 'mq-underbrace-arc' }, [
+                h.text(glyph || (below ? '⏟' : '⏞'))
+            ]);
+            _this_1.domView = new DOMView(1, function (blocks) {
+                return h('span', { class: 'mq-non-leaf mq-underoverbrace' }, below
+                    ? [h.block('span', {}, blocks[0]), mark]
+                    : [mark, h.block('span', {}, blocks[0])]);
+            });
+            return _this_1;
+        }
+        return UnderOverBrace;
+    }(MathCommand));
+    LatexCmds.overgroup = function () { return new UnderOverBrace('\\overgroup', false); };
+    LatexCmds.undergroup = function () { return new UnderOverBrace('\\undergroup', true); };
+    LatexCmds.overbracket = function () {
+        return new UnderOverBrace('\\overbracket', false, '⎴');
+    };
+    LatexCmds.underbracket = function () {
+        return new UnderOverBrace('\\underbracket', true, '⎵');
+    };
+    LatexCmds.underparen = function () {
+        return new UnderOverBrace('\\underparen', true, '⏝');
+    };
+    LatexCmds.overparen = function () {
+        return new UnderOverBrace('\\overparen', false, '⏜');
+    };
+    // \wideparen is amssymb's name for the same glyph as \overparen.
+    LatexCmds.wideparen = function () {
+        return new UnderOverBrace('\\wideparen', false, '⏜');
+    };
+    // Word-form accents missing upstream (the bare-word variants of the
+    // escaped accents \' \` \v \u and \ddddot).
+    LatexCmds.check = function () {
+        return new DiacriticAbove('\\check', h.text('ˇ'), ['check(', ')']);
+    };
+    LatexCmds.breve = function () {
+        return new DiacriticAbove('\\breve', h.text('˘'), ['breve(', ')']);
+    };
+    LatexCmds.acute = function () {
+        return new DiacriticAbove('\\acute', h.text('´'), ['acute(', ')']);
+    };
+    LatexCmds.grave = function () {
+        return new DiacriticAbove('\\grave', h.text('`'), ['grave(', ')']);
+    };
+    LatexCmds.ddddot = function () {
+        return new DiacriticAbove('\\ddddot', h.text('....'), ['ddddot(', ')']);
+    };
+    LatexCmds.overleftharp = function () {
+        return new DiacriticAbove('\\overleftharp', h.text('↼'), ['overleft harp(', ')']);
+    };
+    LatexCmds.overrightharp = function () {
+        return new DiacriticAbove('\\overrightharp', h.text('⇀'), ['overright harp(', ')']);
+    };
+    // Physics bra-ket notation: \bra{x} → ⟨x|, \ket{x} → |x⟩,
+    // \braket{x|y} → ⟨x|y⟩ (one block, | is content), \ketbra → |x⟩⟨y|.
+    function bindBraKet(ctrlSeq, open, close) {
+        return function () {
+            return new MathCommand(ctrlSeq, new DOMView(1, function (blocks) {
+                return h('span', { class: 'mq-non-leaf' }, [
+                    h('span', {}, [h.entityText(open)]),
+                    h.block('span', {}, blocks[0]),
+                    h('span', {}, [h.entityText(close)])
+                ]);
+            }));
+        };
+    }
+    LatexCmds.bra = bindBraKet('\\bra', '&lang;', '|');
+    LatexCmds.ket = bindBraKet('\\ket', '|', '&rang;');
+    LatexCmds.braket = function () {
+        return new MathCommand('\\braket', new DOMView(1, function (blocks) {
+            return h('span', { class: 'mq-non-leaf' }, [
+                h('span', {}, [h.entityText('&lang;')]),
+                h.block('span', {}, blocks[0]),
+                h('span', {}, [h.entityText('&rang;')])
+            ]);
+        }));
+    };
+    LatexCmds.ketbra = function () {
+        return new MathCommand('\\ketbra', new DOMView(2, function (blocks) {
+            return h('span', { class: 'mq-non-leaf' }, [
+                h('span', {}, [h.text('|')]),
+                h.block('span', {}, blocks[0]),
+                h('span', {}, [h.entityText('&rang;'), h.entityText('&lang;')]),
+                h.block('span', {}, blocks[1]),
+                h('span', {}, [h.text('|')])
+            ]);
+        }));
+    };
+    // \[ \] \( \) display-math wrappers parse as bracket glyphs so pasted
+    // display math keeps its delimiters (registered under the escaped
+    // ctrlSeq — bare ( ) [ ] still go through the symbol fallback).
+    LatexCmds['\\['] = function () {
+        return new VanillaSymbol('\\[', h.text('['), 'open display math');
+    };
+    LatexCmds['\\]'] = function () {
+        return new VanillaSymbol('\\]', h.text(']'), 'close display math');
+    };
+    LatexCmds['\\('] = function () {
+        return new VanillaSymbol('\\(', h.text('('), 'open inline math');
+    };
+    LatexCmds['\\)'] = function () {
+        return new VanillaSymbol('\\)', h.text(')'), 'close inline math');
+    };
+    // style switches (\displaystyle … \nolimits) — invisible atoms that
+    // serialize their command verbatim. \limits/\nolimits sit between an
+    // operator and its bounds; the bound then attaches to this zero-width
+    // atom, so `\sum\limits_{i}` renders like `\sum_{i}` and round-trips.
+    // NOTE: defined here (not advancedSymbols.ts) so the mathquill-basic
+    // bundle — which concatenates commands.ts but not advancedSymbols.ts —
+    // can use it too.
+    function bindStyleModifier(ctrlSeq, mathspeak) {
+        return function () {
+            return new VanillaSymbol(ctrlSeq, h('span', { class: 'mq-style-modifier' }), mathspeak);
+        };
+    }
+    // Matrix rules — invisible in the grid, serialize verbatim.
+    LatexCmds.hline = bindStyleModifier('\\hline ', 'h line');
+    LatexCmds.hdashline = bindStyleModifier('\\hdashline ', 'h dash line');
+    LatexCmds.midrule = bindStyleModifier('\\midrule ', 'mid rule');
+    LatexCmds.toprule = bindStyleModifier('\\toprule ', 'top rule');
+    LatexCmds.bottomrule = bindStyleModifier('\\bottomrule ', 'bottom rule');
+    LatexCmds.cline = function () {
+        return new MathCommand('\\cline', new DOMView(1, function (blocks) {
+            return h('span', { class: 'mq-invisible' }, [
+                h.block('span', {}, blocks[0])
+            ]);
+        }));
+    };
+    LatexCmds.cmidrule = function () {
+        return new MathCommand('\\cmidrule', new DOMView(1, function (blocks) {
+            return h('span', { class: 'mq-invisible' }, [
+                h.block('span', {}, blocks[0])
+            ]);
+        }));
+    };
+    // \llap \rlap \clap \smash — overlap boxes; content renders inline.
+    function bindOverlapCmd(ctrlSeq, cls, optRegex) {
+        return function () {
+            return new (/** @class */ (function (_super) {
+                __extends(class_28, _super);
+                function class_28() {
+                    var _this_1 = _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
+                        return h('span', { class: 'mq-non-leaf ' + cls }, [
+                            h.block('span', {}, blocks[0])
+                        ]);
+                    })) || this;
+                    _this_1.optText = '';
+                    return _this_1;
+                }
+                // An overlap command with no following block degrades to a bare
+                // \name leaf instead of failing the parse.
+                class_28.prototype.parser = function () {
+                    var self = this;
+                    return (optRegex
+                        ? Parser.regex(new RegExp('^' + optRegex))
+                            .or(Parser.succeed(''))
+                            .then(function (opt) {
+                            self.optText = opt;
+                            return latexMathParser.block;
+                        })
+                        : latexMathParser.block)
+                        .map(function (b) {
+                        self.blocks = [b];
+                        b.adopt(self, 0, 0);
+                        return self;
+                    })
+                        .or(Parser.succeed(new VanillaSymbol(ctrlSeq + ' ', h.text(ctrlSeq), ctrlSeq.replace(/\\/g, ''))));
+                };
+                class_28.prototype.latexRecursive = function (ctx) {
+                    this.checkCursorContextOpen(ctx);
+                    ctx.uncleanedLatex += this.ctrlSeq + this.optText + '{';
+                    this.blocks[0].latexRecursive(ctx);
+                    ctx.uncleanedLatex += '}';
+                    this.checkCursorContextClose(ctx);
+                };
+                return class_28;
+            }(MathCommand)))();
+        };
+    }
+    LatexCmds.llap = bindOverlapCmd('\\llap', 'mq-llap');
+    LatexCmds.rlap = bindOverlapCmd('\\rlap', 'mq-rlap');
+    LatexCmds.clap = bindOverlapCmd('\\clap', 'mq-clap');
+    LatexCmds.smash = bindOverlapCmd('\\smash', 'mq-smash', '\\[(?:[tb])\\]');
+    LatexCmds.mathllap = bindOverlapCmd('\\mathllap', 'mq-llap');
+    LatexCmds.mathrlap = bindOverlapCmd('\\mathrlap', 'mq-rlap');
+    LatexCmds.mathclap = bindOverlapCmd('\\mathclap', 'mq-clap');
+    LatexCmds.mathstrut = bindStyleModifier('\\mathstrut ', 'math strut');
+    LatexCmds.strut = bindStyleModifier('\\strut ', 'strut');
+    // \iiint \idotsint \ointctrclockwise \varointclockwise — boundless
+    // integral signs like \iint.
+    LatexCmds['∭'] = LatexCmds.iiint = boundlessIntegral('\\iiint ', '&#8749;', 'triple integral');
+    LatexCmds.idotsint = boundlessIntegral('\\idotsint ', '&#8944;', 'dots integral');
+    LatexCmds['∳'] = LatexCmds.ointctrclockwise = boundlessIntegral('\\ointctrclockwise ', '&#8755;', 'counterclockwise contour integral');
+    LatexCmds['∲'] = LatexCmds.varointclockwise = boundlessIntegral('\\varointclockwise ', '&#8754;', 'clockwise contour integral');
+    LatexCmds.bigsqcap = LatexCmds.bigsqcapdot = function () {
+        return new SummationNotation('\\bigsqcap ', '&#8853;', 'square intersection');
+    };
+    LatexCmds.varinjlim = function () {
+        return new SummationNotation('\\varinjlim ', 'lim&#8594;', 'direct limit');
+    };
+    LatexCmds.varprojlim = function () {
+        return new SummationNotation('\\varprojlim ', 'lim&#8592;', 'inverse limit');
+    };
+    // \fbox/\framebox — boxed frames; \nicefrac canonicalizes to \frac.
+    LatexCmds.fbox = function () {
+        return new Style('\\fbox', 'span', { class: 'mq-non-leaf mq-fbox' }, 'Boxed');
+    };
+    // \makebox[w][pos]{x} / \framebox[w][pos]{x} / \raisebox{d}[ht][dp]{x}
+    // — a content block preceded by up to two optional bracket args.
+    // (defined here, not advancedSymbols.ts, so the mathquill-basic bundle —
+    // which concatenates commands.ts but not advancedSymbols.ts — can use it)
+    function bindOptBracketCmd(ctrlSeq, maxOpt, speak) {
+        return /** @class */ (function (_super) {
+            __extends(class_29, _super);
+            function class_29() {
+                var _this_1 = _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
+                    return h('span', { class: 'mq-non-leaf' }, [
+                        h.block('span', {}, blocks[0])
+                    ]);
+                })) || this;
+                _this_1.optText = '';
+                return _this_1;
+            }
+            class_29.prototype.parser = function () {
+                var self = this;
+                return Parser.regex(new RegExp('^(?:\\[[^\\]]*\\]){0,' + maxOpt + '}'))
+                    .then(function (opt) {
+                    self.optText = opt;
+                    return latexMathParser.block;
+                })
+                    .map(function (b) {
+                    self.blocks = [b];
+                    b.adopt(self, 0, 0);
+                    return self;
+                });
+            };
+            class_29.prototype.latexRecursive = function (ctx) {
+                this.checkCursorContextOpen(ctx);
+                ctx.uncleanedLatex += this.ctrlSeq + this.optText + '{';
+                this.blocks[0].latexRecursive(ctx);
+                ctx.uncleanedLatex += '}';
+                this.checkCursorContextClose(ctx);
+            };
+            return class_29;
+        }(MathCommand));
+    }
+    // \framebox keeps optional [width][pos] args like \makebox.
+    LatexCmds.framebox = bindOptBracketCmd('\\framebox', 2, 'frame box');
+    LatexCmds.nicefrac = LatexCmds.frac;
+    // Bold-symbol font wrappers.
+    LatexCmds.boldsymbol = function () {
+        return new Style('\\boldsymbol', 'span', { class: 'mq-non-leaf mq-bf mq-it' }, 'Bold Symbol');
+    };
+    LatexCmds.pmb = function () {
+        return new Style('\\pmb', 'span', { class: 'mq-non-leaf mq-bf' }, 'Poor Mans Bold');
+    };
+    LatexCmds.bm = function () {
+        return new Style('\\bm', 'span', { class: 'mq-non-leaf mq-bf mq-it' }, 'Bold');
+    };
+    LatexCmds.mathbfit = function () {
+        return new Style('\\mathbfit', 'span', { class: 'mq-non-leaf mq-bf mq-it' }, 'Bold Italic');
     };
     var DelimsNode = /** @class */ (function (_super) {
         __extends(DelimsNode, _super);
@@ -9606,7 +11887,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         };
         Bracket.prototype.getSymbol = function (side) {
             var ch = this.sides[side || R].ch;
-            return SVG_SYMBOLS[ch] || { width: '0', html: '' };
+            // a delimiter with no glyph (the invisible `\left.`/`\right.` null
+            // delimiter) renders as a zero-width span
+            return SVG_SYMBOLS[ch] || { width: '0', html: function () { return h.text(''); } };
         };
         Bracket.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
@@ -9856,7 +12139,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var BRACKET_NAMES = {
         '&lang;': 'angle-bracket',
         '&rang;': 'angle-bracket',
-        '|': 'pipe'
+        '|': 'pipe',
+        '.': 'null-delimiter'
     };
     function bindCharBracketPair(open, ctrlSeq, name) {
         var ctrlSeq = ctrlSeq || open;
@@ -9869,30 +12153,52 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     bindCharBracketPair('(', '', 'parenthesis');
     bindCharBracketPair('[', '', 'bracket');
     bindCharBracketPair('{', '\\{', 'brace');
+    // Typed \langle auto-pairs like every Bracket; a standalone \langle x
+    // parses as a plain ⟨ symbol because a one-sided Bracket fails its own
+    // parser and blanks the field. Same for \rangle, \lVert, \rVert below.
+    var StandaloneBracket = /** @class */ (function (_super) {
+        __extends(StandaloneBracket, _super);
+        function StandaloneBracket(side, open, close, ctrlSeq, end, mathspeak) {
+            var _this_1 = _super.call(this, side, open, close, ctrlSeq, end) || this;
+            _this_1.parseSymbol = new VanillaSymbol(ctrlSeq, h.entityText(side === L ? open : close), mathspeak);
+            return _this_1;
+        }
+        StandaloneBracket.prototype.parser = function () {
+            return Parser.succeed(this.parseSymbol);
+        };
+        return StandaloneBracket;
+    }(Bracket));
     LatexCmds.langle = function () {
-        return new Bracket(L, '&lang;', '&rang;', '\\langle ', '\\rangle ');
+        return new StandaloneBracket(L, '&lang;', '&rang;', '\\langle ', '\\rangle ', 'left angle bracket');
     };
     LatexCmds.rangle = function () {
-        return new Bracket(R, '&lang;', '&rang;', '\\langle ', '\\rangle ');
+        return new StandaloneBracket(R, '&lang;', '&rang;', '\\rangle ', '\\langle ', 'right angle bracket');
     };
     CharCmds['|'] = function () { return new Bracket(L, '|', '|', '|', '|'); };
     LatexCmds.lVert = function () {
-        return new Bracket(L, '&#8741;', '&#8741;', '\\lVert ', '\\rVert ');
+        return new StandaloneBracket(L, '&#8741;', '&#8741;', '\\lVert ', '\\rVert ', 'left norm');
     };
     LatexCmds.rVert = function () {
-        return new Bracket(R, '&#8741;', '&#8741;', '\\lVert ', '\\rVert ');
+        return new StandaloneBracket(R, '&#8741;', '&#8741;', '\\rVert ', '\\lVert ', 'right norm');
     };
     LatexCmds.left = /** @class */ (function (_super) {
-        __extends(left, _super);
-        function left() {
+        __extends(class_30, _super);
+        function class_30() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        left.prototype.parser = function () {
+        // Parser-only command: the delimiter lives in the argument after
+        // \left, so a typed '\left' inserts nothing and the following
+        // delimiter keystroke auto-pairs the bracket itself.
+        class_30.prototype.createLeftOf = function () { };
+        class_30.prototype.numBlocks = function () {
+            return 1;
+        };
+        class_30.prototype.parser = function () {
             var regex = Parser.regex;
             var string = Parser.string;
             var optWhitespace = Parser.optWhitespace;
             return optWhitespace
-                .then(regex(/^(?:[([|]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z]))/))
+                .then(regex(/^(?:[([|.]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z])|\\\|)/))
                 .then(function (ctrlSeq) {
                 var open = ctrlSeq.replace(/^\\/, '');
                 if (ctrlSeq == '\\langle') {
@@ -9903,10 +12209,13 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     open = '&#8741;';
                     ctrlSeq = ctrlSeq + ' ';
                 }
+                if (ctrlSeq == '\\|') {
+                    open = '&#8741;';
+                }
                 return latexMathParser.then(function (block) {
                     return string('\\right')
                         .skip(optWhitespace)
-                        .then(regex(/^(?:[\])|]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z]))/))
+                        .then(regex(/^(?:[\])|.]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z])|\\\|)/))
                         .map(function (end) {
                         var close = end.replace(/^\\/, '');
                         if (end == '\\rangle') {
@@ -9917,6 +12226,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                             close = '&#8741;';
                             end = end + ' ';
                         }
+                        if (end == '\\|') {
+                            close = '&#8741;';
+                        }
                         var cmd = new Bracket(0, open, close, ctrlSeq, end);
                         cmd.blocks = [block];
                         block.adopt(cmd, 0, 0);
@@ -9925,18 +12237,84 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 });
             });
         };
-        return left;
+        return class_30;
     }(MathCommand));
     LatexCmds.right = /** @class */ (function (_super) {
-        __extends(right, _super);
-        function right() {
+        __extends(class_31, _super);
+        function class_31() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        right.prototype.parser = function () {
+        // Parser-only command, see \left.
+        class_31.prototype.createLeftOf = function () { };
+        class_31.prototype.numBlocks = function () {
+            return 1;
+        };
+        class_31.prototype.parser = function () {
             return Parser.fail('unmatched \\right');
         };
-        return right;
+        return class_31;
     }(MathCommand));
+    // \big| \Big| \bigg| \Bigg| — fixed-size delimiters. Parser-only (like
+    // \left): they render the delimiter glyph at a fixed scale and keep the
+    // full \big<delim> ctrlSeq so the latex round-trips.
+    var BIG_DELIM_SCALES = {
+        big: '1.2',
+        Big: '1.6',
+        bigg: '2.1',
+        Bigg: '2.6'
+    };
+    var BIG_DELIM_CHARS = {
+        '(': '(',
+        ')': ')',
+        '[': '[',
+        ']': ']',
+        '|': '|',
+        '.': '',
+        '\\{': '{',
+        '\\}': '}',
+        '\\|': '‖',
+        '\\langle': '⟨',
+        '\\rangle': '⟩',
+        '\\lVert': '‖',
+        '\\rVert': '‖'
+    };
+    var BIG_DELIM_RE = /^(?:\\langle(?![a-zA-Z])|\\rangle(?![a-zA-Z])|\\lVert(?![a-zA-Z])|\\rVert(?![a-zA-Z])|\\\{|\\\}|\\[|.]|[()\[\]|.])/;
+    var BigDelim = /** @class */ (function (_super) {
+        __extends(BigDelim, _super);
+        function BigDelim(sizeSeq) {
+            var _this_1 = _super.call(this) || this;
+            _this_1.sizeSeq = '\\big';
+            _this_1.sizeSeq = '\\' + sizeSeq;
+            return _this_1;
+        }
+        BigDelim.prototype.createLeftOf = function () { };
+        BigDelim.prototype.numBlocks = function () {
+            return 1;
+        };
+        BigDelim.prototype.parser = function () {
+            var self = this;
+            return Parser.optWhitespace
+                .then(Parser.regex(BIG_DELIM_RE))
+                .then(function (delimTok) {
+                var ch = BIG_DELIM_CHARS[delimTok];
+                if (ch === undefined)
+                    return Parser.fail('not a \\big delimiter');
+                var ctrlSeq = self.sizeSeq + (delimTok.length > 1 ? delimTok + ' ' : delimTok);
+                var scale = BIG_DELIM_SCALES[self.sizeSeq.slice(1)];
+                var inner = ch === ''
+                    ? h('span', { style: 'width:0' })
+                    : h('span', { style: 'font-size:' + scale + 'em' }, [
+                        h.text(ch)
+                    ]);
+                return Parser.succeed(new MQSymbol(ctrlSeq, h('span', {}, [inner]), undefined, 'delimiter'));
+            });
+        };
+        return BigDelim;
+    }(MathCommand));
+    LatexCmds.big = function () { return new BigDelim('big'); };
+    LatexCmds.Big = function () { return new BigDelim('Big'); };
+    LatexCmds.bigg = function () { return new BigDelim('bigg'); };
+    LatexCmds.Bigg = function () { return new BigDelim('Bigg'); };
     var leftBinomialSymbol = SVG_SYMBOLS['('];
     var rightBinomialSymbol = SVG_SYMBOLS[')'];
     var Binomial = /** @class */ (function (_super) {
@@ -9985,15 +12363,27 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         return Binomial;
     }(DelimsNode));
     LatexCmds.binom = LatexCmds.binomial = Binomial;
+    // \tfrac serializes canonically as \frac (same as \dfrac/\cfrac);
+    // \dbinom/\tbinom likewise as \binom
+    LatexCmds.tfrac = LatexCmds.frac;
+    LatexCmds.dbinom = LatexCmds.tbinom = LatexCmds.binom;
     LatexCmds.choose = /** @class */ (function (_super) {
-        __extends(class_14, _super);
-        function class_14() {
+        __extends(class_32, _super);
+        function class_32() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_14.prototype.createLeftOf = function (cursor) {
+        class_32.prototype.createLeftOf = function (cursor) {
             LiveFraction.prototype.createLeftOf.call(this, cursor);
         };
-        return class_14;
+        class_32.prototype.parser = function () {
+            // DelimsNode's strict two-block parser (Binomial.parser() falls back
+            // to a \binom leaf via MathCommand, which would shadow \choose's own
+            // fallback).
+            return DelimsNode.prototype.strictParser
+                .call(this)
+                .or(Parser.succeed(new VanillaSymbol('\\choose ', h.text('\\choose'), 'choose')));
+        };
+        return class_32;
     }(Binomial));
     var MathFieldNode = /** @class */ (function (_super) {
         __extends(MathFieldNode, _super);
@@ -10279,8 +12669,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
      *************************************************/
     var Environments = {};
     LatexCmds.begin = /** @class */ (function (_super) {
-        __extends(class_15, _super);
-        function class_15() {
+        __extends(class_33, _super);
+        function class_33() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.ctrlSeq = '\\begin';
             _this_1.domView = new DOMView(1, function (blocks) {
@@ -10292,19 +12682,27 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             });
             return _this_1;
         }
-        class_15.prototype.parser = function () {
+        class_33.prototype.parser = function () {
             var string = Parser.string;
             var regex = Parser.regex;
             return string('{')
-                .then(regex(/^[a-z]+/i))
+                .then(regex(/^[a-z*]+/i))
                 .skip(string('}'))
                 .then(function (env) {
-                return (Environments[env]
-                    ? Environments[env]().parser()
-                    : Parser.fail('unknown environment type: ' + env)).skip(string('\\end{' + env + '}'));
+                // Starred variants (align*, gather*, …) parse as their
+                // unstarred counterpart and serialize canonically.
+                var envName = env.replace(/\*/g, '');
+                if (!Environments[envName]) {
+                    // Unknown environment: keep \begin{name} as a visible leaf —
+                    // the body and \end{name} parse as ordinary content.
+                    return Parser.succeed(new VanillaSymbol('\\begin{' + env + '} ', h.text('\\begin{' + env + '}'), 'begin ' + env));
+                }
+                return Environments[envName]()
+                    .parser()
+                    .skip(string('\\end{' + env + '}'));
             });
         };
-        return class_15;
+        return class_33;
     }(MathCommand));
     // A MathCommand whose children ("cells") are laid out in a grid:
     // the matrix family (N columns, optional bracket delimiters) and
@@ -10560,7 +12958,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 .queue(cursor.parent, true);
         };
         CellGrid.prototype.tableRows = function () {
-            var table = this.domFrag().oneElement().querySelector('table');
+            var frag = this.domFrag();
+            if (frag.isEmpty())
+                return [];
+            var table = frag.oneElement().querySelector('table');
             return table ? Array.from(table.querySelectorAll('tr')) : [];
         };
         CellGrid.prototype.renderCell = function (cell) {
@@ -10784,6 +13185,11 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         MatrixCell.prototype.keystroke = function (key, e, ctrlr) {
             switch (key) {
                 case 'Shift-Spacebar':
+                    // \displaylines is a single-column grid: adding a column inside a
+                    // multi-line cell corrupts the row layout (and later crashes
+                    // addColumn on non-contiguous row indices). Matrices only.
+                    if (this.parent instanceof DisplayLines)
+                        return;
                     e === null || e === void 0 ? void 0 : e.preventDefault();
                     return this.parent.insert('addColumn', this, ctrlr);
             }
@@ -10826,7 +13232,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         return env;
     }
     Environments.matrix = function () { return new Matrix(); };
-    LatexCmds.matrix = function () { return withBraces(new Matrix()); };
+    // \matrix{...} emits the \begin{matrix} env form (like \pmatrix).
+    LatexCmds.matrix = function () { return withBraces(new MatrixEnv()); };
     var PMatrix = /** @class */ (function (_super) {
         __extends(PMatrix, _super);
         function PMatrix() {
@@ -10915,11 +13322,30 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         };
         return MatrixEnv;
     }(Matrix));
+    // \begin{cases}...\end{cases}: a left-brace grid — cells are
+    // left-aligned like real cases blocks (expr & condition columns).
+    var Cases = /** @class */ (function (_super) {
+        __extends(Cases, _super);
+        function Cases() {
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.parens = { left: '{', right: null };
+            _this_1.cellTextAlign = 'left';
+            return _this_1;
+        }
+        Cases.prototype.latexOpen = function () {
+            return '\\begin{cases}';
+        };
+        Cases.prototype.latexClose = function () {
+            return '\\end{cases}';
+        };
+        return Cases;
+    }(Matrix));
     Environments.pmatrix = function () { return new PMatrix(); };
     Environments.bmatrix = function () { return new BMatrix(); };
     Environments.Bmatrix = function () { return new BBMatrix(); };
     Environments.vmatrix = function () { return new VMatrix(); };
     Environments.Vmatrix = function () { return new VVMatrix(); };
+    Environments.cases = function () { return new Cases(); };
     // \displaylines{a\\ b}: a single-column grid for multi-line cells.
     var DisplayLines = /** @class */ (function (_super) {
         __extends(DisplayLines, _super);
@@ -10946,6 +13372,127 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     Environments.displaylines = function () { return new DisplayLines(); };
     LatexCmds.displaylines = function () { return withBraces(new DisplayLines()); };
     LatexCmds.pmatrix = function () { return withBraces(new PMatrix()); };
+    // \begin{gathered}: a single-column grid, like displaylines but
+    // \end-bounded.
+    var Gathered = /** @class */ (function (_super) {
+        __extends(Gathered, _super);
+        function Gathered() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        Gathered.prototype.latexOpen = function () {
+            return '\\begin{gathered}';
+        };
+        Gathered.prototype.latexClose = function () {
+            return '\\end{gathered}';
+        };
+        return Gathered;
+    }(DisplayLines));
+    Environments.gathered = function () { return new Gathered(); };
+    Environments.Gathered = function () { return new Gathered(); };
+    // single-column display environments — serialize canonically as gathered
+    Environments.gather = function () { return new Gathered(); };
+    Environments.equation = function () { return new Gathered(); };
+    Environments.multline = function () { return new Gathered(); };
+    Environments.flalign = function () { return new Gathered(); };
+    // \begin{smallmatrix}: matrix cells at a smaller size.
+    var SmallMatrix = /** @class */ (function (_super) {
+        __extends(SmallMatrix, _super);
+        function SmallMatrix() {
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.gridClass = 'mq-matrix mq-smallmatrix mq-non-leaf';
+            return _this_1;
+        }
+        SmallMatrix.prototype.latexOpen = function () {
+            return '\\begin{smallmatrix}';
+        };
+        SmallMatrix.prototype.latexClose = function () {
+            return '\\end{smallmatrix}';
+        };
+        return SmallMatrix;
+    }(Matrix));
+    Environments.smallmatrix = function () { return new SmallMatrix(); };
+    Environments.subarray = function () { return new SmallMatrix(); };
+    // \begin{aligned}: a two-column (or repeating two-column) grid —
+    // parsed like matrix; cell alignment alternates right/left via CSS.
+    var Aligned = /** @class */ (function (_super) {
+        __extends(Aligned, _super);
+        function Aligned() {
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.gridClass = 'mq-aligned mq-non-leaf';
+            _this_1.cellTextAlign = 'left';
+            return _this_1;
+        }
+        Aligned.prototype.latexOpen = function () {
+            return '\\begin{aligned}';
+        };
+        Aligned.prototype.latexClose = function () {
+            return '\\end{aligned}';
+        };
+        return Aligned;
+    }(CellGrid));
+    Environments.aligned = function () { return new Aligned(); };
+    Environments.alignat = function () { return new Aligned(); };
+    // alignment environments — serialize canonically as aligned
+    Environments.align = function () { return new Aligned(); };
+    Environments.split = function () { return new Aligned(); };
+    // \begin{array}{spec}: a matrix grid preceded by a column-spec argument
+    // ({cc}, {|l|c|r|}, …) which round-trips verbatim.
+    var ArrayEnv = /** @class */ (function (_super) {
+        __extends(ArrayEnv, _super);
+        function ArrayEnv() {
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.spec = '';
+            _this_1.pos = '';
+            return _this_1;
+        }
+        ArrayEnv.prototype.latexOpen = function () {
+            return ('\\begin{array}' +
+                (this.pos ? '[' + this.pos + ']' : '') +
+                '{' +
+                this.spec +
+                '}');
+        };
+        ArrayEnv.prototype.latexClose = function () {
+            return '\\end{array}';
+        };
+        ArrayEnv.prototype.parser = function () {
+            var self = this;
+            return Parser.optWhitespace
+                .then(Parser.regex(/^\[[tcb]\]/)
+                .or(Parser.succeed(''))
+                .then(function (pos) {
+                if (pos)
+                    self.pos = pos.slice(1, -1);
+                return Parser.string('{')
+                    .then(Parser.regex(/^[^{}]*/))
+                    .skip(Parser.string('}'));
+            }))
+                .then(function (spec) {
+                self.spec = spec;
+                return self.cellsParser();
+            });
+        };
+        return ArrayEnv;
+    }(Matrix));
+    Environments.array = function () { return new ArrayEnv(); };
+    // \substack{i=1\\ j=2}: a braced single-column stack used as a bound.
+    var Substack = /** @class */ (function (_super) {
+        __extends(Substack, _super);
+        function Substack() {
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.gridClass = 'mq-substack mq-non-leaf';
+            _this_1.cellTextAlign = 'center';
+            return _this_1;
+        }
+        Substack.prototype.latexOpen = function () {
+            return '\\substack{';
+        };
+        Substack.prototype.latexClose = function () {
+            return '}';
+        };
+        return Substack;
+    }(DisplayLines));
+    LatexCmds.substack = function () { return withBraces(new Substack()); };
     LatexCmds.bmatrix = function () { return withBraces(new BMatrix()); };
     LatexCmds.Bmatrix = function () { return withBraces(new BBMatrix()); };
     LatexCmds.vmatrix = function () { return withBraces(new VMatrix()); };
@@ -11099,6 +13646,142 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         ctrlr.notify('edit');
         ctrlr.scrollHoriz();
     }
+    // Old-style environment names canonicalize to the closest supported
+    // grid env; \eqnarray is three-column align, \eqalign is aligned.
+    Environments.eqnarray = function () { return new Aligned(); };
+    Environments.eqalign = function () { return new Aligned(); };
+    // \varliminf / \varlimsup — limit large-ops that take bounds like
+    // \varinjlim / \varprojlim.
+    LatexCmds.varliminf = function () {
+        return new SummationNotation('\\varliminf ', 'lim', 'variable limit inferior');
+    };
+    LatexCmds.varlimsup = function () {
+        return new SummationNotation('\\varlimsup ', 'lim', 'variable limit superior');
+    };
+    // \smallint / \ointclockwise — more boundless integrals.
+    LatexCmds.smallint = boundlessIntegral('\\smallint ', '&#8747;', 'small integral');
+    LatexCmds.ointclockwise = boundlessIntegral('\\ointclockwise ', '&#8754;', 'clockwise contour integral');
+    // \intop / \ointop — boundless integral family members.
+    LatexCmds.intop = boundlessIntegral('\\intop ', '&#8747;', 'int op');
+    LatexCmds.ointop = boundlessIntegral('\\ointop ', '&#8750;', 'oint op');
+    // \end{foo} where foo is NOT a registered environment — kept as a
+    // visible leaf, paired with the unknown-env \begin leaf. A \end{name}
+    // for a known env must fail here so CellGrid parsing still stops at it
+    // and the \begin parser's .skip('\\end{...}') consumes it as the close.
+    LatexCmds.end = function () {
+        return new (/** @class */ (function (_super) {
+            __extends(class_34, _super);
+            function class_34() {
+                var _this_1 = _super.call(this, '\\end', new DOMView(0, function () {
+                    return h('span', { class: 'mq-non-leaf' }, [h.text('\\end')]);
+                })) || this;
+                _this_1.env = '';
+                return _this_1;
+            }
+            class_34.prototype.parser = function () {
+                var self = this;
+                return Parser.string('{')
+                    .then(Parser.regex(/^[a-z*]+/i))
+                    .skip(Parser.string('}'))
+                    .then(function (env) {
+                    if (Environments[env.replace(/\*/g, '')])
+                        return Parser.fail('known environment close handled by the env parser');
+                    self.env = env;
+                    return Parser.succeed(self);
+                });
+            };
+            class_34.prototype.latexRecursive = function (ctx) {
+                this.checkCursorContextOpen(ctx);
+                ctx.uncleanedLatex += '\\end{' + this.env + '}';
+                this.checkCursorContextClose(ctx);
+            };
+            return class_34;
+        }(MathCommand)))();
+    };
+    // \begin{tabular}{spec} — the text-mode twin of \begin{array}, same
+    // colspec + cell grid.
+    var TabularEnv = /** @class */ (function (_super) {
+        __extends(TabularEnv, _super);
+        function TabularEnv() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        TabularEnv.prototype.latexOpen = function () {
+            return ('\\begin{tabular}' +
+                (this.pos ? '[' + this.pos + ']' : '') +
+                '{' +
+                this.spec +
+                '}');
+        };
+        TabularEnv.prototype.latexClose = function () {
+            return '\\end{tabular}';
+        };
+        return TabularEnv;
+    }(ArrayEnv));
+    Environments.tabular = function () { return new TabularEnv(); };
+    // \begin{subarray}{spec}: like smallmatrix but with a required
+    // column spec ({c}, {l}, {r}) that round-trips verbatim.
+    var SubarrayEnv = /** @class */ (function (_super) {
+        __extends(SubarrayEnv, _super);
+        function SubarrayEnv() {
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.spec = '';
+            return _this_1;
+        }
+        SubarrayEnv.prototype.latexOpen = function () {
+            return '\\begin{subarray}{' + this.spec + '}';
+        };
+        SubarrayEnv.prototype.latexClose = function () {
+            return '\\end{subarray}';
+        };
+        SubarrayEnv.prototype.parser = function () {
+            var self = this;
+            return Parser.optWhitespace
+                .then(Parser.string('{'))
+                .then(Parser.regex(/^[^{}]*/))
+                .skip(Parser.string('}'))
+                .then(function (spec) {
+                self.spec = spec;
+                return self.cellsParser();
+            });
+        };
+        return SubarrayEnv;
+    }(SmallMatrix));
+    Environments.subarray = function () { return new SubarrayEnv(); };
+    // \begin{alignat}{n} / \begin{alignedat}{n}: aligned grid with a
+    // required column-pair count; keeps its own env name + spec.
+    var AlignatEnv = /** @class */ (function (_super) {
+        __extends(AlignatEnv, _super);
+        function AlignatEnv() {
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.n = '';
+            _this_1.envName = 'alignat';
+            return _this_1;
+        }
+        AlignatEnv.prototype.latexOpen = function () {
+            return '\\begin{' + this.envName + '}{' + this.n + '}';
+        };
+        AlignatEnv.prototype.latexClose = function () {
+            return '\\end{' + this.envName + '}';
+        };
+        AlignatEnv.prototype.parser = function () {
+            var self = this;
+            return Parser.optWhitespace
+                .then(Parser.string('{'))
+                .then(Parser.regex(/^[^{}]*/))
+                .skip(Parser.string('}'))
+                .then(function (n) {
+                self.n = n;
+                return self.cellsParser();
+            });
+        };
+        return AlignatEnv;
+    }(Aligned));
+    Environments.alignat = function () { return new AlignatEnv(); };
+    Environments.alignedat = function () {
+        var e = new AlignatEnv();
+        e.envName = 'alignedat';
+        return e;
+    };
     var assert = (function () {
         var AssertionError = /** @class */ (function (_super) {
             __extends(AssertionError, _super);
@@ -13886,6 +16569,15 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 mq.latex('\\begin{matrix}a&b\\\\c\\end{matrix}');
                 assert.equal(mq.latex(), '\\begin{matrix}a&b\\\\c&\\end{matrix}');
             });
+            test('cases parses, round-trips, and renders a left brace', function () {
+                mq.latex('\\begin{cases}x&x>0\\\\-x&x\\le0\\end{cases}');
+                assert.equal(mq.latex(), '\\begin{cases}x&x>0\\\\-x&x\\le0\\end{cases}');
+                var root = mq.__controller.root.domFrag().oneElement();
+                // one (left) brace delimiter, 2x2 cells
+                assert.equal(root.querySelectorAll('.mq-bracket-l').length, 1);
+                assert.equal(root.querySelectorAll('td').length, 4);
+                assert.equal(root.querySelectorAll('tr').length, 2);
+            });
             test('arrows move cell-to-cell; moveOutOf fires only at the field edge', function () {
                 mq.latex('\\begin{matrix}a&b\\\\c&d\\end{matrix}');
                 var exits = 0;
@@ -14208,9 +16900,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             assert.throws(function () {
                 assertParsesLatex('\\mathbb + 2');
             });
-            assert.throws(function () {
-                assertParsesLatex('\\mathbb{A}');
-            });
         });
         test('simple exponent', function () {
             assertParsesLatex('x^{n}');
@@ -14300,6 +16989,19 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 latexMathParser.parse('\\left\\lVerte123\\right\\rVerte');
             });
         });
+        test('invisible \\left./\\right. null delimiters (evaluation bars)', function () {
+            assertParsesLatex('\\left.x\\right|', '\\left.x\\right|');
+            assertParsesLatex('\\left|x\\right.', '\\left|x\\right.');
+            assertParsesLatex('\\left.x\\right.', '\\left.x\\right.');
+            assertParsesLatex('\\left.\\frac{a}{b}\\right|_{x=1}', '\\left.\\frac{a}{b}\\right|_{x=1}');
+            assertParsesLatex('\\left\\|x\\right\\|', '\\left\\|x\\right\\|');
+            assertParsesLatex('\\left\\|x\\right.', '\\left\\|x\\right.');
+            var tree = latexMathParser.parse('\\left.x\\right|');
+            var brack = tree.ends[L];
+            assert.ok(brack instanceof Bracket);
+            assert.equal(brack.sides[L].ch, '.');
+            assert.equal(brack.sides[R].ch, '|');
+        });
         test('parens with whitespace', function () {
             assertParsesLatex('\\left ( 123 \\right ) ', '\\left(123\\right)');
         });
@@ -14308,6 +17010,260 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             assertParsesLatex('\\      ', '\\ ');
             assertParsesLatex('  \\   \\\t\t\t\\   \\\n\n\n', '\\ \\ \\ \\ ');
             assertParsesLatex('\\space\\   \\   space  ', '\\ \\ \\ space');
+        });
+        test('spacing commands \\, \\; \\: \\!', function () {
+            assertParsesLatex('\\,', '\\, ');
+            assertParsesLatex('\\;', '\\; ');
+            assertParsesLatex('\\:', '\\: ');
+            assertParsesLatex('\\!', '\\! ');
+            assertParsesLatex('\\int_{a}^{b}x\\,dx', '\\int _{a}^{b}x\\, dx');
+            assertParsesLatex('x\\,dx x\\;dy x\\:dz x\\!dw', 'x\\, dxx\\; dyx\\: dzx\\! dw');
+            // bare punctuation is unaffected
+            assertParsesLatex('a,b;c:d!e', 'a,b;c:d!e');
+        });
+        test('escaped delimiters and specials \\{ \\} \\_ \\# \\|', function () {
+            assertParsesLatex('\\{', '\\{ ');
+            assertParsesLatex('\\{x\\}', '\\{ x\\} ');
+            assertParsesLatex('\\{x,y\\}', '\\{ x,y\\} ');
+            assertParsesLatex('\\{x\\in\\mathbb{R}\\}', '\\{ x\\in \\mathbb{R}\\} ');
+            assertParsesLatex('a\\_b', 'a\\_b');
+            assertParsesLatex('x\\#y', 'x\\#y');
+            assertParsesLatex('\\|x\\|', '\\| x\\| ');
+            // bare characters are unaffected
+            assertParsesLatex('x|y', 'x|y');
+            assertParsesLatex('a#b', 'a#b');
+        });
+        test('standalone \\langle \\rangle \\lVert \\rVert', function () {
+            assertParsesLatex('\\langle x\\rangle', '\\langle x\\rangle ');
+            assertParsesLatex('\\langle a,b\\rangle', '\\langle a,b\\rangle ');
+            assertParsesLatex('\\lVert x\\rVert', '\\lVert x\\rVert ');
+        });
+        test('\\not + relation produces the negated relation', function () {
+            assertParsesLatex('x\\not\\in A', 'x\\notin A');
+            assertParsesLatex('x\\notin A', 'x\\notin A');
+            assertParsesLatex('a\\not=b', 'a\\ne b');
+            assertParsesLatex('A\\not\\subset B', 'A\\not\\subset B');
+            assertParsesLatex('A\\not\\subseteq B', 'A\\not\\subseteq B');
+            assertParsesLatex('a\\not<b', 'a\\nless b');
+            assertParsesLatex('a\\not>b', 'a\\ngtr b');
+            assertParsesLatex('a\\not\\approx b', 'a\\not\\approx b');
+            assertParsesLatex('a\\not\\equiv b', 'a\\not\\equiv b');
+            // unknown followers keep a standalone \not that round-trips
+            assertParsesLatex('\\not\\oplus', '\\not \\oplus ');
+        });
+        test('font and accent commands round-trip', function () {
+            assertParsesLatex('\\mathcal{F}', '\\mathcal{F}');
+            assertParsesLatex('\\mathscr{F}', '\\mathscr{F}');
+            assertParsesLatex('\\mathfrak{g}', '\\mathfrak{g}');
+            assertParsesLatex('\\bold{x}', '\\mathbf{x}');
+            assertParsesLatex('\\ddot{x}', '\\ddot{x}');
+            assertParsesLatex('\\dddot{x}', '\\dddot{x}');
+            assertParsesLatex('\\ring{x}', '\\ring{x}');
+            assertParsesLatex('\\mathring{x}', '\\mathring{x}');
+            assertParsesLatex('\\Bbb{R}', '\\mathbb{R}');
+            assertParsesLatex('\\mathds{R}', '\\mathbb{R}');
+        });
+        test('fraction variants and binomials canonicalize', function () {
+            assertParsesLatex('\\tfrac{1}{2}', '\\frac{1}{2}');
+            assertParsesLatex('\\dfrac{1}{2}', '\\frac{1}{2}');
+            assertParsesLatex('\\dbinom{n}{k}', '\\binom{n}{k}');
+            assertParsesLatex('\\tbinom{n}{k}', '\\binom{n}{k}');
+        });
+        test('mod, boxed, overset, style commands', function () {
+            assertParsesLatex('x\\pmod{m}', 'x\\pmod{m}');
+            assertParsesLatex('a\\bmod b', 'a\\bmod b');
+            assertParsesLatex('\\boxed{x=1}', '\\boxed{x=1}');
+            assertParsesLatex('\\overset{?}{=}', '\\overset{?}{=}');
+            assertParsesLatex('\\underset{x}{\\max}', '\\underset{x}{\\max }');
+            assertParsesLatex('\\displaystyle\\sum_{i=0}^{n}x', '\\displaystyle \\sum _{i=0}^{n}x');
+            assertParsesLatex('\\sum\\limits_{i=0}^{n}x', '\\sum \\limits _{i=0}^{n}x');
+            assertParsesLatex('\\sum\\nolimits_{i=0}^{n}x', '\\sum \\nolimits _{i=0}^{n}x');
+            assertParsesLatex('\\left(\\sum\\limits_{i=0}^{n}\\right)', '\\left(\\sum \\limits _{i=0}^{n}\\right)');
+            assertParsesLatex('\\oiint', '\\oiint ');
+            assertParsesLatex('\\oiiint', '\\oiiint ');
+            assertParsesLatex('\\lnot p', '\\neg p');
+        });
+        test('\\big-sized delimiters and \\middle', function () {
+            assertParsesLatex('\\bigl(x\\bigr)', '\\bigl(x\\bigr)');
+            assertParsesLatex('\\Bigl[\\frac{1}{2}\\Bigr]', '\\Bigl[\\frac{1}{2}\\Bigr]');
+            assertParsesLatex('\\big|x\\big|', '\\big|x\\big|');
+            assertParsesLatex('\\bigl.', '\\bigl.');
+            assertParsesLatex('\\left(x\\middle|y\\right)', '\\left(x\\middle|y\\right)');
+            // letter-name delimiters keep a separating space so the emitted
+            // text re-parses (\langlex would glue into an unknown command)
+            assertParsesLatex('\\big\\langle a,b\\big\\rangle', '\\big\\langle a,b\\big\\rangle ');
+        });
+        test('\\mathbb accepts any capital or digit', function () {
+            assertParsesLatex('\\mathbb{R}', '\\mathbb{R}');
+            assertParsesLatex('\\mathbb{F}', '\\mathbb{F}');
+            assertParsesLatex('\\mathbb{A}', '\\mathbb{A}');
+            assertParsesLatex('\\mathbb{1}', '\\mathbb{1}');
+            assertParsesLatex('\\mathds{F}', '\\mathbb{F}');
+        });
+        test('named spacing, hspace, phantom, invisible wrappers', function () {
+            assertParsesLatex('x\\thinspace y', 'x\\, y');
+            assertParsesLatex('x\\enspace y', 'x\\enspace y');
+            assertParsesLatex('x\\negthickspace y', 'x\\negthickspace y');
+            assertParsesLatex('a\\hspace{1em}b', 'a\\hspace{1em}b');
+            assertParsesLatex('a\\mspace{5mu}b', 'a\\mspace{5mu}b');
+            assertParsesLatex('x\\phantom{y}z', 'x\\phantom{y}z');
+            assertParsesLatex('\\vphantom{x}', '\\vphantom{x}');
+            assertParsesLatex('x\\mathrel{=}y', 'x\\mathrel{=}y');
+            assertParsesLatex('\\mathnormal{x}', '\\mathnormal{x}');
+            assertParsesLatex('x\\tag{1}', 'x\\tag{1}');
+            assertParsesLatex('x\\notag', 'x\\notag ');
+        });
+        test('under/overbrace, xarrows, cancel, accents', function () {
+            assertParsesLatex('\\underbrace{x+y}_{n}', '\\underbrace{x+y}_{n}');
+            assertParsesLatex('\\overbrace{x+y}^{n}', '\\overbrace{x+y}^{n}');
+            assertParsesLatex('\\widehat{xy}', '\\hat{xy}');
+            assertParsesLatex('\\widetilde{xy}', '\\widetilde{xy}');
+            assertParsesLatex('\\xrightarrow{a}', '\\xrightarrow{a}');
+            assertParsesLatex('\\xmapsto{a}', '\\xmapsto{a}');
+            assertParsesLatex('\\cancel{x}', '\\cancel{x}');
+            assertParsesLatex('\\bcancel{x}', '\\bcancel{x}');
+            assertParsesLatex('\\v{s}', '\\v{s}');
+            assertParsesLatex('\\r{a}', '\\r{a}');
+            assertParsesLatex('\\c{c}', '\\c{c}');
+            assertParsesLatex('\\d{u}', '\\d{u}');
+        });
+        test('grid environments: gathered, aligned, substack, line break', function () {
+            assertParsesLatex('\\begin{gathered}a\\\\b\\end{gathered}', '\\begin{gathered}a\\\\ b\\end{gathered}');
+            assertParsesLatex('\\begin{aligned}a&=b\\\\c&=d\\end{aligned}', '\\begin{aligned}a&=b\\\\c&=d\\end{aligned}');
+            assertParsesLatex('\\substack{i=1\\\\j=2}', '\\substack{i=1\\\\ j=2}');
+            // bare \\ outside a grid parses as a line break and re-parses
+            assertParsesLatex('x\\\\y', 'x\\\\y');
+        });
+        test('named environments canonicalize to gathered/aligned', function () {
+            assertParsesLatex('\\begin{align}a&=b\\\\c&=d\\end{align}', '\\begin{aligned}a&=b\\\\c&=d\\end{aligned}');
+            assertParsesLatex('\\begin{align*}a&=b\\end{align*}', '\\begin{aligned}a&=b\\end{aligned}');
+            assertParsesLatex('\\begin{equation}x=1\\end{equation}', '\\begin{gathered}x=1\\end{gathered}');
+            assertParsesLatex('\\begin{smallmatrix}a\\end{smallmatrix}', '\\begin{smallmatrix}a\\end{smallmatrix}');
+            assertParsesLatex('\\begin{array}{cc}a&b\\\\c&d\\end{array}', '\\begin{array}{cc}a&b\\\\c&d\\end{array}');
+        });
+        test('escaped accents, bra-ket, display wrappers, rules', function () {
+            assertParsesLatex("\\'e", "'e");
+            assertParsesLatex('\\~n', '\\~{n}');
+            assertParsesLatex('\\^o', '\\^{o}');
+            assertParsesLatex('\\.{i}', '\\.{i}');
+            // a trailing escaped accent without a block stays a bare mark
+            assertParsesLatex("f\\'", "f'");
+            assertParsesLatex('\\bra{x}', '\\bra{x}');
+            assertParsesLatex('\\ket{x}', '\\ket{x}');
+            assertParsesLatex('\\braket{x|y}', '\\braket{x|y}');
+            assertParsesLatex('\\ketbra{x}{y}', '\\ketbra{x}{y}');
+            assertParsesLatex('\\[x\\]', '\\[x\\]');
+            assertParsesLatex('\\(x\\)', '\\(x\\)');
+            assertParsesLatex('\\hline', '\\hline ');
+            assertParsesLatex('\\cline{1-2}', '\\cline{1-2}');
+            assertParsesLatex('\\iiint', '\\iiint ');
+            assertParsesLatex('\\varinjlim', '\\varinjlim _{ }^{ }');
+            assertParsesLatex('\\boldsymbol{x}', '\\boldsymbol{x}');
+            assertParsesLatex('\\pmb{x}', '\\pmb{x}');
+            assertParsesLatex('\\llap{x}', '\\llap{x}');
+            assertParsesLatex('\\smash{x}', '\\smash{x}');
+            assertParsesLatex('\\fbox{x}', '\\fbox{x}');
+            assertParsesLatex('\\framebox{x}', '\\framebox{x}');
+            assertParsesLatex('\\nicefrac{1}{2}', '\\frac{1}{2}');
+            assertParsesLatex('\\underleftarrow{x}', '\\underleftarrow{x}');
+            assertParsesLatex('\\underrightarrow{x}', '\\underrightarrow{x}');
+            assertParsesLatex('\\overleftharpoon{x}', '\\overleftharpoon{x}');
+            // bare brackets are unaffected by the \[ wrapper registration
+            assertParsesLatex('x[y]', 'x[y]');
+            assertParsesLatex('(x)', '(x)');
+        });
+        test('more relations and symbols parse', function () {
+            assertParsesLatex('x\\subsetneq y', 'x\\subsetneq y');
+            assertParsesLatex('x\\subsetneqq y', 'x\\subsetneqq y');
+            assertParsesLatex('x\\lesssim y', 'x\\lesssim y');
+            assertParsesLatex('x\\precsim y', 'x\\precsim y');
+            assertParsesLatex('x\\approxeq y', 'x\\approxeq y');
+            assertParsesLatex('x\\doteqdot y', 'x\\doteqdot y');
+            assertParsesLatex('x\\eqcirc y', 'x\\eqcirc y');
+            assertParsesLatex('x\\triangleq y', 'x\\triangleq y');
+            assertParsesLatex('x\\vDash y', 'x\\vDash y');
+            assertParsesLatex('x\\Vvdash y', 'x\\Vvdash y');
+            assertParsesLatex('x\\coloneqq y', 'x\\coloneqq y');
+            assertParsesLatex('x\\complement', 'x\\complement ');
+            assertParsesLatex('\\sphericalangle', '\\sphericalangle ');
+            assertParsesLatex('\\imath', '\\imath ');
+            assertParsesLatex('\\beth', '\\beth ');
+            assertParsesLatex('\\Finv', '\\Finv ');
+            assertParsesLatex('\\backepsilon x', '\\backepsilon x');
+            assertParsesLatex('\\LaTeX', '\\LaTeX ');
+            assertParsesLatex('\\S', '\\S ');
+            assertParsesLatex('\\yen', '\\yen ');
+            assertParsesLatex('\\euro', '\\euro ');
+            assertParsesLatex('a\\not\\sim b', 'a\\nsim b');
+        });
+        test('infix ops, macro defs, genfrac: honest verbatim output', function () {
+            assertParsesLatex('a\\over b', 'a\\over b');
+            assertParsesLatex('a\\choose b', 'a\\choose b');
+            assertParsesLatex('a\\atop b', 'a\\atop b');
+            assertParsesLatex('\\newcommand{\\foo}{x}', '\\newcommand{\\foo}{x}');
+            assertParsesLatex('\\renewcommand{\\foo}[1]{#1x}', '\\renewcommand{\\foo}[1]{#1x}');
+            assertParsesLatex('\\providecommand{\\bar}{z}', '\\providecommand{\\bar}{z}');
+            assertParsesLatex('\\def\\foo{bar}', '\\def\\foo{bar}');
+            assertParsesLatex('\\DeclareMathOperator{\\Tr}{Tr}', '\\DeclareMathOperator{\\Tr}{Tr}');
+            assertParsesLatex('\\genfrac(){}{}{x}{y}', '\\genfrac(){}{}{x}{y}');
+            assertParsesLatex('\\genfrac(]{0pt}{0}{x}{y}', '\\genfrac(]{0pt}{0}{x}{y}');
+            assertParsesLatex('\\t{oo}', '\\t{oo}');
+            assertParsesLatex('\\textsuperscript{th}', '\\textsuperscript{th}');
+            assertParsesLatex('\\textsubscript{2}', '\\textsubscript{2}');
+        });
+        test('refs, text-cmds, boxes, links round-trip', function () {
+            assertParsesLatex('\\ref{1}', '\\ref{1}');
+            assertParsesLatex('\\eqref{1}', '\\eqref{1}');
+            assertParsesLatex('\\label{sec:a}', '\\label{sec:a}');
+            assertParsesLatex('\\cite[see]{key}', '\\cite[see]{key}');
+            assertParsesLatex('\\url{http://x_y}', '\\url{http://x_y}');
+            assertParsesLatex('\\intertext{and}', '\\intertext{and}');
+            assertParsesLatex('\\vspace{1em}', '\\vspace{1em}');
+            assertParsesLatex('\\colorbox{red}{x}', '\\colorbox{red}{x}');
+            assertParsesLatex('\\fcolorbox{blue}{yellow}{x}', '\\fcolorbox{blue}{yellow}{x}');
+            assertParsesLatex('\\href{http://a_b}{x}', '\\href{http://a_b}{x}');
+        });
+        test('xarrows with optional under-label, word accents, ligo/dash', function () {
+            assertParsesLatex('\\xrightarrow{a}', '\\xrightarrow{a}');
+            assertParsesLatex('\\xrightarrow[u]{o}', '\\xrightarrow[u]{o}');
+            assertParsesLatex('\\xLeftarrow{a}', '\\xLeftarrow{a}');
+            assertParsesLatex('\\xLeftrightarrow{a}', '\\xLeftrightarrow{a}');
+            assertParsesLatex('\\xhookrightarrow{a}', '\\xhookrightarrow{a}');
+            assertParsesLatex('\\xtwoheadrightarrow{a}', '\\xtwoheadrightarrow{a}');
+            assertParsesLatex('\\check{a}', '\\check{a}');
+            assertParsesLatex('\\breve{a}', '\\breve{a}');
+            assertParsesLatex('\\acute{a}', '\\acute{a}');
+            assertParsesLatex('\\grave{a}', '\\grave{a}');
+            assertParsesLatex('\\ddddot{a}', '\\ddddot{a}');
+            assertParsesLatex('\\mathclap{x}', '\\mathclap{x}');
+            assertParsesLatex('\\underbracket{x}', '\\underbracket{x}');
+            assertParsesLatex('\\overparen{x}', '\\overparen{x}');
+            assertParsesLatex('\\AA', '\\AA ');
+            assertParsesLatex('\\Bumpeq', '\\Bumpeq ');
+            assertParsesLatex('\\bumpeq', '\\bumpeq ');
+            assertParsesLatex('\\ae', '\\ae ');
+            assertParsesLatex('\\ss', '\\ss ');
+            assertParsesLatex('\\i', '\\i ');
+            assertParsesLatex('\\lll', '\\lll ');
+            assertParsesLatex('\\gggtr', '\\ggg ');
+            assertParsesLatex('\\subseteqq', '\\subseteqq ');
+            assertParsesLatex('\\eqsim', '\\eqsim ');
+            assertParsesLatex('\\intercal', '\\intercal ');
+            assertParsesLatex('\\dotsc', '\\dotsc ');
+            assertParsesLatex('\\iddots', '\\iddots ');
+            assertParsesLatex('\\hslash', '\\hslash ');
+            assertParsesLatex('\\Bbbk', '\\Bbbk ');
+            assertParsesLatex('\\bigstar', '\\bigstar ');
+            assertParsesLatex('\\maltese', '\\maltese ');
+            assertParsesLatex('\\glqq', '\\glqq ');
+            assertParsesLatex('\\textemdash', '\\textemdash ');
+            // an overlap command with no following block stays a bare leaf
+            assertParsesLatex('\\mathclap', '\\mathclap ');
+            assertParsesLatex('x\\smash', 'x\\smash ');
+        });
+        test('\\operatorname* consumes the star', function () {
+            assertParsesLatex('\\operatorname{tr}(A)', 'tr(A)');
+            assertParsesLatex('\\operatorname*{argmin}_{x}', '\\arg \\min _{x}');
         });
         test('\\text', function () {
             assertParsesLatex('\\text { lol! } ', '\\text{ lol! }');
@@ -14969,6 +17925,179 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             testCantParse('unmatched \\left/\\right', '\\left ( 1 + 2 )', ' [ 1, 2 \\right ]');
             testCantParse('langlerfish/ranglerfish (checking for confusion with langle/rangle)', '\\left\\langlerfish 123\\right\\ranglerfish)');
         });
+        test('bare-arg commands, tag-star, old-style envs, text braces', function () {
+            // 2-block commands with fewer blocks degrade to a bare leaf instead
+            // of failing the whole parse
+            assertParsesLatex('\\overset{a}', '\\overset a');
+            assertParsesLatex('\\underset{a}', '\\underset a');
+            assertParsesLatex('\\frac{1}', '\\frac 1');
+            assertParsesLatex('\\binom{n}', '\\binom n');
+            // the starred (unparenthesized) tag keeps its star
+            assertParsesLatex('\\tag*{1}', '\\tag*{1}');
+            assertParsesLatex('\\tag{2}', '\\tag{2}');
+            // old-style env names canonicalize to aligned
+            assertParsesLatex('\\begin{eqnarray}a&=b\\\\\\end{eqnarray}', '\\begin{aligned}a&=b\\\\&\\end{aligned}');
+            assertParsesLatex('\\eqnarray x', '\\eqnarray x');
+            // one level of nested braces inside text-mode content round-trips
+            assertParsesLatex('\\textit{x_{2}}', '\\textit{x_{2}}');
+            assertParsesLatex('\\textbf{a{b}c}', '\\textbf{a{b}c}');
+            // arrow/relation/binop leaves
+            assertParsesLatex('\\rightsquigarrow', '\\rightsquigarrow ');
+            assertParsesLatex('\\precnapprox', '\\precnapprox ');
+            assertParsesLatex('\\boxtimes', '\\boxtimes ');
+            assertParsesLatex('\\varliminf', '\\varliminf _{ }^{ }');
+            assertParsesLatex('\\smallint', '\\smallint ');
+            // bare xarrows degrade to a glyph leaf; named arrows keep their names
+            assertParsesLatex('\\xrightarrow', '\\xrightarrow ');
+            assertParsesLatex('\\xhookleftarrow', '\\xhookleftarrow ');
+            assertParsesLatex('\\implies', '\\implies ');
+            assertParsesLatex('\\iff', '\\iff ');
+            assertParsesLatex('\\impliedby', '\\impliedby ');
+            assertParsesLatex('\\varGamma', '\\varGamma ');
+            assertParsesLatex('\\leqslant', '\\leqslant ');
+            assertParsesLatex('\\Join', '\\Join ');
+            assertParsesLatex('\\coloneq', '\\coloneq ');
+            assertParsesLatex('\\And', '\\And ');
+            // declarations, wrappers, and remaining bare-arg cases
+            assertParsesLatex('\\tiny', '\\tiny ');
+            assertParsesLatex('\\it x', '\\it x');
+            assertParsesLatex('\\sf x', '\\sf x');
+            assertParsesLatex('\\sf{x}', '\\sf{x}');
+            assertParsesLatex('\\ensuremath{x}', '\\ensuremath{x}');
+            assertParsesLatex('\\mbox{a b}', '\\mbox{a b}');
+            assertParsesLatex('\\mod', '\\mod ');
+            assertParsesLatex('\\sideset{^a_b}{^c_d}\\sum', '\\sideset{^a_b}{^c_d}\\sum _{ }^{ }');
+            assertParsesLatex('\\newenvironment{foo}{a}{b}', '\\newenvironment{foo}{a}{b}');
+            // bare \sqrt at EOF is a parse error (matches testCantParse above)
+            assertParsesLatex('\\cancelto{0}{x}', '\\cancelto{0}{x}');
+            assertParsesLatex('\\intop', '\\intop ');
+            assertParsesLatex('\\unlhd', '\\unlhd ');
+            // {a\choose b} keeps the infix leaf (Binomial's bare-arg fallback
+            // must not shadow \choose's own)
+            assertParsesLatex('{a\\choose b}', 'a\\choose b');
+            assertParsesLatex('\\choose{a}{b}', '\\binom{a}{b}');
+            // \begin{array}[t]{spec} keeps the optional position arg
+            assertParsesLatex('\\begin{array}[t]{cc}a&b\\end{array}', '\\begin{array}[t]{cc}a&b\\end{array}');
+            assertParsesLatex('\\multicolumn{2}{c}{x}', '\\multicolumn{2}{c}{x}');
+            assertParsesLatex('\\colon', '\\colon ');
+            assertParsesLatex('\\hdots', '\\hdots ');
+            assertParsesLatex('\\hfill', '\\hfill ');
+            assertParsesLatex('\\noalign{\\hline}', '\\noalign{\\hline }');
+            // opt-bracket boxes, raw-arg bookkeeping, starred spacing
+            assertParsesLatex('\\makebox[1em][l]{x}', '\\makebox[1em][l]{x}');
+            assertParsesLatex('\\framebox[2em]{x}', '\\framebox[2em]{x}');
+            assertParsesLatex('\\raisebox{1pt}{x}', '\\raisebox{1pt}{x}');
+            assertParsesLatex('\\raisebox{1pt}[0pt][0pt]{x}', '\\raisebox{1pt}[0pt][0pt]{x}');
+            assertParsesLatex('\\hspace*{1em}', '\\hspace*{1em}');
+            assertParsesLatex('\\vspace*{1em}', '\\vspace*{1em}');
+            assertParsesLatex('\\setcounter{c}{1}', '\\setcounter{c}{1}');
+            assertParsesLatex('\\setlength{l}{1pt}', '\\setlength{l}{1pt}');
+            assertParsesLatex('\\arabic{c}', '\\arabic{c}');
+            assertParsesLatex('\\newtheorem{thm}{Theorem}', '\\newtheorem{thm}{Theorem}');
+            assertParsesLatex('a\\atopwithdelims()b', 'a\\atopwithdelims ()b');
+            assertParsesLatex('\\multicolumn{2}{c}{x}', '\\multicolumn{2}{c}{x}');
+            // infix \over keeps its leaf (FracNode's bare-\frac fallback must
+            // not shadow it); braced args still parse to a real fraction
+            assertParsesLatex('a\\over b', 'a\\over b');
+            assertParsesLatex('\\over{a}{b}', '\\frac{a}{b}');
+            // unknown environments degrade to visible begin/end leaves instead
+            // of blanking the cell
+            assertParsesLatex('\\begin{foo}x\\end{foo}', '\\begin{foo} x\\end{foo}');
+            assertParsesLatex('\\end{foo}', '\\end{foo}');
+            // null delimiters: \left. and \right. close a pair with a
+            // zero-width side (the SVG_SYMBOLS fallback renders nothing)
+            assertParsesLatex('\\left(x\\right.', '\\left(x\\right.');
+            assertParsesLatex('\\left.x\\right|', '\\left.x\\right|');
+            assertParsesLatex('\\displaylines{\\left(x\\right.\\\\ \\left.y\\right)}', '\\displaylines{\\left(x\\right.\\\\ \\left.y\\right)}');
+            // definition + text-mode commands keep their arguments verbatim
+            assertParsesLatex('\\let\\x\\y', '\\let\\x\\y');
+            assertParsesLatex('\\gdef\\x{y}', '\\gdef\\x{y}');
+            assertParsesLatex('\\section{a}', '\\section{a}');
+            assertParsesLatex('\\documentclass[12pt]{article}', '\\documentclass[12pt]{article}');
+            assertParsesLatex('\\k{x}', '\\k{x}');
+            assertParsesLatex('\\item', '\\item ');
+            assertParsesLatex('\\item[x]', '\\item [x]');
+            assertParsesLatex('\\genfrac(){}{0}{}{a}{b}', '\\genfrac(){}{0}{}{a}{b}');
+            // \genfrac inside delimiters: its raw args must not swallow the
+            // enclosing \right / \Bigg…\rangle close
+            assertParsesLatex('\\left(\\genfrac(){}{0}{}{a}{b}\\right)', '\\left(\\genfrac(){}{0}{}{a}{b}\\right)');
+            assertParsesLatex('\\Bigg\\langle\\genfrac(){}{0}{}{a}{b}\\Bigg\\rangle', '\\Bigg\\langle \\genfrac(){}{0}{}{a}{b}\\Bigg\\rangle ');
+            assertParsesLatex('\\genfrac\\langle\\rangle{0}{}{a}{b}', '\\genfrac\\langle\\rangle{0}{}{a}{b}');
+            // text blocks tolerate nested braces up to depth 3
+            assertParsesLatex('\\textbf{a{b{c}d}e}', '\\textbf{a{b{c}d}e}');
+            // \verb<delim>text<delim> keeps its delimiter + star
+            assertParsesLatex('\\verb|x|', '\\verb|x|');
+            assertParsesLatex('\\verb*|x y|', '\\verb*|x y|');
+            // \cfrac[lcr] optional alignment is consumed, not misparsed as
+            // a { [ } { l ] fraction; canonical emit is \frac
+            assertParsesLatex('\\cfrac[l]{a}{b}', '\\frac{a}{b}');
+            // \smash[tb] keeps its optional arg
+            assertParsesLatex('\\smash[b]{x}', '\\smash[b]{x}');
+            assertParsesLatex('\\smash{x}', '\\smash{x}');
+            // multi-group text commands stay verbatim
+            assertParsesLatex('\\prescript{a}{b}{c}', '\\prescript{a}{b}{c}');
+            assertParsesLatex('\\mathchoice{a}{b}{c}{d}', '\\mathchoice{a}{b}{c}{d}');
+            assertParsesLatex('\\includegraphics[width=1cm]{x}', '\\includegraphics[width=1cm]{x}');
+            assertParsesLatex('\\path{x}', '\\path{x}');
+            // \matrix{...} emits the \begin{matrix} env form like \pmatrix
+            assertParsesLatex('\\matrix{a&b}', '\\begin{matrix}a&b\\end{matrix}');
+            // TeX boxes keep 'to <dim>'; siunitx + skip commands stay verbatim
+            assertParsesLatex('\\hbox to 3em{x}', '\\hbox to 3em{x}');
+            assertParsesLatex('\\hbox{x}', '\\hbox {x}');
+            assertParsesLatex('\\vbox to 2in{x}', '\\vbox to 2in{x}');
+            assertParsesLatex('\\SI{1}{m}', '\\SI{1}{m}');
+            assertParsesLatex('\\si{m}', '\\si{m}');
+            assertParsesLatex('\\num{1e3}', '\\num{1e3}');
+            assertParsesLatex('\\celsius', '\\celsius ');
+            assertParsesLatex('\\hskip{3pt}', '\\hskip{3pt}');
+            assertParsesLatex('\\kern{2pt}', '\\kern{2pt}');
+            assertParsesLatex('\\mathbfsf{x}', '\\mathbfsf{x}');
+            assertParsesLatex('\\texteuro', '\\texteuro ');
+            assertParsesLatex('\\oldstylenums{0}', '\\oldstylenums{0}');
+            assertParsesLatex('\\cases{a&b}', '\\cases a\\&b');
+            // tabular parses as an array twin (spec + pos + cells)
+            assertParsesLatex('\\begin{tabular}{cc}a&b\\end{tabular}', '\\begin{tabular}{cc}a&b\\end{tabular}');
+            assertParsesLatex('\\begin{tabular}[t]{|c|c|}a&b\\end{tabular}', '\\begin{tabular}[t]{|c|c|}a&b\\end{tabular}');
+            // unicode-math fonts, primes, colortbl + fancybox commands
+            assertParsesLatex('\\symbf{x}', '\\symbf{x}');
+            assertParsesLatex('\\cprime', '\\cprime ');
+            assertParsesLatex('\\sslash', '\\sslash ');
+            assertParsesLatex('\\rowcolor[rgb]{1,0,0}', '\\rowcolor[rgb]{1,0,0}');
+            assertParsesLatex('\\dashbox{1}(2,3){x}', '\\dashbox{1}(2,3){x}');
+            assertParsesLatex('\\sout{x}', '\\sout{x}');
+            // color commands keep an optional [model]
+            assertParsesLatex('\\textcolor[rgb]{1,0,0}{x}', '\\textcolor[rgb]{1,0,0}{x}');
+            assertParsesLatex('\\color[rgb]{1,0,0}x', '\\textcolor[rgb]{1,0,0}{x}');
+            assertParsesLatex('\\colorbox[rgb]{1,0,0}{x}', '\\colorbox[rgb]{1,0,0}{x}');
+            assertParsesLatex('\\fcolorbox[rgb]{1,0,0}{0,0,1}{x}', '\\fcolorbox[rgb]{1,0,0}{0,0,1}{x}');
+            // starred spacing, multicolumn in a grid, misc
+            assertParsesLatex('\\hspace*{3pt}', '\\hspace*{3pt}');
+            assertParsesLatex('\\vspace*{3pt}', '\\vspace*{3pt}');
+            assertParsesLatex('\\begin{array}{cc}\\multicolumn{2}{c}{x}\\end{array}', '\\begin{array}{cc}\\multicolumn{2}{c}{x}\\end{array}');
+            assertParsesLatex('\\cdashline{1-2}', '\\cdashline{1-2}');
+            assertParsesLatex('\\checkmark', '\\checkmark ');
+            assertParsesLatex('\\definecolor{c}{rgb}{1,0,0}', '\\definecolor{c}{rgb}{1,0,0}');
+            // unknown commands degrade to verbatim leaves instead of
+            // blanking the whole field
+            assertParsesLatex('x\\foo y', 'x\\foo y');
+            assertParsesLatex('\\expandafter\\foo', '\\expandafter  \\foo ');
+            // a registered command missing its braces degrades to a leaf
+            assertParsesLatex('\\frac{a}', '\\frac a');
+            assertParsesLatex('\\begin{matrix}a&\\frac{x}\\end{matrix}', '\\begin{matrix}a&\\frac x\\end{matrix}');
+            // env spec args: subarray {spec}, alignat {n}
+            assertParsesLatex('\\begin{subarray}{c}a\\\\b\\end{subarray}', '\\begin{subarray}{c}a\\\\b\\end{subarray}');
+            assertParsesLatex('\\begin{alignat}{2}a&=b\\end{alignat}', '\\begin{alignat}{2}a&=b\\end{alignat}');
+            assertParsesLatex('\\begin{alignedat}{2}a&=b\\end{alignedat}', '\\begin{alignedat}{2}a&=b\\end{alignedat}');
+            // font-family switches, font commands, TeX primitives
+            assertParsesLatex('\\bfseries x', '\\bfseries  x');
+            assertParsesLatex('\\usefont{T1}{cmr}{m}{n}', '\\usefont{T1}{cmr}{m}{n}');
+            assertParsesLatex('\\fontsize{10}{12}', '\\fontsize{10}{12}');
+            assertParsesLatex('\\selectfont', '\\selectfont  ');
+            assertParsesLatex('\\everymath{x}', '\\everymath{x}');
+            assertParsesLatex('\\ifmmode', '\\ifmmode  ');
+            assertParsesLatex('\\expandafter', '\\expandafter  ');
+            assertParsesLatex('\\romannumeral', '\\romannumeral  ');
+        });
     });
     suite('mouse', function () {
         var $ = window.test_only_jquery;
@@ -15467,7 +18596,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             });
             test('parsing of advanced symbols', function () {
                 mq.latex('\\oplus');
-                assert.equal(mq.latex(), ''); // TODO: better LaTeX parse error behavior
+                assert.equal(mq.latex(), '\\oplus');
             });
         });
         suite('basic API methods', function () {
@@ -19225,8 +22354,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     suite('HTML', function () {
         function renderHtml(domView) {
             var Cmd = /** @class */ (function (_super) {
-                __extends(class_16, _super);
-                function class_16() {
+                __extends(class_35, _super);
+                function class_35() {
                     var _this_1 = _super.call(this, undefined, domView) || this;
                     _this_1.id = 1;
                     _this_1.blocks = Array(domView.childCount);
@@ -19248,7 +22377,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     }
                     return _this_1;
                 }
-                return class_16;
+                return class_35;
             }(MathCommand));
             return new Cmd().html();
         }

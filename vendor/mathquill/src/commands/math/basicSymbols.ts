@@ -974,15 +974,10 @@ LatexCmds['&'] = () =>
   new NonSymbolaSymbol('\\&', h.entityText('&amp;'), 'and');
 
 // escaped delimiters/specials — the parser passes the backslash
-// through in ctrlSeq ('\{'), so the bare characters are untouched
-LatexCmds['\\{'] = () => new NonSymbolaSymbol('\\{', h.text('{'), 'open brace');
-LatexCmds['\\}'] = () =>
-  new NonSymbolaSymbol('\\}', h.text('}'), 'close brace');
+// through in ctrlSeq ('\_'), so the bare characters are untouched
 LatexCmds['\\_'] = () =>
   new NonSymbolaSymbol('\\_', h.text('_'), 'underscore');
 LatexCmds['\\#'] = () => new NonSymbolaSymbol('\\#', h.text('#'), 'hash');
-LatexCmds['\\|'] = () =>
-  new NonSymbolaSymbol('\\|', h.entityText('&#8741;'), 'double bar');
 LatexCmds['%'] = class extends NonSymbolaSymbol {
   constructor() {
     super('\\%', h.text('%'), 'percent');

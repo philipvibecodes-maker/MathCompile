@@ -400,14 +400,6 @@ LatexCmds.textcolor = class extends MathCommand {
 // canonicalizes to \textcolor{color}{math} (the next block is colored).
 LatexCmds.color = LatexCmds.textcolor;
 
-// \boxed{...} is a boxed frame around its content (amsmath \boxed)
-LatexCmds.boxed = () =>
-  new Style(
-    '\\boxed',
-    'span',
-    { class: 'mq-non-leaf mq-fbox' },
-    'Boxed'
-  );
 
 // \colorbox{color}{math} — a filled box around content; the color arg is
 // raw text like \textcolor's, emitted back verbatim.
@@ -547,17 +539,6 @@ LatexCmds.overset = class extends MathCommand {
       h.block('span', {}, blocks[1])
     ])
   );
-  parser() {
-    return super.parser().or(
-      Parser.succeed(
-        new VanillaSymbol(
-          '\\overset ',
-          h.text('\\overset'),
-          'overset'
-        ) as MQNode | Fragment
-      )
-    ) as Parser<MQNode | Fragment>;
-  }
 };
 LatexCmds.stackrel = LatexCmds.overset;
 LatexCmds.underset = class extends MathCommand {
@@ -568,17 +549,6 @@ LatexCmds.underset = class extends MathCommand {
       h.block('span', { class: 'mq-overscript' }, blocks[0])
     ])
   );
-  parser() {
-    return super.parser().or(
-      Parser.succeed(
-        new VanillaSymbol(
-          '\\underset ',
-          h.text('\\underset'),
-          'underset'
-        ) as MQNode | Fragment
-      )
-    ) as Parser<MQNode | Fragment>;
-  }
 };
 
 // \pmod{m} / \pod{m} — parenthesized (mod m) / (m); \bmod is the
@@ -1289,19 +1259,6 @@ var Fraction =
         ])
       );
       textTemplate = ['(', ')/(', ')'];
-      // \frac with fewer than 2 blocks degrades to a bare \frac leaf
-      // instead of failing the whole parse.
-      parser() {
-        return super.parser().or(
-          Parser.succeed(
-            new VanillaSymbol(
-              '\\frac ',
-              h.text('\\frac'),
-              'frac'
-            ) as MQNode | Fragment
-          )
-        ) as Parser<MQNode | Fragment>;
-      }
       finalizeTree() {
         const endsL = this.getEnd(L);
         const endsR = this.getEnd(R);
@@ -1437,10 +1394,10 @@ var LiveFraction =
       // fails. Fall back to a visible `\over` leaf so the input keeps
       // its text instead of blanking the field. The typed `\over`→
       // fraction path is unaffected (it goes through createLeftOf).
-      // MathCommand's own parser is invoked directly: FracNode.parser()
+      // MathCommand's strict parser is invoked directly: parser()
       // falls back to a bare \frac leaf that would shadow \over's.
       parser() {
-        return MathCommand.prototype.parser.call(this).or(
+        return MathCommand.prototype.strictParser.call(this).or(
           Parser.succeed(
             new VanillaSymbol(
               '\\over ',
@@ -1634,16 +1591,7 @@ class SquareRoot extends MathCommand {
           return nthroot;
         });
       })
-      .or(super.parser())
-      .or(
-        Parser.succeed(
-          new VanillaSymbol(
-            '\\sqrt ',
-            h.text('\\sqrt'),
-            'sqrt'
-          ) as MQNode | Fragment
-        )
-      );
+      .or(super.parser());
   }
   deleteTowards(dir: Direction, cursor: Cursor) {
     if (!this.isEmpty() && dir === 1) {
@@ -1784,26 +1732,6 @@ class DiacriticBelow extends DiacriticAbove {
   }
 }
 
-// \underbrace{x+y}_{n} / \overbrace — a 1-block command with a brace
-// drawn under/over; a following _ or ^ block grows an ordinary sibling
-// SupSub so the bound round-trips verbatim.
-class UnderOverBrace extends MathCommand {
-  constructor(ctrlSeq: string, below: boolean, glyph?: string) {
-    super();
-    this.ctrlSeq = ctrlSeq;
-    var mark = h('span', { class: 'mq-underbrace-arc' }, [
-      h.text(glyph || (below ? '⏟' : '⏞'))
-    ]);
-    this.domView = new DOMView(1, (blocks) =>
-      h('span', { class: 'mq-non-leaf mq-underoverbrace' }, below
-        ? [h.block('span', {}, blocks[0]), mark]
-        : [mark, h.block('span', {}, blocks[0])]
-      )
-    );
-  }
-}
-LatexCmds.underbrace = () => new UnderOverBrace('\\underbrace', true);
-LatexCmds.overbrace = () => new UnderOverBrace('\\overbrace', false);
 
 // \xrightarrow{label} / \xleftarrow / \xmapsto and friends — a small
 // label over an extensible-looking arrow; the arrow is a fixed glyph.
@@ -2023,9 +1951,8 @@ LatexCmds.cr = function () {
 };
 
 // Escaped single-char accents (registered under their backslash-escaped
-// ctrlSeq — `\'` is an accent while bare ' stays the prime symbol).
-LatexCmds["\\'"] = () =>
-  new DiacriticAbove("\\'", h.text('´'), ['acute(', ')']);
+// ctrlSeq). `\'` intentionally falls back to the bare ' prime — TeX's
+// acute accent is available as \acute.
 LatexCmds['\\`'] = () =>
   new DiacriticAbove('\\`', h.text('`'), ['grave(', ')']);
 LatexCmds['\\"'] = () =>
@@ -2050,6 +1977,25 @@ LatexCmds.underleftarrow = () =>
   new DiacriticBelow('\\underleftarrow', h.text('←'), ['underleftarrow(', ')']);
 LatexCmds.underrightarrow = () =>
   new DiacriticBelow('\\underrightarrow', h.text('→'), ['underrightarrow(', ')']);
+// One-block under/over marks that draw an arc glyph above or below
+// their argument (\overgroup, \overbracket, \wideparen, …).
+// \underbrace/\overbrace are NOT registered here — the Style-based
+// versions near the top own those names.
+class UnderOverBrace extends MathCommand {
+  constructor(ctrlSeq: string, below: boolean, glyph?: string) {
+    super();
+    this.ctrlSeq = ctrlSeq;
+    var mark = h('span', { class: 'mq-underbrace-arc' }, [
+      h.text(glyph || (below ? '⏟' : '⏞'))
+    ]);
+    this.domView = new DOMView(1, (blocks) =>
+      h('span', { class: 'mq-non-leaf mq-underoverbrace' }, below
+        ? [h.block('span', {}, blocks[0]), mark]
+        : [mark, h.block('span', {}, blocks[0])]
+      )
+    );
+  }
+}
 LatexCmds.overgroup = () => new UnderOverBrace('\\overgroup', false);
 LatexCmds.undergroup = () => new UnderOverBrace('\\undergroup', true);
 LatexCmds.overbracket = () =>
@@ -2138,6 +2084,22 @@ LatexCmds['\\('] = function () {
 LatexCmds['\\)'] = function () {
   return new VanillaSymbol('\\)', h.text(')'), 'close inline math');
 };
+
+// style switches (\displaystyle … \nolimits) — invisible atoms that
+// serialize their command verbatim. \limits/\nolimits sit between an
+// operator and its bounds; the bound then attaches to this zero-width
+// atom, so `\sum\limits_{i}` renders like `\sum_{i}` and round-trips.
+// NOTE: defined here (not advancedSymbols.ts) so the mathquill-basic
+// bundle — which concatenates commands.ts but not advancedSymbols.ts —
+// can use it too.
+function bindStyleModifier(ctrlSeq: string, mathspeak: string) {
+  return () =>
+    new VanillaSymbol(
+      ctrlSeq,
+      h('span', { class: 'mq-style-modifier' }),
+      mathspeak
+    );
+}
 
 // Matrix rules — invisible in the grid, serialize verbatim.
 LatexCmds.hline = bindStyleModifier('\\hline ', 'h line');
@@ -2266,6 +2228,48 @@ LatexCmds.fbox = () =>
     { class: 'mq-non-leaf mq-fbox' },
     'Boxed'
   );
+// \makebox[w][pos]{x} / \framebox[w][pos]{x} / \raisebox{d}[ht][dp]{x}
+// — a content block preceded by up to two optional bracket args.
+// (defined here, not advancedSymbols.ts, so the mathquill-basic bundle —
+// which concatenates commands.ts but not advancedSymbols.ts — can use it)
+function bindOptBracketCmd(ctrlSeq: string, maxOpt: number, speak: string) {
+  return class extends MathCommand {
+    optText = '';
+    constructor() {
+      super(
+        ctrlSeq,
+        new DOMView(1, (blocks) =>
+          h('span', { class: 'mq-non-leaf' }, [
+            h.block('span', {}, blocks[0])
+          ])
+        )
+      );
+    }
+    parser() {
+      var self = this;
+      return Parser.regex(
+        new RegExp('^(?:\\[[^\\]]*\\]){0,' + maxOpt + '}')
+      )
+        .then(function (opt: string) {
+          self.optText = opt;
+          return latexMathParser.block;
+        })
+        .map(function (b: MathBlock) {
+          self.blocks = [b];
+          b.adopt(self, 0, 0);
+          return self;
+        });
+    }
+    latexRecursive(ctx: LatexContext) {
+      this.checkCursorContextOpen(ctx);
+      ctx.uncleanedLatex += this.ctrlSeq + this.optText + '{';
+      this.blocks![0].latexRecursive(ctx);
+      ctx.uncleanedLatex += '}';
+      this.checkCursorContextClose(ctx);
+    }
+  };
+}
+
 // \framebox keeps optional [width][pos] args like \makebox.
 LatexCmds.framebox = bindOptBracketCmd('\\framebox', 2, 'frame box');
 LatexCmds.nicefrac = LatexCmds.frac;
@@ -2687,24 +2691,67 @@ function bindCharBracketPair(
 bindCharBracketPair('(', '', 'parenthesis');
 bindCharBracketPair('[', '', 'bracket');
 bindCharBracketPair('{', '\\{', 'brace');
-// standalone \langle/\rangle are plain ⟨⟩ symbols (same fix as lVert
-// below): a one-sided Bracket fails its parser and blanks the field.
-LatexCmds.langle = bindVanillaSymbol(
-  '\\langle ',
-  '&lang;',
-  'left angle bracket'
-);
-LatexCmds.rangle = bindVanillaSymbol(
-  '\\rangle ',
-  '&rang;',
-  'right angle bracket'
-);
+// Typed \langle auto-pairs like every Bracket; a standalone \langle x
+// parses as a plain ⟨ symbol because a one-sided Bracket fails its own
+// parser and blanks the field. Same for \rangle, \lVert, \rVert below.
+class StandaloneBracket extends Bracket {
+  parseSymbol: VanillaSymbol;
+  constructor(
+    side: BracketSide,
+    open: string,
+    close: string,
+    ctrlSeq: string,
+    end: string,
+    mathspeak: string
+  ) {
+    super(side, open, close, ctrlSeq, end);
+    this.parseSymbol = new VanillaSymbol(
+      ctrlSeq,
+      h.entityText(side === L ? open : close),
+      mathspeak
+    );
+  }
+  parser() {
+    return Parser.succeed(this.parseSymbol) as Parser<MQNode | Fragment>;
+  }
+}
+LatexCmds.langle = () =>
+  new StandaloneBracket(
+    L,
+    '&lang;',
+    '&rang;',
+    '\\langle ',
+    '\\rangle ',
+    'left angle bracket'
+  );
+LatexCmds.rangle = () =>
+  new StandaloneBracket(
+    R,
+    '&lang;',
+    '&rang;',
+    '\\rangle ',
+    '\\langle ',
+    'right angle bracket'
+  );
 CharCmds['|'] = () => new Bracket(L, '|', '|', '|', '|');
-// standalone \lVert/\rVert are plain ‖ symbols — a one-sided Bracket
-// fails its parser and blanks the whole field. The \left\lVert/
-// \right\rVert pair is handled by the \left parser below.
-LatexCmds.lVert = bindVanillaSymbol('\\lVert ', '&#8741;', 'left norm');
-LatexCmds.rVert = bindVanillaSymbol('\\rVert ', '&#8741;', 'right norm');
+LatexCmds.lVert = () =>
+  new StandaloneBracket(
+    L,
+    '&#8741;',
+    '&#8741;',
+    '\\lVert ',
+    '\\rVert ',
+    'left norm'
+  );
+LatexCmds.rVert = () =>
+  new StandaloneBracket(
+    R,
+    '&#8741;',
+    '&#8741;',
+    '\\rVert ',
+    '\\lVert ',
+    'right norm'
+  );
 
 LatexCmds.left = class extends MathCommand {
   // Parser-only command: the delimiter lives in the argument after
@@ -2849,18 +2896,6 @@ var leftBinomialSymbol = SVG_SYMBOLS['('];
 var rightBinomialSymbol = SVG_SYMBOLS[')'];
 class Binomial extends DelimsNode {
   ctrlSeq = '\\binom';
-  // \binom with fewer than 2 blocks degrades to a bare \binom leaf.
-  parser() {
-    return super.parser().or(
-      Parser.succeed(
-        new VanillaSymbol(
-          '\\binom ',
-          h.text('\\binom'),
-          'binomial'
-        ) as MQNode | Fragment
-      )
-    ) as Parser<MQNode | Fragment>;
-  }
   domView = new DOMView(2, (blocks) =>
     h('span', { class: 'mq-non-leaf mq-bracket-container' }, [
       h(
@@ -2925,9 +2960,10 @@ LatexCmds.choose = class extends Binomial {
     LiveFraction.prototype.createLeftOf.call(this, cursor);
   }
   parser() {
-    // DelimsNode's two-block parser (Binomial.parser() itself falls back
-    // to a \binom leaf, which would shadow \choose's own fallback).
-    return DelimsNode.prototype.parser
+    // DelimsNode's strict two-block parser (Binomial.parser() falls back
+    // to a \binom leaf via MathCommand, which would shadow \choose's own
+    // fallback).
+    return DelimsNode.prototype.strictParser
       .call(this)
       .or(
         Parser.succeed(

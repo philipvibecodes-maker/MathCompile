@@ -332,7 +332,9 @@ class CellGrid extends MathCommand {
   }
 
   tableRows(): HTMLElement[] {
-    const table = this.domFrag().oneElement().querySelector('table');
+    const frag = this.domFrag();
+    if (frag.isEmpty()) return [];
+    const table = frag.oneElement().querySelector('table');
     return table ? Array.from(table.querySelectorAll('tr')) : [];
   }
 

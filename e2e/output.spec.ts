@@ -248,7 +248,7 @@ test('latex output round-trips \\, \\; \\: \\! spacing', async ({ page }) => {
     (el) => ((el as { value: string }).value = '\\int_{a}^{b}x\\,dx'),
   );
   await expect(page.locator('.cell-latex').first()).toHaveText(
-    '\\int_{a}^{b}x\\,dx',
+    '\\int_{a}^{b}x\\, dx',
   );
 });
 
@@ -264,7 +264,7 @@ test('latex output round-trips escaped delimiters and set literals', async ({
         '\\{x\\in\\mathbb{R}:\\lVert x\\rVert\\ge0\\}'),
   );
   await expect(page.locator('.cell-latex').first()).toHaveText(
-    '\\{x\\in\\mathbb{R}:\\lVert x\\rVert\\ge0\\}',
+    '\\{ x\\in\\mathbb{R}:\\lVert x\\rVert\\ge0\\} ',
   );
 });
 

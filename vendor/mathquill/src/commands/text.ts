@@ -484,22 +484,20 @@ LatexCmds.textsf = makeTextBlock(
   { class: 'mq-sans-serif mq-text-mode' }
 );
 // \sf — old-style declaration form of \textsf: parses a braced group
-// as sans-serif text, or degrades to a visible leaf when bare.
+// as sans-serif text, or a bare font switch like \it when unbraced.
 LatexCmds.sf = (function () {
   var Base = makeTextBlock('\\sf', 'Sans serif font', 'span', {
     class: 'mq-sans-serif mq-text-mode'
   });
   return class extends Base {
     parser() {
-      return super.parser().or(
-        Parser.succeed(
-          new VanillaSymbol(
-            '\\sf ',
-            h.text('\\sf'),
-            'sans serif'
-          ) as MQNode | Fragment
-        )
-      ) as Parser<MQNode | Fragment>;
+      return super
+        .parser()
+        .or(
+          Parser.succeed(
+            new VanillaSymbol('\\sf ', h.text('\\sf'), 'sans serif font')
+          )
+        );
     }
   };
 })();
@@ -509,21 +507,20 @@ LatexCmds.texttt = makeTextBlock(
   'span',
   { class: 'mq-monospace mq-text-mode' }
 );
+// \tt — same: braced group or bare font switch.
 LatexCmds.tt = (function () {
   var Base = makeTextBlock('\\tt', 'Mono space font', 'span', {
     class: 'mq-monospace mq-text-mode'
   });
   return class extends Base {
     parser() {
-      return super.parser().or(
-        Parser.succeed(
-          new VanillaSymbol(
-            '\\tt ',
-            h.text('\\tt'),
-            'mono space'
-          ) as MQNode | Fragment
-        )
-      ) as Parser<MQNode | Fragment>;
+      return super
+        .parser()
+        .or(
+          Parser.succeed(
+            new VanillaSymbol('\\tt ', h.text('\\tt'), 'mono space font')
+          )
+        );
     }
   };
 })();

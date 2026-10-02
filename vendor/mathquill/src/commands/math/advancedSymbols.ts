@@ -259,46 +259,13 @@ LatexCmds.quad = LatexCmds.emsp = bindVanillaSymbol(
 );
 LatexCmds.qquad = bindVanillaSymbol('\\qquad ', '        ', '8 spaces');
 
-// `\,` `\:` `\;` `\!` — thin/medium/thick/negative spaces. The parser
-// passes the backslash through in ctrlSeq ('\,') so these are distinct
-// from the bare punctuation.
-LatexCmds['\\,'] = () =>
-  new VanillaSymbol(
-    '\\,',
-    h('span', { style: 'margin-right:.1667em' }),
-    'thin space'
-  );
-LatexCmds['\\:'] = () =>
-  new VanillaSymbol(
-    '\\:',
-    h('span', { style: 'margin-right:.2222em' }),
-    'medium space'
-  );
-LatexCmds['\\;'] = () =>
-  new VanillaSymbol(
-    '\\;',
-    h('span', { style: 'margin-right:.2778em' }),
-    'thick space'
-  );
-LatexCmds['\\!'] = () =>
-  new VanillaSymbol(
-    '\\!',
-    h('span', { style: 'margin-right:-.1667em' }),
-    'negative thin space'
-  );
 
 // style switches (\displaystyle … \nolimits) — invisible atoms that
 // serialize their command verbatim. \limits/\nolimits sit between an
 // operator and its bounds; the bound then attaches to this zero-width
 // atom, so `\sum\limits_{i}` renders like `\sum_{i}` and round-trips.
-function bindStyleModifier(ctrlSeq: string, mathspeak: string) {
-  return () =>
-    new VanillaSymbol(
-      ctrlSeq,
-      h('span', { class: 'mq-style-modifier' }),
-      mathspeak
-    );
-}
+// (bindStyleModifier itself is defined in commands.ts — hoisted across
+// the concatenated bundle — so mathquill-basic gets it too.)
 LatexCmds.displaystyle = bindStyleModifier(
   '\\displaystyle ',
   'displaystyle'
@@ -861,18 +828,6 @@ LatexCmds['∤'] = LatexCmds.nmid = bindBinaryOperator(
   '&#8740;',
   'does not divide'
 );
-LatexCmds['≰'] =
-  LatexCmds.nle =
-  LatexCmds.nleq =
-    bindBinaryOperator('\\not\\le ', '&#8816;', 'not less than or equal to');
-LatexCmds['≱'] =
-  LatexCmds.nge =
-  LatexCmds.ngeq =
-    bindBinaryOperator(
-      '\\not\\ge ',
-      '&#8817;',
-      'not greater than or equal to'
-    );
 LatexCmds['⊬'] = LatexCmds.nvdash = bindBinaryOperator(
   '\\not\\vdash ',
   '&#8876;',
@@ -1866,7 +1821,6 @@ var OLDSTYLE: [string, string][] = [
   ['sc', 'small caps'],
   ['sl', 'slanted'],
   ['cal', 'calligraphic'],
-  ['Bbb', 'blackboard bold'],
   ['frak', 'fraktur'],
   ['goth', 'gothic']
 ];
@@ -2017,45 +1971,8 @@ LatexCmds.addtolength = () =>
   }
 );
 
-// \makebox[w][pos]{x} / \framebox[w][pos]{x} / \raisebox{d}[ht][dp]{x}
-// — a content block preceded by up to two optional bracket args.
-function bindOptBracketCmd(ctrlSeq: string, maxOpt: number, speak: string) {
-  return class extends MathCommand {
-    optText = '';
-    constructor() {
-      super(
-        ctrlSeq,
-        new DOMView(1, (blocks) =>
-          h('span', { class: 'mq-non-leaf' }, [
-            h.block('span', {}, blocks[0])
-          ])
-        )
-      );
-    }
-    parser() {
-      var self = this;
-      return Parser.regex(
-        new RegExp('^(?:\\[[^\\]]*\\]){0,' + maxOpt + '}')
-      )
-        .then(function (opt: string) {
-          self.optText = opt;
-          return latexMathParser.block;
-        })
-        .map(function (b: MathBlock) {
-          self.blocks = [b];
-          b.adopt(self, 0, 0);
-          return self;
-        });
-    }
-    latexRecursive(ctx: LatexContext) {
-      this.checkCursorContextOpen(ctx);
-      ctx.uncleanedLatex += this.ctrlSeq + this.optText + '{';
-      this.blocks![0].latexRecursive(ctx);
-      ctx.uncleanedLatex += '}';
-      this.checkCursorContextClose(ctx);
-    }
-  };
-}
+// bindOptBracketCmd is defined in commands.ts so the mathquill-basic
+// bundle (which skips this file) can use it for \framebox.
 LatexCmds.makebox = bindOptBracketCmd('\\makebox', 2, 'make box');
 // (\framebox lives in commands.ts, which applies the same
 // bindOptBracketCmd helper; \raisebox needs a raw dim arg first.)
