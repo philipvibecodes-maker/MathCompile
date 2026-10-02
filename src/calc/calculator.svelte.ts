@@ -9,6 +9,9 @@ export interface CalcRowOk {
   text?: string;
   approx?: string;
   code?: string;
+  // The emitted program with display plumbing (the `e = ...` capture
+  // lines that exist only to drive row rendering). Hidden by default.
+  displayCode?: string;
 }
 export interface CalcRowErr {
   ok: false;

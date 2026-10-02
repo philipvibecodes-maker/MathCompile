@@ -548,6 +548,21 @@ body {
   color: #4078f2;
 }
 
+/* Opt-in reveal of the `e = ...` display-plumbing lines under .calc-code. */
+.calc-plumbing {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 4px;
+  font-size: 11px;
+  color: var(--faint);
+  user-select: none;
+}
+
+.calc-plumbing input {
+  margin: 0;
+}
+
 :root[data-theme='dark'] .calc-code .tok-kw {
   color: #c678dd;
 }

@@ -19,6 +19,8 @@
   let rows = $state<CalcRow[]>([]);
   let pending = $state(false);
   let failed = $state('');
+  // Per-row opt-in to the `e = ...` display plumbing lines in .calc-code.
+  let plumbing = $state<boolean[]>([]);
 
   const statusLabel = $derived(
     calcEngine.status === 'loading'
@@ -95,13 +97,21 @@
               {/if}
             </div>
             {#if appStore.showCode && row.code}
-              {@const toks = highlightPython(row.code)}
+              {@const shown =
+                plumbing[i] && row.displayCode ? row.displayCode : row.code}
+              {@const toks = highlightPython(shown)}
               <pre class="calc-code"><code
                   >{#each toks as tok, j (j)}<span
                       class={tok.cls ? `tok-${tok.cls}` : undefined}
                       >{tok.text}</span
                     >{/each}</code
                 ></pre>
+              {#if row.displayCode && row.displayCode !== row.code}
+                <label class="calc-plumbing"
+                  ><input type="checkbox" bind:checked={plumbing[i]} />
+                  display plumbing</label
+                >
+              {/if}
             {/if}
           {:else}
             <code class="calc-error" title={row.error}>{row.error}</code>

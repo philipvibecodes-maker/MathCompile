@@ -164,15 +164,18 @@ def mc_run(prog_json):
             row = _mc_row(_mc_eval_stmt(stmt, ns))
             row['ok'] = True
             # Show code = the emitted program for this row (prelude defs
-            # + e = <eval'd source>), not the result's python() repr.
-            lines = list(prog['prelude'])
+            # + statement source), not the result's python() repr. The
+            # 'e = ...' capture lines exist only to drive row rendering —
+            # display plumbing, split out so the UI can hide it by default.
             disp = stmt.get('display')
+            row['code'] = '\\n'.join(list(prog['prelude']) + [stmt['code']])
+            plumb = list(prog['prelude'])
             if disp is None:
-                lines.append('e = ' + stmt['code'])
+                plumb.append('e = ' + stmt['code'])
             else:
-                lines.append(stmt['code'])
-                lines.append('e = ' + disp)
-            row['code'] = '\\n'.join(lines)
+                plumb.append(stmt['code'])
+                plumb.append('e = ' + disp)
+            row['displayCode'] = '\\n'.join(plumb)
             out.append(row)
         except Exception as e:
             out.append({'ok': False, 'error': str(e)})
