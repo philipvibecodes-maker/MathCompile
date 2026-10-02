@@ -551,6 +551,17 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(calc('\\int \\ln u\\text{d}u').statements[0].code).toBe(
       'sp.integrate(sp.log(u), u) + sp.Symbol("C")',
     );
+    // `x\sin x\,dx` — the pair is inside the Sin arg, itself a factor.
+    expect(calc('\\int x\\sin x\\text{d}x').statements[0].code).toBe(
+      'sp.integrate(x * sp.sin(x), x) + sp.Symbol("C")',
+    );
+    // `\sin^{2}x\,dx` — inside Sin's arg, inside Power's base.
+    expect(calc('\\int \\sin^{2}x\\text{d}x').statements[0].code).toBe(
+      'sp.integrate(sp.sin(x)**2, x) + sp.Symbol("C")',
+    );
+    expect(calc('\\int \\sec^{2}x\\text{d}x').statements[0].code).toBe(
+      'sp.integrate(sp.sec(x)**2, x) + sp.Symbol("C")',
+    );
   });
 
   it('strips thin-space commands instead of emitting InvisibleOperator', () => {
