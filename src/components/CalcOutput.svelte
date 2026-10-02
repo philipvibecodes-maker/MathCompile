@@ -185,7 +185,7 @@
         <span
           class="calc-interim"
           title="Estimate from the interim engine (nerdamer) — replaced by the SymPy result once the engine finishes loading."
-          >estimate · SymPy still loading</span
+          >estimate — SymPy still loading (interim engine, less accurate)</span
         >
       {/if}
     </div>

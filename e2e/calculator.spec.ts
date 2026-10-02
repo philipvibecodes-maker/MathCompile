@@ -171,18 +171,16 @@ test('flags interim results and the engine-loading banner while SymPy boots', as
   await mf.click();
   await mf.pressSequentially('2+2', { delay: 40 });
 
-  // While Pyodide boots, the output column header announces that interim
-  // results come from a less accurate engine, and each interim row is
-  // tagged as an estimate.
-  const banner = page.locator('.engine-status');
-  await expect(banner).toContainText('Loading SymPy engine');
-  await expect(banner).toContainText('less accurate');
-  await expect(page.locator('.calc-interim').first()).toBeVisible({
+  // While Pyodide boots, each interim row is tagged as a less-accurate
+  // estimate from the interim engine.
+  const tag = page.locator('.calc-interim');
+  await expect(tag.first()).toContainText('SymPy still loading', {
     timeout: 10_000,
   });
+  await expect(tag.first()).toContainText('less accurate');
 
-  // Both clear once the real SymPy result lands.
-  await expect(banner).toHaveCount(0, { timeout: 90_000 });
+  // The tag clears once the real SymPy result lands.
+  await expect(tag).toHaveCount(0, { timeout: 90_000 });
   await expect(page.locator('.calc-interim')).toHaveCount(0);
   await expect(page.locator('.calc-row').first()).toContainText('4');
 });

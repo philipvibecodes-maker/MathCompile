@@ -10,7 +10,7 @@
   import { appStore, THEME_STORAGE_KEY } from './state/store.svelte';
   import { loadPrefs, savePrefs } from './state/persistence';
   import { copyableLatex, displayLatex } from './compile/latex';
-  import { calcEngine, prewarm } from './calc/calculator.svelte.ts';
+  import { prewarm } from './calc/calculator.svelte.ts';
   import { buildCommands } from './commands';
   import { installGlobalKeymap } from './editor/keymap';
   import { compileWorksheet } from './compile/codegen';
@@ -323,23 +323,6 @@
               {/each}
             </select>
           </label>
-          {#if appStore.target === 'calculator' && (calcEngine.status === 'loading' || calcEngine.status === 'error')}
-            <div
-              class="engine-status"
-              class:engine-error={calcEngine.status === 'error'}
-              role="status"
-            >
-              {#if calcEngine.status === 'loading'}
-                <span class="engine-spinner" aria-hidden="true"></span>
-                <span>
-                  <strong>Loading SymPy engine…</strong>
-                  interim results use a faster, less accurate engine
-                </span>
-              {:else}
-                <span>SymPy engine failed to load — {calcEngine.error}</span>
-              {/if}
-            </div>
-          {/if}
           {#if compiled && appStore.target === 'python'}
             <label class="option-checkbox output-import-all">
               <input

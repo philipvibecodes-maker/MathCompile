@@ -547,37 +547,6 @@ body {
   color: var(--faint);
 }
 
-/* Engine-status banner in the output column header — visible while the
-   Pyodide/SymPy worker boots (or failed to). */
-.engine-status {
-  flex: 1 1 100%;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.engine-status.engine-error {
-  color: var(--danger);
-}
-
-.engine-spinner {
-  flex: 0 0 auto;
-  width: 10px;
-  height: 10px;
-  border: 2px solid var(--border);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: engine-spin 0.8s linear infinite;
-}
-
-@keyframes engine-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .calc-error {
   color: var(--danger);
   overflow-wrap: anywhere;
