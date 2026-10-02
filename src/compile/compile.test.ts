@@ -900,6 +900,23 @@ const FIXTURES: {
     latex: '\\operatorname{sqrt}(2)',
     expectedPython: ['sp.sqrt(2)'],
   },
+  {
+    // `f: x \mapsto x^2` is a named function declaration — bind it like
+    // f(x) = x^2 instead of emitting a bare lambda that loses the name.
+    latex: 'f: x \\mapsto x^2',
+    expectedPython: ['def f(x):', '    return x**2'],
+  },
+  {
+    // `g: (x,y) \mapsto x+y` — the Colon-typed declaration shape.
+    latex: 'g: (x,y) \\mapsto x+y',
+    expectedPython: ['def g(x, y):', '    return x + y'],
+  },
+  {
+    // `(x \mapsto x^2)(3)` applies the lambda — `(lambda x: x**2)(3)`,
+    // not `(lambda ...) * 3` (TypeError).
+    latex: '(x \\mapsto x^2)(3)',
+    expectedPython: ['x = sp.Symbol("x")', '(lambda x: x**2)(3)'],
+  },
 ];
 
 describe('latexToStatementStrings', () => {

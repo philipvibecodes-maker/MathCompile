@@ -964,6 +964,13 @@ class Emitter {
           return [text, PREC_ATOM];
 
         }
+        if (isHead(callee, 'Function')) {
+          // `(x \mapsto x^2)(3)` — a lambda callee is a real call, not
+          // juxtaposed factors (the generic multiply path below would
+          // emit `(lambda ...) * 3`, a TypeError at exec).
+          const argList = args.slice(1).map((a) => this.emit(a)).join(', ');
+          return [`${this.emit(callee)}(${argList})`, PREC_ATOM];
+        }
         if (!isStr(callee)) {
           // A non-name "callee" isn't a call — `\sqrt{x}(x+1)`, `2(x+1)`,
           // `x^2(y)` are juxtaposed factors (the delimiter group was the

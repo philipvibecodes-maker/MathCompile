@@ -226,6 +226,15 @@ function flattenSubscript(node: MathJson): string {
 const isSymbolString = (v: MathJson): v is string =>
   isString(v) && v !== '' && !v.startsWith("'");
 
+// A parameter name slot — `x` or the quoted literal `'x'` CE puts in
+// Typed declaration signatures (`f: x \mapsto x^2`). Strips the quotes
+// without emitting a literal note; undefined for anything else.
+const paramName = (v: MathJson): string | undefined => {
+  if (isSymbolString(v)) return v;
+  const m = isString(v) ? TEXT_LITERAL.exec(v) : null;
+  return m ? m[1] : undefined;
+};
+
 // A Delimiter node's argument list: Delimiter(x) -> [x],
 // Delimiter(Sequence(a, b), '(,)') -> [a, b] (the '(,)' marker is dropped).
 function delimiterArgs(delim: MathJson): MathJson[] {
@@ -775,6 +784,27 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       return normalizeStatementEqual(node, (n) => normalize(n, false));
     }
 
+    // `g: (x,y) \mapsto body` — CE types a named function declaration
+    // as Colon(name, Function(body, params...)). That's a def
+    // like `f(x) = body`, not a Colon(...) call (which sympifies the
+    // emitted lambda and dies).
+    if (
+      atStatement &&
+      h === 'Colon' &&
+      node.length === 3 &&
+      isString(node[1]) &&
+      isArray(node[2]) &&
+      head(node[2]) === 'Function' &&
+      node[2].slice(2).every((p) => paramName(p) !== undefined)
+    ) {
+      return [
+        'Def',
+        node[1],
+        ['List', ...node[2].slice(2).map((p) => paramName(p) as string)],
+        normalize(node[2][1], false),
+      ];
+    }
+
     // CE already emits Add/Negate instead of Subtract under canonical
     // parse; non-canonical keeps Subtract, so normalize the variant either
     // way. Nested Add (x - (3 - y)-style terms) is flattened to the
@@ -937,11 +967,36 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
         isArray(body) && head(body) === 'Block' && body.length === 2
           ? body[1]
           : body;
-      return [
-        'Function',
-        normalize(unwrapped, false),
-        ...node.slice(2).map((p) => normalize(p, false, false, true)),
-      ];
+      // `f: x \mapsto body` — the other half of the colon-declaration
+      // shape: the signature slot is Typed(name, params...). At
+      // statement level bind the name like `f(params) = body`; inside an
+      // expression it stays an anonymous lambda. Read the raw slot (not
+      // its normalize) so the signature doesn't emit Typed/literal
+      // notes on the way to a shape that discards it.
+      const sig = node[2];
+      if (
+        atStatement &&
+        node.length === 3 &&
+        isArray(sig) &&
+        head(sig) === 'Typed' &&
+        sig.length >= 3
+      ) {
+        const name = paramName(sig[1]);
+        const sigParams = sig
+          .slice(2)
+          .map((p) => paramName(p) as string | undefined);
+        if (name !== undefined && sigParams.every((p) => p !== undefined))
+          return [
+            'Def',
+            name,
+            ['List', ...(sigParams as string[])],
+            normalize(unwrapped, false),
+          ];
+      }
+      const params = node
+        .slice(2)
+        .map((p) => normalize(p, false, false, true));
+      return ['Function', normalize(unwrapped, false), ...params];
     }
 
     if (h === 'Limits') {
