@@ -312,6 +312,18 @@ const CE_DISPLAY_NAMES: Record<string, string> = {
   thetaSymbol: '\\vartheta',
   rhoSymbol: '\\varrho',
   kappaSymbol: '\\varkappa',
+  digamma: '\\digamma',
+  ell: '\\ell',
+  hBar: '\\hbar',
+  bet: '\\beth',
+  gimel: '\\gimel',
+  daleth: '\\daleth',
+  aleph: '\\aleph',
+  weierstrass: '\\wp',
+  // \Re/\Im alone — as leaves these are set names, not the function
+  // heads re()/im() they spell when called.
+  Real: '\\Re',
+  Imaginary: '\\Im',
 };
 
 // Python precedence levels for parenthesization.
