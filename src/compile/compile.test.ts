@@ -611,13 +611,14 @@ const FIXTURES: {
     ],
   },
   {
+    // A bare symbol is not provably a set — `x \in S` reads it as a
+    // singleton `x \in {S}` rather than a TypeError or a flagged stub,
+    // the same convention the set ops use (`x \cup y` -> `{x, y}`).
     latex: 'x \\in S',
     expectedPython: [
       "x, S = sp.symbols('x S')",
-      'Element = sp.Function("Element")',
-      'Element(x, S)',
+      'sp.Contains(x, sp.FiniteSet(S))',
     ],
-    issues: ['unknown head "Element"'],
   },
   {
     latex: '\\emptyset \\cup \\mathbb{Z}',
