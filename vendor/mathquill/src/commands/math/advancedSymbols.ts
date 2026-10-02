@@ -2323,3 +2323,233 @@ LatexCmds.includegraphics = bindOptBracketCmd(
 // \bmod already parses; \mod variants \pmod/\pod covered. More
 // starred text-modifier commands.
 LatexCmds.tagcurve = bindLiteralCmd('\\tagcurve', 'tag curve');
+
+// Text-mode symbols and misc commands — visible verbatim.
+bindMathWrap('oldstylenums');
+LatexCmds.texteuro = bindLiteralCmd('\\texteuro', 'euro');
+LatexCmds.textsterling = bindLiteralCmd('\\textsterling', 'sterling');
+LatexCmds.textyen = bindLiteralCmd('\\textyen', 'yen');
+LatexCmds.textcent = bindLiteralCmd('\\textcent', 'cent');
+LatexCmds.textcurrency = bindLiteralCmd('\\textcurrency', 'currency');
+LatexCmds.textdollar = bindLiteralCmd('\\textdollar', 'dollar');
+LatexCmds.textdegree = bindLiteralCmd('\\textdegree', 'degree');
+LatexCmds.textasciitilde = bindLiteralCmd(
+  '\\textasciitilde',
+  'asciitilde'
+);
+LatexCmds.textasciicircum = bindLiteralCmd(
+  '\\textasciicircum',
+  'asciicircum'
+);
+LatexCmds.textbackslash = bindLiteralCmd('\\textbackslash', 'backslash');
+LatexCmds.textbar = bindLiteralCmd('\\textbar', 'bar');
+LatexCmds.textunderscore = bindLiteralCmd('\\textunderscore', 'underscore');
+LatexCmds.textbraceleft = bindLiteralCmd('\\textbraceleft', 'brace left');
+LatexCmds.textbraceright = bindLiteralCmd(
+  '\\textbraceright',
+  'brace right'
+);
+LatexCmds.textperiodcentered = bindLiteralCmd(
+  '\\textperiodcentered',
+  'period centered'
+);
+LatexCmds.textasteriskcentered = bindLiteralCmd(
+  '\\textasteriskcentered',
+  'asterisk centered'
+);
+LatexCmds.textbullet = bindLiteralCmd('\\textbullet', 'bullet');
+LatexCmds.textordfeminine = bindLiteralCmd(
+  '\\textordfeminine',
+  'ord feminine'
+);
+LatexCmds.textordmasculine = bindLiteralCmd(
+  '\\textordmasculine',
+  'ord masculine'
+);
+LatexCmds.textregistered = bindLiteralCmd(
+  '\\textregistered',
+  'registered'
+);
+LatexCmds.textcopyright = bindLiteralCmd('\\textcopyright', 'copyright');
+LatexCmds.texttrademark = bindLiteralCmd('\\texttrademark', 'trademark');
+LatexCmds.textellipsis = bindLiteralCmd('\\textellipsis', 'ellipsis');
+LatexCmds.textquestiondown = bindLiteralCmd(
+  '\\textquestiondown',
+  'question down'
+);
+LatexCmds.textexclamdown = bindLiteralCmd(
+  '\\textexclamdown',
+  'exclam down'
+);
+LatexCmds.textquotedblleft = bindLiteralCmd(
+  '\\textquotedblleft',
+  'quote dbl left'
+);
+LatexCmds.textquotedblright = bindLiteralCmd(
+  '\\textquotedblright',
+  'quote dbl right'
+);
+LatexCmds.textquoteleft = bindLiteralCmd('\\textquoteleft', 'quote left');
+LatexCmds.textquoteright = bindLiteralCmd(
+  '\\textquoteright',
+  'quote right'
+);
+LatexCmds.textservicemark = bindLiteralCmd(
+  '\\textservicemark',
+  'service mark'
+);
+LatexCmds.LaTeXe = bindLiteralCmd('\\LaTeXe', 'LaTeX 2e');
+LatexCmds.AmS = bindLiteralCmd('\\AmS', 'AMS');
+LatexCmds.BibTeX = bindLiteralCmd('\\BibTeX', 'BibTeX');
+LatexCmds.MF = bindLiteralCmd('\\MF', 'Metafont');
+LatexCmds.MP = bindLiteralCmd('\\MP', 'Metapost');
+
+// siunitx: value/unit commands keep their argument signature verbatim.
+bindMathWrap('si');
+bindMathWrap('unit');
+bindMathWrap('num');
+bindMathWrap('ang');
+LatexCmds.SI = () =>
+  new RawArgCommand(
+    '\\SI',
+    new RegExp('^' + RAW_GROUP + RAW_GROUP),
+    'SI'
+  );
+LatexCmds.qty = () =>
+  new RawArgCommand(
+    '\\qty',
+    new RegExp('^' + RAW_GROUP + RAW_GROUP),
+    'qty'
+  );
+LatexCmds.numrange = () =>
+  new RawArgCommand(
+    '\\numrange',
+    new RegExp('^' + RAW_GROUP + RAW_GROUP),
+    'num range'
+  );
+LatexCmds.SIrange = () =>
+  new RawArgCommand(
+    '\\SIrange',
+    new RegExp('^' + RAW_GROUP + RAW_GROUP + RAW_GROUP),
+    'SI range'
+  );
+LatexCmds.angrange = () =>
+  new RawArgCommand(
+    '\\angrange',
+    new RegExp('^' + RAW_GROUP + RAW_GROUP),
+    'ang range'
+  );
+// unit names / prefixes used standalone or inside \si args
+[
+  'celsius',
+  'micro',
+  'ohm',
+  'percent',
+  'kilogram',
+  'gram',
+  'metre',
+  'meter',
+  'second',
+  'ampere',
+  'kelvin',
+  'mole',
+  'candela',
+  'joule',
+  'watt',
+  'volt',
+  'hertz',
+  'newton',
+  'pascal',
+  'farad',
+  'henry',
+  'tesla',
+  'weber',
+  'becquerel',
+  'sievert',
+  'gray',
+  'katal',
+  'lumen',
+  'lux',
+  'electronvolt',
+  'minute',
+  'hour',
+  'day',
+  'litre',
+  'liter',
+  'tonne',
+  'hectare',
+  'arcminute',
+  'arcsecond',
+  'astronomicalunit',
+  'per',
+  'square',
+  'cubic',
+  'tothe',
+  'raisetothe',
+  'lowertothe',
+  'of',
+  'kilo',
+  'mega',
+  'giga',
+  'tera',
+  'milli',
+  'centi',
+  'deci',
+  'deca',
+  'hecto',
+  'nano',
+  'pico',
+  'femto',
+  'atto',
+  'zepto',
+  'yocto',
+  'exa',
+  'peta'
+].forEach(function (n) {
+  (LatexCmds as Record<string, () => MQNode | Fragment>)[n] = bindLiteralCmd(
+    '\\' + n,
+    n
+  );
+});
+
+// Skip commands taking a dimension.
+bindMathWrap('hskip');
+bindMathWrap('vskip');
+bindMathWrap('mskip');
+bindMathWrap('kern');
+bindMathWrap('mkern');
+bindMathWrap('hspace');
+bindMathWrap('vspace');
+
+// TeX boxes: optional 'to <dim>' before the braced content.
+LatexCmds.hbox = () =>
+  new RawArgCommand(
+    '\\hbox ',
+    new RegExp('^(?:to\\s+[^\\s{]+)?' + RAW_GROUP),
+    'h box'
+  );
+LatexCmds.vbox = () =>
+  new RawArgCommand(
+    '\\vbox ',
+    new RegExp('^(?:to\\s+[^\\s{]+)?' + RAW_GROUP),
+    'v box'
+  );
+LatexCmds.vtop = () =>
+  new RawArgCommand(
+    '\\vtop ',
+    new RegExp('^(?:to\\s+[^\\s{]+)?' + RAW_GROUP),
+    'v top'
+  );
+LatexCmds.vcenter = () =>
+  new RawArgCommand(
+    '\\vcenter ',
+    new RegExp('^(?:to\\s+[^\\s{]+)?' + RAW_GROUP),
+    'v center'
+  );
+
+// Extra math fonts + \cases leaf (the begin-env form is \begin{cases}).
+bindMathWrap('mathbfsf');
+bindMathWrap('mathbold');
+bindMathWrap('mathfrak');
+bindMathWrap('mathscr');
+LatexCmds.cases = bindLiteralCmd('\\cases', 'cases');

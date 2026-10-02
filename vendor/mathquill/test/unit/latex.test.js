@@ -1576,5 +1576,21 @@ suite('latex', function () {
     assertParsesLatex('\\mathchoice{a}{b}{c}{d}', '\\mathchoice{a}{b}{c}{d}');
     assertParsesLatex('\\includegraphics[width=1cm]{x}', '\\includegraphics[width=1cm]{x}');
     assertParsesLatex('\\path{x}', '\\path{x}');
+    // \matrix{...} emits the \begin{matrix} env form like \pmatrix
+    assertParsesLatex('\\matrix{a&b}', '\\begin{matrix}a&b\\end{matrix}');
+    // TeX boxes keep 'to <dim>'; siunitx + skip commands stay verbatim
+    assertParsesLatex('\\hbox to 3em{x}', '\\hbox to 3em{x}');
+    assertParsesLatex('\\hbox{x}', '\\hbox{x}');
+    assertParsesLatex('\\vbox to 2in{x}', '\\vbox to 2in{x}');
+    assertParsesLatex('\\SI{1}{m}', '\\SI{1}{m}');
+    assertParsesLatex('\\si{m}', '\\si{m}');
+    assertParsesLatex('\\num{1e3}', '\\num{1e3}');
+    assertParsesLatex('\\celsius', '\\celsius');
+    assertParsesLatex('\\hskip{3pt}', '\\hskip{3pt}');
+    assertParsesLatex('\\kern{2pt}', '\\kern{2pt}');
+    assertParsesLatex('\\mathbfsf{x}', '\\mathbfsf{x}');
+    assertParsesLatex('\\texteuro', '\\texteuro');
+    assertParsesLatex('\\oldstylenums{0}', '\\oldstylenums{0}');
+    assertParsesLatex('\\cases{a&b}', '\\cases a\\&b');
   });
 });
