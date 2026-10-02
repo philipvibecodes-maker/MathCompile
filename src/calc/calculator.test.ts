@@ -387,6 +387,16 @@ describe('toNerdamerInput (latex → nerdamer calls)', () => {
     expect(p.statements[0]?.code).toContain('KroneckerDelta"))(i, j)');
     expect(p.statements[0]?.code).not.toContain('sp.I');
   });
+  it("evaluates f'(0) at 0 instead of differentiating a constant", () => {
+    const p = calc("f'(0)");
+    expect(p.statements[0]?.code).toContain('.subs(x, 0)');
+    expect(p.statements[0]?.code).not.toContain('diff(f(0), 0)');
+  });
+
+  it("keeps f'(x) as the derivative in x", () => {
+    const p = calc("f'(x)");
+    expect(p.statements[0]?.code).toContain('diff(f(x), x)');
+  });
 });
 
 describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {

@@ -585,19 +585,34 @@ class Emitter {
             PREC_ATOM,
           ];
         if (isHead(callee, 'Derivative')) {
-          // f'(x): ["Apply", ["Derivative", f, n], x]
+          // f'(x): ["Apply", ["Derivative", f, n], x] — the prime
+          // differentiates f w.r.t. its own variable; the call arg is
+          // where that derivative is evaluated (f'(0) is the derivative
+          // at 0, not `diff(f(0), 0)` which has no differentiation var).
           const [, f, n] = callee;
           const order = typeof n === 'number' && n !== 1 ? `, ${n}` : '';
-          const argList = args
-            .slice(1)
-            .map((a) => this.emit(a))
-            .join(', ');
+          const argNodes = args.slice(1);
           const fname = isStr(f) ? this.fn(f) : null;
-          const applied =
+          const applied = (argsList: string) =>
             fname !== null
-              ? `${fname}(${argList})`
-              : `${this.emit(f)}(${argList})`;
-          return [`${this.sp}diff(${applied}, ${argList}${order})`, PREC_ATOM];
+              ? `${fname}(${argsList})`
+              : `${this.emit(f)}(${argsList})`;
+          if (argNodes.length === 1 && isStr(argNodes[0])) {
+            const a = this.sym(argNodes[0]);
+            return [
+              `${this.sp}diff(${applied(a)}, ${a}${order})`,
+              PREC_ATOM,
+            ];
+          }
+          if (argNodes.length === 1) {
+            const base = `${this.sp}diff(${applied(this.sym('x'))}, x${order})`;
+            return [`${base}.subs(x, ${this.emit(argNodes[0])})`, PREC_ATOM];
+          }
+          const argList = argNodes.map((a) => this.emit(a)).join(', ');
+          return [
+            `${this.sp}diff(${applied(argList)}, ${argList}${order})`,
+            PREC_ATOM,
+          ];
         }
         if (!isStr(callee)) {
           // A non-name "callee" isn't a call — `\sqrt{x}(x+1)`, `2(x+1)`,
