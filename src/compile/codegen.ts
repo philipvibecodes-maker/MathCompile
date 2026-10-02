@@ -1605,19 +1605,25 @@ class Emitter {
           }
         }
         // `A^{+}` on a non-set operand is the Moore–Penrose
-        // pseudoinverse — sp.pinv, not the bare PseudoInverse call CE
-        // uses for the `^{+}` superscript.
+        // pseudoinverse. sympy 1.14 has no sp.pinv — it's a Matrix
+        // method — so emit the method form (honest AttributeError on
+        // scalars rather than a module-level one).
         if (name === 'PseudoInverse' && args.length === 2)
-          return [`${this.sp}pinv(${this.emit(args[1])})`, PREC_ATOM];
+          return [
+            `(${this.emit(args[1], PREC_ATOM)}).pinv()`,
+            PREC_ATOM,
+          ];
         // \bar{x} — the complex-conjugate convention (as \overline{x});
         // SymPy's mean lives in stats and takes a random variable.
         if (name === 'Mean' && args.length === 2)
           return [`${this.sp}conjugate(${this.emit(args[1])})`, PREC_ATOM];
         // `x \text{ for } x>0` — CE's quantifier call parks the
         // condition first; sympy's ForAll/Exists take (symbol, cond).
+        // Not in sympy 1.14's top level, so emit the honest function
+        // call rather than an sp.ForAll AttributeError.
         if ((name === 'ForAll' || name === 'Exists') && args.length === 3)
           return [
-            `${this.sp}${name}(${this.emit(args[2])}, ${this.emit(args[1])})`,
+            `${this.fn(name)}(${this.emit(args[2])}, ${this.emit(args[1])})`,
             PREC_ATOM,
           ];
         // `f \circ g` — CE's composition head is literally 'Ring',

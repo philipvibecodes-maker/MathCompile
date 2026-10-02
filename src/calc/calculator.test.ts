@@ -538,8 +538,9 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(calc('x \\in \\mathbb{Z}^{*}').statements[0].code).toBe(
       'sp.Contains(x, sp.Complement(sp.S.Integers, sp.FiniteSet(0)))',
     );
-    // `A^{+}` — Moore–Penrose pseudoinverse, not a stray call.
-    expect(calc('A^{+}').statements[0].code).toBe('sp.pinv(A)');
+    // `A^{+}` — Moore–Penrose pseudoinverse (a Matrix method in sympy
+    // 1.14 — no sp.pinv exists).
+    expect(calc('A^{+}').statements[0].code).toBe('(A).pinv()');
   });
 
   it('peels a differential nested inside the integrand argument', () => {
