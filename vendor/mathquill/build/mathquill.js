@@ -4106,11 +4106,21 @@ var __assign = (this && this.__assign) || function () {
         var controlSequence = regex(/^[^\\a-eg-zA-Z]/) // hotfix #164; match MathBlock::write
             .or(string('\\').then(regex(/^[a-z]+/i)
             .or(regex(/^\s+/).result(' '))
+<<<<<<< HEAD
             // `\,` `\;` `\:` `\!` spacing commands \u2014 keep the backslash in
             // ctrlSeq so they don't collide with the bare characters
             .or(regex(/^[,;:!]/).map(function (c) {
             return '\\' + c;
         }))
+||||||| 062b1b9
+=======
+            // `\{` `\}` `\_` `\#` `\|` (and `\,` `\;` `\:` `\!`) \u2014 keep
+            // the backslash in ctrlSeq so escaped characters don't
+            // collide with the bare characters' own meanings
+            .or(regex(/^[,;:!{}_#|]/).map(function (c) {
+            return '\\' + c;
+        }))
+>>>>>>> origin/devin/bughunt-latex-escaped-delims
             .or(any)))
             .then(function (ctrlSeq) {
             // TODO - is Parser<MQNode> correct?
@@ -7748,6 +7758,19 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds['&'] = function () {
         return new NonSymbolaSymbol('\\&', h.entityText('&amp;'), 'and');
     };
+    // escaped delimiters/specials \u2014 the parser passes the backslash
+    // through in ctrlSeq ('\{'), so the bare characters are untouched
+    LatexCmds['\\{'] = function () { return new NonSymbolaSymbol('\\{', h.text('{'), 'open brace'); };
+    LatexCmds['\\}'] = function () {
+        return new NonSymbolaSymbol('\\}', h.text('}'), 'close brace');
+    };
+    LatexCmds['\\_'] = function () {
+        return new NonSymbolaSymbol('\\_', h.text('_'), 'underscore');
+    };
+    LatexCmds['\\#'] = function () { return new NonSymbolaSymbol('\\#', h.text('#'), 'hash'); };
+    LatexCmds['\\|'] = function () {
+        return new NonSymbolaSymbol('\\|', h.entityText('&#8741;'), 'double bar');
+    };
     LatexCmds['%'] = /** @class */ (function (_super) {
         __extends(class_6, _super);
         function class_6() {
@@ -9887,19 +9910,16 @@ var __assign = (this && this.__assign) || function () {
     bindCharBracketPair('(', '', 'parenthesis');
     bindCharBracketPair('[', '', 'bracket');
     bindCharBracketPair('{', '\\{', 'brace');
-    LatexCmds.langle = function () {
-        return new Bracket(L, '&lang;', '&rang;', '\\langle ', '\\rangle ');
-    };
-    LatexCmds.rangle = function () {
-        return new Bracket(R, '&lang;', '&rang;', '\\langle ', '\\rangle ');
-    };
+    // standalone \langle/\rangle are plain \u27e8\u27e9 symbols (same fix as lVert
+    // below): a one-sided Bracket fails its parser and blanks the field.
+    LatexCmds.langle = bindVanillaSymbol('\\langle ', '&lang;', 'left angle bracket');
+    LatexCmds.rangle = bindVanillaSymbol('\\rangle ', '&rang;', 'right angle bracket');
     CharCmds['|'] = function () { return new Bracket(L, '|', '|', '|', '|'); };
-    LatexCmds.lVert = function () {
-        return new Bracket(L, '&#8741;', '&#8741;', '\\lVert ', '\\rVert ');
-    };
-    LatexCmds.rVert = function () {
-        return new Bracket(R, '&#8741;', '&#8741;', '\\lVert ', '\\rVert ');
-    };
+    // standalone \lVert/\rVert are plain \u2016 symbols \u2014 a one-sided Bracket
+    // fails its parser and blanks the whole field. The \left\lVert/
+    // \right\rVert pair is handled by the \left parser below.
+    LatexCmds.lVert = bindVanillaSymbol('\\lVert ', '&#8741;', 'left norm');
+    LatexCmds.rVert = bindVanillaSymbol('\\rVert ', '&#8741;', 'right norm');
     LatexCmds.left = /** @class */ (function (_super) {
         __extends(left, _super);
         function left() {

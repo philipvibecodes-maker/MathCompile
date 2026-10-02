@@ -202,6 +202,25 @@ suite('latex', function () {
     assertParsesLatex('a,b;c:d!e', 'a,b;c:d!e');
   });
 
+  test('escaped delimiters and specials \\{ \\} \\_ \\# \\|', function () {
+    assertParsesLatex('\\{', '\\{');
+    assertParsesLatex('\\{x\\}', '\\{x\\}');
+    assertParsesLatex('\\{x,y\\}', '\\{x,y\\}');
+    assertParsesLatex('\\{x\\in\\mathbb{R}\\}', '\\{x\\in\\mathbb{R}\\}');
+    assertParsesLatex('a\\_b', 'a\\_b');
+    assertParsesLatex('x\\#y', 'x\\#y');
+    assertParsesLatex('\\|x\\|', '\\|x\\|');
+    // bare characters are unaffected
+    assertParsesLatex('x|y', 'x|y');
+    assertParsesLatex('a#b', 'a#b');
+  });
+
+  test('standalone \\langle \\rangle \\lVert \\rVert', function () {
+    assertParsesLatex('\\langle x\\rangle', '\\langle x\\rangle');
+    assertParsesLatex('\\langle a,b\\rangle', '\\langle a,b\\rangle');
+    assertParsesLatex('\\lVert x\\rVert', '\\lVert x\\rVert');
+  });
+
   test('\\text', function () {
     assertParsesLatex('\\text { lol! } ', '\\text{ lol! }');
     assertParsesLatex(

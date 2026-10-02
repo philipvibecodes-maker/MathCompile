@@ -1820,15 +1820,24 @@ function bindCharBracketPair(
 bindCharBracketPair('(', '', 'parenthesis');
 bindCharBracketPair('[', '', 'bracket');
 bindCharBracketPair('{', '\\{', 'brace');
-LatexCmds.langle = () =>
-  new Bracket(L, '&lang;', '&rang;', '\\langle ', '\\rangle ');
-LatexCmds.rangle = () =>
-  new Bracket(R, '&lang;', '&rang;', '\\langle ', '\\rangle ');
+// standalone \langle/\rangle are plain ⟨⟩ symbols (same fix as lVert
+// below): a one-sided Bracket fails its parser and blanks the field.
+LatexCmds.langle = bindVanillaSymbol(
+  '\\langle ',
+  '&lang;',
+  'left angle bracket'
+);
+LatexCmds.rangle = bindVanillaSymbol(
+  '\\rangle ',
+  '&rang;',
+  'right angle bracket'
+);
 CharCmds['|'] = () => new Bracket(L, '|', '|', '|', '|');
-LatexCmds.lVert = () =>
-  new Bracket(L, '&#8741;', '&#8741;', '\\lVert ', '\\rVert ');
-LatexCmds.rVert = () =>
-  new Bracket(R, '&#8741;', '&#8741;', '\\lVert ', '\\rVert ');
+// standalone \lVert/\rVert are plain ‖ symbols — a one-sided Bracket
+// fails its parser and blanks the whole field. The \left\lVert/
+// \right\rVert pair is handled by the \left parser below.
+LatexCmds.lVert = bindVanillaSymbol('\\lVert ', '&#8741;', 'left norm');
+LatexCmds.rVert = bindVanillaSymbol('\\rVert ', '&#8741;', 'right norm');
 
 LatexCmds.left = class extends MathCommand {
   // Parser-only command: the delimiter lives in the argument after
