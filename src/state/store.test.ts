@@ -7,7 +7,7 @@ describe('app store', () => {
   it('starts with a single focused cell with the default expression', () => {
     const s = new AppStore();
     expect(s.cells).toHaveLength(1);
-    expect(s.cells[0].latex).toBe('2^n = \\sum_{i=0}^n\\binom{i}{n}');
+    expect(s.cells[0].latex).toBe('2^n = \\sum_{i=0}^n\\binom{n}{i}');
     expect(s.focusedId).toBe(s.cells[0].id);
   });
 

@@ -7,6 +7,10 @@ import { interimEvaluate } from './calculator.svelte.ts';
 
 const toN = (s: string) => toNerdamerInput(s, nerdamer);
 const calc = (latex: string) => compileCellForCalc({ json: parseCellLatex(latex) });
+// The calc pipeline wraps every evaluated expression — expectations
+// spell the inner emitted expression; F() applies the worker's
+// clean_and_simplify wrap.
+const F = (e: string) => `clean_and_simplify(${e})`;
 
 describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
   it('compiles an expression to a prelude + one eval statement', () => {
@@ -14,25 +18,31 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(prog.issues).toEqual([]);
     expect(prog.prelude).toEqual([
       'import sympy as sp',
+      // The emitted program defines its own pipeline helper so the
+      // shown code runs standalone.
+      expect.stringContaining('def clean_and_simplify'),
       'x = sp.Symbol("x")',
     ]);
-    expect(prog.statements).toEqual([{ code: 'x + 1', display: undefined }]);
+    expect(prog.statements).toEqual([{ code: F('x + 1'), display: undefined }]);
   });
 
   it('emits per-statement rows for multi-line cells', () => {
     const prog = calc('1+1\\\\ 2+3');
     expect(prog.statements).toEqual([
-      { code: '1 + 1', display: undefined },
-      { code: '2 + 3', display: undefined },
+      { code: F('1 + 1'), display: undefined },
+      { code: F('2 + 3'), display: undefined },
     ]);
   });
 
   it('gives an assignment a display equation', () => {
     const prog = calc('a = 5');
     // Assignments bind a python name — no Symbol def is emitted.
-    expect(prog.prelude).toEqual(['import sympy as sp']);
+    expect(prog.prelude).toEqual([
+      'import sympy as sp',
+      expect.stringContaining('def clean_and_simplify'),
+    ]);
     expect(prog.statements).toEqual([
-      { code: 'a = 5', display: 'sp.Eq(sp.Symbol("a"), 5)' },
+      { code: 'a = 5', display: F('sp.Eq(sp.Symbol("a"), 5)') },
     ]);
   });
 
@@ -41,23 +51,22 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(prog.statements).toEqual([
       {
         code: 'def f(x):\n    return x**2',
-        display:
-          '(lambda x: sp.Eq(sp.Function("f")(x), x**2))(sp.Symbol("x"))',
+        display: F('(lambda x: sp.Eq(sp.Function("f")(x), x**2))(sp.Symbol("x"))'),
       },
     ]);
   });
 
   it('lowers integrals/sums to sympy calls like the python target', () => {
     const prog = calc('\\int_{0}^{1}x\\,dx');
-    expect(prog.statements[0].code).toBe('sp.integrate(x, (x, 0, 1))');
+    expect(prog.statements[0].code).toBe(F('sp.integrate(x, (x, 0, 1))'));
     expect(calc('\\sum_{i=0}^{n}\\binom{i}{n}').statements[0].code).toBe(
-      'sp.summation(sp.binomial(i, n), (i, 0, n))',
+      F('sp.summation(sp.binomial(i, n), (i, 0, n))'),
     );
   });
 
   it('gives an indefinite integral a constant of integration', () => {
     expect(calc('\\int x\\,dx').statements[0].code).toBe(
-      'sp.integrate(x, x) + sp.Symbol("C")',
+      F('sp.integrate(x, x) + sp.Symbol("C")'),
     );
   });
 
@@ -74,99 +83,99 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
   it('emits two-sided limits (dir +-), keeping variable and direction', () => {
     // sp.limit's default dir='+' would silently right-hand a bare \lim.
     expect(calc('\\lim_{x\\to0}\\frac{1}{x}').statements[0].code).toBe(
-      "sp.limit(1 / x, x, 0, dir='+-')",
+      F("sp.limit(1 / x, x, 0, dir='+-')"),
     );
     expect(calc('\\lim_{x\\to0^{+}}\\frac{1}{x}').statements[0].code).toBe(
-      "sp.limit(1 / x, x, 0, dir='+')",
+      F("sp.limit(1 / x, x, 0, dir='+')"),
     );
     expect(calc('\\lim_{x\\to0^{-}}\\frac{1}{x}').statements[0].code).toBe(
-      "sp.limit(1 / x, x, 0, dir='-')",
+      F("sp.limit(1 / x, x, 0, dir='-')"),
     );
   });
 
   it('lowers eval bars to .subs', () => {
     expect(calc('\\left.x^{2}\\right|_{x=3}').statements[0].code).toBe(
-      '(x**2).subs(x, 3)',
+      F('(x**2).subs(x, 3)'),
     );
     expect(calc('\\left.x^{2}\\right|_{1}^{3}').statements[0].code).toBe(
-      '(x**2).subs(x, 3) - (x**2).subs(x, 1)',
+      F('(x**2).subs(x, 3) - (x**2).subs(x, 1)'),
     );
   });
 
   it('calls unknown functions through a Function fallback, not sp.<name>', () => {
     // sp.f would AttributeError — f may not exist on sympy.
     expect(calc('f(3)').prelude).toContain('f = sp.Function("f")');
-    expect(calc('f(3)').statements[0].code).toBe('f(3)');
+    expect(calc('f(3)').statements[0].code).toBe(F('f(3)'));
     expect(calc('\\operatorname{foo}(x)').prelude).toContain(
       'foo = sp.Function("foo")',
     );
-    expect(calc('\\operatorname{foo}(x)').statements[0].code).toBe('foo(x)');
+    expect(calc('\\operatorname{foo}(x)').statements[0].code).toBe(F('foo(x)'));
   });
 
   it('maps \\sin^{-1} to asin and f^{-1} to an inverse-named function', () => {
-    expect(calc('\\sin^{-1}(x)').statements[0].code).toBe('sp.asin(x)');
+    expect(calc('\\sin^{-1}(x)').statements[0].code).toBe(F('sp.asin(x)'));
     expect(calc('f^{-1}(x)').statements[0].code).toBe(
-      'sp.Function("f^{-1}")(x)',
+      F('sp.Function("f^{-1}")(x)'),
     );
   });
 
   it('declares set-membership assumptions on the symbol def', () => {
     const prog = calc('x\\in\\mathbb{R}');
-    expect(prog.statements[0].code).toBe('sp.Contains(x, sp.S.Reals)');
+    expect(prog.statements[0].code).toBe(F('sp.Contains(x, sp.S.Reals)'));
     expect(prog.prelude).toContain('x = sp.Symbol("x", real=True)');
     // \notin asserts non-membership — it must NOT add the assumption.
     const neg = calc('x\\notin\\mathbb{R}');
     expect(neg.statements[0].code).toBe(
-      'sp.Not(sp.Contains(x, sp.S.Reals))',
+      F('sp.Not(sp.Contains(x, sp.S.Reals))'),
     );
     expect(neg.prelude).toContain('x = sp.Symbol("x")');
     expect(calc('k\\in\\mathbb{N}').statements[0].code).toBe(
-      'sp.Contains(k, sp.S.Naturals0)',
+      F('sp.Contains(k, sp.S.Naturals0)'),
     );
   });
 
   it('lowers set literals, intervals, and congruences', () => {
     expect(calc('\\{1,2,3\\}').statements[0].code).toBe(
-      'sp.FiniteSet(1, 2, 3)',
+      F('sp.FiniteSet(1, 2, 3)'),
     );
     expect(calc('\\{x:x>0\\}').statements[0].code).toBe(
-      'sp.ConditionSet(x, sp.Gt(x, 0))',
+      F('sp.ConditionSet(x, sp.Gt(x, 0))'),
     );
     expect(calc('[1,2]\\cap[0,3)').statements[0].code).toBe(
-      'sp.Intersection(sp.Interval(1, 2), sp.Interval(0, 3, right_open=True))',
+      F('sp.Intersection(sp.Interval(1, 2), sp.Interval(0, 3, right_open=True))'),
     );
     expect(calc('x\\equiv1\\mod2').statements[0].code).toBe(
-      'sp.Eq(sp.Mod(x, 2), 1)',
+      F('sp.Eq(sp.Mod(x, 2), 1)'),
     );
     // An interval-membership asserts the member's domain in a
     // `with assuming(...)` wrapper — the set itself stays the display.
     const mem = calc('x\\in\\left[0,\\infty\\right)');
     expect(mem.statements[0].code).toContain('with sp.assuming');
     expect(mem.statements[0].display).toBe(
-      'sp.Contains(x, sp.Interval(0, sp.oo, right_open=True))',
+      F('sp.Contains(x, sp.Interval(0, sp.oo, right_open=True))'),
     );
   });
 
   it('reads a bare i as the imaginary unit, except bound operator vars', () => {
-    expect(calc('e^{i\\pi}').statements[0].code).toBe('sp.E**(sp.I * sp.pi)');
-    expect(calc('i^{2}').statements[0].code).toBe('sp.I**2');
+    expect(calc('e^{i\\pi}').statements[0].code).toBe(F('sp.E**(sp.I * sp.pi)'));
+    expect(calc('i^{2}').statements[0].code).toBe(F('sp.I**2'));
     // The index is bound by the operator — it stays a plain symbol.
     expect(calc('\\sum_{i=0}^{n}i').statements[0].code).toBe(
-      'sp.summation(i, (i, 0, n))',
+      F('sp.summation(i, (i, 0, n))'),
     );
   });
 
   it('keeps int/int division exact as Rational', () => {
     expect(calc('\\frac{10^{6}}{3}').statements[0].code).toBe(
-      'sp.Rational(10**6, 3)',
+      F('sp.Rational(10**6, 3)'),
     );
-    expect(calc('\\frac{x}{3}').statements[0].code).toBe('x / 3');
+    expect(calc('\\frac{x}{3}').statements[0].code).toBe(F('x / 3'));
   });
 
   it('strips \\limits so \\sum\\limits parses', () => {
     const prog = calc('\\sum\\limits_{i=1}^{n}i');
     expect(prog.issues.filter((i) => i.severity === 'error')).toEqual([]);
-    expect(prog.statements[0].code).toBe('sp.summation(i, (i, 1, n))');
+    expect(prog.statements[0].code).toBe(F('sp.summation(i, (i, 1, n))'));
   });
 
   it('flags half-empty bounds on sums like integrals', () => {
@@ -178,23 +187,23 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
 
   it('parses unbracketed/bmatrix environments and ignores marker args', () => {
     expect(calc('\\begin{matrix}a&b\\\\c&d\\end{matrix}').statements[0].code).toBe(
-      'sp.Matrix([[a, b], [c, d]])',
+      F('sp.Matrix([[a, b], [c, d]])'),
     );
     expect(calc('\\begin{bmatrix}1\\\\0\\end{bmatrix}').statements[0].code).toBe(
-      'sp.Matrix([[1], [0]])',
+      F('sp.Matrix([[1], [0]])'),
     );
   });
 
   it('drops \\, spacing and unwraps \\text{d} differentials', () => {
-    expect(calc('x\\,y').statements[0].code).toBe('x * y');
+    expect(calc('x\\,y').statements[0].code).toBe(F('x * y'));
     expect(calc('\\int x^{2}\\text{d}x').statements[0].code).toBe(
-      'sp.integrate(x**2, x) + sp.Symbol("C")',
+      F('sp.integrate(x**2, x) + sp.Symbol("C")'),
     );
   });
 
   it('emits \\min_{x} f as sp.minimum over the variable', () => {
     expect(calc('\\min_{x}x^{2}').statements[0].code).toBe(
-      'sp.minimum(x**2, x)',
+      F('sp.minimum(x**2, x)'),
     );
   });
 
@@ -202,20 +211,39 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // \text{sp} is a single symbol named 'sp' — it can't share the
     // `import sympy as sp` name.
     const prog = calc('\\text{sp}=5');
-    expect(prog.statements[0].code).toBe('sp.Eq(sp_, 5)');
+    expect(prog.statements[0].code).toBe(F('sp.Eq(sp_, 5)'));
     expect(prog.prelude).toContain('sp_ = sp.Symbol("sp")');
     // Bare `sp` is juxtaposed s·p — an equation, never a `def` of the
     // InvisibleOperator head.
-    expect(calc('sp=5').statements[0].code).toBe('sp.Eq(s * p, 5)');
+    expect(calc('sp=5').statements[0].code).toBe(F('sp.Eq(s * p, 5)'));
+  });
+
+  it('mangles user names colliding with the mc_* pipeline helpers', () => {
+    // A symbol named like a pipeline helper would shadow it in the eval
+    // namespace — every wrapped expression then calls a Symbol instead.
+    const prog = calc('\\text{mc_order}+1');
+    expect(prog.prelude).toContain('mc_order_ = sp.Symbol("mc_order")');
+    expect(prog.statements[0].code).toBe(F('mc_order_ + 1'));
+    // Equations and call names take the same mangle.
+    expect(calc('\\text{mc_simplify}=2').statements[0].code).toBe(
+      F('sp.Eq(mc_simplify_, 2)'),
+    );
+    expect(calc('\\text{mc_doit}(x)=x^{2}').statements[0].code).toBe(
+      F('sp.Eq(mc_doit_(x), x**2)'),
+    );
+    // The composed helper name is reserved too.
+    expect(calc('\\text{clean_and_simplify}+1').statements[0].code).toBe(
+      F('clean_and_simplify_ + 1'),
+    );
   });
 
   it('lowers \\setminus, \\emptyset, and \\pmod congruences', () => {
-    expect(calc('\\emptyset').statements[0].code).toBe('sp.EmptySet');
+    expect(calc('\\emptyset').statements[0].code).toBe(F('sp.EmptySet'));
     expect(calc('\\{1,2\\}\\setminus\\{2\\}').statements[0].code).toBe(
-      'sp.Complement(sp.FiniteSet(1, 2), sp.FiniteSet(2))',
+      F('sp.Complement(sp.FiniteSet(1, 2), sp.FiniteSet(2))'),
     );
     expect(calc('x\\equiv3\\pmod{7}').statements[0].code).toBe(
-      'sp.Eq(sp.Mod(x, 7), 3)',
+      F('sp.Eq(sp.Mod(x, 7), 3)'),
     );
   });
 
@@ -224,18 +252,18 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // pair binds the outermost sign.
     expect(
       calc('\\int_{0}^{1}\\int_{0}^{x}y\\text{d}y\\text{d}x').statements[0].code,
-    ).toBe('sp.integrate(sp.integrate(y, (y, 0, x)), (x, 0, 1))');
+    ).toBe(F('sp.integrate(sp.integrate(y, (y, 0, x)), (x, 0, 1))'));
   });
 
   it('folds multiple differentials on one sign into an iterated integral', () => {
     // \iint is a single Integrate node — the `d v` pairs all sit in its
     // body; leftmost is the innermost variable.
     expect(calc('\\iint xy\\text{d}x\\text{d}y').statements[0].code).toBe(
-      'sp.integrate(x * y, x, y) + sp.Symbol("C")',
+      F('sp.integrate(x * y, x, y) + sp.Symbol("C")'),
     );
     expect(
       calc('\\iiint x\\text{d}x\\text{d}y\\text{d}z').statements[0].code,
-    ).toBe('sp.integrate(x, x, y, z) + sp.Symbol("C")');
+    ).toBe(F('sp.integrate(x, x, y, z) + sp.Symbol("C")'));
   });
 
   it('declares MatrixSymbol for \\det/\\tr on a bare name', () => {
@@ -243,15 +271,15 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(det.prelude).toContain(
       'A = sp.MatrixSymbol("A", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
     );
-    expect(det.statements[0].code).toBe('sp.Determinant(A)');
+    expect(det.statements[0].code).toBe(F('sp.Determinant(A)'));
     expect(calc('\\operatorname{tr}(A)').statements[0].code).toBe(
-      'sp.Trace(A)',
+      F('sp.Trace(A)'),
     );
   });
 
   it('lowers \\mapsto to sp.Lambda, not a raw python lambda', () => {
     expect(calc('x\\mapsto x^{2}').statements[0].code).toBe(
-      'sp.Lambda(x, x**2)',
+      F('sp.Lambda(x, x**2)'),
     );
   });
 
@@ -261,7 +289,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     const prog = calc('f: x \\mapsto x^{2}');
     expect(prog.statements[0].code).toBe('f = sp.Lambda(x, x**2)');
     expect(prog.statements[0].display).toBe(
-      'sp.Eq(sp.Symbol("f"), sp.Lambda(x, x**2))',
+      F('sp.Eq(sp.Symbol("f"), sp.Lambda(x, x**2))'),
     );
     // Multi-param colon form `f: (x,y) ↦ x+y` lowers the same way.
     expect(calc('f: (x,y) \\mapsto x + y').statements[0].code).toBe(
@@ -272,32 +300,32 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
   it('emits a ConditionSet for \\{x \\in S : cond\\}', () => {
     expect(
       calc('\\{x\\in\\mathbb{R}:x>0\\}').statements[0].code,
-    ).toBe('sp.ConditionSet(x, sp.Gt(x, 0), sp.S.Reals)');
+    ).toBe(F('sp.ConditionSet(x, sp.Gt(x, 0), sp.S.Reals)'));
   });
 
   it('lowers `expr \\text{ for } x \\in S` to sp.imageset', () => {
     expect(
       calc('2x \\text{ for } x \\in \\{1,2,3\\}').statements[0].code,
-    ).toBe('sp.imageset(sp.Lambda(x, 2 * x), sp.FiniteSet(1, 2, 3))');
+    ).toBe(F('sp.imageset(sp.Lambda(x, 2 * x), sp.FiniteSet(1, 2, 3))'));
     // `x for x \\in S` / `x for x>0` is just the domain itself.
     expect(calc('x \\text{ for } x \\in \\{1,2\\}').statements[0].code).toBe(
-      'sp.FiniteSet(1, 2)',
+      F('sp.FiniteSet(1, 2)'),
     );
     expect(calc('x \\text{ for } x>0').statements[0].code).toBe(
-      'sp.Interval.open(0, sp.oo)',
+      F('sp.Interval.open(0, sp.oo)'),
     );
     // Relational conditions become real domains so imageset evaluates.
     expect(calc('x+1 \\text{ for } x>0').statements[0].code).toBe(
-      'sp.imageset(sp.Lambda(x, x + 1), sp.Interval.open(0, sp.oo))',
+      F('sp.imageset(sp.Lambda(x, x + 1), sp.Interval.open(0, sp.oo))'),
     );
     expect(calc('2x \\text{ for } x>0').statements[0].code).toBe(
-      'sp.imageset(sp.Lambda(x, 2 * x), sp.Interval.open(0, sp.oo))',
+      F('sp.imageset(sp.Lambda(x, 2 * x), sp.Interval.open(0, sp.oo))'),
     );
     expect(calc('x^{2} \\text{ for } 0<x').statements[0].code).toBe(
-      'sp.imageset(sp.Lambda(x, x**2), sp.Interval.open(0, sp.oo))',
+      F('sp.imageset(sp.Lambda(x, x**2), sp.Interval.open(0, sp.oo))'),
     );
     expect(calc('x+1 \\text{ for } x=2').statements[0].code).toBe(
-      'sp.imageset(sp.Lambda(x, x + 1), sp.FiniteSet(2))',
+      F('sp.imageset(sp.Lambda(x, x + 1), sp.FiniteSet(2))'),
     );
   });
 
@@ -305,17 +333,17 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // `x \cup y` emitted a flagged `Union(x, y)` Function stub — the
     // union of two bare names is the two-element set.
     expect(calc('x \\cup y').statements[0].code).toBe(
-      'sp.Union(sp.FiniteSet(x), sp.FiniteSet(y))',
+      F('sp.Union(sp.FiniteSet(x), sp.FiniteSet(y))'),
     );
     expect(calc('x \\cap y').statements[0].code).toBe(
-      'sp.Intersection(sp.FiniteSet(x), sp.FiniteSet(y))',
+      F('sp.Intersection(sp.FiniteSet(x), sp.FiniteSet(y))'),
     );
     expect(calc('x \\setminus y').statements[0].code).toBe(
-      'sp.Complement(sp.FiniteSet(x), sp.FiniteSet(y))',
+      F('sp.Complement(sp.FiniteSet(x), sp.FiniteSet(y))'),
     );
     // Set-ish operands keep the direct emission.
     expect(calc('\\mathbb{R} \\cup \\mathbb{Z}').statements[0].code).toBe(
-      'sp.Union(sp.S.Reals, sp.S.Integers)',
+      F('sp.Union(sp.S.Reals, sp.S.Integers)'),
     );
   });
 
@@ -323,21 +351,21 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // `\mathbb{Z}^+` was a bare `PositiveIntegers` symbol; `S^±` on a
     // non-Real set hit a flagged stub, and `S^*` emitted
     // `conjugate(Integers)` — TypeError on a Set.
-    expect(calc('\\mathbb{Z}^{+}').statements[0].code).toBe('sp.S.Naturals');
+    expect(calc('\\mathbb{Z}^{+}').statements[0].code).toBe(F('sp.S.Naturals'));
     expect(calc('\\mathbb{Z}^{-}').statements[0].code).toBe(
-      'sp.Intersection(sp.S.Integers, sp.Interval.open(-sp.oo, 0))',
+      F('sp.Intersection(sp.S.Integers, sp.Interval.open(-sp.oo, 0))'),
     );
     expect(calc('\\mathbb{Z}^{*}').statements[0].code).toBe(
-      'sp.Complement(sp.S.Integers, sp.FiniteSet(0))',
+      F('sp.Complement(sp.S.Integers, sp.FiniteSet(0))'),
     );
     expect(calc('\\mathbb{R}^{+}').statements[0].code).toBe(
-      'sp.Interval.open(0, sp.oo)',
+      F('sp.Interval.open(0, sp.oo)'),
     );
     expect(calc('\\mathbb{Q}^{-}').statements[0].code).toBe(
-      'sp.Intersection(sp.S.Rationals, sp.Interval.open(-sp.oo, 0))',
+      F('sp.Intersection(sp.S.Rationals, sp.Interval.open(-sp.oo, 0))'),
     );
     expect(calc('x \\in \\mathbb{Z}^{+}').statements[0].code).toBe(
-      'sp.Contains(x, sp.S.Naturals)',
+      F('sp.Contains(x, sp.S.Naturals)'),
     );
   });
 
@@ -345,32 +373,32 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // `arsinh(x)`/`Arsinh(x)` showed an unevaluated Function stub —
     // sympy spells them asinh/acosh/atanh.
     expect(calc('\\operatorname{arsinh}(x)').statements[0].code).toBe(
-      'sp.asinh(x)',
+      F('sp.asinh(x)'),
     );
     expect(calc('\\operatorname{asinh}(x)').statements[0].code).toBe(
-      'sp.asinh(x)',
+      F('sp.asinh(x)'),
     );
     expect(calc('\\operatorname{acosh}(x)').statements[0].code).toBe(
-      'sp.acosh(x)',
+      F('sp.acosh(x)'),
     );
   });
 
   it('lowers \\Re/\\Im/\\arg/\\operatorname{erf} to real sympy names', () => {
     // These parse to Real/Imaginary/Argument/Erf — `sp.<Head>` doesn't
     // exist, so each row raised 'module sympy has no attribute'.
-    expect(calc('\\Re(z)').statements[0].code).toBe('sp.re(z)');
-    expect(calc('\\Im(z)').statements[0].code).toBe('sp.im(z)');
-    expect(calc('\\arg(z)').statements[0].code).toBe('sp.arg(z)');
+    expect(calc('\\Re(z)').statements[0].code).toBe(F('sp.re(z)'));
+    expect(calc('\\Im(z)').statements[0].code).toBe(F('sp.im(z)'));
+    expect(calc('\\arg(z)').statements[0].code).toBe(F('sp.arg(z)'));
     expect(calc('\\operatorname{erf}(x)').statements[0].code).toBe(
-      'sp.erf(x)',
+      F('sp.erf(x)'),
     );
   });
 
   it('lowers `x!!` to sp.factorial2 and `f \\circ g` to composition', () => {
-    expect(calc('x!!').statements[0].code).toBe('sp.factorial2(x)');
+    expect(calc('x!!').statements[0].code).toBe(F('sp.factorial2(x)'));
     const prog = calc('f\\circ g');
     expect(prog.statements[0].code).toBe(
-      'sp.Lambda(sp.Symbol("x"), f(g(sp.Symbol("x"))))',
+      F('sp.Lambda(sp.Symbol("x"), f(g(sp.Symbol("x"))))'),
     );
     expect(prog.prelude).toContain('f = sp.Function("f")');
     expect(prog.prelude).toContain('g = sp.Function("g")');
@@ -380,14 +408,14 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // \frac{\text{d}}{\text{d}t}t^2 was emitted as `d / (d*t) * t**2`
     // — the `d` factors cancel and the result is `t`, not `2t`.
     expect(calc('\\frac{\\text{d}}{\\text{d}t}t^{2}').statements[0].code).toBe(
-      'sp.diff(t**2, t)',
+      F('sp.diff(t**2, t)'),
     );
     expect(calc('\\frac{\\text{d}f}{\\text{d}x}').statements[0].code).toBe(
-      'sp.diff(f(x), x)',
+      F('sp.diff(f(x), x)'),
     );
     expect(
       calc('\\frac{\\text{d}^{2}}{\\text{d}x^{2}}x^{3}').statements[0].code,
-    ).toBe('sp.diff(x**3, x, 2)');
+    ).toBe(F('sp.diff(x**3, x, 2)'));
   });
 
   it('lowers A^T to Transpose on a MatrixSymbol, not the crashing .T', () => {
@@ -395,11 +423,11 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(prog.prelude).toContain(
       'A = sp.MatrixSymbol("A", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
     );
-    expect(prog.statements[0].code).toBe('sp.Transpose(A)');
+    expect(prog.statements[0].code).toBe(F('sp.Transpose(A)'));
   });
 
   it('lowers \\varphi(n) to totient, not the uncallable GoldenRatio', () => {
-    expect(calc('\\varphi(n)').statements[0].code).toBe('sp.totient(n)');
+    expect(calc('\\varphi(n)').statements[0].code).toBe(F('sp.totient(n)'));
   });
 
   it('collapses nested boundless integrals into one iterated call', () => {
@@ -408,7 +436,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(
       calc('\\int\\int\\int xyz\\text{d}x\\text{d}y\\text{d}z').statements[0]
         .code,
-    ).toBe('sp.integrate(x * y * z, x, y, z) + sp.Symbol("C")');
+    ).toBe(F('sp.integrate(x * y * z, x, y, z) + sp.Symbol("C")'));
   });
 
   it('gives \\mathbb{C} membership a complex=True assumption', () => {
@@ -429,16 +457,16 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // function: `x^{(2)}`/`5^{(2)}` are ordinary powers. `f^{(3)}` after
     // a def still diffs; `f^{(3)}(x)` diffs because the call itself
     // makes f a function.
-    expect(calc('x^{(2)}').statements[0].code).toBe('x**2');
-    expect(calc('5^{(2)}').statements[0].code).toBe('5**2');
-    expect(calc('(x+1)^{(2)}').statements[0].code).toBe('(x + 1)**2');
-    expect(calc('f^{(3)}').statements[0].code).toBe('f**3');
-    expect(calc('x^{(n)}').statements[0].code).toBe('x**n');
+    expect(calc('x^{(2)}').statements[0].code).toBe(F('x**2'));
+    expect(calc('5^{(2)}').statements[0].code).toBe(F('5**2'));
+    expect(calc('(x+1)^{(2)}').statements[0].code).toBe(F('(x + 1)**2'));
+    expect(calc('f^{(3)}').statements[0].code).toBe(F('f**3'));
+    expect(calc('x^{(n)}').statements[0].code).toBe(F('x**n'));
     expect(calc('f^{(3)}(x)').statements[0].code).toBe(
-      'sp.diff(f(x), x, 3)',
+      F('sp.diff(f(x), x, 3)'),
     );
     expect(calc('g: x \\mapsto x^{2} \\\\ g^{(2)}').statements[1].code).toBe(
-      'sp.diff(g(x), x, 2)',
+      F('sp.diff(g(x), x, 2)'),
     );
   });
 
@@ -446,10 +474,10 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // `\partial_{x}x^{2}` parsed to `x**x * 2` — CE dropped the
     // operator and glued the subscript var onto the next factor.
     expect(calc('\\partial_{x}x^{2}').statements[0].code).toBe(
-      'sp.diff(x**2, x)',
+      F('sp.diff(x**2, x)'),
     );
     expect(calc('\\partial_{t}y').statements[0].code).toBe(
-      'sp.diff(y(t), t)',
+      F('sp.diff(y(t), t)'),
     );
   });
 
@@ -457,25 +485,25 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // `x \in S` echoed a `Element(x, S)` call stub; `x \in {S}` is the
     // honest reading and matches `x \cup y` -> `{x, y}`.
     expect(calc('x \\in S').statements[0].code).toBe(
-      'sp.Contains(x, sp.FiniteSet(S))',
+      F('sp.Contains(x, sp.FiniteSet(S))'),
     );
     expect(calc('x \\notin S').statements[0].code).toBe(
-      'sp.Not(sp.Contains(x, sp.FiniteSet(S)))',
+      F('sp.Not(sp.Contains(x, sp.FiniteSet(S)))'),
     );
     expect(calc('x \\in \\mathbb{R}').statements[0].code).toBe(
-      'sp.Contains(x, sp.S.Reals)',
+      F('sp.Contains(x, sp.S.Reals)'),
     );
   });
 
   it('singleton-wraps bare names in subset/superset ops too', () => {
     expect(calc('A \\subseteq B').statements[0].code).toBe(
-      '(sp.FiniteSet(A)).is_subset(sp.FiniteSet(B))',
+      F('(sp.FiniteSet(A)).is_subset(sp.FiniteSet(B))'),
     );
     expect(calc('\\mathbb{Z} \\subseteq \\mathbb{R}').statements[0].code).toBe(
-      '(sp.S.Integers).is_subset(sp.S.Reals)',
+      F('(sp.S.Integers).is_subset(sp.S.Reals)'),
     );
     expect(calc('A \\not\\subseteq B').statements[0].code).toBe(
-      'sp.Not((sp.FiniteSet(A)).is_subset(sp.FiniteSet(B)))',
+      F('sp.Not((sp.FiniteSet(A)).is_subset(sp.FiniteSet(B)))'),
     );
   });
 
@@ -511,49 +539,49 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
   it('chains comparisons pairwise — sympy relationals take two operands', () => {
     // `Lt(x,y,z)` is a TypeError in sympy; the honest form is And(pairs).
     expect(calc('x < y < z').statements[0].code).toBe(
-      'sp.And(sp.Lt(x, y), sp.Lt(y, z))',
+      F('sp.And(sp.Lt(x, y), sp.Lt(y, z))'),
     );
     expect(calc('a < b < c < d').statements[0].code).toBe(
-      'sp.And(sp.Lt(a, b), sp.Lt(b, c), sp.Lt(c, d))',
+      F('sp.And(sp.Lt(a, b), sp.Lt(b, c), sp.Lt(c, d))'),
     );
     // Mixed chains normalize as relation-inside-relation — pairwise And.
     expect(calc('1 < x \\le 2').statements[0].code).toBe(
-      'sp.And(sp.Lt(1, x), sp.Le(x, 2))',
+      F('sp.And(sp.Lt(1, x), sp.Le(x, 2))'),
     );
     expect(calc('x > y > z').statements[0].code).toBe(
-      'sp.And(sp.Gt(x, y), sp.Gt(y, z))',
+      F('sp.And(sp.Gt(x, y), sp.Gt(y, z))'),
     );
     expect(calc('2 \\ge x > 0').statements[0].code).toBe(
-      'sp.And(sp.Ge(2, x), sp.Gt(x, 0))',
+      F('sp.And(sp.Ge(2, x), sp.Gt(x, 0))'),
     );
     expect(calc('x \\ne 0 \\ne 1').statements[0].code).toBe(
-      'sp.And(sp.Ne(x, 0), sp.Ne(0, 1))',
+      F('sp.And(sp.Ne(x, 0), sp.Ne(0, 1))'),
     );
     expect(calc('x < y = z').statements[0].code).toBe(
-      'sp.And(sp.Lt(x, y), sp.Eq(y, z))',
+      F('sp.And(sp.Lt(x, y), sp.Eq(y, z))'),
     );
   });
 
   it('fuses bare sgn into sign(next) inside products', () => {
     // `\operatorname{sgn}x` flattens to Multiply(Sign, x) — `Sign` is a
     // name, not signum, so `a sgn b` must emit a * sign(b), not a*S·b.
-    expect(calc('\\operatorname{sgn}x').statements[0].code).toBe('sp.sign(x)');
+    expect(calc('\\operatorname{sgn}x').statements[0].code).toBe(F('sp.sign(x)'));
     expect(calc('a \\operatorname{sgn} b').statements[0].code).toBe(
-      'a * sp.sign(b)',
+      F('a * sp.sign(b)'),
     );
     expect(calc('x \\operatorname{sgn} y').statements[0].code).toBe(
-      'x * sp.sign(y)',
+      F('x * sp.sign(y)'),
     );
     expect(calc('2 \\operatorname{sgn}(x+1)').statements[0].code).toBe(
-      '2 * sp.sign(x + 1)',
+      F('2 * sp.sign(x + 1)'),
     );
     // \gcd/\lcm are binary infix — they take the factor on BOTH sides.
-    expect(calc('a \\gcd b').statements[0].code).toBe('sp.gcd(a, b)');
+    expect(calc('a \\gcd b').statements[0].code).toBe(F('sp.gcd(a, b)'));
     expect(calc('a \\operatorname{lcm} b').statements[0].code).toBe(
-      'sp.lcm(a, b)',
+      F('sp.lcm(a, b)'),
     );
     expect(calc('x \\gcd y \\cdot z').statements[0].code).toBe(
-      'sp.gcd(x, y) * z',
+      F('sp.gcd(x, y) * z'),
     );
   });
 
@@ -561,20 +589,20 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // `x ∈ Z^-` emitted Contains(x, FiniteSet(Intersection(...))) —
     // membership of a singleton-holding-a-set, always False.
     expect(calc('x \\in \\mathbb{Z}^{-}').statements[0].code).toBe(
-      'sp.Contains(x, sp.Intersection(sp.S.Integers, sp.Interval.open(-sp.oo, 0)))',
+      F('sp.Contains(x, sp.Intersection(sp.S.Integers, sp.Interval.open(-sp.oo, 0)))'),
     );
     expect(calc('x \\in \\mathbb{Z}_{0}^{+}').statements[0].code).toBe(
-      'sp.Contains(x, sp.Intersection(sp.S.Integers, sp.Interval(0, sp.oo)))',
+      F('sp.Contains(x, sp.Intersection(sp.S.Integers, sp.Interval(0, sp.oo)))'),
     );
     expect(calc('x \\in \\mathbb{R}_{0}^{-}').statements[0].code).toBe(
-      'sp.Contains(x, sp.Intersection(sp.S.Reals, sp.Interval(-sp.oo, 0)))',
+      F('sp.Contains(x, sp.Intersection(sp.S.Reals, sp.Interval(-sp.oo, 0)))'),
     );
     expect(calc('x \\in \\mathbb{Z}^{*}').statements[0].code).toBe(
-      'sp.Contains(x, sp.Complement(sp.S.Integers, sp.FiniteSet(0)))',
+      F('sp.Contains(x, sp.Complement(sp.S.Integers, sp.FiniteSet(0)))'),
     );
     // `A^{+}` — Moore–Penrose pseudoinverse (a Matrix method in sympy
     // 1.14 — no sp.pinv exists).
-    expect(calc('A^{+}').statements[0].code).toBe('(A).pinv()');
+    expect(calc('A^{+}').statements[0].code).toBe(F('(A).pinv()'));
   });
 
   it('shows matrix assignments unevaluated — Eq(Symbol, Matrix) is literal False', () => {
@@ -597,36 +625,36 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // `\int \sin\theta\text{d}\theta` — CE binds the dθ inside the
     // trig arg: Sin(θ·d·θ). The pair peels from the last argument.
     expect(calc('\\int \\sin\\theta\\text{d}\\theta').statements[0].code).toBe(
-      'sp.integrate(sp.sin(theta), theta) + sp.Symbol("C")',
+      F('sp.integrate(sp.sin(theta), theta) + sp.Symbol("C")'),
     );
     expect(calc('\\int \\ln u\\text{d}u').statements[0].code).toBe(
-      'sp.integrate(sp.log(u), u) + sp.Symbol("C")',
+      F('sp.integrate(sp.log(u), u) + sp.Symbol("C")'),
     );
     // `x\sin x\,dx` — the pair is inside the Sin arg, itself a factor.
     expect(calc('\\int x\\sin x\\text{d}x').statements[0].code).toBe(
-      'sp.integrate(x * sp.sin(x), x) + sp.Symbol("C")',
+      F('sp.integrate(x * sp.sin(x), x) + sp.Symbol("C")'),
     );
     // `\sin^{2}x\,dx` — inside Sin's arg, inside Power's base.
     expect(calc('\\int \\sin^{2}x\\text{d}x').statements[0].code).toBe(
-      'sp.integrate(sp.sin(x)**2, x) + sp.Symbol("C")',
+      F('sp.integrate(sp.sin(x)**2, x) + sp.Symbol("C")'),
     );
     expect(calc('\\int \\sec^{2}x\\text{d}x').statements[0].code).toBe(
-      'sp.integrate(sp.sec(x)**2, x) + sp.Symbol("C")',
+      F('sp.integrate(sp.sec(x)**2, x) + sp.Symbol("C")'),
     );
     // `\int x³+x²+x+1 dx` — CE files the integral as an Add's first
     // term and spills the integrand into siblings; it folds back.
     expect(
       calc('\\int x^{3} + x^{2} + x + 1\\text{d}x').statements[0].code,
-    ).toBe('sp.integrate(x**3 + x**2 + x + 1, x) + sp.Symbol("C")');
+    ).toBe(F('sp.integrate(x**3 + x**2 + x + 1, x) + sp.Symbol("C")'));
     expect(calc('\\int 2x + \\sin x\\text{d}x').statements[0].code).toBe(
-      'sp.integrate(2 * x + sp.sin(x), x) + sp.Symbol("C")',
+      F('sp.integrate(2 * x + sp.sin(x), x) + sp.Symbol("C")'),
     );
   });
 
   it('strips thin-space commands instead of emitting InvisibleOperator', () => {
     for (const l of ['\\int x\\,dx', '\\int x\\;dx', '\\int x\\!dx', '\\int x\\ dx'])
       expect(calc(l).statements[0].code).toBe(
-        'sp.integrate(x, x) + sp.Symbol("C")',
+        F('sp.integrate(x, x) + sp.Symbol("C")'),
       );
     // `\\ ` after a statement break stays a statement break.
     expect(calc('a = 2 \\\\ b = a + 1').statements).toHaveLength(2);
@@ -638,18 +666,18 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(
       calc('\\displaylines{f: x \\mapsto x^{2} \\\\ \\int f(x)\\text{d}x}')
         .statements[1].code,
-    ).toBe('sp.integrate(f(x), x) + sp.Symbol("C")');
+    ).toBe(F('sp.integrate(f(x), x) + sp.Symbol("C")'));
     expect(
       calc('\\displaylines{f(x) = x^{2} \\\\ \\int f(x)\\text{d}x}')
         .statements[1].code,
-    ).toBe('sp.integrate(f(x), x) + sp.Symbol("C")');
+    ).toBe(F('sp.integrate(f(x), x) + sp.Symbol("C")'));
     // A scalar binding is not a call — `a x` stays `a*x`.
     expect(
       calc('\\displaylines{a = 5 \\\\ \\int a x\\text{d}x}').statements[1].code,
-    ).toBe('sp.integrate(a * x, x) + sp.Symbol("C")');
+    ).toBe(F('sp.integrate(a * x, x) + sp.Symbol("C")'));
     // An undefined `f` reads as `f·x` (Desmos convention).
     expect(calc('\\int f(x)\\text{d}x').statements[0].code).toBe(
-      'sp.integrate(f * x, x) + sp.Symbol("C")',
+      F('sp.integrate(f * x, x) + sp.Symbol("C")'),
     );
   });
 
@@ -657,20 +685,20 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // `x>0 \\ x+1` is two written statements — the where-block reorder
     // must not flip it to [x+1, x>0].
     expect(calc('x>0\\\\ x+1').statements.map((s) => s.code)).toEqual([
-      'sp.Gt(x, 0)',
-      'x + 1',
+      F('sp.Gt(x, 0)'),
+      F('x + 1'),
     ]);
     // `x^2 \text{ where } x>0` is one statement CE splits — body first.
     expect(
       calc('x^{2}\\ \\text{where}\\ x>0').statements.map((s) => s.code),
-    ).toEqual(['x**2', 'sp.Gt(x, 0)']);
+    ).toEqual([F('x**2'), F('sp.Gt(x, 0)')]);
   });
 
   it('binds lambda params as symbols, not constants (i \\mapsto i^2)', () => {
     // `i \mapsto i^2` emitted Lambda(sp.I, sp.I**2) — Lambda can't take
     // the imaginary constant as its bound variable.
     const prog = calc('i \\mapsto i^{2}');
-    expect(prog.statements[0].code).toBe('sp.Lambda(i, i**2)');
+    expect(prog.statements[0].code).toBe(F('sp.Lambda(i, i**2)'));
     expect(prog.prelude).toContain('i = sp.Symbol("i")');
   });
 
@@ -680,12 +708,12 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(
       calc('\\displaylines{A=\\left\\{1,2\\right\\}\\\\ A\\cup\\left\\{3\\right\\}}')
         .statements[1].code,
-    ).toBe('sp.Union(A, sp.FiniteSet(3))');
+    ).toBe(F('sp.Union(A, sp.FiniteSet(3))'));
     // Scalar assigns still wrap — `A = 5` then `A ∪ {3}` is {5,3}.
     expect(
       calc('\\displaylines{A=5\\\\ A\\cup\\left\\{3\\right\\}}')
         .statements[1].code,
-    ).toBe('sp.Union(sp.FiniteSet(A), sp.FiniteSet(3))');
+    ).toBe(F('sp.Union(sp.FiniteSet(A), sp.FiniteSet(3))'));
     // The assign row needs evaluate=False — Eq(Symbol, FiniteSet)
     // collapses to literal False like Eq(Symbol, Matrix) did.
     expect(
@@ -697,9 +725,9 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // `Rational(3**-1, 2)` fed sympy a float 0.333… — a giant binary
     // fraction instead of 1/6.
     expect(calc('\\frac{3^{-1}}{2}').statements[0].code).toBe(
-      'sp.Rational(sp.Pow(3, -1), 2)',
+      F('sp.Rational(sp.Pow(3, -1), 2)'),
     );
-    expect(calc('2^{-1}').statements[0].code).toBe('sp.Pow(2, -1)');
+    expect(calc('2^{-1}').statements[0].code).toBe(F('sp.Pow(2, -1)'));
   });
 
   it('keeps a failed statement as an in-place error row', () => {
@@ -710,7 +738,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
     expect(prog.statements).toEqual([
       { code: '', display: undefined, error: expect.any(String) },
-      { code: 'x + 1', display: undefined, error: undefined },
+      { code: F('x + 1'), display: undefined, error: undefined },
     ]);
     // Statement-bound errors aren't re-appended at the program level.
     expect(
@@ -770,13 +798,13 @@ describe('toNerdamerInput (latex → nerdamer calls)', () => {
   });
   it('reads a bare prime as a primed variable name', () => {
     const p = calc("x'");
-    expect(p.statements[0]?.code).toBe('x_prime');
+    expect(p.statements[0]?.code).toBe(F('x_prime'));
     expect(p.prelude).toContain("x_prime = sp.Symbol(\"x'\")");
   });
 
   it('applies nested calls, not a literal call(f, x)', () => {
     const p = calc('g(f(x))');
-    expect(p.statements[0]?.code).toBe('g(f(x))');
+    expect(p.statements[0]?.code).toBe(F('g(f(x))'));
     expect(p.prelude).toContain('f = sp.Function("f")');
     expect(p.prelude).toContain('g = sp.Function("g")');
   });
@@ -813,7 +841,7 @@ describe('toNerdamerInput (latex → nerdamer calls)', () => {
       expect(p.statements[0]?.code).toContain('.subs(x, 2)');
     }
     expect(calc('f\\prime\\prime(2)').statements[0]?.code).toBe(
-      'sp.diff(f(x), x, 2).subs(x, 2)',
+      F('sp.diff(f(x), x, 2).subs(x, 2)'),
     );
   });
 

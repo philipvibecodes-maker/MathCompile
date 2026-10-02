@@ -25,7 +25,7 @@ const createCell = (latex = ''): Cell => ({
   json: parseCellLatex(latex),
 });
 
-const SEED_LATEX = '2^n = \\sum_{i=0}^n\\binom{i}{n}';
+const SEED_LATEX = '2^n = \\sum_{i=0}^n\\binom{n}{i}';
 
 // Hydrate from localStorage; fall back to the seeded example cell.
 // Restored ids push nextId forward so later cells never collide.
