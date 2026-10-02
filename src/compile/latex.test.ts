@@ -35,6 +35,15 @@ describe('outputLatex', () => {
     // Bounds grow as a sibling SupSub — the alias still maps.
     expect(outputLatex('\\antid_{1} xdx')).toBe('\\int_{1} xdx');
   });
+
+  it('only maps the alias when its \\ is not half of a \\\\ separator', () => {
+    // `x\\antid y` lexes as `\\` + the literal letters antid — not an
+    // alias — while `\\\antid` is `\\` + a real \antid command.
+    expect(outputLatex('x\\\\antid y')).toBe('x\\\\antid y');
+    expect(outputLatex('x\\\\iint y')).toBe('x\\\\iint y');
+    expect(outputLatex('x\\\\\\antid y')).toBe('x\\\\\\int y');
+    expect(outputLatex('x\\\\\\iint y')).toBe('x\\\\\\int y');
+  });
 });
 
 describe('displayLatex', () => {
