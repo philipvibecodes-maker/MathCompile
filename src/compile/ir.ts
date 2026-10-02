@@ -55,7 +55,13 @@ const head = (v: MathJson): string | undefined =>
 // environment is a matrix/cases row separator, not a statement break, so
 // environment depth is tracked alongside brace depth.
 export function latexToStatementStrings(latex: string): string[] {
-  const inner = outputLatex(latex);
+  // \limits/\nolimits/\displaylimits are display hints, not semantics —
+  // CE chokes on `\sum\limits_{i=1}^{n}` while `\sum_{i=1}^{n}` parses
+  // fine, so they are stripped before parsing.
+  const inner = outputLatex(latex).replace(
+    /\\(?:limits|nolimits|displaylimits)(?![a-zA-Z])/g,
+    '',
+  );
   const statements: string[] = [];
   let depth = 0;
   let envDepth = 0;
@@ -117,13 +123,20 @@ const KNOWN_HEADS = new Set([
   'Sinh', 'Cosh', 'Tanh', 'Coth', 'Sech', 'Csch',
   'Arcsin', 'Arccos', 'Arctan', 'Arcsec', 'Arccsc', 'Arccot',
   'Arcsinh', 'Arccosh', 'Arctanh',
+  // functions CE emits with different names than the codegen map
+  'Conjugate', 'Real', 'Imaginary', 'Argument', 'Erf', 'Zeta',
   // calculus
   'D', 'Derivative', 'Apply', 'Integrate', 'Sum', 'Product', 'Limit',
+  'Prime', 'EvaluateAt', 'EvaluateAtRange',
   // linear algebra
   'Matrix', 'Determinant', 'Transpose', 'Inverse',
   // relations / logic / piecewise
   'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
   'And', 'Or', 'Not', 'Which', 'Piecewise',
+  // sets
+  'Element', 'NotElement', 'Interval', 'Set', 'Condition',
+  'IdenticallyEqual', 'Open', 'Union', 'Intersection', 'Complement',
+  'Difference', 'InverseFunction',
   // statement-level IR
   'Assign', 'Def', 'Block', 'Function',
   // structural helpers
@@ -218,6 +231,17 @@ function delimiterArgs(delim: MathJson): MathJson[] {
 const isDelimiterGroup = (v: MathJson): v is MathJson[] =>
   isArray(v) && (head(v) === 'Delimiter' || head(v) === 'Delimiters');
 
+// TeX spacing commands CE wraps in nodes (`\,` -> HorizontalSpacing).
+// They carry no value — dropped from implicit-multiplication chains so
+// `x\,y` stays `x * y` instead of leaking `sp.HorizontalSpacing`.
+const SPACING_HEADS = new Set([
+  'HorizontalSpacing', 'Spacing', 'Space', 'TextSpace', 'Quad', 'Qquad',
+]);
+const isSpacing = (v: MathJson): boolean => {
+  const h = head(v);
+  return h !== undefined && SPACING_HEADS.has(h);
+};
+
 // f(x, y) shape: lowercase-ish head applied to bare symbols. Canonical CE
 // encodes application as ["name", arg1, ...]; non-canonical parses give
 // InvisibleOperator("name", Delimiter(args...)) — both resolve to a Def.
@@ -225,13 +249,27 @@ function functionDefShape(
   node: MathJson,
 ): { name: string; params: string[] } | null {
   if (!isArray(node) || node.length < 2) return null;
-  if (isSymbolString(node[0])) {
+  // A builtin or structural head applied to symbols is an application,
+  // not a def: `\frac{dN}{dt} = rN`, `|x| = cases`, and `sp = 5` (CE reads
+  // `sp` as juxtaposed s·p) must stay equations — they would otherwise
+  // `def D(N, t)` / `def Abs(x)` / `def InvisibleOperator(s, p)` and
+  // shadow SymPy.
+  if (
+    isSymbolString(node[0]) &&
+    !KNOWN_HEADS.has(node[0]) &&
+    node[0] !== 'call' &&
+    node[0] !== 'InvisibleOperator'
+  ) {
     const params = node.slice(1);
     if (params.every(isSymbolString)) return { name: node[0], params };
   }
   if (head(node) === 'InvisibleOperator' && node.length === 3) {
     const [, fn, delim] = node;
-    if (isSymbolString(fn) && isDelimiterGroup(delim)) {
+    if (
+      isSymbolString(fn) &&
+      !KNOWN_HEADS.has(fn) &&
+      isDelimiterGroup(delim)
+    ) {
       const params = delimiterArgs(delim);
       if (params.every(isSymbolString)) return { name: fn, params };
     }
@@ -406,16 +444,21 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     // group marks the argument list). Calls reshape to ["name", ...args]
     // so they join the same unknown-head/call path canonical f(x) takes.
     if (h === 'InvisibleOperator' && node.length >= 3) {
-      const last = node[node.length - 1];
+      // Spacing commands (x\,y) carry no value — they would otherwise
+      // leak into the product as `sp.HorizontalSpacing`.
+      const items = node.slice(1).filter((n) => !isSpacing(n));
+      if (items.length === 0) return 'Nothing';
+      if (items.length === 1) return normalize(items[0], atStatement);
+      const last = items[items.length - 1];
       if (isDelimiterGroup(last)) {
         const callArgs = delimiterArgs(last).map((n) => normalize(n, false));
-        const mid = node.slice(2, -1).map((n) => normalize(n, false));
-        const fn = node[1];
+        const mid = items.slice(1, -1).map((n) => normalize(n, false));
+        const fn = items[0];
         if (isString(fn) && mid.length === 0)
           return normalize([fn, ...callArgs], atStatement);
         return ['Apply', normalize(fn, false), ...mid, ...callArgs];
       }
-      const args = node.slice(1).map((n) => normalize(n, false));
+      const args = items.map((n) => normalize(n, false));
       // `2i` (number times bare i) means the imaginary unit — matches the
       // canonical Complex-node output. `xi`/`ij` keep i as a symbol.
       const imaginary =
@@ -484,6 +527,40 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       ];
     }
 
+    // \left. F \right|_{spec} and \left. F \right|_{lo}^{hi} eval bars:
+    // CE wraps the body in EvaluateAt and lets the bar read as a stray
+    // Subscript/Power shell — without folding it would flatten to the
+    // mangled `?_{0}` symbol. `EvaluateAt`/`EvaluateAtRange` carry the
+    // folded form to codegen's .subs() emission.
+    if (
+      h === 'Subscript' &&
+      node.length === 3 &&
+      isArray(node[1]) &&
+      head(node[1]) === 'EvaluateAt'
+    ) {
+      return [
+        'EvaluateAt',
+        normalize(node[1][1] ?? 'Nothing', false),
+        normalize(node[2], false),
+      ];
+    }
+    if (
+      h === 'Power' &&
+      node.length === 3 &&
+      isArray(node[1]) &&
+      head(node[1]) === 'Subscript' &&
+      node[1].length === 3 &&
+      isArray(node[1][1]) &&
+      head(node[1][1]) === 'EvaluateAt'
+    ) {
+      return [
+        'EvaluateAtRange',
+        normalize(node[1][1][1] ?? 'Nothing', false),
+        normalize(node[1][2], false),
+        normalize(node[2], false),
+      ];
+    }
+
     if (h === 'Subscript' && node.length === 3) {
       return `${flattenSubscript(node[1])}_{${flattenSubscript(node[2])}}`;
     }
@@ -518,6 +595,51 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       // Parenthesized group — CE wraps (a+b) as ["Delimiters", inner, ...];
       // keep the inner expression.
       return normalize(node[1], atStatement);
+    }
+
+    // CE tags an environment's delimiter style onto the Matrix node as
+    // a trailing text-literal arg ('..', '[]', '()'): it's metadata for
+    // the latex emitter, not a matrix row — strip it so codegen doesn't
+    // see a stray "text literal" symbol.
+    if (
+      h === 'Matrix' &&
+      node.length >= 2 &&
+      isArray(node[1]) &&
+      head(node[1]) === 'List'
+    ) {
+      return [
+        'Matrix',
+        ...node
+          .slice(1)
+          .filter((a) => !(isString(a) && TEXT_LITERAL.test(a)))
+          .map((n) => normalize(n, false)),
+      ];
+    }
+
+    // `\min_{x} f` — CE encodes the subscript bound as a leading `_`
+    // factor in an InvisibleOperator body. SymPy Min can't take a bound
+    // variable; drop it, keep the body, and note the loss.
+    if (
+      (h === 'Min' || h === 'Max') &&
+      node.length === 2 &&
+      isArray(node[1]) &&
+      head(node[1]) === 'InvisibleOperator' &&
+      node[1][1] === '_' &&
+      node[1].length >= 3
+    ) {
+      const rest = node[1].slice(3); // drop '_' and the bound variable
+      issues.push(
+        issue(
+          'note',
+          `${h.toLowerCase()} bound "${String(node[1][2])}" can't be applied — showing the body`,
+        ),
+      );
+      return [
+        h,
+        ...(rest.length === 1
+          ? [normalize(rest[0], false)]
+          : [['Multiply', ...rest.map((n) => normalize(n, false))]]),
+      ];
     }
 
     if (!KNOWN_HEADS.has(h)) {

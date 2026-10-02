@@ -128,7 +128,12 @@ const FIXTURES: {
   },
   {
     latex: '\\lim_{x\\to 0} \\frac{\\sin x}{x}',
-    expectedPython: ['x = sp.Symbol("x")', 'sp.limit(sp.sin(x) / x, x, 0)'],
+    // A bare \lim is two-sided — sympy's dir='+' default would silently
+    // right-hand it (1/x at 0 gives oo instead of zoo).
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      "sp.limit(sp.sin(x) / x, x, 0, dir='+-')",
+    ],
   },
   {
     latex: '\\frac{d}{dx} x^2',
@@ -179,13 +184,24 @@ const FIXTURES: {
   {
     latex: '\\operatorname{foo}(x) + 1',
     expectedIR: ['Add', ['call', 'foo', 'x'], 1],
-    expectedPython: ['x = sp.Symbol("x")', 'sp.foo(x) + 1'],
+    // Unknown names call through getattr — a sympy attr when it exists
+    // (sp.besselj), an undefined function otherwise; a bare sp.foo would
+    // AttributeError on any non-sympy name.
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'getattr(sp, "foo", sp.Function("foo"))(x) + 1',
+    ],
     issues: ['unknown head "foo"'],
   },
   {
     latex: '\\mathrm{solve}(x^2 = 4, x)',
     expectedIR: ['call', 'solve', ['Equal', ['Power', 'x', 2], 4], 'x'],
-    expectedPython: ['x = sp.Symbol("x")', 'sp.solve(sp.Eq(x**2, 4), x)'],
+    // getattr resolves the real sp.solve — the Function fallback is dead
+    // code at runtime for names sympy has.
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'getattr(sp, "solve", sp.Function("solve"))(sp.Eq(x**2, 4), x)',
+    ],
     issues: ['unknown head "solve"'],
   },
   {

@@ -79,13 +79,32 @@ def _mc_order(val):
         return val.func(*[_mc_order(a) for a in val.args])
     return val
 
+def _mc_doit(val):
+    # Relations and booleans doit per-side: Eq.doit() collapses the
+    # equation to lhs - rhs = 0, losing the displayed form.
+    if getattr(val, 'is_Relational', False) or getattr(val, 'is_Boolean', False):
+        return val.func(*[_mc_doit(a) for a in val.args])
+    return val.doit()
+
+def _mc_simplify(val):
+    # Relations simplify side-by-side: a blanket sp.simplify(Eq) routes
+    # through the solver and rewrites x + 1 = 2 as x = 1.
+    if getattr(val, 'is_Relational', False):
+        return val.func(*[sp.simplify(a) for a in val.args])
+    return sp.simplify(val)
+
 def _mc_row(val):
     try:
-        val = val.doit()
+        val = _mc_doit(val)
     except Exception:
         pass
     try:
-        val = sp.simplify(val)
+        # Booleans (And/Or of equations) keep their structure — the
+        # relational args simplify per-side, never solved.
+        if getattr(val, 'is_Boolean', False):
+            val = val.func(*[_mc_simplify(a) for a in val.args])
+        else:
+            val = _mc_simplify(val)
     except Exception:
         pass
     try:
@@ -100,7 +119,14 @@ def _mc_row(val):
     except Exception:
         out = {'text': sp.sstr(val, order='none')}
     try:
-        if getattr(val, 'is_number', False) and not val.is_Integer:
+        # is_number alone also admits oo/zoo/nan and unevaluated
+        # Sum/Product/Integral/Limit trees — an approx on those renders
+        # meaningless garbage (approx zoo, approx 9e-1067).
+        if (
+            getattr(val, 'is_number', False)
+            and val.is_finite
+            and not val.is_Integer
+        ):
             out['approx'] = str(sp.N(val, 12))
     except Exception:
         pass

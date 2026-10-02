@@ -39,13 +39,17 @@
       return;
     }
     pending = true;
+    // A stale error belongs to the old latex — drop it up front.
+    failed = '';
     const timer = setTimeout(() => {
       if (mine !== seq) return;
       // While the engine boots, show nerdamer's instant best-effort
       // result — rendered dimmed since the real eval is still pending.
+      // The `pending` guard keeps a late interim from overwriting real
+      // rows that already landed.
       if (calcEngine.status !== 'ready') {
         interimEvaluate(latex).then((r) => {
-          if (mine === seq && r.length > 0) rows = r;
+          if (mine === seq && pending && r.length > 0) rows = r;
         });
       }
       evaluate(cell).then(

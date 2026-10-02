@@ -62,6 +62,13 @@ function pyIdent(name: string): string {
   return out;
 }
 
+// Python identifier for a worksheet name. In `import sympy as sp` mode
+// the module alias is live in the namespace — a user symbol literally
+// named `sp` (\text{sp}, \operatorname{sp}) would rebound it and break
+// every `sp.` call, so it mangles to `sp_`.
+const userIdent = (qualified: boolean, name: string): string =>
+  qualified && name === 'sp' ? 'sp_' : pyIdent(name);
+
 // CE constants -> SymPy names (unqualified — the `sp.` prefix is applied
 // per-emission via the emitter's `sp` getter so `from sympy import *`
 // mode emits bare names). `True`/`False` are Python builtins and stay
@@ -105,6 +112,49 @@ const SP_FUNCS: Record<string, string> = {
   Arcsec: 'asec', Arccsc: 'acsc', Arccot: 'acot',
   Arcsinh: 'asinh', Arccosh: 'acosh', Arctanh: 'atanh',
   Conjugate: 'conjugate', Re: 're', Im: 'im', Arg: 'arg',
+  // CE emits these under longer names than sympy uses.
+  Real: 're', Imaginary: 'im', Argument: 'arg',
+  Erf: 'erf', Zeta: 'zeta',
+  // Set operations exist under their own names.
+  Union: 'Union',
+  Intersection: 'Intersection',
+  Complement: 'Complement',
+  Difference: 'Complement', // sp.Difference(A, B) == Complement(A, B)
+  SymmetricDifference: 'SymmetricDifference',
+};
+
+// \sin^{-1} — CE emits Apply(InverseFunction(<name>), arg); sympy names
+// the inverses arc-*/exp/log instead of taking InverseFunction objects.
+const INVERSE_FUNCS: Record<string, string> = {
+  Sin: 'asin', Cos: 'acos', Tan: 'atan',
+  Sec: 'asec', Csc: 'acsc', Cot: 'acot',
+  Sinh: 'asinh', Cosh: 'acosh', Tanh: 'atanh',
+  Exp: 'log', Ln: 'exp',
+};
+
+// Named CE set constants -> SymPy set, plus the Symbol assumption the
+// membership implies (`x \in \mathbb{R}` should declare `x` real).
+const SET_CONSTANTS: Record<string, string> = {
+  RealNumbers: 'S.Reals',
+  RationalNumbers: 'S.Rationals',
+  Integers: 'S.Integers',
+  Naturals: 'S.Naturals',
+  Naturals0: 'S.Naturals0',
+  PositiveIntegers: 'S.Naturals',
+  NonnegativeIntegers: 'S.Naturals0',
+  NonNegativeIntegers: 'S.Naturals0',
+  ComplexNumbers: 'S.Complexes',
+  AlgebraicNumbers: 'S.Algebraics',
+};
+const SET_ASSUMPTIONS: Record<string, string> = {
+  RealNumbers: 'real=True',
+  RationalNumbers: 'rational=True',
+  Integers: 'integer=True',
+  Naturals: 'integer=True, positive=True',
+  Naturals0: 'integer=True, nonnegative=True',
+  PositiveIntegers: 'integer=True, positive=True',
+  NonnegativeIntegers: 'integer=True, nonnegative=True',
+  NonNegativeIntegers: 'integer=True, nonnegative=True',
 };
 
 // Statement-position heads that only lower to Python.
@@ -123,6 +173,13 @@ interface Scope {
   defined: Set<string>;
   /** Python-local bound names (Def params) while inside a def body. */
   bound: Set<string>;
+  /** Operator variable names while emitting the operator's body —
+   * `\sum_{i=0}^{n}` binds `i` to the summation index, which matters
+   * only for `i` (a bound `i` stays a symbol; a free `i` is `sp.I`). */
+  lambdaBound: Set<string>;
+  /** Symbol name -> assumption kwargs (`real=True`) inferred from
+   * `\in`-membership statements; consulted when def lines emit. */
+  assumptions: Map<string, string>;
   /** Free symbol name -> emitted python identifier, insertion-ordered.
    * A def line is emitted in the cell where the name is first needed. */
   symbols: Map<string, string>;
@@ -158,7 +215,7 @@ function numText(node: MathJson): string {
 }
 
 // Numeric literal node — number or `{num: "..."}`.
-const isNum = (v: MathJson | undefined): boolean =>
+const isNum = (v: MathJson | undefined): v is number | { num: string } =>
   typeof v === 'number' ||
   (typeof v === 'object' && v !== null && 'num' in v);
 
@@ -191,7 +248,7 @@ class Emitter {
   private alloc(map: Map<string, string>, name: string): string {
     const existing = map.get(name);
     if (existing) return existing;
-    let ident = pyIdent(name);
+    let ident = userIdent(this.scope.qualified, name);
     // Different symbol names can mangle to the same ident (a_{n} vs a_n) —
     // disambiguate deterministically by first-seen order.
     let n = 2;
@@ -199,21 +256,33 @@ class Emitter {
       this.scope.symbols.has(v) ||
       [...this.scope.symbols.values()].includes(v) ||
       [...this.scope.functions.values()].includes(v);
-    while (used(ident)) ident = `${pyIdent(name)}_${n++}`;
+    while (used(ident)) ident = `${userIdent(this.scope.qualified, name)}_${n++}`;
     map.set(name, ident);
     return ident;
   }
 
   private sym(name: string): string {
+    // A bare `i` in value position is the imaginary unit (i^2 -> -1,
+    // e^{i\pi} -> -1); only a bound operator/def variable or an
+    // `i = …` assignment keeps it an ordinary symbol.
+    if (
+      name === 'i' &&
+      !this.scope.defined.has(name) &&
+      !this.scope.bound.has(name)
+    ) {
+      return this.scope.lambdaBound.has(name)
+        ? this.alloc(this.scope.symbols, name)
+        : `${this.sp}I`;
+    }
     if (this.scope.bound.has(name) || this.scope.defined.has(name))
-      return pyIdent(name);
+      return userIdent(this.scope.qualified, name);
     return this.alloc(this.scope.symbols, name);
   }
 
   // A name used as a function (f in f'(x)) needs sp.Function, not
   // sp.symbols — symbols aren't callable.
   private fn(name: string): string {
-    if (this.scope.defined.has(name)) return pyIdent(name);
+    if (this.scope.defined.has(name)) return userIdent(this.scope.qualified, name);
     return this.alloc(this.scope.functions, name);
   }
 
@@ -247,6 +316,8 @@ class Emitter {
     if (isStr(node)) {
       const c = CONSTANTS[node];
       if (c) return [this.constName(c), PREC_ATOM];
+      const set = SET_CONSTANTS[node];
+      if (set) return [`${this.sp}${set}`, PREC_ATOM];
       if (node === 'Nothing') {
         this.scope.flag('error', 'missing argument cannot be emitted');
         return ['None', PREC_ATOM];
@@ -296,10 +367,11 @@ class Emitter {
           PREC_MUL,
         ];
       case 'Divide':
-        // int/int divides to a Python float — keep it exact as Rational.
-        if (isNum(args[0]) && isNum(args[1]))
+        // int-valued expressions divide to a Python float — keep them
+        // exact as Rational (`10^6/3` -> Rational(10**6, 3)).
+        if (isIntExpr(args[0]) && isIntExpr(args[1]))
           return [
-            `${this.sp}Rational(${numText(args[0])}, ${numText(args[1])})`,
+            `${this.sp}Rational(${this.emit(args[0])}, ${this.emit(args[1])})`,
             PREC_ATOM,
           ];
         return [
@@ -380,14 +452,54 @@ class Emitter {
       }
       case 'D': {
         // \frac{d}{dx} f and partials both parse to D(f, x[, n]).
+        const savedBound = this.scope.lambdaBound;
+        if (isStr(args[1]))
+          this.scope.lambdaBound = new Set([...savedBound, args[1]]);
         const f = this.emit(args[0]);
         const x = this.emit(args[1]);
-        return args.length >= 3
-          ? [`${this.sp}diff(${f}, ${x}, ${this.emit(args[2])})`, PREC_ATOM]
-          : [`${this.sp}diff(${f}, ${x})`, PREC_ATOM];
+        const out: [string, number] =
+          args.length >= 3
+            ? [`${this.sp}diff(${f}, ${x}, ${this.emit(args[2])})`, PREC_ATOM]
+            : [`${this.sp}diff(${f}, ${x})`, PREC_ATOM];
+        this.scope.lambdaBound = savedBound;
+        return out;
       }
       case 'Apply': {
         const callee = args[0];
+        // \sin^{-1} x — CE emits Apply(InverseFunction(<name>), x).
+        if (
+          isHead(callee, 'InverseFunction') &&
+          callee.length === 2 &&
+          isStr(callee[1]) &&
+          INVERSE_FUNCS[callee[1]] !== undefined
+        ) {
+          const inv = INVERSE_FUNCS[callee[1]];
+          return [
+            `${this.sp}${inv}(${args
+              .slice(1)
+              .map((a) => this.emit(a))
+              .join(', ')})`,
+            PREC_ATOM,
+          ];
+        }
+        // f^{-1}(x) — the inverse function of f applied: emit a distinct
+        // undefined function named `f^{-1}` (latex prints it literally).
+        if (
+          isHead(callee, 'Power') &&
+          callee.length === 3 &&
+          isStr(callee[1]) &&
+          ((isNum(callee[2]) && numText(callee[2]) === '-1') ||
+            (isHead(callee[2], 'Negate') &&
+              isNum(callee[2][1]) &&
+              numText(callee[2][1]) === '1'))
+        )
+          return [
+            `${this.sp}Function(${JSON.stringify(`${callee[1]}^{-1}`)})(${args
+              .slice(1)
+              .map((a) => this.emit(a))
+              .join(', ')})`,
+            PREC_ATOM,
+          ];
         if (isHead(callee, 'Derivative')) {
           // f'(x): ["Apply", ["Derivative", f, n], x]
           const [, f, n] = callee;
@@ -438,13 +550,30 @@ class Emitter {
         return [`(lambda ${params.join(', ')}: ${body})`, PREC_LOW];
       }
       case 'Integrate': {
-        const { body, params } = unwrapLambda(args[0]);
+        const { body: parsedBody, params } = unwrapLambda(args[0]);
+        let body = parsedBody;
         const limits = isHead(args[1], 'Limits') ? args[1].slice(1) : null;
         const missing = (n: MathJson | undefined): boolean =>
           n === undefined || n === 'Nothing' || isHead(n, 'Error');
         let v = limits?.[0] ?? params[0];
         const lo = limits?.[1];
         const hi = limits?.[2];
+        if (missing(v) && isHead(body, 'Multiply') && body.length >= 3) {
+          // `\int x^2 \text{d}x` — CE leaves a \text{d} differential as a
+          // `d * x` factor pair in the body instead of marking the var.
+          const tail = body.slice(1);
+          const varName = tail[tail.length - 1];
+          const marker = tail[tail.length - 2];
+          if (
+            isStr(varName) &&
+            isStr(marker) &&
+            (marker === 'd' || marker === 'd_upright')
+          ) {
+            v = varName;
+            const rest = tail.slice(0, -2);
+            body = rest.length === 1 ? rest[0] : ['Multiply', ...rest];
+          }
+        }
         if (missing(v)) {
           // No `dx` — infer the variable from the body's free symbols
           // (`\int x^2` -> x). Ambiguous bodies can't be emitted — SymPy
@@ -465,27 +594,37 @@ class Emitter {
             return [`${this.sp}integrate(${this.emit(body)})`, PREC_ATOM];
           }
         }
-        const hasLo = !missing(lo);
-        const hasHi = !missing(hi);
-        if (hasLo !== hasHi) {
-          this.scope.flag(
-            'error',
-            `${hasLo ? 'upper' : 'lower'} bound is empty — fill it in or delete it`,
-          );
-          return [`${this.sp}integrate(${this.emit(body)}, ${this.emit(v)})`, PREC_ATOM];
-        }
-        if (hasLo)
+        // The integration variable is bound for the body's emission (a
+        // bound `i` stays a symbol instead of resolving to sp.I).
+        const savedBound = this.scope.lambdaBound;
+        if (isStr(v))
+          this.scope.lambdaBound = new Set([...savedBound, v]);
+        const finish = (): [string, number] => {
+          const hasLo = !missing(lo);
+          const hasHi = !missing(hi);
+          if (hasLo !== hasHi) {
+            this.scope.flag(
+              'error',
+              `${hasLo ? 'upper' : 'lower'} bound is empty — fill it in or delete it`,
+            );
+            return [`${this.sp}integrate(${this.emit(body)}, ${this.emit(v)})`, PREC_ATOM];
+          }
+          if (hasLo)
+            return [
+              `${this.sp}integrate(${this.emit(body)}, (${this.emit(v)}, ${this.emit(lo)}, ${this.emit(hi)}))`,
+              PREC_ATOM,
+            ];
+          // Indefinite: append the constant of integration (`+ C`). PREC_ADD
+          // keeps the sum parenthesized when the integral nests inside a
+          // larger term (`(∫x dx)^2` -> `(x**2/2 + C)**2`).
           return [
-            `${this.sp}integrate(${this.emit(body)}, (${this.emit(v)}, ${this.emit(lo)}, ${this.emit(hi)}))`,
-            PREC_ATOM,
+            `${this.sp}integrate(${this.emit(body)}, ${this.emit(v)}) + ${this.sp}Symbol(${JSON.stringify(nextConstName(this.scope))})`,
+            PREC_ADD,
           ];
-        // Indefinite: append the constant of integration (`+ C`). PREC_ADD
-        // keeps the sum parenthesized when the integral nests inside a
-        // larger term (`(∫x dx)^2` -> `(x**2/2 + C)**2`).
-        return [
-          `${this.sp}integrate(${this.emit(body)}, ${this.emit(v)}) + ${this.sp}Symbol(${JSON.stringify(nextConstName(this.scope))})`,
-          PREC_ADD,
-        ];
+        };
+        const out = finish();
+        this.scope.lambdaBound = savedBound;
+        return out;
       }
       case 'Sum':
       case 'Product': {
@@ -493,41 +632,258 @@ class Emitter {
         const limits = isHead(args[1], 'Limits') ? args[1].slice(1) : null;
         const eager = h === 'Sum' ? 'summation' : 'product';
         const lazy = h === 'Sum' ? 'Sum' : 'Product';
-        if (
-          limits &&
-          !(isStr(limits[1]) && limits[1] === 'Nothing') &&
-          !(isStr(limits[2]) && limits[2] === 'Nothing')
-        )
-          return [
-            `${this.sp}${eager}(${this.emit(body)}, (${this.emit(limits[0])}, ${this.emit(limits[1])}, ${this.emit(limits[2])}))`,
+        const missing = (n: MathJson | undefined): boolean =>
+          n === undefined || n === 'Nothing' || isHead(n, 'Error');
+        // The index variable is bound for the body's emission (a bound
+        // `i` stays a symbol instead of resolving to sp.I).
+        const savedBound = this.scope.lambdaBound;
+        if (limits && isStr(limits[0]) && !missing(limits[0]))
+          this.scope.lambdaBound = new Set([...savedBound, limits[0]]);
+        const finish = (): [string, number] => {
+          if (limits) {
+            const hasLo = !missing(limits[1]);
+            const hasHi = !missing(limits[2]);
+            if (hasLo !== hasHi) {
+              // `Sum(body, var)` isn't valid SymPy — flag the half-empty
+              // bounds like a one-sided integral instead of emitting it.
+              this.scope.flag(
+                'error',
+                `${hasLo ? 'upper' : 'lower'} bound is empty — fill it in or delete it`,
+              );
+              return [`${this.sp}${lazy}(${this.emit(body)})`, PREC_ATOM];
+            }
+            if (hasLo)
+              return [
+                `${this.sp}${eager}(${this.emit(body)}, (${this.emit(limits[0])}, ${this.emit(limits[1])}, ${this.emit(limits[2])}))`,
+                PREC_ATOM,
+              ];
+          }
+          // Missing bounds can't be evaluated — emit the unevaluated
+          // form; a lone index variable is dropped (`Sum(body, i)` isn't
+          // valid SymPy).
+          if (limits)
+            this.scope.flag(
+              'note',
+              `unbounded ${h === 'Sum' ? 'sum' : 'product'} — add bounds like \\sum_{i=a}^{b} to evaluate`,
+            );
+          return [`${this.sp}${lazy}(${this.emit(body)})`, PREC_ATOM];
+        };
+        const out = finish();
+        this.scope.lambdaBound = savedBound;
+        return out;
+      }
+      case 'Limit': {
+        // CE emits ["Limit", ["Function", body, x], value[, dir]] — dir
+        // is ±1 from `x \to a^{\pm}` (one-sided). Without a direction the
+        // limit is two-sided: sympy's default dir='+' would silently give
+        // the right-hand answer, so '+-' is emitted explicitly.
+        const { body, params } = unwrapLambda(args[0]);
+        if (isHead(args[0], 'Function')) {
+          const v = params[0] ?? 'x';
+          const dir =
+            args.length >= 3 && isNum(args[2])
+              ? Number(numText(args[2])) > 0
+                ? '+'
+                : '-'
+              : '+-';
+          const savedBound = this.scope.lambdaBound;
+          if (isStr(v))
+            this.scope.lambdaBound = new Set([...savedBound, v]);
+          const out: [string, number] = [
+            `${this.sp}limit(${this.emit(body)}, ${this.emit(v)}, ${this.emit(args[1])}, dir='${dir}')`,
             PREC_ATOM,
           ];
-        // Missing bounds can't be evaluated — emit the unevaluated form.
+          this.scope.lambdaBound = savedBound;
+          return out;
+        }
+        // Defensive ["Limit", expr, x, value[, dir]] shape.
+        if (args.length >= 3) {
+          const dir =
+            args.length >= 4 && isNum(args[3])
+              ? `, dir='${Number(numText(args[3])) > 0 ? '+' : '-'}'`
+              : '';
+          return [
+            `${this.sp}limit(${this.emit(body)}, ${this.emit(args[1])}, ${this.emit(args[2])}${dir})`,
+            PREC_ATOM,
+          ];
+        }
+        const v = params[0] ?? 'x';
         return [
-          limits
-            ? `${this.sp}${lazy}(${this.emit(body)}, ${this.emit(limits[0])})`
-            : `${this.sp}${lazy}(${this.emit(body)})`,
+          `${this.sp}limit(${this.emit(body)}, ${this.emit(v)}, ${this.emit(args[1])}, dir='+-')`,
           PREC_ATOM,
         ];
       }
-      case 'Limit': {
-        // ["Limit", ["Function", body, x], value]; defensive 3-arg form
-        // ["Limit", expr, x, value] too.
-        const { body, params } = unwrapLambda(args[0]);
-        if (args.length >= 3)
+      case 'Open':
+        // An interval's open-endpoint marker outside an Interval — it
+        // only means something inside [a,b) bounds.
+        this.scope.flag(
+          'error',
+          'an open-endpoint marker is only meaningful inside an interval',
+        );
+        return ['None', PREC_ATOM];
+      case 'InverseFunction': {
+        const name = isStr(args[0]) ? args[0] : 'unknown';
+        const inv = INVERSE_FUNCS[name];
+        if (inv) return [`${this.sp}${inv}`, PREC_ATOM];
+        this.scope.flag('note', `can't invert ${name} — showing it as a function`);
+        return [`${this.sp}Function(${JSON.stringify(name + '^{-1}')})`, PREC_ATOM];
+      }
+      case 'EvaluateAt': {
+        // \left. F \right|_{x=a} — point evaluation via .subs; a bare
+        // \left. F \right|_a infers the variable like an integral does.
+        const body = args[0];
+        const spec = args[1];
+        let v: string | undefined;
+        let at: MathJson | undefined;
+        if (isHead(spec, 'Equal') && spec.length === 3) {
+          if (isStr(spec[1])) v = spec[1];
+          at = spec[2];
+        } else {
+          at = spec;
+        }
+        if (v === undefined) {
+          const free = freeNames(body);
+          if (free.length === 1) v = free[0];
+        }
+        if (
+          v === undefined ||
+          at === undefined ||
+          at === 'Nothing' ||
+          isHead(at, 'Error')
+        ) {
+          this.scope.flag(
+            'error',
+            'the eval bar needs a variable — write it as \\left. F \\right|_{x=a}',
+          );
+          return ['None', PREC_ATOM];
+        }
+        return [
+          `${this.emit(body, PREC_ATOM)}.subs(${this.emit(v)}, ${this.emit(at)})`,
+          PREC_ATOM,
+        ];
+      }
+      case 'EvaluateAtRange': {
+        // \left. F \right|_{a}^{b} -> F(b) - F(a); bounds may name the
+        // variable explicitly (`_{x=a}^{x=b}`) or lean on the body's
+        // single free symbol.
+        const body = args[0];
+        const parts = [args[1], args[2]].map((n) =>
+          isHead(n, 'Equal') && n.length === 3
+            ? { v: isStr(n[1]) ? n[1] : undefined, val: n[2] }
+            : { v: undefined, val: n },
+        );
+        let v = parts.find((p) => p.v !== undefined)?.v;
+        if (v === undefined) {
+          const free = freeNames(body);
+          if (free.length === 1) v = free[0];
+        }
+        const [lo, hi] = parts.map((p) => p.val);
+        const missing = (n: MathJson | undefined): boolean =>
+          n === undefined || n === 'Nothing' || isHead(n, 'Error');
+        if (v === undefined || missing(lo) || missing(hi)) {
+          this.scope.flag(
+            'error',
+            'the eval bar needs a variable and two bounds — \\left. F \\right|_{x=a}^{x=b}',
+          );
+          return ['None', PREC_ATOM];
+        }
+        const b = this.emit(body, PREC_ATOM);
+        return [
+          `${b}.subs(${this.emit(v)}, ${this.emit(hi)}) - ${b}.subs(${this.emit(v)}, ${this.emit(lo)})`,
+          PREC_ADD,
+        ];
+      }
+      case 'Prime': {
+        // y'' — the nth derivative of the function w.r.t. x.
+        const name = isStr(args[0])
+          ? `${this.fn(args[0])}(${this.sym('x')})`
+          : this.emit(args[0], PREC_ATOM);
+        const n =
+          isNum(args[1]) && numText(args[1]) !== '1'
+            ? `, ${numText(args[1])}`
+            : '';
+        return [`${this.sp}Derivative(${name}, x${n})`, PREC_ATOM];
+      }
+      case 'Element': {
+        // `x \in S` — a named set carries an assumption that lands on the
+        // symbol's def line (`x = Symbol('x', real=True)`).
+        const [a, s] = args;
+        if (isStr(a) && isStr(s) && SET_ASSUMPTIONS[s] !== undefined)
+          this.scope.assumptions.set(a, SET_ASSUMPTIONS[s]);
+        return [
+          `${this.sp}Contains(${this.emit(a)}, ${this.emit(s)})`,
+          PREC_ATOM,
+        ];
+      }
+      case 'NotElement':
+        // No assumption — `\notin` asserts non-membership, never `real`.
+        return [
+          `${this.sp}Not(${this.sp}Contains(${this.emit(args[0])}, ${this.emit(args[1])}))`,
+          PREC_ATOM,
+        ];
+      case 'Interval': {
+        // Endpoint "Open" markers select the half-open Interval variant.
+        const loOpen = isHead(args[0], 'Open');
+        const hiOpen = isHead(args[1], 'Open');
+        const a = this.emit(loOpen && isArr(args[0]) ? args[0][1] : args[0]);
+        const b = this.emit(hiOpen && isArr(args[1]) ? args[1][1] : args[1]);
+        const variant = loOpen && hiOpen ? 'open' : loOpen ? 'Lopen' : hiOpen ? 'Ropen' : '';
+        return [
+          `${this.sp}Interval${variant ? `.${variant}` : ''}(${a}, ${b})`,
+          PREC_ATOM,
+        ];
+      }
+      case 'Set': {
+        // \{a, b\} -> FiniteSet; \{x : cond\} -> ConditionSet.
+        if (args.length === 2 && isStr(args[0]) && isHead(args[1], 'Condition'))
           return [
-            `${this.sp}limit(${this.emit(body)}, ${this.emit(args[1])}, ${this.emit(args[2])})`,
+            `${this.sp}ConditionSet(${this.emit(args[0])}, ${this.emit(args[1][1])})`,
             PREC_ATOM,
           ];
-        const v = params[0] ?? 'x';
         return [
-          `${this.sp}limit(${this.emit(body)}, ${this.emit(v)}, ${this.emit(args[1])})`,
+          `${this.sp}FiniteSet(${args.map((a) => this.emit(a)).join(', ')})`,
+          PREC_ATOM,
+        ];
+      }
+      case 'Condition': {
+        // A Condition escaping a Set wrapper — defensive; the variable
+        // comes from the predicate's single free name.
+        const free = freeNames(args[0]);
+        if (free.length !== 1) {
+          this.scope.flag(
+            'error',
+            'set-builder notation needs exactly one variable',
+          );
+          return ['None', PREC_ATOM];
+        }
+        return [
+          `${this.sp}ConditionSet(${this.emit(free[0])}, ${this.emit(args[0])})`,
+          PREC_ATOM,
+        ];
+      }
+      case 'IdenticallyEqual': {
+        // `x \equiv a \mod m` — CE parks the modulus in a Mod node.
+        const [a, rhs] = args;
+        if (isHead(rhs, 'Mod') && rhs.length === 3)
+          return [
+            `${this.sp}Eq(${this.sp}Mod(${this.emit(a)}, ${this.emit(rhs[2])}), ${this.emit(rhs[1])})`,
+            PREC_ATOM,
+          ];
+        return [
+          `${this.sp}Eq(${this.emit(a)}, ${this.emit(rhs)})`,
           PREC_ATOM,
         ];
       }
       case 'Matrix': {
+        // The grid is the first List-of-rows arg; unbracketed envs tag a
+        // delimiter marker on as an extra arg ('..' / '[]') — ignored.
+        const grid =
+          isHead(args[0], 'List') &&
+          args[0].slice(1).every((r) => isHead(r, 'List'));
         const rows =
-          args.length === 1 && isHead(args[0], 'List') ? args[0].slice(1) : args;
+          grid || (args.length === 1 && isHead(args[0], 'List'))
+            ? (args[0] as MathJson[]).slice(1)
+            : args;
         const text = rows
           .map((r: MathJson) =>
             isHead(r, 'List')
@@ -551,9 +907,11 @@ class Emitter {
           PREC_ATOM,
         ];
       case 'call': {
-        // Escape hatch: unknown/`\operatorname` heads -> sp.<head>(args),
-        // except worksheet-declared names, which call directly (f(x)=...) —
-        // declared-but-not-yet-bound gets a Function def in this cell.
+        // Escape hatch: unknown/`\operatorname` heads — getattr resolves
+        // a real sympy attr when the name exists (sp.besselj) and falls
+        // back to an undefined function instead of AttributeErroring.
+        // Worksheet-declared names call directly (f(x) = …): a declared
+        // but unbound name gets a Function def in this cell.
         const name = isStr(args[0]) ? args[0] : 'unknown';
         const rendered = args
           .slice(1)
@@ -561,7 +919,10 @@ class Emitter {
           .join(', ');
         if (this.scope.declared.has(name))
           return [`${this.fn(name)}(${rendered})`, PREC_ATOM];
-        return [`${this.sp}${pyIdent(name)}(${rendered})`, PREC_ATOM];
+        const callee = this.scope.qualified
+          ? `getattr(sp, ${JSON.stringify(pyIdent(name))}, ${this.sp}Function(${JSON.stringify(name)}))`
+          : `globals().get(${JSON.stringify(pyIdent(name))}, ${this.sp}Function(${JSON.stringify(name)}))`;
+        return [`${callee}(${rendered})`, PREC_ATOM];
       }
       default:
         if (SP_FUNCS[h])
@@ -591,6 +952,19 @@ function unwrapLambda(node: MathJson): { body: MathJson; params: string[] } {
   return { body: node, params: [] };
 }
 
+// Node guaranteed to evaluate to a Python int: integer literals, plus
+// powers/products/sums of them — `10^6/3` must emit `Rational(10**6, 3)`
+// so it stays exact instead of a float.
+function isIntExpr(v: MathJson | undefined): boolean {
+  if (isNum(v)) return /^-?\d+$/.test(numText(v));
+  if (!isArr(v)) return false;
+  const h = headOf(v);
+  if (h === 'Negate') return isIntExpr(v[1]);
+  if (h === 'Power' || h === 'Multiply' || h === 'Add')
+    return v.slice(1).every(isIntExpr);
+  return false;
+}
+
 interface StatementOut {
   lines: string[];
   /** Expression to eval for the statement's displayed value — set only
@@ -614,7 +988,12 @@ interface CellBody {
 // marker, and callee names (f in f(t), call heads) don't count.
 function freeNames(node: MathJson, acc = new Set<string>()): string[] {
   if (isStr(node)) {
-    if (!CONSTANTS[node] && node !== 'Nothing' && !node.startsWith("'"))
+    if (
+      !CONSTANTS[node] &&
+      !SET_CONSTANTS[node] &&
+      node !== 'Nothing' &&
+      !node.startsWith("'")
+    )
       acc.add(node);
     return [...acc];
   }
@@ -683,16 +1062,26 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   for (const raw of newNames) scope.defined.add(raw);
 
   const defs: string[] = [];
-  const simple = newSyms.filter(([raw, ident]) => ident === pyIdent(raw));
-  const fancy = newSyms.filter(([raw, ident]) => ident !== pyIdent(raw));
+  // Assumed symbols (`x \in \mathbb{R}` -> real=True) always emit on their
+  // own line — `symbols('x y', real=True)` would smear the assumption.
+  const simple = newSyms.filter(
+    ([raw, ident]) => ident === pyIdent(raw) && !scope.assumptions.has(raw),
+  );
+  const fancy = newSyms.filter(
+    ([raw, ident]) => ident !== pyIdent(raw) || scope.assumptions.has(raw),
+  );
   if (simple.length === 1)
     defs.push(`${simple[0][1]} = ${sp}Symbol(${JSON.stringify(simple[0][0])})`);
   else if (simple.length > 1)
     defs.push(
       `${simple.map(([, ident]) => ident).join(', ')} = ${sp}symbols('${simple.map(([raw]) => raw).join(' ')}')`,
     );
-  for (const [raw, ident] of fancy)
-    defs.push(`${ident} = ${sp}Symbol(${JSON.stringify(raw)})`);
+  for (const [raw, ident] of fancy) {
+    const assum = scope.assumptions.get(raw);
+    defs.push(
+      `${ident} = ${sp}Symbol(${JSON.stringify(raw)}${assum ? `, ${assum}` : ''})`,
+    );
+  }
   for (const [raw, ident] of newFns)
     defs.push(`${ident} = ${sp}Function(${JSON.stringify(raw)})`);
 
@@ -733,7 +1122,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     if (isStr(node[1])) emitter.scope.defined.add(name);
     if (emitter.scope.errorCount > before) return { lines: [] };
     return {
-      lines: [`${pyIdent(name)} = ${rhs}`],
+      lines: [`${userIdent(emitter.scope.qualified, name)} = ${rhs}`],
       // The display expression uses a fresh Symbol for the target so the
       // row renders the raw name (`x_{1}` shows subscripted, not `x_1`).
       display: `${sp}Eq(${sp}Symbol(${JSON.stringify(name)}), ${rhs})`,
@@ -750,7 +1139,9 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     emitter.scope.bound = saved;
     emitter.scope.defined.add(name);
     if (emitter.scope.errorCount > before) return { lines: [] };
-    const idents = params.map(pyIdent).join(', ');
+    const idents = params
+      .map((p) => userIdent(emitter.scope.qualified, p))
+      .join(', ');
     // `f(x) = body` rendered via an undefined function — the def'd python
     // function would just evaluate back to body. The lambda binds the
     // param idents to fresh Symbols so the display needs no namespace
@@ -762,7 +1153,10 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
             .map((p) => `${sp}Symbol(${JSON.stringify(p)})`)
             .join(', ')})`;
     return {
-      lines: [`def ${pyIdent(name)}(${idents}):`, `    return ${body}`],
+      lines: [
+        `def ${userIdent(emitter.scope.qualified, name)}(${idents}):`,
+        `    return ${body}`,
+      ],
       display,
     };
   }
@@ -908,6 +1302,8 @@ function buildScope(
     declared,
     defined: new Set(),
     bound: new Set(),
+    lambdaBound: new Set(),
+    assumptions: new Map(),
     symbols: new Map(),
     functions: new Map(),
     issues,
