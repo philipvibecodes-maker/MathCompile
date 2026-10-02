@@ -24,14 +24,26 @@ LatexCmds.begin = class extends MathCommand {
     var string = Parser.string;
     var regex = Parser.regex;
     return string('{')
-      .then(regex(/^[a-z]+/i))
+      .then(regex(/^[a-z*]+/i))
       .skip(string('}'))
       .then(function (env) {
-        return (
-          Environments[env]
-            ? Environments[env]().parser()
-            : Parser.fail('unknown environment type: ' + env)
-        ).skip(string('\\end{' + env + '}'));
+        // Starred variants (align*, gather*, …) parse as their
+        // unstarred counterpart and serialize canonically.
+        var envName = env.replace(/\*/g, '');
+        if (!Environments[envName]) {
+          // Unknown environment: keep \begin{name} as a visible leaf —
+          // the body and \end{name} parse as ordinary content.
+          return Parser.succeed(
+            new VanillaSymbol(
+              '\\begin{' + env + '} ',
+              h.text('\\begin{' + env + '}'),
+              'begin ' + env
+            ) as MQNode | Fragment
+          );
+        }
+        return Environments[envName]()
+          .parser()
+          .skip(string('\\end{' + env + '}'));
       });
   }
 };
@@ -625,7 +637,8 @@ function withBraces<T extends CellGrid>(env: T): T {
 }
 
 Environments.matrix = () => new Matrix();
-LatexCmds.matrix = () => withBraces(new Matrix());
+// \matrix{...} emits the \begin{matrix} env form (like \pmatrix).
+LatexCmds.matrix = () => withBraces(new MatrixEnv());
 
 class PMatrix extends Matrix {
   parens = { left: '(' as const, right: ')' as const };
@@ -725,6 +738,106 @@ class DisplayLines extends CellGrid {
 Environments.displaylines = () => new DisplayLines();
 LatexCmds.displaylines = () => withBraces(new DisplayLines());
 LatexCmds.pmatrix = () => withBraces(new PMatrix());
+
+// \begin{gathered}: a single-column grid, like displaylines but
+// \end-bounded.
+class Gathered extends DisplayLines {
+  latexOpen() {
+    return '\\begin{gathered}';
+  }
+  latexClose() {
+    return '\\end{gathered}';
+  }
+}
+Environments.gathered = () => new Gathered();
+Environments.Gathered = () => new Gathered();
+// single-column display environments — serialize canonically as gathered
+Environments.gather = () => new Gathered();
+Environments.equation = () => new Gathered();
+Environments.multline = () => new Gathered();
+Environments.flalign = () => new Gathered();
+
+// \begin{smallmatrix}: matrix cells at a smaller size.
+class SmallMatrix extends Matrix {
+  gridClass = 'mq-matrix mq-smallmatrix mq-non-leaf';
+  latexOpen() {
+    return '\\begin{smallmatrix}';
+  }
+  latexClose() {
+    return '\\end{smallmatrix}';
+  }
+}
+Environments.smallmatrix = () => new SmallMatrix();
+Environments.subarray = () => new SmallMatrix();
+
+// \begin{aligned}: a two-column (or repeating two-column) grid —
+// parsed like matrix; cell alignment alternates right/left via CSS.
+class Aligned extends CellGrid {
+  gridClass = 'mq-aligned mq-non-leaf';
+  cellTextAlign = 'left';
+  latexOpen() {
+    return '\\begin{aligned}';
+  }
+  latexClose() {
+    return '\\end{aligned}';
+  }
+}
+Environments.aligned = () => new Aligned();
+Environments.alignat = () => new Aligned();
+// alignment environments — serialize canonically as aligned
+Environments.align = () => new Aligned();
+Environments.split = () => new Aligned();
+
+// \begin{array}{spec}: a matrix grid preceded by a column-spec argument
+// ({cc}, {|l|c|r|}, …) which round-trips verbatim.
+class ArrayEnv extends Matrix {
+  spec = '';
+  pos = '';
+  latexOpen() {
+    return (
+      '\\begin{array}' +
+      (this.pos ? '[' + this.pos + ']' : '') +
+      '{' +
+      this.spec +
+      '}'
+    );
+  }
+  latexClose() {
+    return '\\end{array}';
+  }
+  parser() {
+    var self = this;
+    return Parser.optWhitespace
+      .then(
+        Parser.regex(/^\[[tcb]\]/)
+          .or(Parser.succeed(''))
+          .then(function (pos: string) {
+            if (pos) self.pos = pos.slice(1, -1);
+            return Parser.string('{')
+              .then(Parser.regex(/^[^{}]*/))
+              .skip(Parser.string('}'));
+          })
+      )
+      .then(function (spec: string) {
+        self.spec = spec;
+        return self.cellsParser();
+      });
+  }
+}
+Environments.array = () => new ArrayEnv();
+
+// \substack{i=1\\ j=2}: a braced single-column stack used as a bound.
+class Substack extends DisplayLines {
+  gridClass = 'mq-substack mq-non-leaf';
+  cellTextAlign = 'center';
+  latexOpen() {
+    return '\\substack{';
+  }
+  latexClose() {
+    return '}';
+  }
+}
+LatexCmds.substack = () => withBraces(new Substack());
 LatexCmds.bmatrix = () => withBraces(new BMatrix());
 LatexCmds.Bmatrix = () => withBraces(new BBMatrix());
 LatexCmds.vmatrix = () => withBraces(new VMatrix());
@@ -888,3 +1001,139 @@ function insertLineBreakAtCursor(ctrlr: Controller) {
   ctrlr.notify('edit');
   ctrlr.scrollHoriz();
 }
+
+// Old-style environment names canonicalize to the closest supported
+// grid env; \eqnarray is three-column align, \eqalign is aligned.
+Environments.eqnarray = () => new Aligned();
+Environments.eqalign = () => new Aligned();
+
+// \varliminf / \varlimsup — limit large-ops that take bounds like
+// \varinjlim / \varprojlim.
+LatexCmds.varliminf = () =>
+  new SummationNotation('\\varliminf ', 'lim', 'variable limit inferior');
+LatexCmds.varlimsup = () =>
+  new SummationNotation('\\varlimsup ', 'lim', 'variable limit superior');
+
+// \smallint / \ointclockwise — more boundless integrals.
+LatexCmds.smallint = boundlessIntegral(
+  '\\smallint ',
+  '&#8747;',
+  'small integral'
+);
+LatexCmds.ointclockwise = boundlessIntegral(
+  '\\ointclockwise ',
+  '&#8754;',
+  'clockwise contour integral'
+);
+
+// \intop / \ointop — boundless integral family members.
+LatexCmds.intop = boundlessIntegral('\\intop ', '&#8747;', 'int op');
+LatexCmds.ointop = boundlessIntegral('\\ointop ', '&#8750;', 'oint op');
+
+// \end{foo} where foo is NOT a registered environment — kept as a
+// visible leaf, paired with the unknown-env \begin leaf. A \end{name}
+// for a known env must fail here so CellGrid parsing still stops at it
+// and the \begin parser's .skip('\\end{...}') consumes it as the close.
+LatexCmds.end = () =>
+  new (class extends MathCommand {
+    env = '';
+    constructor() {
+      super(
+        '\\end',
+        new DOMView(0, () =>
+          h('span', { class: 'mq-non-leaf' }, [h.text('\\end')])
+        )
+      );
+    }
+    parser() {
+      var self = this;
+      return Parser.string('{')
+        .then(Parser.regex(/^[a-z*]+/i))
+        .skip(Parser.string('}'))
+        .then(function (env: string) {
+          if (Environments[env.replace(/\*/g, '')])
+            return Parser.fail(
+              'known environment close handled by the env parser'
+            );
+          self.env = env;
+          return Parser.succeed(self as MQNode | Fragment);
+        });
+    }
+    latexRecursive(ctx: LatexContext) {
+      this.checkCursorContextOpen(ctx);
+      ctx.uncleanedLatex += '\\end{' + this.env + '}';
+      this.checkCursorContextClose(ctx);
+    }
+  })();
+
+// \begin{tabular}{spec} — the text-mode twin of \begin{array}, same
+// colspec + cell grid.
+class TabularEnv extends ArrayEnv {
+  latexOpen() {
+    return (
+      '\\begin{tabular}' +
+      (this.pos ? '[' + this.pos + ']' : '') +
+      '{' +
+      this.spec +
+      '}'
+    );
+  }
+  latexClose() {
+    return '\\end{tabular}';
+  }
+}
+Environments.tabular = () => new TabularEnv();
+
+// \begin{subarray}{spec}: like smallmatrix but with a required
+// column spec ({c}, {l}, {r}) that round-trips verbatim.
+class SubarrayEnv extends SmallMatrix {
+  spec = '';
+  latexOpen() {
+    return '\\begin{subarray}{' + this.spec + '}';
+  }
+  latexClose() {
+    return '\\end{subarray}';
+  }
+  parser() {
+    var self = this;
+    return Parser.optWhitespace
+      .then(Parser.string('{'))
+      .then(Parser.regex(/^[^{}]*/))
+      .skip(Parser.string('}'))
+      .then(function (spec: string) {
+        self.spec = spec;
+        return self.cellsParser();
+      });
+  }
+}
+Environments.subarray = () => new SubarrayEnv();
+
+// \begin{alignat}{n} / \begin{alignedat}{n}: aligned grid with a
+// required column-pair count; keeps its own env name + spec.
+class AlignatEnv extends Aligned {
+  n = '';
+  envName = 'alignat';
+  latexOpen() {
+    return '\\begin{' + this.envName + '}{' + this.n + '}';
+  }
+  latexClose() {
+    return '\\end{' + this.envName + '}';
+  }
+  parser() {
+    var self = this;
+    return Parser.optWhitespace
+      .then(Parser.string('{'))
+      .then(Parser.regex(/^[^{}]*/))
+      .skip(Parser.string('}'))
+      .then(function (n: string) {
+        self.n = n;
+        return self.cellsParser();
+      });
+  }
+}
+Environments.alignat = () => new AlignatEnv();
+Environments.alignedat = () => {
+  var e = new AlignatEnv();
+  e.envName = 'alignedat';
+  return e;
+};

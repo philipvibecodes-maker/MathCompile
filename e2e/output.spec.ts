@@ -242,8 +242,6 @@ test('latex output round-trips \\begin{cases}', async ({ page }) => {
   );
 });
 
-||||||| 062b1b9
-=======
 // `\,` `\;` `\:` `\!` spacing commands parse (previously `\,` degraded
 // to a literal comma and the rest wiped the field).
 test('latex output round-trips \\, \\; \\: \\! spacing', async ({ page }) => {
@@ -256,7 +254,6 @@ test('latex output round-trips \\, \\; \\: \\! spacing', async ({ page }) => {
   );
 });
 
->>>>>>> origin/devin/bughunt-latex-spacing-cmds
 ||||||| 062b1b9
 =======
 // Escaped delimiters and standalone angle/norm delimiters parse
@@ -276,6 +273,40 @@ test('latex output round-trips escaped delimiters and set literals', async ({
 });
 
 >>>>>>> origin/devin/bughunt-latex-escaped-delims
+||||||| 062b1b9
+=======
+// Common latex constructs that previously blanked the field now
+// round-trip: fonts/accents, negated relations, mod, boxed, overset.
+test('latex output round-trips fonts, negations, mod, boxed, overset', async ({
+  page,
+}) => {
+  const cases: [string, string][] = [
+    ['\\mathcal{F}x', '\\mathcal{F}x'],
+    ['x\\not\\in A', 'x\\notin A'],
+    ['x\\pmod{m}', 'x\\pmod{m}'],
+    ['\\boxed{x=1}', '\\boxed{x=1}'],
+    ['\\sum\\limits_{i=0}^{n}x', '\\sum\\limits_{i=0}^{n}x'],
+    ['\\bigl(x\\bigr)', '\\bigl(x\\bigr)'],
+    ['\\mathbb{F}', '\\mathbb{F}'],
+    ['\\left(x\\middle|y\\right)', '\\left(x\\middle|y\\right)'],
+    ['\\underbrace{x+y}_{n}', '\\underbrace{x+y}_{n}'],
+    ['\\begin{gathered}a\\\\b\\end{gathered}', '\\begin{gathered}a\\\\ b\\end{gathered}'],
+    // a bare \\ in the field is a line break — the output column
+    // displays it as a newline (normalized to a space by toHaveText)
+    ['x\\\\y', 'x\\\\ y'],
+  ];
+  const mf = cell(page, 0);
+  const out = page.locator('.cell-latex').first();
+  for (const [input, expected] of cases) {
+    await mf.evaluate(
+      (el, latex) => ((el as { value: string }).value = latex),
+      input,
+    );
+    await expect(out).toHaveText(expected);
+  }
+});
+
+>>>>>>> origin/devin/bughunt-latex-round2
 test('latex output shows multi-line cells as separate lines', async ({
   page,
 }) => {

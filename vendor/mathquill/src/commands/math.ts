@@ -130,16 +130,30 @@ class MathCommand extends MathElement {
 
   parser(): Parser<MQNode | Fragment> {
     var block = latexMathParser.block;
+    var self = this;
 
-    return block.times(this.numBlocks()).map((blocks) => {
-      this.blocks = blocks;
+    return block
+      .times(this.numBlocks())
+      .map((blocks) => {
+        this.blocks = blocks;
 
-      for (var i = 0; i < blocks.length; i += 1) {
-        blocks[i].adopt(this, this.getEnd(R), 0);
-      }
+        for (var i = 0; i < blocks.length; i += 1) {
+          blocks[i].adopt(this, this.getEnd(R), 0);
+        }
 
-      return this;
-    });
+        return this;
+      })
+      .or(
+        // a command missing its braces degrades to a verbatim leaf
+        // instead of blanking the surrounding content
+        Parser.succeed(
+          new VanillaSymbol(
+            self.ctrlSeq + ' ',
+            h.text(self.ctrlSeq || ''),
+            self.ctrlSeq
+          ) as MQNode | Fragment
+        )
+      );
   }
 
   // createLeftOf(cursor) and the methods it calls

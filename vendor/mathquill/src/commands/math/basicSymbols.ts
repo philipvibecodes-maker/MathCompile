@@ -844,26 +844,32 @@ LatexCmds.operatorname = class extends MathCommand {
     return 1 as const;
   }
   parser() {
-    return latexMathParser.block.map(function (b) {
-      // Check for the special case of \operatorname{ans}, which has
-      // a special html representation
-      var isAllLetters = true;
-      var str = '';
-      var children = b.children();
-      children.each(function (child) {
-        if (child instanceof Letter) {
-          str += child.letter;
-        } else {
-          isAllLetters = false;
+    // \operatorname* is the limits-form operator — consume the star so
+    // it doesn't surface as a stray literal '*' (previously
+    // \operatorname*{argmin} -> *\arg\min)
+    return Parser.optWhitespace
+      .then(Parser.string('*').or(Parser.succeed('')))
+      .then(latexMathParser.block)
+      .map(function (b) {
+        // Check for the special case of \operatorname{ans}, which has
+        // a special html representation
+        var isAllLetters = true;
+        var str = '';
+        var children = b.children();
+        children.each(function (child) {
+          if (child instanceof Letter) {
+            str += child.letter;
+          } else {
+            isAllLetters = false;
+          }
+          return undefined;
+        });
+        if (isAllLetters && str === 'ans') {
+          return AnsBuilder();
         }
-        return undefined;
+        // In cases other than `ans`, just return the children directly
+        return children;
       });
-      if (isAllLetters && str === 'ans') {
-        return AnsBuilder();
-      }
-      // In cases other than `ans`, just return the children directly
-      return children;
-    });
   }
 };
 

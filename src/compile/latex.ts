@@ -74,6 +74,15 @@ function rewriteEvalBar(s: string): string {
 const canonicalCmds = (s: string): string =>
   canonicalInt(stripBigDelims(rewriteEvalBar(stripBigDelims(rewriteOverUnder(s)))));
 
+// Clipboard form: the field's stored serialization verbatim — still
+// \displaylines-wrapped for multi-line cells — with only the \int
+// canonicalization. Unlike outputLatex's unwrapped text, this parses
+// back verbatim (a bare top-level \\ is not valid MathQuill input, so
+// copying the display form silently wiped a pasted cell).
+export function copyableLatex(latex: string): string {
+  return canonicalInt(latex);
+}
+
 // The latex output target shows a cell's LaTeX verbatim, except the
 // \displaylines{} wrapper MathQuill adds to multi-line cells — that's an
 // editing artifact, not part of the expression, so it is unwrapped here.
