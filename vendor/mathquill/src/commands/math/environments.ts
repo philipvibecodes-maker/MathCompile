@@ -1047,3 +1047,21 @@ LatexCmds.end = () =>
       this.checkCursorContextClose(ctx);
     }
   })();
+
+// \begin{tabular}{spec} — the text-mode twin of \begin{array}, same
+// colspec + cell grid.
+class TabularEnv extends ArrayEnv {
+  latexOpen() {
+    return (
+      '\\begin{tabular}' +
+      (this.pos ? '[' + this.pos + ']' : '') +
+      '{' +
+      this.spec +
+      '}'
+    );
+  }
+  latexClose() {
+    return '\\end{tabular}';
+  }
+}
+Environments.tabular = () => new TabularEnv();

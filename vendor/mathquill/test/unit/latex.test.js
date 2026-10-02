@@ -1592,5 +1592,21 @@ suite('latex', function () {
     assertParsesLatex('\\texteuro', '\\texteuro');
     assertParsesLatex('\\oldstylenums{0}', '\\oldstylenums{0}');
     assertParsesLatex('\\cases{a&b}', '\\cases a\\&b');
+    // tabular parses as an array twin (spec + pos + cells)
+    assertParsesLatex(
+      '\\begin{tabular}{cc}a&b\\end{tabular}',
+      '\\begin{tabular}{cc}a&b\\end{tabular}'
+    );
+    assertParsesLatex(
+      '\\begin{tabular}[t]{|c|c|}a&b\\end{tabular}',
+      '\\begin{tabular}[t]{|c|c|}a&b\\end{tabular}'
+    );
+    // unicode-math fonts, primes, colortbl + fancybox commands
+    assertParsesLatex('\\symbf{x}', '\\symbf{x}');
+    assertParsesLatex('\\cprime', '\\cprime');
+    assertParsesLatex('\\sslash', '\\sslash');
+    assertParsesLatex('\\rowcolor[rgb]{1,0,0}', '\\rowcolor[rgb]{1,0,0}');
+    assertParsesLatex('\\dashbox{1}(2,3){x}', '\\dashbox{1}(2,3){x}');
+    assertParsesLatex('\\sout{x}', '\\sout{x}');
   });
 });

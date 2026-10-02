@@ -2553,3 +2553,29 @@ bindMathWrap('mathbold');
 bindMathWrap('mathfrak');
 bindMathWrap('mathscr');
 LatexCmds.cases = bindLiteralCmd('\\cases', 'cases');
+
+// unicode-math \sym* font aliases.
+['symbf', 'symrm', 'symit', 'symsf', 'symtt', 'symbb', 'symcal', 'symfrak',
+ 'symsfup', 'symsfit', 'symbfup', 'symbfit'].forEach(bindMathWrap);
+// \cprime \csecond \cthird — back/2nd/3rd primes.
+LatexCmds.cprime = bindVanillaSymbol('\\cprime ', '&#8245;', 'back prime');
+LatexCmds.csecond = bindVanillaSymbol('\\csecond ', '&#8243;', 'double prime');
+LatexCmds.cthird = bindVanillaSymbol('\\cthird ', '&#8244;', 'triple prime');
+// \sslash (double-slash relation, U+2AFD).
+LatexCmds.sslash = bindBinaryOperator('\\sslash ', '&#10973;', 'sslash');
+// fancybox + ulem: one braced group.
+['ovalbox', 'Ovalbox', 'shadowbox', 'doublebox', 'sout', 'uwave',
+ 'xout', 'dashuline', 'dotuline', 'uline', 'uuline', 'st'].forEach(bindMathWrap);
+// colortbl color commands — optional [model] then {color}.
+LatexCmds.rowcolor = bindOptBracketCmd('\\rowcolor', 1, 'row color');
+LatexCmds.cellcolor = bindOptBracketCmd('\\cellcolor', 1, 'cell color');
+LatexCmds.columncolor = bindOptBracketCmd('\\columncolor', 1, 'column color');
+// \dashbox{d}(w,h)[pos]{content}
+LatexCmds.dashbox = () =>
+  new RawArgCommand(
+    '\\dashbox',
+    new RegExp(
+      '^' + RAW_GROUP + '(?:\\([0-9.,]*\\))?(?:\\[[a-z]*\\])?' + RAW_GROUP
+    ),
+    'dash box'
+  );

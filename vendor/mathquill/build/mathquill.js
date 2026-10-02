@@ -8157,6 +8157,26 @@ var __assign = (this && this.__assign) || function () {
     bindMathWrap('mathfrak');
     bindMathWrap('mathscr');
     LatexCmds.cases = bindLiteralCmd('\\cases', 'cases');
+    // unicode-math \sym* font aliases.
+    ['symbf', 'symrm', 'symit', 'symsf', 'symtt', 'symbb', 'symcal', 'symfrak',
+        'symsfup', 'symsfit', 'symbfup', 'symbfit'].forEach(bindMathWrap);
+    // \cprime \csecond \cthird \u2014 back/2nd/3rd primes.
+    LatexCmds.cprime = bindVanillaSymbol('\\cprime ', '&#8245;', 'back prime');
+    LatexCmds.csecond = bindVanillaSymbol('\\csecond ', '&#8243;', 'double prime');
+    LatexCmds.cthird = bindVanillaSymbol('\\cthird ', '&#8244;', 'triple prime');
+    // \sslash (double-slash relation, U+2AFD).
+    LatexCmds.sslash = bindBinaryOperator('\\sslash ', '&#10973;', 'sslash');
+    // fancybox + ulem: one braced group.
+    ['ovalbox', 'Ovalbox', 'shadowbox', 'doublebox', 'sout', 'uwave',
+        'xout', 'dashuline', 'dotuline', 'uline', 'uuline', 'st'].forEach(bindMathWrap);
+    // colortbl color commands \u2014 optional [model] then {color}.
+    LatexCmds.rowcolor = bindOptBracketCmd('\\rowcolor', 1, 'row color');
+    LatexCmds.cellcolor = bindOptBracketCmd('\\cellcolor', 1, 'cell color');
+    LatexCmds.columncolor = bindOptBracketCmd('\\columncolor', 1, 'column color');
+    // \dashbox{d}(w,h)[pos]{content}
+    LatexCmds.dashbox = function () {
+        return new RawArgCommand('\\dashbox', new RegExp('^' + RAW_GROUP + '(?:\\([0-9.,]*\\))?(?:\\[[a-z]*\\])?' + RAW_GROUP), 'dash box');
+    };
     /*********************************
      * Symbols for Basic Mathematics
      ********************************/
@@ -13284,6 +13304,26 @@ var __assign = (this && this.__assign) || function () {
             return class_32;
         }(MathCommand)))();
     };
+    // \begin{tabular}{spec} \u2014 the text-mode twin of \begin{array}, same
+    // colspec + cell grid.
+    var TabularEnv = /** @class */ (function (_super) {
+        __extends(TabularEnv, _super);
+        function TabularEnv() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        TabularEnv.prototype.latexOpen = function () {
+            return ('\\begin{tabular}' +
+                (this.pos ? '[' + this.pos + ']' : '') +
+                '{' +
+                this.spec +
+                '}');
+        };
+        TabularEnv.prototype.latexClose = function () {
+            return '\\end{tabular}';
+        };
+        return TabularEnv;
+    }(ArrayEnv));
+    Environments.tabular = function () { return new TabularEnv(); };
     // For backwards compatibility, set up the global MathQuill object as an instance of API interface v1
     if (window.jQuery) {
         MQ1 = getInterface(1);
