@@ -326,6 +326,14 @@ interface Scope {
   symbols: Map<string, string>;
   /** Names used as functions (f'(x), Apply callees) -> sp.Function lines. */
   functions: Map<string, string>;
+  /** Argument list recorded for a function name at its decl/call site
+   * (`\dot{x}` -> `x` of `t`, `dy/dx` of `x`, `def f(x,y)`, `f(x)`). A
+   * bare Function name in operand position (a call arg, arithmetic)
+   * raises TypeError, so later references emit the applied form `f(x)`. */
+  fnArgs: Map<string, MathJson[]>;
+  /** Function names currently emitting their applied form — guards
+   * `f`/`g` mutual-reference cycles (`f` in g's args, `g` in f's). */
+  emitting: Set<string>;
   /** Symbol kwargs inferred from memberships (`x \in \mathbb{R}` ->
    * `real=True`) applied to this cell's Symbol def lines. */
   assumptions: Map<string, Set<string>>;
@@ -514,22 +522,43 @@ class Emitter {
         ? this.alloc(this.scope.symbols, name)
         : `${this.sp}I`;
     }
-    if (this.scope.bound.has(name) || this.scope.defined.has(name))
-      return pyIdent(name);
+    if (this.scope.bound.has(name)) return pyIdent(name);
+    if (this.scope.functions.has(name)) {
+      const ident = this.scope.functions.get(name)!;
+      const argNodes = this.scope.fnArgs.get(name);
+      if (argNodes === undefined || this.scope.emitting.has(name))
+        return ident;
+      // `g(f)`/`f + 1` with an unapplied UndefinedFunction raises
+      // TypeError — emit the applied form (`f(x)`) recorded at the
+      // decl/call site. The emitting guard breaks f/g mutual-reference
+      // cycles on the second hop.
+      this.scope.emitting.add(name);
+      try {
+        return `${ident}(${argNodes.map((a) => this.emit(a)).join(', ')})`;
+      } finally {
+        this.scope.emitting.delete(name);
+      }
+    }
+    if (this.scope.defined.has(name)) return pyIdent(name);
     // `v^T A v` — `v` was claimed by the matrix tier (Transpose), so a
     // later bare `v` is the SAME name, not a new symbol: reuse the
     // MatrixSymbol ident instead of minting `v_2`.
     if (this.scope.matrices.has(name))
       return this.scope.matrices.get(name)!;
-    if (this.scope.functions.has(name))
-      return this.scope.functions.get(name)!;
     return this.alloc(this.scope.symbols, name);
   }
 
   // A name used as a function (f in f'(x)) needs sp.Function, not
   // sp.symbols — symbols aren't callable.
   private fn(name: string): string {
-    if (this.scope.defined.has(name)) return pyIdent(name);
+    if (this.scope.defined.has(name)) {
+      // `x = 5` then `\dot{x}` — the name is already a bound value;
+      // `x(t)` raises TypeError at exec. Def'd/lambda-bound names stay
+      // callable (call-fold).
+      if (!this.scope.declaredFns.has(name))
+        this.scope.flag('error', `${name} is bound to a value — not callable`);
+      return pyIdent(name);
+    }
     return this.alloc(this.scope.functions, name);
   }
 
@@ -807,6 +836,8 @@ class Emitter {
    * same flag + output shape normalizeIR's unknown-head path produces. */
   private unknownCall(h: string, args: MathJson[]): [string, number] {
     this.scope.flag('note', `unknown head "${h}" — emitted as ${h}(...)`);
+    const fnArgs = args.filter((a) => a !== h);
+    if (fnArgs.length > 0) this.scope.fnArgs.set(h, fnArgs);
     return [
       `${this.fn(h)}(${args.map((a) => this.emit(a)).join(', ')})`,
       PREC_ATOM,
@@ -1316,26 +1347,31 @@ class Emitter {
         ];
       }
       case 'Subset':
-      case 'SubsetEqual': {
-        return [
-          `(${this.setArg(args[0])}).is_subset(${this.setArg(args[1])})`,
-          PREC_ATOM,
-        ];
-      }
+      case 'SubsetEqual':
       case 'Superset':
-      case 'SupersetEqual': {
-        return [
-          `(${this.setArg(args[1])}).is_subset(${this.setArg(args[0])})`,
-          PREC_ATOM,
-        ];
-      }
+      case 'SupersetEqual':
       case 'NotSubset':
       case 'NotSubsetNotEqual':
       case 'NotSuperset':
       case 'NotSupersetNotEqual': {
-        const [l, r] = h.startsWith('NotSub') ? [0, 1] : [1, 0];
+        // `A.is_subset(B)` returns None (not a Boolean) whenever the
+        // operands are undecidable — bare `sp.Not(None)` then raises
+        // AttributeError. `A ⊆ B` ⟺ `Union(A,B) == B` (strict ⊂ adds
+        // `A != B`) always lowers to an Eq/Ne the worker can hold.
+        const [sub, sup] = h.startsWith('NotSup') || h.startsWith('Sup')
+          ? [args[1], args[0]]
+          : [args[0], args[1]];
+        const l = this.setArg(sub);
+        const r = this.setArg(sup);
+        const strict =
+          h === 'Subset' || h === 'Superset' ||
+          h === 'NotSubset' || h === 'NotSuperset';
+        const eq = `${this.sp}Eq(${this.sp}Union(${l}, ${r}), ${r})`;
+        const base = strict
+          ? `${this.sp}And(${eq}, ${this.sp}Ne(${l}, ${r}))`
+          : eq;
         return [
-          `${this.sp}Not((${this.setArg(args[l])}).is_subset(${this.setArg(args[r])}))`,
+          h.startsWith('Not') ? `${this.sp}Not(${base})` : base,
           PREC_ATOM,
         ];
       }
@@ -1384,12 +1420,29 @@ class Emitter {
         // \frac{df}{dx} — a bare name as the body is a function of the
         // variable, not an independent symbol: `diff(f, x)` would
         // evaluate to 0. Emit `diff(f(x), x)` -> Derivative(f(x), x).
-        const f =
+        let f: string;
+        if (
           isStr(args[0]) &&
           args[0] !== args[1] &&
           !this.scope.defined.has(args[0])
-            ? `${this.fn(args[0])}(${this.emit(args[1])})`
-            : this.emit(args[0]);
+        ) {
+          f = `${this.fn(args[0])}(${this.emit(args[1])})`;
+          this.scope.fnArgs.set(args[0], [args[1]]);
+        } else {
+          f = this.emit(args[0]);
+          // `\dot{x}` after `x = 5` — sp.diff(5, t) evaluates to 0, so
+          // the emitted equation silently says `0 = rhs` instead of a
+          // derivative; flag rather than emit a plausible falsehood.
+          if (
+            isStr(args[0]) &&
+            this.scope.defined.has(args[0]) &&
+            !this.scope.declaredFns.has(args[0])
+          )
+            this.scope.flag(
+              'error',
+              `${args[0]} is bound to a value — cannot differentiate`,
+            );
+        }
         const x = this.emit(args[1]);
         const out: [string, number] =
           args.length >= 3
@@ -1449,6 +1502,13 @@ class Emitter {
             ];
           }
           const fname = isStr(f) ? this.fn(f) : null;
+          // f is a function of its call args' variables — a later bare
+          // `f` operand emits `f(<vars>)` (UndefinedFunction operand
+          // raises TypeError).
+          if (isStr(f)) {
+            const fvars = argNodes.filter((a) => isStr(a) && a !== f);
+            if (fvars.length > 0) this.scope.fnArgs.set(f, fvars);
+          }
           const applied = (list: string[]) =>
             fname !== null
               ? `${fname}(${list.join(', ')})`
@@ -1513,6 +1573,10 @@ class Emitter {
           ];
         }
         const calleeText = this.fn(callee);
+        // Record the application so a later bare `f` in operand
+        // position emits `f(<args>)` (UndefinedFunction operands raise).
+        const fnArgs = args.slice(1).filter((a) => a !== callee);
+        if (fnArgs.length > 0) this.scope.fnArgs.set(callee, fnArgs);
         return [
           `${calleeText}(${args.slice(1).map((a) => this.emit(a)).join(', ')})`,
           PREC_ATOM,
@@ -1527,6 +1591,7 @@ class Emitter {
         const name = isStr(args[0])
           ? `${this.fn(args[0])}(${arg})`
           : this.emit(args[0], PREC_ATOM);
+        if (isStr(args[0])) this.scope.fnArgs.set(args[0], ['x']);
         const n =
           isNum(args[1]) && numText(args[1]) !== '1'
             ? `, ${numText(args[1])}`
@@ -1559,6 +1624,7 @@ class Emitter {
           // `x^{(2)}` can't differentiate `x(x)` by `x` — the var must
           // differ from the callee name.
           const v = this.sym(args[0] === 'x' ? 't' : 'x');
+          this.scope.fnArgs.set(args[0], [args[0] === 'x' ? 't' : 'x']);
           if (args[1] !== undefined && !isNum(args[1])) {
             // Same wasm-crashing (v, n) tuple as the applied path.
             this.scope.flag(
@@ -2229,8 +2295,15 @@ class Emitter {
           ];
         if (CALL_RENAMES[name])
           return [`${this.sp}${CALL_RENAMES[name]}(${rendered})`, PREC_ATOM];
-        if (this.scope.declared.has(name) || !SP_BUILTIN_CALL.has(name))
+        if (this.scope.declared.has(name) || !SP_BUILTIN_CALL.has(name)) {
+          // Record the application so a later bare `f` in operand
+          // position emits `f(<args>)` — an UndefinedFunction operand
+          // raises TypeError (the name itself as arg is filtered so
+          // self-reference can't recurse).
+          const fnArgs = args.slice(1).filter((a) => a !== name);
+          if (fnArgs.length > 0) this.scope.fnArgs.set(name, fnArgs);
           return [`${this.fn(name)}(${rendered})`, PREC_ATOM];
+        }
         return [`${this.sp}${pyIdent(name)}(${rendered})`, PREC_ATOM];
       }
       default:
@@ -2414,7 +2487,7 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   // Function-bound names (Def/`f:`) sit in `functions` for call-fold
   // detection but declare themselves — no `sp.Function` def for them.
   const newFns = [...scope.functions].filter(
-    ([raw]) => !preDefined.has(raw) && !scope.defined.has(raw),
+    ([raw]) => !preDefined.has(raw) && !scope.declaredFns.has(raw),
   );
   const newMats = [...scope.matrices].filter(
     ([raw]) => !preDefined.has(raw),
@@ -2534,6 +2607,10 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       };
     }
     const name = isStr(node[1]) ? node[1] : 'result';
+    // `f = x \mapsto body` binds a callable — later `f(…)` call-folds
+    // like a def'd name instead of flagging a bound-value call.
+    if (isStr(node[1]) && isHead(node[2], 'Function'))
+      emitter.scope.declaredFns.add(node[1]);
     const matrixRhs =
       /\bMatrix\b/.test(rhs) ||
       (isStr(node[2]) &&
@@ -2546,6 +2623,11 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       else emitter.scope.matrixNames.delete(name);
       if (setRhs) emitter.scope.setNames.add(name);
       else emitter.scope.setNames.delete(name);
+      // A rebound name is a value now, not the earlier Function —
+      // later references emit `x`, not `x(t)`. The `functions` entry
+      // stays: it carries the pending `x = sp.Function` def line for
+      // earlier statements that applied it.
+      emitter.scope.fnArgs.delete(name);
     }
     if (emitter.scope.errorCount > before) return { lines: [] };
     return {
@@ -2564,6 +2646,9 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     emitter.scope.bound = saved;
     emitter.scope.defined.add(name);
     emitter.scope.functions.set(name, pyIdent(name));
+    // A later bare `f` in operand position emits `f(<params>)` — an
+    // unapplied function object raises TypeError as an operand.
+    if (params.length > 0) emitter.scope.fnArgs.set(name, params);
     if (emitter.scope.errorCount > before) return { lines: [] };
     const idents = params.map(pyIdent).join(', ');
     // `f(x) = body` rendered via an undefined function — the def'd python
@@ -2600,6 +2685,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       const rhs = emitter.emit(['Function', node[1], sig]);
       emitter.scope.defined.add(name);
       emitter.scope.functions.set(name, pyIdent(name));
+      emitter.scope.fnArgs.set(name, [sig]);
       if (emitter.scope.errorCount > before) return { lines: [] };
       return {
         lines: [`${pyIdent(name)} = ${rhs}`],
@@ -2618,6 +2704,8 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     const rhs = emitter.emit(node[3]);
     emitter.scope.defined.add(name);
     emitter.scope.functions.set(name, pyIdent(name));
+    const colonParams = node[3].slice(2).filter(isStr);
+    if (colonParams.length > 0) emitter.scope.fnArgs.set(name, colonParams);
     if (emitter.scope.errorCount > before) return { lines: [] };
     return {
       lines: [`${pyIdent(name)} = ${rhs}`],
@@ -2721,12 +2809,18 @@ export function compileWorksheet(
     if (r.ir === undefined) return [];
     const matrixNames = new Set<string>();
     collectMatrices(r.ir, matrixNames);
+    // `declaredFns` is worksheet-wide, but cells are independent
+    // programs — a name def'd in cell 1 still gets its own
+    // `f = sp.Function` decl when called in cell 2, and only an
+    // Assign-rebind in THIS cell drops a pending Function decl.
+    const cellDeclaredFns = new Set<string>();
+    collectDeclared(r.ir, new Set(), cellDeclaredFns);
     return cellStatements(
       r.ir,
       buildScope(
         qualified,
         declared,
-        declaredFns,
+        cellDeclaredFns,
         matrixNames,
         issues,
         genIssues,
@@ -2837,6 +2931,8 @@ function buildScope(
     setNames: new Set(),
     symbols: new Map(),
     functions: new Map(),
+    fnArgs: new Map(),
+    emitting: new Set(),
     issues,
     cellIssues,
     cell,

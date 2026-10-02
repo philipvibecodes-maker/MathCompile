@@ -1012,6 +1012,16 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
         head(node[2]) === 'Function'
       )
         decl = node[1];
+      // `f = x \mapsto body` (with `=`, not `:=`) binds a callable the
+      // same way — without this `f(2)` in a later statement flags
+      // 'unknown head' even though the cell defines f.
+      else if (
+        h === 'Equal' &&
+        isString(node[1]) &&
+        isArray(node[2]) &&
+        head(node[2]) === 'Function'
+      )
+        decl = node[1];
       if (decl !== undefined) declaredFns.add(decl);
     }
 

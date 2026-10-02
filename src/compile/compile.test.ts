@@ -931,7 +931,7 @@ const FIXTURES: {
       't = sp.Symbol("t")',
       'x = sp.Function("x")',
       'f = sp.Function("f")',
-      'sp.Eq(sp.diff(x(t), t), f(x))',
+      'sp.Eq(sp.diff(x(t), t), f(x(t)))',
     ],
   },
   {
@@ -1092,6 +1092,50 @@ const FIXTURES: {
     expectedPython: [
       'M = sp.MatrixSymbol("M", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
       'sp.Transpose(M)',
+    ],
+  },
+  {
+    // `A.is_subset(B)` returns None on undecidable operands — a `Not`
+    // wrap raised AttributeError on `sp.Not(None)`. Subset relations
+    // lower through `Union(A,B) == B` (+ `A != B` when strict), which
+    // always yields a Boolean.
+    latex: 'A \\subseteq B',
+    expectedPython: [
+      "A, B = sp.symbols('A B')",
+      'sp.Eq(sp.Union(sp.FiniteSet(A), sp.FiniteSet(B)), sp.FiniteSet(B))',
+    ],
+  },
+  {
+    latex: 'A \\subset B',
+    expectedPython: [
+      "A, B = sp.symbols('A B')",
+      'sp.And(sp.Eq(sp.Union(sp.FiniteSet(A), sp.FiniteSet(B)), sp.FiniteSet(B)), sp.Ne(sp.FiniteSet(A), sp.FiniteSet(B)))',
+    ],
+  },
+  {
+    latex: 'A \\nsubseteq B',
+    expectedPython: [
+      "A, B = sp.symbols('A B')",
+      'sp.Not(sp.Eq(sp.Union(sp.FiniteSet(A), sp.FiniteSet(B)), sp.FiniteSet(B)))',
+    ],
+  },
+  {
+    // A D-operator-declared name is a function of the variable — later
+    // bare references emit the applied form: `x + t` / `f(x)` on an
+    // UndefinedFunction raise TypeError in the worker.
+    latex: 'D(x,t) = x + t',
+    expectedPython: [
+      't = sp.Symbol("t")',
+      'x = sp.Function("x")',
+      'sp.Eq(sp.diff(x(t), t), x(t) + t)',
+    ],
+  },
+  {
+    latex: '\\frac{dy}{dx} = ky',
+    expectedPython: [
+      "x, k = sp.symbols('x k')",
+      'y = sp.Function("y")',
+      'sp.Eq(sp.diff(y(x), x), k * y(x))',
     ],
   },
 ];
