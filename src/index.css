@@ -555,6 +555,9 @@ body {
   align-items: center;
   gap: 6px;
   font-size: 12px;
+  /* One text line is always reserved — an empty slot is invisible but
+     keeps the rows below from shifting when the message clears. */
+  min-height: 18px;
   color: var(--muted);
 }
 

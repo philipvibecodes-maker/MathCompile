@@ -323,11 +323,14 @@
               {/each}
             </select>
           </label>
-          {#if appStore.target === 'calculator' && (calcEngine.status === 'loading' || calcEngine.status === 'error')}
+          {#if appStore.target === 'calculator'}
+            <!-- The slot's min-height is always reserved, so the message
+                 appearing/clearing never moves the rows below. -->
             <div
               class="engine-status"
               class:engine-error={calcEngine.status === 'error'}
               role="status"
+              aria-live="polite"
             >
               {#if calcEngine.status === 'loading'}
                 <span class="engine-spinner" aria-hidden="true"></span>
@@ -335,7 +338,7 @@
                   <strong>Loading SymPy engine…</strong>
                   interim results use a faster, less accurate engine
                 </span>
-              {:else}
+              {:else if calcEngine.status === 'error'}
                 <span>SymPy engine failed to load — {calcEngine.error}</span>
               {/if}
             </div>
