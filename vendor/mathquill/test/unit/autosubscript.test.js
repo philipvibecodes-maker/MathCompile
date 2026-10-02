@@ -125,4 +125,18 @@ suite('autoSubscript', function () {
     mq.keystroke('Backspace');
     assert.equal(mq.latex(), 'x');
   });
+
+  test('autosubscript keeps a nonempty exponent', function () {
+    mq.latex('x^{5}');
+    mq.moveToRightEnd();
+    mq.typedText('2');
+    assert.equal(mq.latex(), 'x_{2}^{5}');
+  });
+
+  test('typed `_` keeps a nonempty exponent', function () {
+    mq.typedText('x^5');
+    mq.keystroke('Right');
+    mq.typedText('_2');
+    assert.equal(mq.latex(), 'x_{2}^{5}');
+  });
 });

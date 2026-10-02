@@ -217,6 +217,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var U_NARY_PRODUCT = '\u220F';
     var U_NARY_COPRODUCT = '\u2210';
     var U_INTEGRAL = '\u222B';
+    var U_DOUBLE_INTEGRAL = '\u222C';
     /**
      * Like `el.getBoundingClientRect()` but avoids throwing for
      * disconnected and hidden elements in IE <= 11.
@@ -9111,14 +9112,26 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     // grow an ordinary sibling SupSub for bounds. `\antid` is a MathCompile
     // insertion alias: the app maps it to `\int` at compile time; `\iint`
     // parses to Integrate in the compute engine on its own.
+    //
+    // BoundlessIntegral is its own class so left-scanning code (a typed `/`
+    // wrapping the preceding run into a numerator) can stop at the sign —
+    // for a SummationNotation like `\sum` the scan already breaks there, and
+    // a boundless ∫ should behave the same way.
+    var BoundlessIntegral = /** @class */ (function (_super) {
+        __extends(BoundlessIntegral, _super);
+        function BoundlessIntegral() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        return BoundlessIntegral;
+    }(MQSymbol));
     var boundlessIntegral = function (ctrlSeq, glyph, speak) {
         return function () {
-            return new MQSymbol(ctrlSeq, h('span', { class: 'mq-int' }, [
+            return new BoundlessIntegral(ctrlSeq, h('span', { class: 'mq-int' }, [
                 h('big', {}, [h.text(glyph)])
             ]), undefined, speak);
         };
     };
-    LatexCmds['∬'] = LatexCmds.iint = boundlessIntegral('\\iint ', U_INTEGRAL, 'indefinite integral');
+    LatexCmds['∬'] = LatexCmds.iint = boundlessIntegral('\\iint ', U_DOUBLE_INTEGRAL, 'double integral');
     LatexCmds.antid = boundlessIntegral('\\antid ', U_INTEGRAL, 'antiderivative');
     var Fraction = (LatexCmds.frac =
         LatexCmds.dfrac =
@@ -9271,12 +9284,14 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                                     leftward._groupingClass === 'mq-ellipsis-end') ||
                                 leftward instanceof (LatexCmds.text || noop) ||
                                 leftward instanceof SummationNotation ||
+                                leftward instanceof BoundlessIntegral ||
                                 leftward.ctrlSeq === '\\ ' ||
                                 /^[,;:]$/.test(leftward.ctrlSeq)) //lookbehind for operator
                         )
                             leftward = leftward[L];
                     }
-                    if (leftward instanceof SummationNotation &&
+                    if ((leftward instanceof SummationNotation ||
+                        leftward instanceof BoundlessIntegral) &&
                         leftward[R] instanceof SupSub) {
                         // The previous step scanned too far. `\sum_1^5` looks like [SummationNotation,SupSub],
                         // so scan back right
@@ -11927,6 +11942,18 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             assert.equal(mq.latex(), 'x_{ }');
             mq.keystroke('Backspace');
             assert.equal(mq.latex(), 'x');
+        });
+        test('autosubscript keeps a nonempty exponent', function () {
+            mq.latex('x^{5}');
+            mq.moveToRightEnd();
+            mq.typedText('2');
+            assert.equal(mq.latex(), 'x_{2}^{5}');
+        });
+        test('typed `_` keeps a nonempty exponent', function () {
+            mq.typedText('x^5');
+            mq.keystroke('Right');
+            mq.typedText('_2');
+            assert.equal(mq.latex(), 'x_{2}^{5}');
         });
     });
     suite('backspace', function () {

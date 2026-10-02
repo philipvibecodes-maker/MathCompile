@@ -271,6 +271,10 @@ test('iint inserts a boundless double integral, typed linearly', async ({
     value: '\\iint',
     where: 'right',
   });
+  // Renders the double-integral sign ∬, not a bare ∫.
+  expect(
+    await mf.evaluate((el) => el.querySelector('.mq-int')!.textContent),
+  ).toBe('∬');
   await mf.pressSequentially('xdxdy', { delay: 60 });
   expect((await caretInfo(mf)).value).toBe('\\iint xdxdy');
 });
@@ -390,4 +394,39 @@ test('\\antid with a lone sub bound keeps baseline typing', async ({
   await page.keyboard.press('ArrowRight');
   await mf.pressSequentially('xdx', { delay: 60 });
   expect((await caretInfo(mf)).value).toBe('\\antid_{1}xdx');
+});
+
+// A boundless sign carrying ONLY an upper bound still sets that bound
+// above the sign — a lone `\iint^{b}` must render like the upper bound of
+// `\iint_{a}^{b}`, not floated up as an ordinary exponent.
+test('\\iint with a lone sup bound renders it at bound height', async ({
+  page,
+}) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('iint', { delay: 60 });
+  await mf.pressSequentially('^b', { delay: 60 });
+  await settle(page);
+  expect((await caretInfo(mf)).value).toBe('\\iint^{b}');
+  const lone = await mf.evaluate((el) => {
+    const sign = el.querySelector('.mq-int')!.getBoundingClientRect();
+    const sup = el
+      .querySelector('.mq-int ~ .mq-supsub .mq-sup')!
+      .getBoundingClientRect();
+    return { signTop: sign.top, supTop: sup.top };
+  });
+  expect(lone.supTop).toBeLessThan(lone.signTop);
+
+  // Same position the bound takes when a lower bound is present too.
+  await mf.evaluate((el) => {
+    (el as unknown as { mq: { latex(l: string): void } }).mq.latex(
+      '\\iint_{a}^{b}',
+    );
+  });
+  const two = await mf.evaluate((el) => {
+    const sup = el
+      .querySelector('.mq-int ~ .mq-supsub .mq-sup')!
+      .getBoundingClientRect();
+    return { supTop: sup.top };
+  });
+  expect(Math.abs(lone.supTop - two.supTop)).toBeLessThan(6);
 });

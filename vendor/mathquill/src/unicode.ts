@@ -5,3 +5,4 @@ const U_NARY_SUMMATION = '\u2211';
 const U_NARY_PRODUCT = '\u220F';
 const U_NARY_COPRODUCT = '\u2210';
 const U_INTEGRAL = '\u222B';
+const U_DOUBLE_INTEGRAL = '\u222C';

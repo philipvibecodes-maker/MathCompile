@@ -208,6 +208,7 @@ var __assign = (this && this.__assign) || function () {
     var U_NARY_PRODUCT = '\u220F';
     var U_NARY_COPRODUCT = '\u2210';
     var U_INTEGRAL = '\u222B';
+    var U_DOUBLE_INTEGRAL = '\u222C';
     /**
      * Like `el.getBoundingClientRect()` but avoids throwing for
      * disconnected and hidden elements in IE <= 11.
@@ -9250,7 +9251,7 @@ var __assign = (this && this.__assign) || function () {
             ]), undefined, speak);
         };
     };
-    LatexCmds['\u222c'] = LatexCmds.iint = boundlessIntegral('\\iint ', U_INTEGRAL, 'indefinite integral');
+    LatexCmds['\u222c'] = LatexCmds.iint = boundlessIntegral('\\iint ', U_DOUBLE_INTEGRAL, 'double integral');
     LatexCmds.antid = boundlessIntegral('\\antid ', U_INTEGRAL, 'antiderivative');
     var Fraction = (LatexCmds.frac =
         LatexCmds.dfrac =

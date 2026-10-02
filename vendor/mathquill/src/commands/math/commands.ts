@@ -996,8 +996,8 @@ const boundlessIntegral = (ctrlSeq: string, glyph: string, speak: string) => {
 
 LatexCmds['∬'] = LatexCmds.iint = boundlessIntegral(
   '\\iint ',
-  U_INTEGRAL,
-  'indefinite integral'
+  U_DOUBLE_INTEGRAL,
+  'double integral'
 );
 LatexCmds.antid = boundlessIntegral('\\antid ', U_INTEGRAL, 'antiderivative');
 
