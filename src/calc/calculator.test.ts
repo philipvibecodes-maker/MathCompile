@@ -562,6 +562,14 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(calc('\\int \\sec^{2}x\\text{d}x').statements[0].code).toBe(
       'sp.integrate(sp.sec(x)**2, x) + sp.Symbol("C")',
     );
+    // `\int x³+x²+x+1 dx` — CE files the integral as an Add's first
+    // term and spills the integrand into siblings; it folds back.
+    expect(
+      calc('\\int x^{3} + x^{2} + x + 1\\text{d}x').statements[0].code,
+    ).toBe('sp.integrate(x**3 + x**2 + x + 1, x) + sp.Symbol("C")');
+    expect(calc('\\int 2x + \\sin x\\text{d}x').statements[0].code).toBe(
+      'sp.integrate(2 * x + sp.sin(x), x) + sp.Symbol("C")',
+    );
   });
 
   it('strips thin-space commands instead of emitting InvisibleOperator', () => {
