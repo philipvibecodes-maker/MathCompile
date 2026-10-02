@@ -123,18 +123,24 @@ export function evaluate(cell: {
     ]);
   }
   const errors = prog.issues.filter((i) => i.severity === 'error');
-  if (errors.length > 0)
-    return Promise.resolve(
-      errors.map((i) => ({ ok: false as const, error: i.message })),
-    );
-  if (prog.statements.length === 0) return Promise.resolve([]);
+  if (prog.statements.length === 0)
+    return Promise.resolve([
+      // Uncompileable cells show their issues; a cell with none at all
+      // (empty, or only notes) shows nothing.
+      ...errors.map((i) => ({ ok: false as const, error: i.message })),
+    ]);
+  // A multi-statement cell keeps its good rows when a sibling statement
+  // is broken — the errors append after the valid results.
+  const errRows = errors.map(
+    (i) => ({ ok: false as const, error: i.message }) as CalcRow,
+  );
   const w = ensureWorker();
   const id = nextId++;
   return new Promise<CalcRow[]>((resolve, reject) => {
     pending.set(id, {
       resolve: (r) => {
         clearTimeout(timer);
-        resolve(r);
+        resolve([...r, ...errRows]);
       },
       reject: (e) => {
         clearTimeout(timer);
