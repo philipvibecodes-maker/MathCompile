@@ -1935,12 +1935,14 @@ interface CellBody {
   /** Emitted top-level statements, in order (pre-collapse). `errs`
    * carries the emission errors of a statement that produced no lines —
    * the calculator target turns those into in-place error rows. `emitted`
-   * is every issue raised during that statement (line-binding data). */
+   * is every issue raised during that statement (line-binding data).
+   * `line` is the statement's 0-based input-line index. */
   parts: {
     stmt: MathJson;
     out: StatementOut;
     errs: Issue[];
     emitted: Issue[];
+    line: number;
   }[];
   /** Symbol/function names first bound in this cell. */
   newNames: Set<string>;
@@ -2033,16 +2035,22 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   ]);
   const isRelation = (n: MathJson): boolean => RELATION_HEADS.has(headOf(n) ?? '');
   const blockNodes = isHead(ir, 'Block') ? ir.slice(1) : [ir];
-  const nodes = blockNodes.flatMap((n) => {
-    if (!isHead(n, 'WhereBlock')) return [n];
+  // Each node carries the index of the displayline it came from — a
+  // WhereBlock expands one input line into several statements, so the
+  // nodes index alone is not the line number.
+  const nodes = blockNodes.flatMap((n, line) => {
+    const tag = (stmt: MathJson) => ({ stmt, line });
+    if (!isHead(n, 'WhereBlock')) return [tag(n)];
     const kids = n.slice(1);
-    return kids.length > 1 &&
+    return (
+      kids.length > 1 &&
       kids.slice(0, -1).every(isRelation) &&
       !isRelation(kids[kids.length - 1])
-      ? [kids[kids.length - 1], ...kids.slice(0, -1)]
-      : kids;
+        ? [kids[kids.length - 1], ...kids.slice(0, -1)]
+        : kids
+    ).map(tag);
   });
-  const parts = nodes.map((stmt) => {
+  const parts = nodes.map(({ stmt, line }) => {
     const issuesAt = scope.issues.length;
     const out = emitStatement(stmt, emitter);
     // Every issue raised while emitting this statement — notes included,
@@ -2054,7 +2062,7 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
       out.lines.length === 0
         ? emitted.filter((i) => i.severity === 'error')
         : [];
-    return { stmt, out, errs, emitted };
+    return { stmt, out, errs, emitted, line };
   });
 
   // Names first needed in this cell (not already bound in earlier ones).
@@ -2510,11 +2518,11 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
   let errorLine: number | undefined;
   const statementLines: number[] = [];
   const statements = parts
-    .map(({ out, errs }, i) => {
-      if (errs.length > 0 && errorLine === undefined) errorLine = i;
+    .map(({ out, errs, line }) => {
+      if (errs.length > 0 && errorLine === undefined) errorLine = line;
       return {
         out,
-        line: i,
+        line,
         error:
           errs
             .map((e) => e.message)
@@ -2548,8 +2556,8 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
   // unbound issues (notes like "no differential") anchor to their own
   // line instead of falling back to the cell top or the first error.
   const issueLine = new Map<Issue, number>();
-  parts.forEach(({ emitted }, i) =>
-    emitted.forEach((iss) => issueLine.set(iss, i)),
+  parts.forEach(({ emitted, line }) =>
+    emitted.forEach((iss) => issueLine.set(iss, line)),
   );
   // Statement-bound errors are reported by their rows — drop them from
   // the program issue list so they aren't also appended at the end.
@@ -2562,7 +2570,13 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
     statements,
     issues: issues
       .filter((i) => !consumed.has(i))
-      .map((i) => (issueLine.has(i) ? { ...i, line: issueLine.get(i) } : i)),
+      // Normalize already stamps most issues with their line — only fill
+      // in the ones it didn't reach (emit-time notes like differentials).
+      .map((i) =>
+        i.line === undefined && issueLine.has(i)
+          ? { ...i, line: issueLine.get(i) }
+          : i,
+      ),
     errorLine,
     statementLines,
   };

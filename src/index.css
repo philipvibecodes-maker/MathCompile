@@ -592,6 +592,21 @@ body {
   overflow-wrap: break-word;
 }
 
+/* Issues sharing a line stack inside one chip, one row each. */
+.calc-issues-inline .chip-msgs {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.calc-issues-inline .chip-msg {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
 .calc-issues-inline .chip-text {
   overflow: hidden;
   text-overflow: ellipsis;

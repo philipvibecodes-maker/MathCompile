@@ -745,6 +745,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
       {
         severity: 'error',
         message: 'incomplete or unsupported command "\\foo"',
+        line: 0,
       },
     ]);
   });

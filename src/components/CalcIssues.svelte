@@ -63,8 +63,23 @@
   // lines; unbound issues pin to line 0).
   const anchorRow = (line: number | undefined): number =>
     Math.min(line ?? 0, anchors.length - 1);
-  const anchorFor = (line: number | undefined): Anchor | undefined =>
-    anchors[anchorRow(line)];
+
+  // One chip per input line — issues on the same line stack inside it,
+  // so a second issue can't drift down onto the next line's anchor.
+  const chips = $derived(
+    anchors.length === 0
+      ? []
+      : (() => {
+          const byLine = new Map<number, typeof issues>();
+          for (const iss of issues) {
+            const row = anchorRow(iss.line);
+            byLine.set(row, [...(byLine.get(row) ?? []), iss]);
+          }
+          return [...byLine.entries()]
+            .sort((a, b) => a[0] - b[0])
+            .map(([row, list]) => ({ row, a: anchors[row], list }));
+        })(),
+  );
 </script>
 
 {#if issues.length > 0}
@@ -76,23 +91,25 @@
         in:fade={{ duration: fadeInMs }}
         out:fade={{ duration: fadeOutMs }}
       >
-        {#each issues as iss, j (j)}
-          {@const a = anchorFor(iss.line)}
-          {@const stack = issues
-            .slice(0, j)
-            .filter((o) => anchorRow(o.line) === anchorRow(iss.line)).length}
-          {#if a}
-            <li
-              class="issue-{iss.severity}"
-              style="top: {a.top + a.height / 2 + stack * 22}px; left: {a.right +
-                6}px; max-width: {Math.max(overlayW - a.right - 12, 120)}px"
-              title={iss.message}
-            >
-              {#if iss.severity === 'error'}<span class="parse-error-icon"
-                  >!</span
-                >{/if}<span class="chip-text">{iss.message}</span>
-            </li>
-          {/if}
+        {#each chips as chip (chip.row)}
+          {@const a = chip.a}
+          <li
+            class="issue-{chip.list.some((i) => i.severity === 'error')
+              ? 'error'
+              : 'note'}"
+            style="top: {a.top + a.height / 2}px; left: {a.right +
+              6}px; max-width: {Math.max(overlayW - a.right - 12, 120)}px"
+          >
+            <div class="chip-msgs">
+              {#each chip.list as iss, k (k)}
+                <span class="chip-msg" title={iss.message}
+                  >{#if iss.severity === 'error'}<span
+                      class="parse-error-icon">!</span
+                    >{/if}<span class="chip-text">{iss.message}</span></span
+                >
+              {/each}
+            </div>
+          </li>
         {/each}
       </ul>
     {:else}
