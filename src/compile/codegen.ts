@@ -376,6 +376,30 @@ class Emitter {
     );
   }
 
+  /** A matrix body's `m, n` dims (as MatrixSymbol args) — literal
+   * `Matrix` nodes read them statically; declared `A \in R^{mxn}` names
+   * carry them in matrixDims; cell-assigned matrices fall back to
+   * `*A.shape` so the dims resolve when the program runs. Non-matrices
+   * get null. */
+  private matrixShape(node: MathJson | undefined): string | null {
+    if (isHead(node, 'Matrix')) {
+      const rows =
+        node.length === 2 && isHead(node[1], 'List')
+          ? node[1].slice(1)
+          : node.slice(1);
+      const cols =
+        rows.length > 0 && isHead(rows[0], 'List') ? rows[0].length - 1 : 1;
+      return `${rows.length}, ${cols}`;
+    }
+    if (isStr(node)) {
+      const dim = this.scope.matrixDims.get(node);
+      if (dim) return `${dim[0]}, ${dim[1]}`;
+      if (this.scope.matrixNames.has(node))
+        return `*${this.emit(node)}.shape`;
+    }
+    return null;
+  }
+
   /** SymPy constant: qualified in `import sympy as sp` mode; Python
    * builtins (True/False) and literals stay unqualified either way. */
   private constName(c: string): string {
@@ -1150,20 +1174,19 @@ class Emitter {
         // Indefinite: append the constant of integration (`+ C`). PREC_ADD
         // keeps the sum parenthesized when the integral nests inside a
         // larger term (`(∫x dx)^2` -> `(x**2/2 + C)**2`). A matrix
-        // integrand can't take `+ C` — Matrix + Symbol raises TypeError
-        // and the constant is dimensionally a matrix anyway.
-        const constable = !isHead(body, 'Matrix');
-        if (outermost && !constable)
-          this.scope.flag(
-            'note',
-            'matrix integrand — constant of integration omitted',
-          );
+        // integrand's constant is a matrix too — `Matrix + Symbol`
+        // raises TypeError, so emit a same-shape MatrixSymbol.
         const indefinite = `${this.sp}integrate(${emitBody()}, ${this.emit(v)})`;
+        if (!outermost) return [indefinite, PREC_ATOM];
+        const c = nextConstName(this.scope);
+        const shape = this.matrixShape(body);
         return [
-          outermost && constable
-            ? `${indefinite} + ${this.sp}Symbol(${JSON.stringify(nextConstName(this.scope))})`
-            : indefinite,
-          outermost && constable ? PREC_ADD : PREC_ATOM,
+          `${indefinite} + ${
+            shape
+              ? `${this.sp}MatrixSymbol(${JSON.stringify(c)}, ${shape})`
+              : `${this.sp}Symbol(${JSON.stringify(c)})`
+          }`,
+          PREC_ADD,
         ];
       }
       case 'Sum':

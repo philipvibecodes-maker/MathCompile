@@ -847,13 +847,28 @@ const FIXTURES: {
     expectedPython: ['AB_arc = sp.Symbol("AB_arc")'],
   },
   {
-    // A matrix integrand can't take + C — Matrix + Symbol is a TypeError.
+    // A matrix integrand's constant is a same-shape MatrixSymbol —
+    // `Matrix + Symbol` is a TypeError.
     latex: '\\int \\begin{pmatrix} x & 0 \\\\ 0 & x \\end{pmatrix} dx',
     expectedPython: [
       'x = sp.Symbol("x")',
-      'sp.integrate(sp.Matrix([[x, 0], [0, x]]), x)',
+      'sp.integrate(sp.Matrix([[x, 0], [0, x]]), x) + sp.MatrixSymbol("C", 2, 2)',
     ],
-    issues: ['matrix integrand'],
+  },
+  {
+    // A \in R^{mxn}-declared name as integrand → MatrixSymbol constant
+    // with the declared dims.
+    latex:
+      '\\displaylines{A \\in \\mathbb{R}^{2\\times2} \\\\ \\int A\\;dx}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'A = sp.MatrixSymbol("A", 2, 2)',
+      'Element = sp.Function("Element")',
+      'MatrixSpace = sp.Function("MatrixSpace")',
+      'Element(A, MatrixSpace(sp.S.Reals, 2, 2))',
+      'sp.integrate(A, x) + sp.MatrixSymbol("C", 2, 2)',
+    ],
+    issues: ['matrix space'],
   },
   {
     // x' = 1 assigns a primed variable — functionDefShape used to match
