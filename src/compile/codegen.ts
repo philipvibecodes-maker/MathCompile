@@ -1155,57 +1155,75 @@ class Emitter {
         const lo = limits?.[1];
         const hi = limits?.[2];
         let extraVars: string[] = [];
-        if (isHead(body, 'Multiply') && body.length >= 3) {
-          // `\int x^2 \text{d}x` — CE leaves a \text{d} differential as
-          // a `d * x` factor pair in the body instead of marking the var.
-          // `\iint`/`\iiint` park several pairs on one Integrate node —
-          // peel them all (leftmost = innermost). A pair naming the
-          // already-bound variable (`(x,0,1)` limits) is consumed, not
-          // counted as an extra variable.
-          const tail = body.slice(1);
+        // `\int x^2 \text{d}x` — CE leaves a \text{d} differential as a
+        // `d * x` factor pair in the body instead of marking the var.
+        // `\iint`/`\iiint` park several pairs on one Integrate node —
+        // peel them all (leftmost = innermost). A pair naming the
+        // already-bound variable (`(x,0,1)` limits) is consumed, not
+        // counted as an extra variable.
+        const stripDiffs = (factors: MathJson[]): string[] => {
+          const found: string[] = [];
           while (
-            tail.length >= 2 &&
-            isStr(tail[tail.length - 1]) &&
-            isStr(tail[tail.length - 2]) &&
-            (tail[tail.length - 2] === 'd' ||
-              tail[tail.length - 2] === 'd_upright' ||
-              tail[tail.length - 2] === "'d'" ||
-              tail[tail.length - 2] === "'d_upright'")
+            factors.length >= 2 &&
+            isStr(factors[factors.length - 1]) &&
+            isStr(factors[factors.length - 2]) &&
+            /^(d|d_upright|'d'|'d_upright')$/.test(
+              factors[factors.length - 2] as string,
+            )
           ) {
-            const name = tail.pop() as string;
-            tail.pop();
-            if (name === v) continue;
-            extraVars.unshift(name);
+            const name = factors.pop() as string;
+            factors.pop();
+            if (name !== v) found.unshift(name);
           }
-          const peeled = tail.length !== body.length - 1;
-          if (peeled)
-            body = tail.length === 1 ? tail[0] : ['Multiply', ...tail];
-          // CE flattens `f(x)` inside an integral to plain factors —
-          // `Multiply(f, x, d, x)` loses the call marker. Fold a
-          // function-name factor fused with the next name back into a
-          // call so `∫f(x)dx` isn't emitted `∫f·x dx`.
-          if (isHead(body, 'Multiply')) {
-            const parts: MathJson[] = [body[0]];
-            for (let i = 1; i < body.length; i++) {
-              const a = body[i];
-              const b = body[i + 1];
-              if (
-                isStr(a) &&
-                this.scope.functions.has(a) &&
-                isStr(b)
-              ) {
-                parts.push(['call', a, b]);
-                i++;
-              } else parts.push(a);
-            }
-            body =
-              parts.length === 2
-                ? (parts[1] as MathJson)
-                : (parts as MathJson);
+          return found;
+        };
+        // CE flattens `f(x)` inside an integral to plain factors —
+        // `Multiply(f, x, d, x)` loses the call marker. Fold a
+        // function-name factor fused with the next name back into a
+        // call so `∫f(x)dx` isn't emitted `∫f·x dx`.
+        const foldCalls = (factors: MathJson[]): MathJson[] => {
+          const out: MathJson[] = [];
+          for (let i = 0; i < factors.length; i++) {
+            const a = factors[i];
+            const b = factors[i + 1];
+            if (isStr(a) && this.scope.functions.has(a) && isStr(b)) {
+              out.push(['call', a, b]);
+              i++;
+            } else out.push(a);
           }
-          if (peeled && missing(v) && extraVars.length > 0) {
+          return out;
+        };
+        const promoteVar = () => {
+          if (missing(v) && extraVars.length > 0) {
             v = extraVars[0];
             extraVars = extraVars.slice(1);
+          }
+        };
+        if (isHead(body, 'Multiply') && body.length >= 3) {
+          const tail = body.slice(1);
+          extraVars = [...extraVars, ...stripDiffs(tail)];
+          const peeled = tail.length !== body.length - 1;
+          if (peeled) {
+            const parts = foldCalls(tail);
+            body =
+              parts.length === 1 ? parts[0] : ['Multiply', ...parts];
+            promoteVar();
+          }
+        } else if (isArr(body) && isHead(body[body.length - 1], 'Multiply')) {
+          // `\int \sin\theta \text{d}\theta` — CE binds the differential
+          // inside the trig arg: Sin(θ·d·θ). Peel the pair from the
+          // last argument and rebuild the application without it.
+          const inner = body[body.length - 1] as MathJson[];
+          const tail = inner.slice(1);
+          const peeled = stripDiffs(tail);
+          const parts = tail.length !== inner.length - 1 ? foldCalls(tail) : [];
+          if (parts.length >= 1) {
+            extraVars = [...extraVars, ...peeled];
+            body = [
+              ...body.slice(0, -1),
+              parts.length === 1 ? parts[0] : ['Multiply', ...parts],
+            ] as MathJson;
+            promoteVar();
           }
         }
         if (missing(v)) {

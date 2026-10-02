@@ -523,7 +523,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
   });
 
-  it('lowers \mathbb{S}^±/^*/_0 variants to set operations', () => {
+  it('lowers mathbb{S}^±/^*/_0 variants to set operations', () => {
     // `x ∈ Z^-` emitted Contains(x, FiniteSet(Intersection(...))) —
     // membership of a singleton-holding-a-set, always False.
     expect(calc('x \\in \\mathbb{Z}^{-}').statements[0].code).toBe(
@@ -540,6 +540,26 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
     // `A^{+}` — Moore–Penrose pseudoinverse, not a stray call.
     expect(calc('A^{+}').statements[0].code).toBe('sp.pinv(A)');
+  });
+
+  it('peels a differential nested inside the integrand argument', () => {
+    // `\int \sin\theta\text{d}\theta` — CE binds the dθ inside the
+    // trig arg: Sin(θ·d·θ). The pair peels from the last argument.
+    expect(calc('\\int \\sin\\theta\\text{d}\\theta').statements[0].code).toBe(
+      'sp.integrate(sp.sin(theta), theta) + sp.Symbol("C")',
+    );
+    expect(calc('\\int \\ln u\\text{d}u').statements[0].code).toBe(
+      'sp.integrate(sp.log(u), u) + sp.Symbol("C")',
+    );
+  });
+
+  it('strips thin-space commands instead of emitting InvisibleOperator', () => {
+    for (const l of ['\\int x\\,dx', '\\int x\\;dx', '\\int x\\!dx', '\\int x\\ dx'])
+      expect(calc(l).statements[0].code).toBe(
+        'sp.integrate(x, x) + sp.Symbol("C")',
+      );
+    // `\\ ` after a statement break stays a statement break.
+    expect(calc('a = 2 \\\\ b = a + 1').statements).toHaveLength(2);
   });
 
   it('restores f(x) calls inside integrals for defined functions', () => {

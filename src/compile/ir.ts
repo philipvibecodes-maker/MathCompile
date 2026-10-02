@@ -155,6 +155,10 @@ export function latexToStatementStrings(latex: string): string[] {
   // fine, so they are stripped before parsing.
   const inner = outputLatex(latex)
     .replace(/\\(?:limits|nolimits|displaylimits)(?![a-zA-Z])/g, '')
+    // Thin spaces (\, \; \: \!) are layout hints — CE wraps them as an
+    // InvisibleOperator call which then looks like a function
+    // application (`\int x\,dx` → integrate(InvisibleOperator(x), x)).
+    .replace(/\\[,;:!]|(?<!\\)\\ /g, ' ')
     // `\partial_{x}` is the partial operator applied as a subscript —
     // CE glues it to the next factor (`\partial_{x}x^{2}` → x**x*2).
     // The \frac{\partial}{\partial x} form routes through D() cleanly
