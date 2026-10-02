@@ -460,6 +460,7 @@ body {
 
 /* Calculator output (target = calculator): one SymPy result per cell row. */
 .calc-output {
+  position: relative;
   align-items: flex-start;
   padding-top: 6px;
   padding-bottom: 6px;
@@ -551,12 +552,13 @@ body {
 /* Per-cell opt-in to reveal the `e = ...` display-plumbing lines — a
    small control pinned to the output cell's top-right corner. */
 .calc-plumbing {
-  flex: 0 0 auto;
+  position: absolute;
+  top: 3px;
+  right: 8px;
+  z-index: 5;
   display: flex;
   align-items: center;
   gap: 4px;
-  padding-top: 2px;
-  margin-left: 6px;
   font-size: 11px;
   color: var(--faint);
   white-space: nowrap;
@@ -576,6 +578,7 @@ body {
 
 .calc-plumbing .info-tip {
   right: 0;
+  white-space: normal;
 }
 
 :root[data-theme='dark'] .calc-code .tok-kw {

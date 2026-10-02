@@ -158,8 +158,13 @@ def mc_run(prog_json):
         exec('\\n'.join(prog['prelude']), ns)
     except Exception as e:
         return json.dumps([{'ok': False, 'error': str(e)}])
+    prelude = list(prog['prelude'])
+    # 'import ...' lines are program boilerplate — show them only in the
+    # first row's code block; later rows keep the Symbol/Function defs.
+    tail = [l for l in prelude
+            if not l.startswith(('import ', 'from '))]
     out = []
-    for stmt in prog['statements']:
+    for i, stmt in enumerate(prog['statements']):
         try:
             row = _mc_row(_mc_eval_stmt(stmt, ns))
             row['ok'] = True
@@ -167,9 +172,10 @@ def mc_run(prog_json):
             # + statement source), not the result's python() repr. The
             # 'e = ...' capture lines exist only to drive row rendering —
             # display plumbing, split out so the UI can hide it by default.
+            pre = prelude if i == 0 else tail
             disp = stmt.get('display')
-            row['code'] = '\\n'.join(list(prog['prelude']) + [stmt['code']])
-            plumb = list(prog['prelude'])
+            row['code'] = '\\n'.join(pre + [stmt['code']])
+            plumb = list(pre)
             if disp is None:
                 plumb.append('e = ' + stmt['code'])
             else:
