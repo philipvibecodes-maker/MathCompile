@@ -564,6 +564,13 @@ body {
   color: var(--danger);
 }
 
+/* The chip's nowrap would otherwise stretch the tip's text past the
+   badge; pin it to the icon's right edge too. */
+.engine-chip .info-tip {
+  right: 0;
+  white-space: normal;
+}
+
 
 .engine-spinner {
   flex: 0 0 auto;
