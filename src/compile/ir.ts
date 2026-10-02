@@ -302,6 +302,11 @@ function flattenSubscript(node: MathJson): string {
     if (h === 'Negate') return `-${flattenSubscript(node[1])}`;
     if (h === 'Power')
       return `${flattenSubscript(node[1])}^${flattenSubscript(node[2])}`;
+    if (h === 'Sequence')
+      return node.slice(1).map(flattenSubscript).join(',');
+    // `P_{5,2}` — a comma'd subscript list arrives as Delimiter(Sequence).
+    if (h === 'Delimiter')
+      return delimiterArgs(node).map(flattenSubscript).join(',');
   }
   return '?';
 }
@@ -839,6 +844,13 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
           ? [normalize(rest[0], false)]
           : [['Multiply', ...rest.map((n) => normalize(n, false))]]),
       ];
+    }
+
+    // A 'call' node is already the escape-hatch shape — re-wrapping it
+    // produces ['call','call',...], which codegen reads as a function
+    // literally named "call" (g(f(x)) -> g(call(f, x))).
+    if (h === 'call') {
+      return ['call', node[1], ...node.slice(2).map((n) => normalize(n, false))];
     }
 
     if (!KNOWN_HEADS.has(h)) {

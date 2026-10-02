@@ -930,9 +930,13 @@ class Emitter {
         ];
       }
       case 'Prime': {
-        // y'' — the nth derivative of the function w.r.t. x.
+        // y'' — the nth derivative of the function w.r.t. x. The arg's
+        // `x` must be allocated first: for `x'` itself, taking the
+        // function ident first gives `x` to the callee and `x_2` to the
+        // variable, scrambling the names (`Derivative(x(x_2), x)`).
+        const arg = this.sym('x');
         const name = isStr(args[0])
-          ? `${this.fn(args[0])}(${this.sym('x')})`
+          ? `${this.fn(args[0])}(${arg})`
           : this.emit(args[0], PREC_ATOM);
         const n =
           isNum(args[1]) && numText(args[1]) !== '1'
@@ -1127,6 +1131,36 @@ class Emitter {
             `${this.sp}Trace(${this.matrixArg(args[1], '\\operatorname{tr}') ?? 'None'})`,
             PREC_ATOM,
           ];
+        // `z^{*}`/`A^{*}` — CE's superscript-star head. A declared
+        // matrix reads as the conjugate transpose (Adjoint crashes on
+        // scalars); anything else is the complex conjugate.
+        if (name === 'Superstar' && args.length === 2) {
+          const a = args[1];
+          if (isStr(a) && this.scope.matrices.has(a))
+            return [
+              `${this.sp}Adjoint(${this.matrixArg(a, '*') ?? 'None'})`,
+              PREC_ATOM,
+            ];
+          return [`${this.sp}conjugate(${this.emit(a)})`, PREC_ATOM];
+        }
+        // `\delta_{ij}` — index positions keep `i` an ordinary symbol;
+        // the global free-`i` rule would emit the imaginary unit.
+        if (name === 'KroneckerDelta' && args.length === 3) {
+          const savedBound = this.scope.lambdaBound;
+          this.scope.lambdaBound = new Set([...savedBound, 'i']);
+          try {
+            const rendered = args
+              .slice(1)
+              .map((a) => this.emit(a))
+              .join(', ');
+            const callee = this.scope.qualified
+              ? `getattr(sp, "KroneckerDelta", ${this.sp}Function("KroneckerDelta"))`
+              : `globals().get("KroneckerDelta", ${this.sp}Function("KroneckerDelta"))`;
+            return [`${callee}(${rendered})`, PREC_ATOM];
+          } finally {
+            this.scope.lambdaBound = savedBound;
+          }
+        }
         // `\|x\|`/Vmatrix — no top-level `sp.Norm`; a bare name reads as
         // a scalar magnitude, a matrix value keeps `.norm()`.
         if (name === 'Norm' && args.length === 2) {

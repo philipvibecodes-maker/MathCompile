@@ -359,6 +359,34 @@ describe('toNerdamerInput (latex → nerdamer calls)', () => {
       '2^n=sum(factorial(i)/(factorial(n)*factorial(i-n)), i, 0, n)',
     );
   });
+  it('keeps the argument x in x′ (prime on x itself)', () => {
+    const p = calc("x'");
+    expect(p.statements[0]?.code).toContain('x_2(x)');
+    expect(p.prelude).toContain('x_2 = sp.Function("x")');
+  });
+
+  it('applies nested calls, not a literal call(f, x)', () => {
+    const p = calc('g(f(x))');
+    expect(p.statements[0]?.code).not.toContain('call(');
+    expect(p.statements[0]?.code).toContain('Function("f"))(x)');
+  });
+
+  it('keeps a comma subscript in the symbol name', () => {
+    const p = calc('P_{5,2}');
+    expect(p.prelude.join()).toContain('Symbol("P_{5,2}")');
+    expect(p.statements[0]?.code).not.toBe('P');
+  });
+
+  it('reads z^{*} as adjoint/conjugate', () => {
+    const p = calc('z^{*}');
+    expect(p.statements[0]?.code).toContain('conjugate');
+  });
+
+  it('keeps i a symbol inside a Kronecker delta', () => {
+    const p = calc('\\delta_{ij}');
+    expect(p.statements[0]?.code).toContain('KroneckerDelta"))(i, j)');
+    expect(p.statements[0]?.code).not.toContain('sp.I');
+  });
 });
 
 describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
@@ -429,3 +457,4 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
     expect(await interimEvaluate('')).toEqual([]);
   });
 });
+
