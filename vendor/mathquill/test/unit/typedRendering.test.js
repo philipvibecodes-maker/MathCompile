@@ -200,4 +200,39 @@ suite('typed rendering', function () {
       });
     });
   });
+
+  suite('bra-ket delimiter spacing', function () {
+    test('\\bra{x} delimiters keep the caret off the glyphs', function () {
+      typed('\\bra{x}');
+      var delims = rootEl().querySelectorAll('.mq-bra-ket-delim');
+      assert.equal(delims.length, 2, 'bra delimiters');
+      var close = delims[1];
+      assert.ok(
+        parseFloat(getComputedStyle(close).paddingLeft) > 0,
+        'closing | has no left padding'
+      );
+      // the | glyph sits right of the block's content edge (caret space)
+      var block = close.previousElementSibling;
+      var range = document.createRange();
+      range.selectNodeContents(close);
+      assert.ok(
+        range.getBoundingClientRect().left -
+          block.getBoundingClientRect().right >
+          0,
+        'closing | overlaps the block edge'
+      );
+    });
+
+    test('\\ketbra{x}{y} delimiters keep the caret off the glyphs', function () {
+      typed('\\ketbra{x}{y}');
+      var delims = rootEl().querySelectorAll('.mq-bra-ket-delim');
+      assert.equal(delims.length, 3, 'ketbra delimiters');
+      for (var i = 0; i < delims.length; i += 1) {
+        assert.ok(
+          parseFloat(getComputedStyle(delims[i]).paddingLeft) > 0,
+          'delimiter ' + i + ' has no left padding'
+        );
+      }
+    });
+  });
 });

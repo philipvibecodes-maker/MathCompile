@@ -2060,9 +2060,9 @@ function bindBraKet(ctrlSeq: string, open: string, close: string) {
       ctrlSeq,
       new DOMView(1, (blocks) =>
         h('span', { class: 'mq-non-leaf' }, [
-          h('span', {}, [h.entityText(open)]),
+          h('span', { class: 'mq-bra-ket-delim' }, [h.entityText(open)]),
           h.block('span', {}, blocks[0]),
-          h('span', {}, [h.entityText(close)])
+          h('span', { class: 'mq-bra-ket-delim' }, [h.entityText(close)])
         ])
       )
     );
@@ -2074,9 +2074,9 @@ LatexCmds.braket = () =>
     '\\braket',
     new DOMView(1, (blocks) =>
       h('span', { class: 'mq-non-leaf' }, [
-        h('span', {}, [h.entityText('&lang;')]),
+        h('span', { class: 'mq-bra-ket-delim' }, [h.entityText('&lang;')]),
         h.block('span', {}, blocks[0]),
-        h('span', {}, [h.entityText('&rang;')])
+        h('span', { class: 'mq-bra-ket-delim' }, [h.entityText('&rang;')])
       ])
     )
   );
@@ -2085,11 +2085,14 @@ LatexCmds.ketbra = () =>
     '\\ketbra',
     new DOMView(2, (blocks) =>
       h('span', { class: 'mq-non-leaf' }, [
-        h('span', {}, [h.text('|')]),
+        h('span', { class: 'mq-bra-ket-delim' }, [h.text('|')]),
         h.block('span', {}, blocks[0]),
-        h('span', {}, [h.entityText('&rang;'), h.entityText('&lang;')]),
+        h('span', { class: 'mq-bra-ket-delim' }, [
+          h.entityText('&rang;'),
+          h.entityText('&lang;')
+        ]),
         h.block('span', {}, blocks[1]),
-        h('span', {}, [h.text('|')])
+        h('span', { class: 'mq-bra-ket-delim' }, [h.text('|')])
       ])
     )
   );
