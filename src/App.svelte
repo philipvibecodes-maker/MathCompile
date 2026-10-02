@@ -30,6 +30,36 @@
   let fadeOutMs = $state(animPrefs.fadeOutMs ?? 150);
   let settingsOpen = $state(false);
 
+  // Output column width (% of the row's flex width) — shared by every
+  // row and the column header; the .col-resize divider drags it.
+  let outputPct = $state(34);
+
+  function startColDrag(e: PointerEvent) {
+    const handle = e.currentTarget as HTMLElement;
+    const row = handle.parentElement;
+    const output = row?.querySelector<HTMLElement>('.cell-output');
+    if (!row || !output) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = output.getBoundingClientRect().width;
+    const rowW = row.clientWidth;
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add('dragging');
+    const move = (ev: PointerEvent) => {
+      const pct = ((startW + startX - ev.clientX) / rowW) * 100;
+      outputPct = Math.min(60, Math.max(15, pct));
+    };
+    const done = () => {
+      handle.classList.remove('dragging');
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', done);
+      handle.removeEventListener('pointercancel', done);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', done);
+    handle.addEventListener('pointercancel', done);
+  }
+
   // The latex target bypasses the compile pipeline (per-cell displayLatex);
   // every codegen target compiles the whole worksheet.
   let compiled = $derived(
@@ -272,7 +302,7 @@
     </button>
   </header>
   <div class="main">
-    <section class="expr-panel">
+    <section class="expr-panel" style:--output-w={`${outputPct}%`}>
       <div class="col-headers">
         <span class="col-index"></span>
         <span class="col-field"></span>
@@ -383,6 +413,13 @@
           <li class="expr-row">
             <span class="expr-index">{i + 1}</span>
             <MathField {cell} />
+            <div
+              class="col-resize"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize output column"
+              onpointerdown={startColDrag}
+            ></div>
             {#if appStore.target === 'latex'}
               <div class="cell-output">
                 <code class="cell-latex">{displayLatex(cell.latex)}</code>

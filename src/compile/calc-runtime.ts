@@ -2,15 +2,14 @@
 // emits this block into every cell's prelude so the emitted program is
 // self-contained — the shown code runs standalone (given sympy) and the
 // audit trail has no hidden post-processing. Statements evaluate through
-// mc_simplify_organize(...). Each stage degrades to its input on failure.
+// mc_eval(...). Each stage degrades to its input on failure.
 //
 // The signature is the first line of the code display after the import;
 // the code view folds the body behind a caret by default.
 //
-// `mc_simplify_organize` is a reserved identifier — pyIdent mangles a
-// user symbol of the same name to `mc_simplify_organize_` so a cell
-// can't shadow it.
-export const CALC_RUNTIME_PY = `def mc_simplify_organize(val):
+// `mc_eval` is a reserved identifier — pyIdent mangles a user symbol of
+// the same name to `mc_eval_` so a cell can't shadow it.
+export const CALC_RUNTIME_PY = `def mc_eval(val):
     def mc_deg(term, gens):
         # Bare capital letters are constants of integration — they go last.
         if term.is_Symbol and len(term.name) == 1 and term.name.isupper():
