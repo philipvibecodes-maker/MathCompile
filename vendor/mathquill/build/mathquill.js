@@ -5370,9 +5370,15 @@ var __assign = (this && this.__assign) || function () {
         MathCommand.prototype.placeCursor = function (cursor) {
             //insert the cursor at the right end of the first empty child, searching
             //left-to-right, or if none empty, the right end child
-            cursor.insAtRightEnd(this.foldChildren(this.getEnd(L), function (leftward, child) {
+            var el = this.foldChildren(this.getEnd(L), function (leftward, child) {
                 return leftward.isEmpty() ? leftward : child;
-            }));
+            });
+            // A command with no blocks (e.g. \verb, \end) has no child to land
+            // the caret in \u2014 place it right of the atom instead.
+            if (el)
+                cursor.insAtRightEnd(el);
+            else
+                cursor.insRightOf(this);
         };
         // editability methods: called by the cursor for editing, cursor movements,
         // and selection of the MathQuill tree, these all take in a direction and
@@ -7256,10 +7262,10 @@ var __assign = (this && this.__assign) || function () {
     };
     LatexCmds.r = function () { return new DiacriticAbove('\\r', h.text('\u02da'), ['ring(', ')']); };
     LatexCmds.d = function () {
-        return new DiacriticBelow('\\d', h.text('&#803;'), ['dot below(', ')']);
+        return new DiacriticBelow('\\d', h.entityText('&#803;'), ['dot below(', ')']);
     };
     LatexCmds.b = function () {
-        return new DiacriticBelow('\\b', h.text('&#818;'), ['bar below(', ')']);
+        return new DiacriticBelow('\\b', h.entityText('&#818;'), ['bar below(', ')']);
     };
     LatexCmds.c = function () {
         return new DiacriticBelow('\\c', h.text('\u00b8'), ['cedilla(', ')']);
@@ -7859,7 +7865,7 @@ var __assign = (this && this.__assign) || function () {
     // \k: ogonek below \u2014 completes the text-accent set (\v \u \r above,
     // \d \b \c below).
     LatexCmds.k = function () {
-        return new DiacriticBelow('\\k', h.text('&#808;'), ['ogonek(', ')']);
+        return new DiacriticBelow('\\k', h.entityText('&#808;'), ['ogonek(', ')']);
     };
     // More definition commands \u2014 same raw-args shape as \def.
     LatexCmds.gdef = function () {
@@ -10064,6 +10070,13 @@ var __assign = (this && this.__assign) || function () {
             _this_1.model = '';
             return _this_1;
         }
+        // Parser-only command: typing '\colorbox' in the command input can't
+        // supply a color argument, so typed insertion is a no-op (same
+        // convention as \textcolor).
+        class_18.prototype.createLeftOf = function () { };
+        class_18.prototype.numBlocks = function () {
+            return 1;
+        };
         class_18.prototype.parser = function () {
             var _this_1 = this;
             var self = this;
@@ -10111,6 +10124,13 @@ var __assign = (this && this.__assign) || function () {
             _this_1.model = '';
             return _this_1;
         }
+        // Parser-only command: typing '\fcolorbox' in the command input can't
+        // supply color arguments, so typed insertion is a no-op (same
+        // convention as \textcolor).
+        class_19.prototype.createLeftOf = function () { };
+        class_19.prototype.numBlocks = function () {
+            return 1;
+        };
         class_19.prototype.parser = function () {
             var _this_1 = this;
             var self = this;
@@ -10169,6 +10189,13 @@ var __assign = (this && this.__assign) || function () {
             _this_1.url = '';
             return _this_1;
         }
+        // Parser-only command: typing '\href' in the command input can't
+        // supply a url argument, so typed insertion is a no-op (same
+        // convention as \textcolor).
+        class_20.prototype.createLeftOf = function () { };
+        class_20.prototype.numBlocks = function () {
+            return 1;
+        };
         class_20.prototype.parser = function () {
             var _this_1 = this;
             var self = this;
@@ -10687,7 +10714,7 @@ var __assign = (this && this.__assign) || function () {
             var domView = new DOMView(2, function (blocks) {
                 return h('span', { class: 'mq-large-operator mq-non-leaf' }, [
                     h('span', { class: 'mq-to' }, [h.block('span', {}, blocks[1])]),
-                    h('big', {}, [h.text(symbol)]),
+                    h('big', {}, [h.entityText(symbol)]),
                     h('span', { class: 'mq-from' }, [h.block('span', {}, blocks[0])])
                 ]);
             });
@@ -10839,7 +10866,7 @@ var __assign = (this && this.__assign) || function () {
     var boundlessIntegral = function (ctrlSeq, glyph, speak) {
         return function () {
             return new BoundlessIntegral(ctrlSeq, h('span', { class: 'mq-int' }, [
-                h('big', {}, [h.text(glyph)])
+                h('big', {}, [h.entityText(glyph)])
             ]), undefined, speak);
         };
     };
@@ -11478,6 +11505,10 @@ var __assign = (this && this.__assign) || function () {
             _this_1.prefix = prefix;
             return _this_1;
         }
+        // Parser-only command: typing '\bigl' in the command input can't
+        // supply a delimiter token, so typed insertion is a no-op (same
+        // convention as \textcolor / \big).
+        SizedDelimiter.prototype.createLeftOf = function () { };
         SizedDelimiter.prototype.parser = function () {
             var self = this;
             return Parser.optWhitespace
@@ -11628,9 +11659,9 @@ var __assign = (this && this.__assign) || function () {
         return function () {
             return new MathCommand(ctrlSeq, new DOMView(1, function (blocks) {
                 return h('span', { class: 'mq-non-leaf' }, [
-                    h('span', {}, [h.entityText(open)]),
+                    h('span', { class: 'mq-bra-ket-delim' }, [h.entityText(open)]),
                     h.block('span', {}, blocks[0]),
-                    h('span', {}, [h.entityText(close)])
+                    h('span', { class: 'mq-bra-ket-delim' }, [h.entityText(close)])
                 ]);
             }));
         };
@@ -11640,20 +11671,23 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.braket = function () {
         return new MathCommand('\\braket', new DOMView(1, function (blocks) {
             return h('span', { class: 'mq-non-leaf' }, [
-                h('span', {}, [h.entityText('&lang;')]),
+                h('span', { class: 'mq-bra-ket-delim' }, [h.entityText('&lang;')]),
                 h.block('span', {}, blocks[0]),
-                h('span', {}, [h.entityText('&rang;')])
+                h('span', { class: 'mq-bra-ket-delim' }, [h.entityText('&rang;')])
             ]);
         }));
     };
     LatexCmds.ketbra = function () {
         return new MathCommand('\\ketbra', new DOMView(2, function (blocks) {
             return h('span', { class: 'mq-non-leaf' }, [
-                h('span', {}, [h.text('|')]),
+                h('span', { class: 'mq-bra-ket-delim' }, [h.text('|')]),
                 h.block('span', {}, blocks[0]),
-                h('span', {}, [h.entityText('&rang;'), h.entityText('&lang;')]),
+                h('span', { class: 'mq-bra-ket-delim' }, [
+                    h.entityText('&rang;'),
+                    h.entityText('&lang;')
+                ]),
                 h.block('span', {}, blocks[1]),
-                h('span', {}, [h.text('|')])
+                h('span', { class: 'mq-bra-ket-delim' }, [h.text('|')])
             ]);
         }));
     };
@@ -11764,7 +11798,7 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds['\u2233'] = LatexCmds.ointctrclockwise = boundlessIntegral('\\ointctrclockwise ', '&#8755;', 'counterclockwise contour integral');
     LatexCmds['\u2232'] = LatexCmds.varointclockwise = boundlessIntegral('\\varointclockwise ', '&#8754;', 'clockwise contour integral');
     LatexCmds.bigsqcap = LatexCmds.bigsqcapdot = function () {
-        return new SummationNotation('\\bigsqcap ', '&#8853;', 'square intersection');
+        return new SummationNotation('\\bigsqcap ', '&#10757;', 'square intersection');
     };
     LatexCmds.varinjlim = function () {
         return new SummationNotation('\\varinjlim ', 'lim&#8594;', 'direct limit');
@@ -13510,6 +13544,17 @@ var __assign = (this && this.__assign) || function () {
         };
         Aligned.prototype.latexClose = function () {
             return '\\end{aligned}';
+        };
+        // Typed `\begin{aligned}` resolves to a 2x2 starter grid, matching
+        // Matrix's createBlocks (CellGrid's domView is lazy, so the default
+        // numBlocks() can't run here).
+        Aligned.prototype.createBlocks = function () {
+            this.blocks = [
+                new MatrixCell(0, this),
+                new MatrixCell(0, this),
+                new MatrixCell(1, this),
+                new MatrixCell(1, this)
+            ];
         };
         return Aligned;
     }(CellGrid));
