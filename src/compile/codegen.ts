@@ -1199,32 +1199,64 @@ class Emitter {
             extraVars = extraVars.slice(1);
           }
         };
-        if (isHead(body, 'Multiply') && body.length >= 3) {
-          const tail = body.slice(1);
-          extraVars = [...extraVars, ...stripDiffs(tail)];
-          const peeled = tail.length !== body.length - 1;
-          if (peeled) {
-            const parts = foldCalls(tail);
-            body =
-              parts.length === 1 ? parts[0] : ['Multiply', ...parts];
-            promoteVar();
+        // CE glues the `\text{d}v` differential onto the tail of the
+        // integrand — flat (`Multiply(x², d, x)`) or nested inside the
+        // last factor's arguments (`x\sin x\,dx` →
+        // `Multiply(x, Sin(Multiply(x, d, x)))`, `\sin²x\,dx` →
+        // `Power(Sin(Multiply(x, d, x)), 2)`). Peel pairs at the
+        // deepest level they sit at and rebuild the application.
+        const peelNode = (
+          node: MathJson,
+        ): { node: MathJson; names: string[] } => {
+          if (isHead(node, 'Multiply')) {
+            const r = peelDeep(node.slice(1));
+            if (r.names.length > 0 && r.factors.length >= 1) {
+              return {
+                node:
+                  r.factors.length === 1
+                    ? r.factors[0]
+                    : (['Multiply', ...r.factors] as MathJson),
+                names: r.names,
+              };
+            }
+            return { node, names: [] };
           }
-        } else if (isArr(body) && isHead(body[body.length - 1], 'Multiply')) {
-          // `\int \sin\theta \text{d}\theta` — CE binds the differential
-          // inside the trig arg: Sin(θ·d·θ). Peel the pair from the
-          // last argument and rebuild the application without it.
-          const inner = body[body.length - 1] as MathJson[];
-          const tail = inner.slice(1);
-          const peeled = stripDiffs(tail);
-          const parts = tail.length !== inner.length - 1 ? foldCalls(tail) : [];
-          if (parts.length >= 1) {
-            extraVars = [...extraVars, ...peeled];
-            body = [
-              ...body.slice(0, -1),
-              parts.length === 1 ? parts[0] : ['Multiply', ...parts],
-            ] as MathJson;
-            promoteVar();
+          if (isArr(node) && node.length >= 2) {
+            for (let i = node.length - 1; i >= 1; i--) {
+              const r = peelNode(node[i]);
+              if (r.names.length > 0) {
+                const out = [...node];
+                out[i] = r.node;
+                return { node: out as MathJson, names: r.names };
+              }
+            }
           }
+          return { node, names: [] };
+        };
+        const peelDeep = (
+          factors: MathJson[],
+        ): { factors: MathJson[]; names: string[] } => {
+          const tail = [...factors];
+          const names = stripDiffs(tail);
+          if (names.length > 0) return { factors: tail, names };
+          const last = tail[tail.length - 1];
+          const r = peelNode(last);
+          if (r.names.length > 0) {
+            tail[tail.length - 1] = r.node;
+            return { factors: tail, names: r.names };
+          }
+          return { factors, names: [] };
+        };
+        const r = peelDeep(
+          isHead(body, 'Multiply') && body.length >= 3
+            ? body.slice(1)
+            : [body],
+        );
+        if (r.names.length > 0 && r.factors.length >= 1) {
+          extraVars = [...extraVars, ...r.names];
+          const parts = foldCalls(r.factors);
+          body = parts.length === 1 ? parts[0] : ['Multiply', ...parts];
+          promoteVar();
         }
         if (missing(v)) {
           // No `dx` — infer the variable from the body's free symbols
