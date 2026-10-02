@@ -575,9 +575,26 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(calc('x \\in \\mathbb{Z}^{*}').statements[0].code).toBe(
       'sp.Contains(x, sp.Complement(sp.S.Integers, sp.FiniteSet(0)))',
     );
-    // `A^{+}` — Moore–Penrose pseudoinverse (a Matrix method in sympy
-    // 1.14 — no sp.pinv exists).
-    expect(calc('A^{+}').statements[0].code).toBe('(A).pinv()');
+    // `A^{+}` — Moore–Penrose pseudoinverse (a MatrixBase method in
+    // sympy 1.14 — no sp.pinv, and MatrixSymbol has no pinv either, so
+    // only a concrete matrix operand can exec; a bare `A^{+}` flags).
+    const pinv = calc('A^{+}');
+    expect(pinv.statements[0].error).toContain(
+      'pseudoinverse needs a concrete matrix',
+    );
+  });
+
+  it('emits .pinv() for concrete-matrix pseudoinverse operands', () => {
+    // `A` bound to a pmatrix in the same cell → `(A).pinv()` execs.
+    const out = calc(
+      'A = \\begin{pmatrix}1&0\\\\0&1\\end{pmatrix} \\\\ A^{+}',
+    );
+    expect(out.statements.at(-1)!.code).toBe('(A).pinv()');
+    // A matrix literal operand likewise.
+    expect(
+      calc('\\begin{pmatrix}1&0\\\\0&1\\end{pmatrix}^{+}').statements[0]
+        .code,
+    ).toBe('(sp.Matrix([[1, 0], [0, 1]])).pinv()');
   });
 
   it('shows matrix assignments unevaluated — Eq(Symbol, Matrix) is literal False', () => {

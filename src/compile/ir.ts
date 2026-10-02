@@ -583,6 +583,26 @@ const CALL_RENAMED = new Set([
   'inverse',
   'transpose',
   'norm',
+  // Codegen's `call`-tier name branches (compositions, quantifier stubs,
+  // set/pseudoinverse superscripts, greek/operator aliases) — all real
+  // emissions or self-flagged degradations, not unknown heads.
+  'Ring',
+  'GoldenRatio',
+  'Mean',
+  'PseudoInverse',
+  'Superminus',
+  'Superplus',
+  'KroneckerDelta',
+  'Arsinh',
+  'Arcosh',
+  'Artanh',
+  'Arcsinh',
+  'Arccosh',
+  'Arctanh',
+  'diff',
+  'integrate',
+  'summation',
+  'product',
   // The lowercase names codegen's SP_BUILTIN_CALL table maps — mirrors
   // codegen.ts (kept in sync manually; \operatorname{erf}/solve/... get
   // here as call heads too).

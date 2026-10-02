@@ -792,9 +792,26 @@ class Emitter {
    * expressions wrap as `sp.FiniteSet(...)` so Union/Intersection/
    * Complement compute instead of raising TypeError on bare Symbols. */
   private setArg(n: MathJson): string {
-    return this.isSetish(n)
-      ? this.emit(n)
-      : `${this.sp}FiniteSet(${this.emit(n)})`;
+    if (this.isSetish(n)) return this.emit(n);
+    // `x \in S^{+}` / `A \cup S^{-}` — a signed-superscript operand that
+    // isn't a known set still reads as the signed part of the singleton:
+    // `{S} ∩ (0,∞)`. (In operand position `S^{+}` is the pseudoinverse
+    // reading — the call tier handles that, with a concrete-matrix flag.)
+    if (
+      isHead(n, 'call') &&
+      n.length === 3 &&
+      isStr(n[1]) &&
+      (n[1] === 'Superminus' ||
+        n[1] === 'Superplus' ||
+        n[1] === 'PseudoInverse')
+    ) {
+      const range =
+        n[1] === 'Superminus'
+          ? `${this.sp}Interval.open(-${this.sp}oo, 0)`
+          : `${this.sp}Interval.open(0, ${this.sp}oo)`;
+      return `${this.sp}Intersection(${this.sp}FiniteSet(${this.emit(n[2])}), ${range})`;
+    }
+    return `${this.sp}FiniteSet(${this.emit(n)})`;
   }
 
   /** Comparison chains. `x < y < z` arrives flat as `Less(x, y, z)`
@@ -2151,15 +2168,37 @@ class Emitter {
             ];
           }
         }
+        // `S^{±}` on a non-set operand can't intersect — keep the
+        // degradation honest before the generic call emits a stub.
+        if (
+          (name === 'Superminus' || name === 'Superplus') &&
+          args.length === 2
+        )
+          this.scope.flag(
+            'note',
+            `signed set superscript needs a set operand — emitted as ${name}(...)`,
+          );
         // `A^{+}` on a non-set operand is the Moore–Penrose
-        // pseudoinverse. sympy 1.14 has no sp.pinv — it's a Matrix
-        // method — so emit the method form (honest AttributeError on
-        // scalars rather than a module-level one).
-        if (name === 'PseudoInverse' && args.length === 2)
+        // pseudoinverse. sympy's pinv is a MatrixBase method — even
+        // MatrixSymbol has no pinv — so only a concrete matrix operand
+        // can exec; anything else flags rather than emitting a
+        // plausible AttributeError. (The `x \in S^{+}` membership case
+        // never reaches here — setArg reads it as the positive part.)
+        if (name === 'PseudoInverse' && args.length === 2) {
+          const a = args[1];
+          const concrete =
+            isHead(a, 'Matrix') ||
+            (isStr(a) && this.scope.matrixNames.has(a));
+          if (!concrete)
+            this.scope.flag(
+              'error',
+              'pseudoinverse needs a concrete matrix — sympy has no symbolic pinv',
+            );
           return [
-            `(${this.emit(args[1], PREC_ATOM)}).pinv()`,
+            `(${isStr(a) ? this.mat(a) : this.emit(a, PREC_ATOM)}).pinv()`,
             PREC_ATOM,
           ];
+        }
         // \bar{x} — the complex-conjugate convention (as \overline{x});
         // SymPy's mean lives in stats and takes a random variable.
         if (name === 'Mean' && args.length === 2)
@@ -2198,13 +2237,14 @@ class Emitter {
             ];
           }
           return [
-            `${this.fn(name)}(${this.emit(expr)}, ${this.emit(cond)})`,
+            `${this.fn(name)}(${this.emit(cond)}, ${this.emit(expr)})`,
             PREC_ATOM,
           ];
         }
+        // sympy's quantifier signature is (symbol, condition).
         if (name === 'Exists' && args.length === 3)
           return [
-            `${this.fn(name)}(${this.emit(args[2])}, ${this.emit(args[1])})`,
+            `${this.fn(name)}(${this.emit(args[1])}, ${this.emit(args[2])})`,
             PREC_ATOM,
           ];
         // `f \circ g` — CE's composition head is literally 'Ring',

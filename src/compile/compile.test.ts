@@ -1138,6 +1138,49 @@ const FIXTURES: {
       'sp.Eq(sp.diff(y(x), x), k * y(x))',
     ],
   },
+  {
+    // `x \in S^{+}` reads S⁺ as the positive part of {S} — not the
+    // pseudoinverse (which needs a concrete matrix; `Matrix.pinv()` is
+    // a method, `sp.pinv` doesn't exist).
+    latex: 'x \\in \\mathbb{S}^{+}',
+    expectedPython: [
+      "x, S_doublestruck = sp.symbols('x S_doublestruck')",
+      'sp.Contains(x, sp.Intersection(sp.FiniteSet(S_doublestruck), sp.Interval.open(0, sp.oo)))',
+    ],
+  },
+  {
+    latex: '\\displaylines{A = \\begin{pmatrix}1&0\\\\0&1\\end{pmatrix} \\\\ A^{+}}',
+    expectedPython: ['A = sp.Matrix([[1, 0], [0, 1]])', '(A).pinv()'],
+  },
+  {
+    // sympy has no symbolic pinv — a bare `A^{+}` flags rather than
+    // emitting a plausible AttributeError (`(A).pinv()` crashes on
+    // Symbol AND MatrixSymbol).
+    latex: 'A^{+}',
+    expectedPython: [
+      'A = sp.MatrixSymbol("A", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
+    ],
+    issues: ['pseudoinverse needs a concrete matrix'],
+  },
+  {
+    // sympy's quantifier signature is (symbol, condition) — the opaque
+    // fallback used to emit the arguments swapped.
+    latex: '\\forall x: x>0',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'ForAll = sp.Function("ForAll")',
+      'ForAll(x, sp.Gt(x, 0))',
+    ],
+    issues: ['unknown head "ForAll"'],
+  },
+  {
+    latex: 'f \\circ g',
+    expectedPython: [
+      'f = sp.Function("f")',
+      'g = sp.Function("g")',
+      'sp.Lambda(sp.Symbol("x"), f(g(sp.Symbol("x"))))',
+    ],
+  },
 ];
 
 describe('worksheet matrix tracking', () => {
