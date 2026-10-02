@@ -177,6 +177,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* Offset parent for the line-anchored issue chips. */
+  position: relative;
 }
 
 /* Markers shown under the field before the issue panel debounces in. */
@@ -560,6 +562,40 @@ body {
   border: 1px solid var(--border);
   border-radius: 4px;
   box-shadow: 0 4px 12px var(--shadow);
+}
+
+/* Inline-tail variant: the ul is a transparent layer over the field;
+   each li is a chip pinned to its own line's measured position, so the
+   layer blocks no input (pointer-events pass through except the chips,
+   which keep hover text) and only the failing line is annotated. */
+.calc-issues-inline {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.calc-issues-inline li {
+  position: absolute;
+  transform: translateY(-50%);
+  max-width: 320px;
+  padding: 1px 6px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px var(--shadow);
+  pointer-events: auto;
+  white-space: nowrap;
+}
+
+.calc-issues-inline .chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .calc-result {
