@@ -40,7 +40,6 @@ BASE_SOURCES = \
   $(SRC_DIR)/services/parser.util.ts \
   $(SRC_DIR)/services/saneKeyboardEvents.util.ts \
   $(SRC_DIR)/services/exportText.ts \
-  $(SRC_DIR)/services/latexRepair.ts \
   $(SRC_DIR)/services/focusBlur.ts \
   $(SRC_DIR)/services/keystroke.ts \
   $(SRC_DIR)/services/latex.ts \

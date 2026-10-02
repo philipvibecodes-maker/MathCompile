@@ -3361,65 +3361,6 @@ var __assign = (this && this.__assign) || function () {
         };
         return Controller_exportText;
     }(ControllerBase));
-    // Salvage ladder for latex the math parser rejects outright. Used by
-    // writeLatex so pasting a corrupted latex fragment inserts a repaired
-    // approximation instead of silently doing nothing. Kept in sync with
-    // src/editor/latex-repair.ts (the app-side copy used for hydration repair).
-    function repairLatex(input, parses, maxAttempts) {
-        if (input.trim() === '')
-            return null;
-        var attempts = 0;
-        var tries = function (candidate) {
-            if (attempts >= maxAttempts)
-                return false;
-            attempts += 1;
-            return parses(candidate);
-        };
-        // 1. an unclosed trailing group closes happily: `x_{` -> `x_{ }`
-        var unescaped = input.replace(/\\./g, '');
-        var opens = 0;
-        var closes = 0;
-        for (var ci = 0; ci < unescaped.length; ci += 1) {
-            if (unescaped.charAt(ci) === '{')
-                opens += 1;
-            else if (unescaped.charAt(ci) === '}')
-                closes += 1;
-        }
-        if (opens > closes) {
-            var balanced = input;
-            for (var bi = 0; bi < opens - closes; bi += 1)
-                balanced += '}';
-            if (tries(balanced))
-                return balanced;
-        }
-        // 2. a raw `\\` row break only parses inside an environment
-        if (/\\\\/.test(input) && input.indexOf('\\displaylines') === -1) {
-            var wrapped = '\\displaylines{' + input + '}';
-            if (tries(wrapped))
-                return wrapped;
-        }
-        var tokens = input.match(/\\[a-zA-Z]+|\\.|./gs) || [];
-        // 3. one stray token mid-string (`x_{a}}y` -> `x_{a}y`)
-        for (var i = 0; i < tokens.length; i += 1) {
-            var candidate = tokens.slice(0, i).join('') + tokens.slice(i + 1).join('');
-            if (tries(candidate))
-                return candidate;
-        }
-        // 4. right-trim: `x_{a}^` -> `x_{a}`, `x_{a}\right)` -> `x_{a}`
-        for (var r = tokens.length - 1; r > 0; r -= 1) {
-            var trimmed = tokens.slice(0, r).join('');
-            if (trimmed.trim() === '')
-                return null;
-            if (tries(trimmed))
-                return trimmed;
-        }
-        return null;
-    }
-    // Last resort: show the raw text rather than a blank field. Braces and
-    // backslashes are stripped since they can't safely appear inside \text.
-    function latexTextFallback(latex) {
-        return '\\text{' + latex.replace(/[{}\\]/g, ' ') + '}';
-    }
     ControllerBase.onNotify(function (cursor, e) {
         // these try to cover all ways that mathquill can be modified
         if (e === 'edit' || e === 'replace' || e === undefined) {
@@ -5828,27 +5769,10 @@ var __assign = (this && this.__assign) || function () {
         MathBlock.prototype.writeLatex = function (cursor, latex) {
             var all = Parser.all;
             var eof = Parser.eof;
-            var parses = function (candidate) {
-                return latexMathParser
-                    .skip(eof)
-                    .or(all.result(false))
-                    .parse(candidate) !== false;
-            };
             var block = latexMathParser
                 .skip(eof)
                 .or(all.result(false))
                 .parse(latex);
-            if (block === false) {
-                // a malformed pasted fragment used to vanish silently; salvage the
-                // nearest parseable string and insert that instead
-                var repaired = repairLatex(latex, parses, 60);
-                if (repaired === null)
-                    repaired = latexTextFallback(latex);
-                block = latexMathParser
-                    .skip(eof)
-                    .or(all.result(false))
-                    .parse(repaired);
-            }
             if (block && !block.isEmpty() && block.prepareInsertionAt(cursor)) {
                 block
                     .children()
@@ -10306,24 +10230,9 @@ var __assign = (this && this.__assign) || function () {
         };
         LatexCommandInput.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
-            // An un-accepted command input holds the raw \name text, which fails
-            // to re-parse whenever the name isn't a real command \u2014 a cell left
-            // holding an abandoned \name input then stored unparseable latex
-            // and came back blank on reload. Serialize unknown names as
-            // \text{name} so the stored latex round-trips; the input atom stays
-            // open and editable either way.
-            var name = this.getEnd(L).latex();
-            if (name &&
-                !Object.prototype.hasOwnProperty.call(LatexCmds, name)) {
-                ctx.uncleanedLatex += '\\text{';
-                this.getEnd(L).latexRecursive(ctx);
-                ctx.uncleanedLatex += '}';
-            }
-            else {
-                ctx.uncleanedLatex += '\\';
-                this.getEnd(L).latexRecursive(ctx);
-                ctx.uncleanedLatex += ' ';
-            }
+            ctx.uncleanedLatex += '\\';
+            this.getEnd(L).latexRecursive(ctx);
+            ctx.uncleanedLatex += ' ';
             this.checkCursorContextClose(ctx);
         };
         LatexCommandInput.prototype.renderCommand = function (cursor) {
@@ -10338,12 +10247,7 @@ var __assign = (this && this.__assign) || function () {
             var latex = this.getEnd(L).latex();
             if (!latex)
                 latex = ' ';
-            // LatexCmds is a plain object: a raw [] lookup picks up inherited
-            // members (\toString, \valueOf, \constructor, ...) and calls them
-            // as command factories below, throwing mid-keystroke.
-            var cmd = Object.prototype.hasOwnProperty.call(LatexCmds, latex)
-                ? LatexCmds[latex]
-                : undefined;
+            var cmd = LatexCmds[latex];
             if (cmd) {
                 var node = void 0;
                 if (isMQNodeClass(cmd)) {
@@ -10686,16 +10590,13 @@ var __assign = (this && this.__assign) || function () {
             var rightFrag = rightStart
                 ? new Fragment(rightStart, rightEnd)
                 : new Fragment(0, 0);
-            // Bump later rows before constructing the new cell \u2014 its ctor adopts
-            // it as a child, so it must not be seen by the increment pass or its
-            // row lands one too high (colliding with the row after it).
+            var newCell = new MatrixCell(cell.row + 1, this);
             this.eachChild(function (child) {
                 var c = child;
                 if (c.row > cell.row)
                     c.row += 1;
                 return undefined;
             });
-            var newCell = new MatrixCell(cell.row + 1, this);
             this.blocks.splice(this.cells.indexOf(cell) + 1, 0, newCell);
             rightFrag.disown();
             rightFrag.adopt(newCell, 0, 0);
@@ -11150,36 +11051,6 @@ var __assign = (this && this.__assign) || function () {
         // at the caret itself when it sits directly inside the line block.
         var splitAfter = atomInLine || cursor[L];
         if (Controller.isControllerRoot(lineBlock)) {
-            // A lone top-level \displaylines env owns the whole cell. Enter typed
-            // beside it (e.g. after mq.latex() hydrates the caret at baseline
-            // right of the env, or after arrows walk out of an edge row) must
-            // split a row inside that env \u2014 wrapping it produces a nested
-            // \displaylines{...} inside a single row.
-            var only = lineBlock.getEnd(L);
-            if (only instanceof DisplayLines &&
-                only === lineBlock.getEnd(R) &&
-                (cursor[R] === only || cursor[L] === only)) {
-                var cells = only.cells;
-                var edgeCell;
-                if (cursor[R] === only) {
-                    // left of the env: splitRowBelow(0) moves the first row down into
-                    // a new row \u2014 the emptied first cell is the new top row
-                    edgeCell = cells[0];
-                    only.splitRowBelow(edgeCell, 0, cursor);
-                }
-                else {
-                    var lastCell = cells[cells.length - 1];
-                    edgeCell = only.splitRowBelow(lastCell, lastCell.getEnd(R), cursor);
-                }
-                only.bubble(function (n) {
-                    n.reflow();
-                    return undefined;
-                });
-                cursor.insAtLeftEnd(edgeCell);
-                ctrlr.notify('edit');
-                ctrlr.scrollHoriz();
-                return;
-            }
             // Wrap the root's whole content in a two-row \displaylines.
             var env = new DisplayLines();
             var cellL = new MatrixCell(0, env);

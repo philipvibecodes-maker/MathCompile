@@ -95,25 +95,9 @@ CharCmds['\\'] = class LatexCommandInput extends MathCommand {
   latexRecursive(ctx: LatexContext) {
     this.checkCursorContextOpen(ctx);
 
-    // An un-accepted command input holds the raw \name text, which fails
-    // to re-parse whenever the name isn't a real command — a cell left
-    // holding an abandoned \name input then stored unparseable latex
-    // and came back blank on reload. Serialize unknown names as
-    // \text{name} so the stored latex round-trips; the input atom stays
-    // open and editable either way.
-    var name = this.getEnd(L).latex();
-    if (
-      name &&
-      !Object.prototype.hasOwnProperty.call(LatexCmds, name)
-    ) {
-      ctx.uncleanedLatex += '\\text{';
-      this.getEnd(L).latexRecursive(ctx);
-      ctx.uncleanedLatex += '}';
-    } else {
-      ctx.uncleanedLatex += '\\';
-      this.getEnd(L).latexRecursive(ctx);
-      ctx.uncleanedLatex += ' ';
-    }
+    ctx.uncleanedLatex += '\\';
+    this.getEnd(L).latexRecursive(ctx);
+    ctx.uncleanedLatex += ' ';
 
     this.checkCursorContextClose(ctx);
   }
@@ -128,12 +112,7 @@ CharCmds['\\'] = class LatexCommandInput extends MathCommand {
 
     var latex = this.getEnd(L).latex();
     if (!latex) latex = ' ';
-    // LatexCmds is a plain object: a raw [] lookup picks up inherited
-    // members (\toString, \valueOf, \constructor, ...) and calls them
-    // as command factories below, throwing mid-keystroke.
-    var cmd = Object.prototype.hasOwnProperty.call(LatexCmds, latex)
-      ? LatexCmds[latex]
-      : undefined;
+    var cmd = LatexCmds[latex];
 
     if (cmd) {
       let node: MQNode;

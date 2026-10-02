@@ -78,22 +78,6 @@ suite('environments', function () {
       mq.typedText('y');
       assert.equal(mq.latex(), '\\displaylines{x\\\\ y+1}');
     });
-
-    test('at the right edge of a lone displaylines env appends a row inside it', function () {
-      mq.latex('\\displaylines{x\\\\ y}');
-      mq.moveToRightEnd();
-      mq.insertLineBreak();
-      assert.equal(mq.latex(), '\\displaylines{x\\\\ y\\\\ }');
-    });
-
-    test('at the left edge of a lone displaylines env inserts a row above', function () {
-      mq.latex('\\displaylines{x\\\\ y}');
-      mq.moveToLeftEnd();
-      mq.insertLineBreak();
-      assert.equal(mq.latex(), '\\displaylines{\\\\ x\\\\ y}');
-      mq.typedText('w');
-      assert.equal(mq.latex(), '\\displaylines{w\\\\ x\\\\ y}');
-    });
   });
 
   suite('matrix editing', function () {

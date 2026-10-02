@@ -74,23 +74,4 @@ suite('paste', function () {
       assertLatex('sqrt1+');
     });
   });
-
-  suite('malformed latex repair', function () {
-    test('dangling bound marker pastes a repaired approximation', function () {
-      simulatePaste(mq, 'x_{a}^');
-      assertLatex('x_{a}');
-    });
-    test('unclosed group is closed on paste', function () {
-      simulatePaste(mq, '\\frac{1}{');
-      assertLatex('\\frac{1}{ }');
-    });
-    test('raw row break pastes inside \\displaylines', function () {
-      simulatePaste(mq, 'x\\\\y');
-      assertLatex('\\displaylines{x\\\\ y}');
-    });
-    test('irrecoverable paste shows the raw text', function () {
-      simulatePaste(mq, '}}}}');
-      assertLatex('\\text{    }');
-    });
-  });
 });

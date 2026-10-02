@@ -347,15 +347,12 @@ class CellGrid extends MathCommand {
       ? new Fragment(rightStart, rightEnd)
       : new Fragment(0, 0);
 
-    // Bump later rows before constructing the new cell — its ctor adopts
-    // it as a child, so it must not be seen by the increment pass or its
-    // row lands one too high (colliding with the row after it).
+    var newCell = new MatrixCell(cell.row + 1, this);
     this.eachChild(function (child) {
       const c = child as MatrixCell;
       if (c.row > cell.row) c.row += 1;
       return undefined;
     });
-    var newCell = new MatrixCell(cell.row + 1, this);
     this.blocks.splice(this.cells.indexOf(cell) + 1, 0, newCell);
 
     rightFrag.disown();
@@ -814,38 +811,6 @@ function insertLineBreakAtCursor(ctrlr: Controller) {
   var splitAfter: NodeRef = atomInLine || (cursor[L] as NodeRef);
 
   if (Controller.isControllerRoot(lineBlock)) {
-    // A lone top-level \displaylines env owns the whole cell. Enter typed
-    // beside it (e.g. after mq.latex() hydrates the caret at baseline
-    // right of the env, or after arrows walk out of an edge row) must
-    // split a row inside that env — wrapping it produces a nested
-    // \displaylines{...} inside a single row.
-    var only = lineBlock.getEnd(L);
-    if (
-      only instanceof DisplayLines &&
-      only === lineBlock.getEnd(R) &&
-      (cursor[R] === only || cursor[L] === only)
-    ) {
-      var cells = only.cells as MatrixCell[];
-      var edgeCell: MatrixCell;
-      if (cursor[R] === only) {
-        // left of the env: splitRowBelow(0) moves the first row down into
-        // a new row — the emptied first cell is the new top row
-        edgeCell = cells[0];
-        only.splitRowBelow(edgeCell, 0, cursor);
-      } else {
-        var lastCell = cells[cells.length - 1];
-        edgeCell = only.splitRowBelow(lastCell, lastCell.getEnd(R), cursor);
-      }
-      only.bubble(function (n) {
-        n.reflow();
-        return undefined;
-      });
-      cursor.insAtLeftEnd(edgeCell);
-      ctrlr.notify('edit');
-      ctrlr.scrollHoriz();
-      return;
-    }
-
     // Wrap the root's whole content in a two-row \displaylines.
     var env = new DisplayLines();
     var cellL = new MatrixCell(0, env);

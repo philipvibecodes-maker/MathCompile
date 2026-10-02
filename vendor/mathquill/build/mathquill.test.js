@@ -3370,65 +3370,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         };
         return Controller_exportText;
     }(ControllerBase));
-    // Salvage ladder for latex the math parser rejects outright. Used by
-    // writeLatex so pasting a corrupted latex fragment inserts a repaired
-    // approximation instead of silently doing nothing. Kept in sync with
-    // src/editor/latex-repair.ts (the app-side copy used for hydration repair).
-    function repairLatex(input, parses, maxAttempts) {
-        if (input.trim() === '')
-            return null;
-        var attempts = 0;
-        var tries = function (candidate) {
-            if (attempts >= maxAttempts)
-                return false;
-            attempts += 1;
-            return parses(candidate);
-        };
-        // 1. an unclosed trailing group closes happily: `x_{` -> `x_{ }`
-        var unescaped = input.replace(/\\./g, '');
-        var opens = 0;
-        var closes = 0;
-        for (var ci = 0; ci < unescaped.length; ci += 1) {
-            if (unescaped.charAt(ci) === '{')
-                opens += 1;
-            else if (unescaped.charAt(ci) === '}')
-                closes += 1;
-        }
-        if (opens > closes) {
-            var balanced = input;
-            for (var bi = 0; bi < opens - closes; bi += 1)
-                balanced += '}';
-            if (tries(balanced))
-                return balanced;
-        }
-        // 2. a raw `\\` row break only parses inside an environment
-        if (/\\\\/.test(input) && input.indexOf('\\displaylines') === -1) {
-            var wrapped = '\\displaylines{' + input + '}';
-            if (tries(wrapped))
-                return wrapped;
-        }
-        var tokens = input.match(/\\[a-zA-Z]+|\\.|./gs) || [];
-        // 3. one stray token mid-string (`x_{a}}y` -> `x_{a}y`)
-        for (var i = 0; i < tokens.length; i += 1) {
-            var candidate = tokens.slice(0, i).join('') + tokens.slice(i + 1).join('');
-            if (tries(candidate))
-                return candidate;
-        }
-        // 4. right-trim: `x_{a}^` -> `x_{a}`, `x_{a}\right)` -> `x_{a}`
-        for (var r = tokens.length - 1; r > 0; r -= 1) {
-            var trimmed = tokens.slice(0, r).join('');
-            if (trimmed.trim() === '')
-                return null;
-            if (tries(trimmed))
-                return trimmed;
-        }
-        return null;
-    }
-    // Last resort: show the raw text rather than a blank field. Braces and
-    // backslashes are stripped since they can't safely appear inside \text.
-    function latexTextFallback(latex) {
-        return '\\text{' + latex.replace(/[{}\\]/g, ' ') + '}';
-    }
     ControllerBase.onNotify(function (cursor, e) {
         // these try to cover all ways that mathquill can be modified
         if (e === 'edit' || e === 'replace' || e === undefined) {
@@ -5837,27 +5778,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         MathBlock.prototype.writeLatex = function (cursor, latex) {
             var all = Parser.all;
             var eof = Parser.eof;
-            var parses = function (candidate) {
-                return latexMathParser
-                    .skip(eof)
-                    .or(all.result(false))
-                    .parse(candidate) !== false;
-            };
             var block = latexMathParser
                 .skip(eof)
                 .or(all.result(false))
                 .parse(latex);
-            if (block === false) {
-                // a malformed pasted fragment used to vanish silently; salvage the
-                // nearest parseable string and insert that instead
-                var repaired = repairLatex(latex, parses, 60);
-                if (repaired === null)
-                    repaired = latexTextFallback(latex);
-                block = latexMathParser
-                    .skip(eof)
-                    .or(all.result(false))
-                    .parse(repaired);
-            }
             if (block && !block.isEmpty() && block.prepareInsertionAt(cursor)) {
                 block
                     .children()
@@ -10315,24 +10239,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         };
         LatexCommandInput.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
-            // An un-accepted command input holds the raw \name text, which fails
-            // to re-parse whenever the name isn't a real command — a cell left
-            // holding an abandoned \name input then stored unparseable latex
-            // and came back blank on reload. Serialize unknown names as
-            // \text{name} so the stored latex round-trips; the input atom stays
-            // open and editable either way.
-            var name = this.getEnd(L).latex();
-            if (name &&
-                !Object.prototype.hasOwnProperty.call(LatexCmds, name)) {
-                ctx.uncleanedLatex += '\\text{';
-                this.getEnd(L).latexRecursive(ctx);
-                ctx.uncleanedLatex += '}';
-            }
-            else {
-                ctx.uncleanedLatex += '\\';
-                this.getEnd(L).latexRecursive(ctx);
-                ctx.uncleanedLatex += ' ';
-            }
+            ctx.uncleanedLatex += '\\';
+            this.getEnd(L).latexRecursive(ctx);
+            ctx.uncleanedLatex += ' ';
             this.checkCursorContextClose(ctx);
         };
         LatexCommandInput.prototype.renderCommand = function (cursor) {
@@ -10347,12 +10256,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             var latex = this.getEnd(L).latex();
             if (!latex)
                 latex = ' ';
-            // LatexCmds is a plain object: a raw [] lookup picks up inherited
-            // members (\toString, \valueOf, \constructor, ...) and calls them
-            // as command factories below, throwing mid-keystroke.
-            var cmd = Object.prototype.hasOwnProperty.call(LatexCmds, latex)
-                ? LatexCmds[latex]
-                : undefined;
+            var cmd = LatexCmds[latex];
             if (cmd) {
                 var node = void 0;
                 if (isMQNodeClass(cmd)) {
@@ -10695,16 +10599,13 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             var rightFrag = rightStart
                 ? new Fragment(rightStart, rightEnd)
                 : new Fragment(0, 0);
-            // Bump later rows before constructing the new cell — its ctor adopts
-            // it as a child, so it must not be seen by the increment pass or its
-            // row lands one too high (colliding with the row after it).
+            var newCell = new MatrixCell(cell.row + 1, this);
             this.eachChild(function (child) {
                 var c = child;
                 if (c.row > cell.row)
                     c.row += 1;
                 return undefined;
             });
-            var newCell = new MatrixCell(cell.row + 1, this);
             this.blocks.splice(this.cells.indexOf(cell) + 1, 0, newCell);
             rightFrag.disown();
             rightFrag.adopt(newCell, 0, 0);
@@ -11159,36 +11060,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         // at the caret itself when it sits directly inside the line block.
         var splitAfter = atomInLine || cursor[L];
         if (Controller.isControllerRoot(lineBlock)) {
-            // A lone top-level \displaylines env owns the whole cell. Enter typed
-            // beside it (e.g. after mq.latex() hydrates the caret at baseline
-            // right of the env, or after arrows walk out of an edge row) must
-            // split a row inside that env — wrapping it produces a nested
-            // \displaylines{...} inside a single row.
-            var only = lineBlock.getEnd(L);
-            if (only instanceof DisplayLines &&
-                only === lineBlock.getEnd(R) &&
-                (cursor[R] === only || cursor[L] === only)) {
-                var cells = only.cells;
-                var edgeCell;
-                if (cursor[R] === only) {
-                    // left of the env: splitRowBelow(0) moves the first row down into
-                    // a new row — the emptied first cell is the new top row
-                    edgeCell = cells[0];
-                    only.splitRowBelow(edgeCell, 0, cursor);
-                }
-                else {
-                    var lastCell = cells[cells.length - 1];
-                    edgeCell = only.splitRowBelow(lastCell, lastCell.getEnd(R), cursor);
-                }
-                only.bubble(function (n) {
-                    n.reflow();
-                    return undefined;
-                });
-                cursor.insAtLeftEnd(edgeCell);
-                ctrlr.notify('edit');
-                ctrlr.scrollHoriz();
-                return;
-            }
             // Wrap the root's whole content in a two-row \displaylines.
             var env = new DisplayLines();
             var cellL = new MatrixCell(0, env);
@@ -14086,20 +13957,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 mq.typedText('y');
                 assert.equal(mq.latex(), '\\displaylines{x\\\\ y+1}');
             });
-            test('at the right edge of a lone displaylines env appends a row inside it', function () {
-                mq.latex('\\displaylines{x\\\\ y}');
-                mq.moveToRightEnd();
-                mq.insertLineBreak();
-                assert.equal(mq.latex(), '\\displaylines{x\\\\ y\\\\ }');
-            });
-            test('at the left edge of a lone displaylines env inserts a row above', function () {
-                mq.latex('\\displaylines{x\\\\ y}');
-                mq.moveToLeftEnd();
-                mq.insertLineBreak();
-                assert.equal(mq.latex(), '\\displaylines{\\\\ x\\\\ y}');
-                mq.typedText('w');
-                assert.equal(mq.latex(), '\\displaylines{w\\\\ x\\\\ y}');
-            });
         });
         suite('matrix editing', function () {
             test('Shift-Spacebar adds a column', function () {
@@ -14550,17 +14407,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     assertParsesLatex(' ', '');
                     assertParsesLatex('{}', '');
                     assertParsesLatex('   {}{} {{{}}  }', '');
-                });
-                test('malformed LaTeX is repaired instead of dropped', function () {
-                    function assertRepairs(str, latex) {
-                        mq.write(str);
-                        assert.equal(mq.latex(), latex);
-                        mq.latex('');
-                    }
-                    assertRepairs('x_{a}^', 'x_{a}');
-                    assertRepairs('\\frac{1}{', '\\frac{1}{ }');
-                    assertRepairs('}}}}', '\\text{    }');
-                    assertRepairs('x\\\\y', '\\displaylines{x\\\\ y}');
                 });
                 test('overflow triggers automatic horizontal scroll', function (done) {
                     var mqEl = mq.el();
@@ -15576,24 +15422,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 mq.moveToLeftEnd();
                 simulatePaste(mq, 'sqrt');
                 assertLatex('sqrt1+');
-            });
-        });
-        suite('malformed latex repair', function () {
-            test('dangling bound marker pastes a repaired approximation', function () {
-                simulatePaste(mq, 'x_{a}^');
-                assertLatex('x_{a}');
-            });
-            test('unclosed group is closed on paste', function () {
-                simulatePaste(mq, '\\frac{1}{');
-                assertLatex('\\frac{1}{ }');
-            });
-            test('raw row break pastes inside \\displaylines', function () {
-                simulatePaste(mq, 'x\\\\y');
-                assertLatex('\\displaylines{x\\\\ y}');
-            });
-            test('irrecoverable paste shows the raw text', function () {
-                simulatePaste(mq, '}}}}');
-                assertLatex('\\text{    }');
             });
         });
     });
@@ -17756,35 +17584,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             test('nonexistent LaTeX command, then symbol', function () {
                 mq.typedText('\\asdf+');
                 assertLatex('\\text{asdf}+');
-            });
-            test('an open unknown-name input serializes reparseable latex', function () {
-                mq.typedText('\\asdf');
-                assertLatex('\\text{asdf}');
-                // stored latex round-trips instead of failing to parse entirely
-                mq.latex(mq.latex());
-                assertLatex('\\text{asdf}');
-            });
-            test('an abandoned unknown-name input inside a bound round-trips', function () {
-                mq.latex('x_{a}');
-                mq.keystroke('Ctrl-Home').keystroke('Right').keystroke('Right');
-                mq.typedText('\\asdf').keystroke('Esc');
-                assertLatex('x_{\\text{asdf}a}');
-                mq.latex(mq.latex());
-                assertLatex('x_{\\text{asdf}a}');
-            });
-            test('prototype-member command names do not throw on accept', function () {
-                mq.typedText('\\toString').keystroke('Enter');
-                assertLatex('\\text{toString}');
-                mq.latex('');
-                mq.typedText('\\valueOf').keystroke('Spacebar');
-                assertLatex('\\text{valueOf}');
-                mq.latex('');
-                mq.typedText('\\constructor').keystroke('Tab');
-                assertLatex('\\text{constructor}');
-            });
-            test('an open input holding a real command name serializes it', function () {
-                mq.typedText('\\sqrt');
-                assertLatex('\\sqrt');
             });
             test('dollar sign', function () {
                 mq.typedText('$');
