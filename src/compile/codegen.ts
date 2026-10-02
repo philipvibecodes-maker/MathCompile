@@ -95,14 +95,18 @@ const CONSTANTS: Record<string, string> = {
   False: 'False',
 };
 
-// \mathbb{R}^{+/-/_+/_-}-style leaf sets CE emits as plain symbol names
-// (CONSTANTS can only hold one-segment S.* names — these are intervals).
-// Value: [lo, hi, openLo].
-const LEAF_SETS: Record<string, [string, string, boolean]> = {
-  PositiveNumbers: ['0', 'oo', true],
-  NegativeNumbers: ['-oo', '0', true],
-  NonNegativeNumbers: ['0', 'oo', false],
-  NonPositiveNumbers: ['-oo', '0', false],
+// \mathbb{S}^{+/-/_+/_-}-style leaf sets CE emits as plain symbol names
+// (CONSTANTS can only hold one-segment S.* names — these are intervals
+// or integer intersections).
+const LEAF_SETS: Record<string, string> = {
+  PositiveNumbers: 'Interval.open(0, oo)',
+  NegativeNumbers: 'Interval.open(-oo, 0)',
+  NonNegativeNumbers: 'Interval(0, oo)',
+  NonPositiveNumbers: 'Interval(-oo, 0)',
+  PositiveIntegers: 'S.Naturals',
+  NonNegativeIntegers: 'S.Naturals0',
+  NegativeIntegers: 'Intersection(S.Integers, Interval.open(-oo, 0))',
+  NonPositiveIntegers: 'Intersection(S.Integers, Interval(-oo, 0))',
 };
 
 // Known function heads -> the SymPy function name to call.
@@ -181,7 +185,10 @@ const SP_FUNC_MIN_ARGS: Record<string, number> = {
 // Complement emission (those raise TypeError on plain Symbols).
 const SETISH_SYMBOLS = new Set([
   'EmptySet', 'RealNumbers', 'ComplexNumbers', 'RationalNumbers',
-  'Integers', 'NonNegativeIntegers', 'Primes',
+  'Integers', 'NonNegativeIntegers', 'NonPositiveIntegers',
+  'PositiveIntegers', 'NegativeIntegers', 'Primes',
+  'PositiveNumbers', 'NegativeNumbers',
+  'NonNegativeNumbers', 'NonPositiveNumbers',
 ]);
 const SETISH_HEADS = new Set([
   'Interval', 'Set', 'FiniteSet', 'Union', 'Intersection', 'SetMinus',
@@ -504,16 +511,11 @@ class Emitter {
       // emits these as leaf symbol names; bare symbols named
       // "PositiveNumbers" are meaningless, so emit the interval set.
       if (LEAF_SETS[node] !== undefined) {
-        const s = this.sp;
-        const [lo, hi, openLo] = LEAF_SETS[node];
-        const b = (e: string) =>
-          e === '-oo' ? `-${s}oo` : e === 'oo' ? `${s}oo` : e;
-        return [
-          openLo
-            ? `${s}Interval.open(${b(lo)}, ${b(hi)})`
-            : `${s}Interval(${b(lo)}, ${b(hi)})`,
-          PREC_ATOM,
-        ];
+        const expr = LEAF_SETS[node].replace(
+          /\b(oo|S|Interval|Intersection|FiniteSet|Union|Complement|Contains)\b/g,
+          (m) => `${this.sp}${m}`,
+        );
+        return [expr, PREC_ATOM];
       }
       if (node === 'Nothing') {
         this.scope.flag('error', 'missing argument cannot be emitted');
@@ -1352,17 +1354,24 @@ class Emitter {
         // Euler's totient.
         if (name === 'GoldenRatio' && args.length === 2)
           return [`${this.sp}totient(${this.emit(args[1])})`, PREC_ATOM];
-        // \mathbb{R}^- / \mathbb{R}^+ — Superminus/Superplus are
-        // call-wrapped here, not in the head switch: emit the interval.
+        // \mathbb{S}^- / \mathbb{S}^+ — the negative/positive half of
+        // S, i.e. S ∩ (−∞,0) / S ∩ (0,∞): \mathbb{Z}^- needs the
+        // intersection (it isn't an interval), \mathbb{R}^± reduces to
+        // the open interval anyway.
         if (
           (name === 'Superminus' || name === 'Superplus') &&
           args.length === 2 &&
-          args[1] === 'RealNumbers'
-        )
+          this.isSetish(args[1])
+        ) {
+          const range =
+            name === 'Superminus'
+              ? `${this.sp}Interval.open(-${this.sp}oo, 0)`
+              : `${this.sp}Interval.open(0, ${this.sp}oo)`;
           return [
-            `${this.sp}Interval.open(${(name === 'Superminus' ? `-${this.sp}oo, 0` : `0, ${this.sp}oo`)})`,
+            `${this.sp}Intersection(${this.emit(args[1])}, ${range})`,
             PREC_ATOM,
           ];
+        }
         // \bar{x} — the complex-conjugate convention (as \overline{x});
         // SymPy's mean lives in stats and takes a random variable.
         if (name === 'Mean' && args.length === 2)
@@ -1392,12 +1401,19 @@ class Emitter {
           ];
         // `z^{*}`/`A^{*}` — CE's superscript-star head. A declared
         // matrix reads as the conjugate transpose (Adjoint crashes on
-        // scalars); anything else is the complex conjugate.
+        // scalars); a set operand reads as S∖{0} (`\mathbb{Z}^{*}` —
+        // conjugate of a Set raised TypeError); anything else is the
+        // complex conjugate.
         if (name === 'Superstar' && args.length === 2) {
           const a = args[1];
           if (isStr(a) && this.scope.matrices.has(a))
             return [
               `${this.sp}Adjoint(${this.matrixArg(a, '*') ?? 'None'})`,
+              PREC_ATOM,
+            ];
+          if (this.isSetish(a))
+            return [
+              `${this.sp}Complement(${this.emit(a)}, ${this.sp}FiniteSet(0))`,
               PREC_ATOM,
             ];
           return [`${this.sp}conjugate(${this.emit(a)})`, PREC_ATOM];

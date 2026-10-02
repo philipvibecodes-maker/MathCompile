@@ -292,6 +292,28 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
   });
 
+  it('lowers signed/starred leaf sets to real SymPy sets', () => {
+    // `\mathbb{Z}^+` was a bare `PositiveIntegers` symbol; `S^±` on a
+    // non-Real set hit a flagged stub, and `S^*` emitted
+    // `conjugate(Integers)` — TypeError on a Set.
+    expect(calc('\\mathbb{Z}^{+}').statements[0].code).toBe('sp.S.Naturals');
+    expect(calc('\\mathbb{Z}^{-}').statements[0].code).toBe(
+      'sp.Intersection(sp.S.Integers, sp.Interval.open(-sp.oo, 0))',
+    );
+    expect(calc('\\mathbb{Z}^{*}').statements[0].code).toBe(
+      'sp.Complement(sp.S.Integers, sp.FiniteSet(0))',
+    );
+    expect(calc('\\mathbb{R}^{+}').statements[0].code).toBe(
+      'sp.Interval.open(0, sp.oo)',
+    );
+    expect(calc('\\mathbb{Q}^{-}').statements[0].code).toBe(
+      'sp.Intersection(sp.S.Rationals, sp.Interval.open(-sp.oo, 0))',
+    );
+    expect(calc('x \\in \\mathbb{Z}^{+}').statements[0].code).toBe(
+      'sp.Contains(x, sp.S.Naturals)',
+    );
+  });
+
   it('lowers \\Re/\\Im/\\arg/\\operatorname{erf} to real sympy names', () => {
     // These parse to Real/Imaginary/Argument/Erf — `sp.<Head>` doesn't
     // exist, so each row raised 'module sympy has no attribute'.
