@@ -664,7 +664,7 @@ class Emitter {
     // Error nodes carry a normalizer diagnostic — flag so the enclosing
     // statement is dropped instead of emitting `sp.Error(...)` noise.
     if (isHead(node, 'Error')) {
-      this.scope.flag('error', 'unparseable input — statement skipped');
+      this.scope.flag('error', UNPARSEABLE_MSG);
       return 'None';
     }
     const [text, prec] = this.inner(node);
@@ -2437,6 +2437,12 @@ function buildScope(
   };
 }
 
+// `emit` flags a dropped Error node with this generic message; the
+// normalizer already issued the real diagnostic, so the placeholder is
+// marker-only — the python overlay renders it as a ! icon (never text)
+// and the calculator drops it from statement errors entirely.
+const UNPARSEABLE_MSG = 'unparseable input — statement skipped';
+
 export interface CalcStatement {
   /** Python source for the statement: exec'd (Assign/Def) or eval'd
    * (expression) by the calculator worker. */
@@ -2478,10 +2484,21 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
   const scope = buildScope(true, declared, declaredFns, issues, [[]], 0);
   const { defs, parts } = cellBody(ir, scope);
   // Statements dropped by an emission error carry it in place — the
-  // error becomes their row so the cell keeps written order.
+  // error becomes their row so the cell keeps written order. The
+  // "statement skipped" placeholder doesn't count as an error here:
+  // the normalizer's diagnostic already reports the problem, so a
+  // statement left with no code and no real error yields no row.
   const statements = parts
-    .filter(({ out, errs }) => out.lines.length > 0 || errs.length > 0)
     .map(({ out, errs }) => ({
+      out,
+      error:
+        errs
+          .map((i) => i.message)
+          .filter((m) => m !== UNPARSEABLE_MSG)
+          .join('; ') || undefined,
+    }))
+    .filter(({ out, error }) => out.lines.length > 0 || error !== undefined)
+    .map(({ out, error }) => ({
       // The worker evals each statement as written, so the result
       // pipeline (doit -> simplify -> decreasing-degree order) is
       // emitted INTO the program — Show code then displays exactly
@@ -2492,7 +2509,7 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
           ? calcEval(out.lines[0])
           : out.lines.join('\n'),
       display: out.display === undefined ? undefined : calcEval(out.display),
-      error: errs.map((i) => i.message).join('; ') || undefined,
+      error,
     }));
   // Statement-bound errors are reported by their rows — drop them from
   // the program issue list so they aren't also appended at the end.

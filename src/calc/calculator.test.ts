@@ -730,22 +730,23 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(calc('2^{-1}').statements[0].code).toBe(F('sp.Pow(2, -1)'));
   });
 
-  it('keeps a failed statement as an in-place error row', () => {
-    // `\foo(1) \\ x+1` used to append the line-1 error AFTER the line-2
-    // result — the error now keeps its written position.
+  it('reports an unparseable statement via the issue list, not a row', () => {
+    // `emit` flags a dropped Error node with a "statement skipped"
+    // placeholder — redundant with the normalizer's real diagnostic,
+    // which rides the issue list (the python overlay also never shows
+    // the placeholder as text, only as a ! icon).
     const prog = calc(
       '\\displaylines{\\foo\\left(1\\right)\\\\ x+1}',
     );
     expect(prog.statements).toEqual([
-      { code: '', display: undefined, error: expect.any(String) },
       { code: F('x + 1'), display: undefined, error: undefined },
     ]);
-    // Statement-bound errors aren't re-appended at the program level.
-    expect(
-      prog.issues.filter(
-        (i) => i.severity === 'error' && /statement skipped/.test(i.message),
-      ),
-    ).toEqual([]);
+    expect(prog.issues).toEqual([
+      {
+        severity: 'error',
+        message: 'incomplete or unsupported command "\\foo"',
+      },
+    ]);
   });
 });
 
