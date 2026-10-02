@@ -323,22 +323,28 @@
               {/each}
             </select>
           </label>
-          {#if appStore.target === 'calculator' && (calcEngine.status === 'loading' || calcEngine.status === 'error')}
-            <div
-              class="engine-status"
+          {#if appStore.target === 'calculator'}
+            <!-- Persistent inline chip — swaps its label instead of
+                 unmounting, so the header row never changes size. -->
+            <span
+              class="engine-chip"
               class:engine-error={calcEngine.status === 'error'}
               role="status"
+              title={calcEngine.status === 'loading'
+                ? 'The SymPy engine is still loading — interim results use a faster, less accurate engine.'
+                : calcEngine.status === 'error'
+                  ? calcEngine.error
+                  : 'SymPy engine ready'}
             >
               {#if calcEngine.status === 'loading'}
                 <span class="engine-spinner" aria-hidden="true"></span>
-                <span>
-                  <strong>Loading SymPy engine…</strong>
-                  interim results use a faster, less accurate engine
-                </span>
+                SymPy loading…
+              {:else if calcEngine.status === 'error'}
+                SymPy failed to load
               {:else}
-                <span>SymPy engine failed to load — {calcEngine.error}</span>
+                SymPy ready
               {/if}
-            </div>
+            </span>
           {/if}
           {#if compiled && appStore.target === 'python'}
             <label class="option-checkbox output-import-all">

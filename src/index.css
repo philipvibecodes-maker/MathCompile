@@ -547,18 +547,20 @@ body {
   color: var(--faint);
 }
 
-/* Engine-status banner in the output column header — visible while the
-   Pyodide/SymPy worker boots (or failed to). */
-.engine-status {
-  flex: 1 1 100%;
-  display: flex;
+/* Persistent engine-state chip inline in the output header — it swaps
+   its label (loading -> ready/failed) rather than unmounting, so the
+   header row never changes size. */
+.engine-chip {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--muted);
+  gap: 5px;
+  font-size: 11px;
+  color: var(--faint);
+  white-space: nowrap;
+  cursor: default;
 }
 
-.engine-status.engine-error {
+.engine-chip.engine-error {
   color: var(--danger);
 }
 
