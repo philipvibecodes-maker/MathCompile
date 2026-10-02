@@ -43,6 +43,7 @@
             .map((r) => ({
               severity: r.severity ?? 'error',
               message: r.error,
+              line: r.line,
             }));
     cellIssues[cell.id] = issues;
     return () => {

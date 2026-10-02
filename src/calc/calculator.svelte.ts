@@ -24,6 +24,9 @@ export interface CalcRowErr {
    * advisories that didn't stop anything — the row's issue panel styles
    * them like the python target's overlay does. */
   severity?: 'error' | 'note';
+  /** 0-based input line the error came from — where a line-anchored
+   * indicator would pin. Undefined = not line-bound. */
+  line?: number;
 }
 export type CalcRow = CalcRowOk | CalcRowErr;
 
@@ -38,7 +41,9 @@ export const calcEngine = $state<{ status: EngineStatus; error: string }>({
 
 // Issues per cell, published by CalcOutput as evaluation lands — the
 // input column's CalcIssues renders the messages under the field.
-export const cellIssues = $state<Record<number, Issue[]>>({});
+export const cellIssues = $state<
+  Record<number, (Issue & { line?: number })[]>
+>({});
 
 interface WorkerReply {
   type?: 'ready' | 'init-error';
@@ -147,6 +152,8 @@ export function evaluate(cell: {
         ok: false as const,
         error: i.message,
         severity: i.severity,
+        // Unbound issues anchor at the first failed statement's line.
+        line: prog.errorLine,
       }) as CalcRow,
   );
   if (prog.statements.length === 0)
@@ -163,7 +170,13 @@ export function evaluate(cell: {
     pending.set(id, {
       resolve: (r) => {
         clearTimeout(timer);
-        resolve([...r, ...issueRows]);
+        resolve([
+          // Statement errors anchor at their own input line.
+          ...r.map((row, i) =>
+            row.ok ? row : { ...row, line: prog.statements[i]?.line },
+          ),
+          ...issueRows,
+        ]);
       },
       reject: (e) => {
         clearTimeout(timer);

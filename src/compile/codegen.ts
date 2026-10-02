@@ -2453,6 +2453,9 @@ export interface CalcStatement {
   /** Set when the statement itself failed to emit — reported as an
    * error row in place so the cell keeps written order. */
   error?: string;
+  /** 0-based input line (displayline index) the statement came from —
+   * where a line-anchored issue indicator would pin. */
+  line?: number;
 }
 
 export interface CalcProgram {
@@ -2462,6 +2465,9 @@ export interface CalcProgram {
   statements: CalcStatement[];
   /** Normalization + codegen issues for the cell. */
   issues: Issue[];
+  /** 0-based line of the first statement that failed to emit — where
+   * unbound issues (which carry no line of their own) anchor. */
+  errorLine?: number;
 }
 
 // Wrap an evaluated expression in the worker's result pipeline so the
@@ -2488,17 +2494,22 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
   // "statement skipped" placeholder doesn't count as an error here:
   // the normalizer's diagnostic already reports the problem, so a
   // statement left with no code and no real error yields no row.
+  let errorLine: number | undefined;
   const statements = parts
-    .map(({ out, errs }) => ({
-      out,
-      error:
-        errs
-          .map((i) => i.message)
-          .filter((m) => m !== UNPARSEABLE_MSG)
-          .join('; ') || undefined,
-    }))
+    .map(({ out, errs }, i) => {
+      if (errs.length > 0 && errorLine === undefined) errorLine = i;
+      return {
+        out,
+        line: i,
+        error:
+          errs
+            .map((e) => e.message)
+            .filter((m) => m !== UNPARSEABLE_MSG)
+            .join('; ') || undefined,
+      };
+    })
     .filter(({ out, error }) => out.lines.length > 0 || error !== undefined)
-    .map(({ out, error }) => ({
+    .map(({ out, error, line }) => ({
       // The worker evals each statement as written, so the result
       // pipeline (doit -> simplify -> decreasing-degree order) is
       // emitted INTO the program — Show code then displays exactly
@@ -2510,6 +2521,8 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
           : out.lines.join('\n'),
       display: out.display === undefined ? undefined : calcEval(out.display),
       error,
+      // Line anchors only matter where an error points back at input.
+      ...(error !== undefined ? { line } : {}),
     }));
   // Statement-bound errors are reported by their rows — drop them from
   // the program issue list so they aren't also appended at the end.
@@ -2521,5 +2534,6 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
     prelude: ['import sympy as sp', CALC_RUNTIME_PY, ...defs],
     statements,
     issues: issues.filter((i) => !consumed.has(i)),
+    errorLine,
   };
 }
