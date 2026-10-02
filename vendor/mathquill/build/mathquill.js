@@ -208,6 +208,7 @@ var __assign = (this && this.__assign) || function () {
     var U_NARY_PRODUCT = '\u220F';
     var U_NARY_COPRODUCT = '\u2210';
     var U_INTEGRAL = '\u222B';
+    var U_DOUBLE_INTEGRAL = '\u222C';
     /**
      * Like `el.getBoundingClientRect()` but avoids throwing for
      * disconnected and hidden elements in IE <= 11.
@@ -8668,6 +8669,10 @@ var __assign = (this && this.__assign) || function () {
                 var thisDir = this[dir];
                 var pt = void 0;
                 if (thisDir instanceof SupSub) {
+                    // Bounds present before the weld; a bound the weld leaves empty
+                    // was never filled, so it's dropped below (e.g. `x^{ }` typed
+                    // then `2` is `x_{2}`, not `x_{2}^{ }`).
+                    var hadSub = !!thisDir.sub, hadSup = !!thisDir.sup;
                     // equiv. to 'sub sup'.split(' ').forEach(function(supsub) { ... });
                     for (var supsub = 'sub'; supsub; supsub = supsub === 'sub' ? 'sup' : false) {
                         var src = this[supsub], dest = thisDir[supsub];
@@ -8697,6 +8702,15 @@ var __assign = (this && this.__assign) || function () {
                                 cursor.insAtDirEnd(-dir, dest || src);
                             };
                         })(dest, src);
+                        // A bound that was already there and the weld leaves empty was
+                        // never filled \u2014 drop it (e.g. `x^{ }` then `2` is `x_{2}`,
+                        // not `x_{2}^{ }`). The bound just welded may itself be empty;
+                        // it's the cursor's landing spot, so only the opposite side is
+                        // a prune candidate.
+                        var oppositeSupsub = supsub === 'sub' ? 'sup' : 'sub';
+                        if ((oppositeSupsub === 'sub' ? hadSub : hadSup) &&
+                            thisDir[oppositeSupsub].isEmpty())
+                            thisDir.removeEmptyBound(oppositeSupsub);
                     }
                     this.remove();
                     if (cursor && cursor[L] === this) {
@@ -8908,6 +8922,26 @@ var __assign = (this && this.__assign) || function () {
             for (var i = 0; i < 2; i += 1) {
                 _loop_4(i);
             }
+        };
+        // Drops a bound block that has no contents, e.g. the stale `^{ }` left
+        // behind when a digit autosub welds into `x^{ }` (`x_{2}^{ }` ->
+        // `x_{2}`). Mirrors the teardown `deleteOutOf` performs per bound.
+        SupSub.prototype.removeEmptyBound = function (supsub) {
+            var block = this[supsub];
+            if (!block || !block.isEmpty())
+                return;
+            var oppositeSupsub = supsub === 'sub' ? 'sup' : 'sub';
+            var updown = supsub === 'sub' ? 'down' : 'up';
+            this.supsub = oppositeSupsub;
+            delete this[supsub];
+            delete this["".concat(updown, "Into")];
+            var remaining = this[oppositeSupsub];
+            remaining["".concat(updown, "OutOf")] = insLeftOfMeUnlessAtEnd;
+            delete remaining.deleteOutOf;
+            if (supsub === 'sub') {
+                this.domFrag().addClass('mq-sup-only').children().last().remove();
+            }
+            block.remove();
         };
         return SupSub;
     }(MathCommand));
@@ -9121,7 +9155,7 @@ var __assign = (this && this.__assign) || function () {
             ]), undefined, speak);
         };
     };
-    LatexCmds['\u222c'] = LatexCmds.iint = boundlessIntegral('\\iint ', U_INTEGRAL, 'indefinite integral');
+    LatexCmds['\u222c'] = LatexCmds.iint = boundlessIntegral('\\iint ', U_DOUBLE_INTEGRAL, 'double integral');
     LatexCmds.antid = boundlessIntegral('\\antid ', U_INTEGRAL, 'antiderivative');
     var Fraction = (LatexCmds.frac =
         LatexCmds.dfrac =
@@ -9676,11 +9710,31 @@ var __assign = (this && this.__assign) || function () {
                         this.matchBrack(opts, R, cursor[R]) ||
                             this.matchBrack(opts, L, cursor[L]) ||
                             this.matchBrack(opts, 0, cursor.parent.parent);
+                    if (!brack) {
+                        // a pipe typed inside a block also closes an enclosing open
+                        // bracket at any depth
+                        var ancestor = cursor.parent.parent;
+                        while (ancestor && !brack) {
+                            brack = this.matchBrack(opts, 0, ancestor);
+                            ancestor = ancestor.parent ? ancestor.parent.parent : undefined;
+                        }
+                    }
                 }
                 else {
                     brack =
                         this.matchBrack(opts, -this.side, cursor[-this.side]) ||
                             this.matchBrack(opts, -this.side, cursor.parent.parent);
+                    if (!brack) {
+                        // No match beside or just above the caret \u2014 a close bracket
+                        // typed inside a block (e.g. `)` inside the bound of `(x_{1|}`)
+                        // should close a matching open bracket enclosing the caret at
+                        // any depth, not auto-expand around the block's contents.
+                        var ancestor = cursor.parent.parent;
+                        while (ancestor && !brack) {
+                            brack = this.matchBrack(opts, -this.side, ancestor);
+                            ancestor = ancestor.parent ? ancestor.parent.parent : undefined;
+                        }
+                    }
                 }
             }
             if (brack) {

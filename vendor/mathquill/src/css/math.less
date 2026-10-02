@@ -201,6 +201,19 @@
       vertical-align: -1.1em;
       padding-right: 0.2em;
 
+      // A sign carrying only an upper bound still sets that bound above
+      // itself; the generic `.mq-supsub.mq-sup-only` rule below would
+      // float it as an ordinary exponent.
+      &.mq-sup-only {
+        vertical-align: -1.1em;
+
+        // Lift the lone bound to where it sits when a lower bound is
+        // also present.
+        > .mq-sup {
+          vertical-align: 1.5em;
+        }
+      }
+
       // Plain SupSub has no .mq-sup-inner (unlike the large-operator
       // template), so spread the bounds with margins instead.
       > .mq-sup {

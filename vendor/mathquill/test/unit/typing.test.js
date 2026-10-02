@@ -422,6 +422,41 @@ suite('typing with auto-replaces', function () {
         mq.typedText('1+(2+(3+4)+5)+6');
         assertLatex('1+\\left(2+\\left(3+4\\right)+5\\right)+6');
       });
+
+      test('close-paren typed inside a subscript closes the outer pair (x_1)', function () {
+        mq.typedText('(x_1)');
+        assertLatex('\\left(x_{1}\\right)');
+      });
+
+      test('close-paren typed inside a superscript closes the outer pair (x^1)', function () {
+        mq.typedText('(x^1)');
+        assertLatex('\\left(x^{1}\\right)');
+      });
+
+      test('close-brace typed inside a subscript closes the outer pair {x_1}', function () {
+        mq.typedText('{x_1}');
+        assertLatex('\\left\\{x_{1}\\right\\}');
+      });
+
+      test('close-paren inside a bound reaches past siblings to the open pair (x_1)(y_2)', function () {
+        mq.typedText('(x_1)(y_2)');
+        assertLatex('\\left(x_{1}\\right)\\left(y_{2}\\right)');
+      });
+
+      test('close-paren inside a bound still prefers an open bracket inside the bound', function () {
+        mq.typedText('(x_(1)');
+        assertLatex('\\left(x_{\\left(1\\right)}\\right)');
+      });
+
+      test('close-paren inside a bound with no open bracket wraps the bound (x_1)', function () {
+        mq.typedText('x_1)');
+        assertLatex('x_{\\left(1\\right)}');
+      });
+
+      test('close-paren inside a nested bound closes the outer pair (a_{i_j})', function () {
+        mq.typedText('(a_{i_j})');
+        assertLatex('\\left(a_{\\left\\{i_{j}\\right\\}}\\right)');
+      });
     });
 
     suite('mismatched brackets', function () {

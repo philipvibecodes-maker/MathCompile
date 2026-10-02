@@ -440,6 +440,11 @@ class SupSub extends MathCommand {
       const thisDir = this[dir];
       let pt;
       if (thisDir instanceof SupSub) {
+        // Bounds present before the weld; a bound the weld leaves empty
+        // was never filled, so it's dropped below (e.g. `x^{ }` typed
+        // then `2` is `x_{2}`, not `x_{2}^{ }`).
+        const hadSub = !!thisDir.sub,
+          hadSup = !!thisDir.sup;
         // equiv. to 'sub sup'.split(' ').forEach(function(supsub) { ... });
         for (
           var supsub: 'sub' | 'sup' | false = 'sub';
@@ -469,6 +474,17 @@ class SupSub extends MathCommand {
               cursor.insAtDirEnd(-dir as Direction, dest || src);
             };
           })(dest, src);
+          // A bound that was already there and the weld leaves empty was
+          // never filled — drop it (e.g. `x^{ }` then `2` is `x_{2}`,
+          // not `x_{2}^{ }`). The bound just welded may itself be empty;
+          // it's the cursor's landing spot, so only the opposite side is
+          // a prune candidate.
+          const oppositeSupsub = supsub === 'sub' ? 'sup' : 'sub';
+          if (
+            (oppositeSupsub === 'sub' ? hadSub : hadSup) &&
+            thisDir[oppositeSupsub]!.isEmpty()
+          )
+            thisDir.removeEmptyBound(oppositeSupsub);
         }
         this.remove();
         if (cursor && cursor[L] === this) {
@@ -686,6 +702,25 @@ class SupSub extends MathCommand {
         this.remove();
       };
     }
+  }
+  // Drops a bound block that has no contents, e.g. the stale `^{ }` left
+  // behind when a digit autosub welds into `x^{ }` (`x_{2}^{ }` ->
+  // `x_{2}`). Mirrors the teardown `deleteOutOf` performs per bound.
+  removeEmptyBound(supsub: 'sub' | 'sup') {
+    const block = this[supsub];
+    if (!block || !block.isEmpty()) return;
+    const oppositeSupsub = supsub === 'sub' ? 'sup' : 'sub';
+    const updown = supsub === 'sub' ? 'down' : 'up';
+    this.supsub = oppositeSupsub;
+    delete this[supsub];
+    delete this[`${updown}Into`];
+    const remaining = this[oppositeSupsub]!;
+    remaining[`${updown}OutOf`] = insLeftOfMeUnlessAtEnd;
+    delete (remaining as any).deleteOutOf;
+    if (supsub === 'sub') {
+      this.domFrag().addClass('mq-sup-only').children().last().remove();
+    }
+    block.remove();
   }
 }
 
@@ -912,8 +947,8 @@ const boundlessIntegral = (ctrlSeq: string, glyph: string, speak: string) => {
 
 LatexCmds['∬'] = LatexCmds.iint = boundlessIntegral(
   '\\iint ',
-  U_INTEGRAL,
-  'indefinite integral'
+  U_DOUBLE_INTEGRAL,
+  'double integral'
 );
 LatexCmds.antid = boundlessIntegral('\\antid ', U_INTEGRAL, 'antiderivative');
 
@@ -1501,6 +1536,15 @@ class Bracket extends DelimsNode {
           this.matchBrack(opts, R, cursor[R]) ||
           this.matchBrack(opts, L, cursor[L]) ||
           this.matchBrack(opts, 0, cursor.parent.parent);
+        if (!brack) {
+          // a pipe typed inside a block also closes an enclosing open
+          // bracket at any depth
+          var ancestor = cursor.parent.parent;
+          while (ancestor && !brack) {
+            brack = this.matchBrack(opts, 0, ancestor);
+            ancestor = ancestor.parent ? ancestor.parent.parent : undefined;
+          }
+        }
       } else {
         brack =
           this.matchBrack(
@@ -1513,6 +1557,21 @@ class Bracket extends DelimsNode {
             -this.side as BracketSide,
             cursor.parent.parent
           );
+        if (!brack) {
+          // No match beside or just above the caret — a close bracket
+          // typed inside a block (e.g. `)` inside the bound of `(x_{1|}`)
+          // should close a matching open bracket enclosing the caret at
+          // any depth, not auto-expand around the block's contents.
+          var ancestor = cursor.parent.parent;
+          while (ancestor && !brack) {
+            brack = this.matchBrack(
+              opts,
+              -this.side as BracketSide,
+              ancestor
+            );
+            ancestor = ancestor.parent ? ancestor.parent.parent : undefined;
+          }
+        }
       }
     }
     if (brack) {
