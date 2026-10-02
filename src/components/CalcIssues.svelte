@@ -48,9 +48,12 @@
   let overlayEl = $state<HTMLElement | undefined>(undefined);
   let overlayW = $state(0);
   $effect(() => {
-    issues;
-    cell.latex;
-    anchors = appStore.fields.get(cell.id)?.lineAnchors() ?? [];
+    // Re-measure whenever the field's content or its issue set changes
+    // (issues land long after MathQuill finishes rendering a keystroke).
+    anchors =
+      cell.latex !== '' || issues.length > 0
+        ? (appStore.fields.get(cell.id)?.lineAnchors() ?? [])
+        : [];
     // The layer spans .cell-input — each chip's max width is the space
     // left of it to the cell edge, so a message is only truncated when
     // the cell itself runs out of room.
