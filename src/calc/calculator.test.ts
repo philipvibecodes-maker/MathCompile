@@ -543,6 +543,22 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(calc('A^{+}').statements[0].code).toBe('(A).pinv()');
   });
 
+  it('shows matrix assignments unevaluated — Eq(Symbol, Matrix) is literal False', () => {
+    // `A = [[1,0],[0,1]]` displayed `False` — Eq collapses against a
+    // Matrix; evaluate=False keeps the row reading `A = …`.
+    const m = calc('A = \\begin{pmatrix}1&0\\\\0&1\\end{pmatrix}');
+    expect(m.statements[0].display).toContain('evaluate=False');
+    // A name assigned to another matrix (`B = A`) counts as matrix-valued.
+    const b = calc(
+      'A = \\begin{pmatrix}1&0\\\\0&1\\end{pmatrix} \\ \\\\ \\ B = A',
+    );
+    expect(b.statements[1].display).toContain('evaluate=False');
+    // Scalar assigns keep the evaluated Eq display.
+    expect(calc('a = 5').statements[0].display).not.toContain(
+      'evaluate=False',
+    );
+  });
+
   it('peels a differential nested inside the integrand argument', () => {
     // `\int \sin\theta\text{d}\theta` — CE binds the dθ inside the
     // trig arg: Sin(θ·d·θ). The pair peels from the last argument.

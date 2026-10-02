@@ -264,6 +264,9 @@ interface Scope {
   /** Names used as matrices (\det A, \operatorname{tr}(A)) ->
    * `sp.MatrixSymbol` def lines. */
   matrices: Map<string, string>;
+  /** Assigned names whose value is a matrix (`A = [[..]]`, `B = A`) —
+   * an Eq display for these collapses to literal False. */
+  matrixNames: Set<string>;
   /** Free symbol name -> emitted python identifier, insertion-ordered.
    * A def line is emitted in the cell where the name is first needed. */
   symbols: Map<string, string>;
@@ -1929,6 +1932,19 @@ function emitExprStatement(node: MathJson, emitter: Emitter): StatementOut {
   return { lines: [line] };
 }
 
+// `a = 5` shows `a = 5` — a fresh Symbol for the target renders the raw
+// name (`x_{1}` shows subscripted, not `x_1`). A matrix RHS needs
+// evaluate=False: Eq(Symbol, Matrix) collapses to literal False.
+function assignDisplay(
+  sp: string,
+  name: string,
+  rhs: string,
+  matrixRhs = false,
+): string {
+  const uneval = matrixRhs ? ', evaluate=False' : '';
+  return `${sp}Eq(${sp}Symbol(${JSON.stringify(name)}), ${rhs}${uneval})`;
+}
+
 function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
   const sp = emitter.scope.qualified ? 'sp.' : '';
   if (!isArr(node)) return emitExprStatement(node, emitter);
@@ -1939,13 +1955,19 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     const before = emitter.scope.errorCount;
     const rhs = emitter.emit(node[2]);
     const name = isStr(node[1]) ? node[1] : 'result';
-    if (isStr(node[1])) emitter.scope.defined.add(name);
+    const matrixRhs =
+      /\bMatrix\b/.test(rhs) ||
+      (isStr(node[2]) &&
+        (emitter.scope.matrixNames.has(node[2]) ||
+          emitter.scope.matrices.has(node[2])));
+    if (isStr(node[1])) {
+      emitter.scope.defined.add(name);
+      if (matrixRhs) emitter.scope.matrixNames.add(name);
+    }
     if (emitter.scope.errorCount > before) return { lines: [] };
     return {
       lines: [`${pyIdent(name)} = ${rhs}`],
-      // The display expression uses a fresh Symbol for the target so the
-      // row renders the raw name (`x_{1}` shows subscripted, not `x_1`).
-      display: `${sp}Eq(${sp}Symbol(${JSON.stringify(name)}), ${rhs})`,
+      display: assignDisplay(sp, name, rhs, matrixRhs),
     };
   }
   if (h === 'Def') {
@@ -1998,7 +2020,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       if (emitter.scope.errorCount > before) return { lines: [] };
       return {
         lines: [`${pyIdent(name)} = ${rhs}`],
-        display: `${sp}Eq(${sp}Symbol(${JSON.stringify(name)}), ${rhs})`,
+        display: assignDisplay(sp, name, rhs),
       };
     }
   }
@@ -2016,7 +2038,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     if (emitter.scope.errorCount > before) return { lines: [] };
     return {
       lines: [`${pyIdent(name)} = ${rhs}`],
-      display: `${sp}Eq(${sp}Symbol(${JSON.stringify(name)}), ${rhs})`,
+      display: assignDisplay(sp, name, rhs),
     };
   }
   if (h === 'Block')
@@ -2163,6 +2185,7 @@ function buildScope(
     bound: new Set(),
     lambdaBound: new Set(),
     matrices: new Map(),
+    matrixNames: new Set(),
     symbols: new Map(),
     functions: new Map(),
     issues,
