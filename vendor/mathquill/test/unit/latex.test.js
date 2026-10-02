@@ -1463,5 +1463,16 @@ suite('latex', function () {
     assertParsesLatex('\\boxtimes', '\\boxtimes');
     assertParsesLatex('\\varliminf', '\\varliminf_{ }^{ }');
     assertParsesLatex('\\smallint', '\\smallint');
+    // bare xarrows degrade to a glyph leaf; named arrows keep their names
+    assertParsesLatex('\\xrightarrow', '\\xrightarrow');
+    assertParsesLatex('\\xhookleftarrow', '\\xhookleftarrow');
+    assertParsesLatex('\\implies', '\\implies');
+    assertParsesLatex('\\iff', '\\iff');
+    assertParsesLatex('\\impliedby', '\\impliedby');
+    assertParsesLatex('\\varGamma', '\\varGamma');
+    assertParsesLatex('\\leqslant', '\\leqslant');
+    assertParsesLatex('\\Join', '\\Join');
+    assertParsesLatex('\\coloneq', '\\coloneq');
+    assertParsesLatex('\\And', '\\And');
   });
 });

@@ -6979,7 +6979,7 @@ var __assign = (this && this.__assign) || function () {
             LatexCmds.Uparrow =
                 bindVanillaSymbol('\\Uparrow ', '&uArr;', 'up arrow');
     LatexCmds.rarr = LatexCmds.rightarrow = bindVanillaSymbol('\\rightarrow ', '&rarr;', 'right arrow');
-    LatexCmds.implies = bindBinaryOperator('\\Rightarrow ', '&rArr;', 'implies');
+    LatexCmds.implies = bindBinaryOperator('\\implies ', '&rArr;', 'implies');
     LatexCmds['\u21d2'] =
         LatexCmds.rArr =
             LatexCmds.Rightarrow =
@@ -6989,7 +6989,7 @@ var __assign = (this && this.__assign) || function () {
         LatexCmds.larr =
             LatexCmds.leftarrow =
                 bindVanillaSymbol('\\leftarrow ', '&larr;', 'left arrow');
-    LatexCmds.impliedby = bindBinaryOperator('\\Leftarrow ', '&lArr;', 'implied by');
+    LatexCmds.impliedby = bindBinaryOperator('\\impliedby ', '&lArr;', 'implied by');
     LatexCmds['\u21d0'] =
         LatexCmds.lArr =
             LatexCmds.Leftarrow =
@@ -6999,7 +6999,7 @@ var __assign = (this && this.__assign) || function () {
             LatexCmds.lrarr =
                 LatexCmds.leftrightarrow =
                     bindVanillaSymbol('\\leftrightarrow ', '&harr;', 'left and right arrow');
-    LatexCmds.iff = bindBinaryOperator('\\Leftrightarrow ', '&hArr;', 'if and only if');
+    LatexCmds.iff = bindBinaryOperator('\\iff ', '&hArr;', 'if and only if');
     LatexCmds['\u21d4'];
     LatexCmds.hArr =
         LatexCmds.lrArr =
@@ -7503,6 +7503,67 @@ var __assign = (this && this.__assign) || function () {
     // dispatch for the same names lives at the end of environments.ts).
     LatexCmds.eqnarray = bindLiteralCmd('\\eqnarray', 'eqn array');
     LatexCmds.eqalign = bindLiteralCmd('\\eqalign', 'eq align');
+    // \varGamma ... \varOmega \u2014 the slanted/italic variant capitals; kept
+    // under their own names so the var spelling round-trips.
+    var VARGREEK = [
+        ['varGamma', '&#915;', 'var Gamma'],
+        ['varDelta', '&#916;', 'var Delta'],
+        ['varTheta', '&#920;', 'var Theta'],
+        ['varLambda', '&#923;', 'var Lambda'],
+        ['varXi', '&#926;', 'var Xi'],
+        ['varPi', '&#928;', 'var Pi'],
+        ['varSigma', '&#931;', 'var Sigma'],
+        ['varUpsilon', '&#933;', 'var Upsilon'],
+        ['varPhi', '&#934;', 'var Phi'],
+        ['varPsi', '&#936;', 'var Psi'],
+        ['varOmega', '&#937;', 'var Omega']
+    ];
+    VARGREEK.forEach(function (a) {
+        LatexCmds[a[0]] = bindVanillaSymbol('\\' + a[0] + ' ', a[1], a[2]);
+    });
+    // More relation/symbol leaves: amssymb comparisons, colon ops
+    // (mathtools), triangles, Join, and \And.
+    var RELS2 = [
+        ['leqslant', '&#x2A7D;', 'less than or slant equal'],
+        ['geqslant', '&#x2A7E;', 'greater than or slant equal'],
+        ['lessapprox', '&#x2A85;', 'less than or approximately'],
+        ['gtrapprox', '&#x2A86;', 'greater than or approximately'],
+        ['lessdot', '&#x22D6;', 'less dot'],
+        ['gtrdot', '&#x22D7;', 'greater dot'],
+        ['eqslantless', '&#x2A95;', 'equal slant less'],
+        ['eqslantgtr', '&#x2A96;', 'equal slant greater'],
+        ['backsim', '&#x223D;', 'back similar'],
+        ['backsimeq', '&#x22CD;', 'back similar equal'],
+        ['Subset', '&#x22D0;', 'subset'],
+        ['Supset', '&#x22D1;', 'superset'],
+        ['between', '&#x226C;', 'between'],
+        ['blacktriangle', '&#x25B2;', 'black triangle'],
+        ['blacktriangleleft', '&#x25C0;', 'black triangle left'],
+        ['blacktriangleright', '&#x25B6;', 'black triangle right'],
+        ['thickapprox', '&#x2248;', 'thick approximately'],
+        ['thicksim', '&#x223C;', 'thick similar'],
+        ['vartriangle', '&#x25B3;', 'var triangle'],
+        ['trianglelefteq', '&#x22B4;', 'triangle left equal'],
+        ['trianglerighteq', '&#x22B5;', 'triangle right equal'],
+        ['shortmid', '&#x2223;', 'short mid'],
+        ['shortparallel', '&#x2225;', 'short parallel'],
+        ['nshortmid', '&#x2224;', 'not short mid'],
+        ['nshortparallel', '&#x2226;', 'not short parallel'],
+        ['smallsmile', '&#x2323;', 'small smile'],
+        ['smallfrown', '&#x2322;', 'small frown'],
+        ['Join', '&#x22C8;', 'join'],
+        ['coloneq', '&#x2254;', 'colon equal'],
+        ['eqcolon', '&#x2255;', 'equal colon'],
+        ['dblcolon', '&#x2237;', 'double colon'],
+        ['colonsim', '&#x3A;&#x223C;', 'colon similar'],
+        ['Colonsim', '&#x2237;&#x223C;', 'double colon similar'],
+        ['colonapprox', '&#x3A;&#x2248;', 'colon approximately'],
+        ['Colonapprox', '&#x2237;&#x2248;', 'double colon approximately']
+    ];
+    RELS2.forEach(function (a) {
+        LatexCmds[a[0]] = bindBinaryOperator('\\' + a[0] + ' ', a[1], a[2]);
+    });
+    LatexCmds.And = bindLiteralCmd('\\And', 'and');
     /*********************************
      * Symbols for Basic Mathematics
      ********************************/
@@ -10464,7 +10525,8 @@ var __assign = (this && this.__assign) || function () {
                             return xa;
                         });
                     })
-                        .or(_super.prototype.parser.call(this));
+                        .or(_super.prototype.parser.call(this))
+                        .or(Parser.succeed(new VanillaSymbol(ctrlSeq + ' ', h.text(arrow), ctrlSeq.slice(1))));
                 };
                 return class_22;
             }(MathCommand)))();
@@ -10477,6 +10539,14 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.xLeftarrow = bindArrowLabelCmd('\\xLeftarrow', '\u27f8');
     LatexCmds.xLeftrightarrow = bindArrowLabelCmd('\\xLeftrightarrow', '\u27fa');
     LatexCmds.xleftrightarrow = bindArrowLabelCmd('\\xleftrightarrow', '\u27f7');
+    LatexCmds.xhookleftarrow = bindArrowLabelCmd('\\xhookleftarrow', '\u21a9');
+    LatexCmds.xhookrightarrow = bindArrowLabelCmd('\\xhookrightarrow', '\u21aa');
+    LatexCmds.xrightharpoondown = bindArrowLabelCmd('\\xrightharpoondown', '\u21c0');
+    LatexCmds.xrightharpoonup = bindArrowLabelCmd('\\xrightharpoonup', '\u21c1');
+    LatexCmds.xleftharpoondown = bindArrowLabelCmd('\\xleftharpoondown', '\u21bd');
+    LatexCmds.xleftharpoonup = bindArrowLabelCmd('\\xleftharpoonup', '\u21bc');
+    LatexCmds.xrightleftharpoons = bindArrowLabelCmd('\\xrightleftharpoons', '\u21cc');
+    LatexCmds.xleftrightharpoons = bindArrowLabelCmd('\\xleftrightharpoons', '\u21cb');
     LatexCmds.xhookleftarrow = bindArrowLabelCmd('\\xhookleftarrow', '\u21a9');
     LatexCmds.xhookrightarrow = bindArrowLabelCmd('\\xhookrightarrow', '\u21aa');
     LatexCmds.xLongrightarrow = bindArrowLabelCmd('\\xLongrightarrow', '\u27f6');

@@ -1717,7 +1717,16 @@ function bindArrowLabelCmd(ctrlSeq: string, arrow: string) {
               return xa;
             });
           })
-          .or(super.parser());
+          .or(super.parser())
+          .or(
+            Parser.succeed(
+              new VanillaSymbol(
+                ctrlSeq + ' ',
+                h.text(arrow),
+                ctrlSeq.slice(1)
+              ) as MQNode | Fragment
+            )
+          );
       }
     })();
 }
@@ -1728,6 +1737,14 @@ LatexCmds.xRightarrow = bindArrowLabelCmd('\\xRightarrow', '⟹');
 LatexCmds.xLeftarrow = bindArrowLabelCmd('\\xLeftarrow', '⟸');
 LatexCmds.xLeftrightarrow = bindArrowLabelCmd('\\xLeftrightarrow', '⟺');
 LatexCmds.xleftrightarrow = bindArrowLabelCmd('\\xleftrightarrow', '⟷');
+LatexCmds.xhookleftarrow = bindArrowLabelCmd('\\xhookleftarrow', '↩');
+LatexCmds.xhookrightarrow = bindArrowLabelCmd('\\xhookrightarrow', '↪');
+LatexCmds.xrightharpoondown = bindArrowLabelCmd('\\xrightharpoondown', '⇀');
+LatexCmds.xrightharpoonup = bindArrowLabelCmd('\\xrightharpoonup', '⇁');
+LatexCmds.xleftharpoondown = bindArrowLabelCmd('\\xleftharpoondown', '↽');
+LatexCmds.xleftharpoonup = bindArrowLabelCmd('\\xleftharpoonup', '↼');
+LatexCmds.xrightleftharpoons = bindArrowLabelCmd('\\xrightleftharpoons', '⇌');
+LatexCmds.xleftrightharpoons = bindArrowLabelCmd('\\xleftrightharpoons', '⇋');
 LatexCmds.xhookleftarrow = bindArrowLabelCmd('\\xhookleftarrow', '↩');
 LatexCmds.xhookrightarrow = bindArrowLabelCmd('\\xhookrightarrow', '↪');
 LatexCmds.xLongrightarrow = bindArrowLabelCmd('\\xLongrightarrow', '⟶');

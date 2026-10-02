@@ -896,7 +896,7 @@ LatexCmds.rarr = LatexCmds.rightarrow = bindVanillaSymbol(
   'right arrow'
 );
 
-LatexCmds.implies = bindBinaryOperator('\\Rightarrow ', '&rArr;', 'implies');
+LatexCmds.implies = bindBinaryOperator('\\implies ', '&rArr;', 'implies');
 
 LatexCmds['⇒'] =
   LatexCmds.rArr =
@@ -911,7 +911,7 @@ LatexCmds['←'] =
     bindVanillaSymbol('\\leftarrow ', '&larr;', 'left arrow');
 
 LatexCmds.impliedby = bindBinaryOperator(
-  '\\Leftarrow ',
+  '\\impliedby ',
   '&lArr;',
   'implied by'
 );
@@ -928,7 +928,7 @@ LatexCmds['↔'] =
     bindVanillaSymbol('\\leftrightarrow ', '&harr;', 'left and right arrow');
 
 LatexCmds.iff = bindBinaryOperator(
-  '\\Leftrightarrow ',
+  '\\iff ',
   '&hArr;',
   'if and only if'
 );
@@ -1715,3 +1715,74 @@ BINOPS.forEach(function (a) {
 // dispatch for the same names lives at the end of environments.ts).
 LatexCmds.eqnarray = bindLiteralCmd('\\eqnarray', 'eqn array');
 LatexCmds.eqalign = bindLiteralCmd('\\eqalign', 'eq align');
+
+// \varGamma ... \varOmega — the slanted/italic variant capitals; kept
+// under their own names so the var spelling round-trips.
+var VARGREEK: [string, string, string][] = [
+  ['varGamma', '&#915;', 'var Gamma'],
+  ['varDelta', '&#916;', 'var Delta'],
+  ['varTheta', '&#920;', 'var Theta'],
+  ['varLambda', '&#923;', 'var Lambda'],
+  ['varXi', '&#926;', 'var Xi'],
+  ['varPi', '&#928;', 'var Pi'],
+  ['varSigma', '&#931;', 'var Sigma'],
+  ['varUpsilon', '&#933;', 'var Upsilon'],
+  ['varPhi', '&#934;', 'var Phi'],
+  ['varPsi', '&#936;', 'var Psi'],
+  ['varOmega', '&#937;', 'var Omega']
+];
+VARGREEK.forEach(function (a) {
+  (LatexCmds as LatexCmdsAny)[a[0]] = bindVanillaSymbol(
+    '\\' + a[0] + ' ',
+    a[1],
+    a[2]
+  );
+});
+
+// More relation/symbol leaves: amssymb comparisons, colon ops
+// (mathtools), triangles, Join, and \And.
+var RELS2: [string, string, string][] = [
+  ['leqslant', '&#x2A7D;', 'less than or slant equal'],
+  ['geqslant', '&#x2A7E;', 'greater than or slant equal'],
+  ['lessapprox', '&#x2A85;', 'less than or approximately'],
+  ['gtrapprox', '&#x2A86;', 'greater than or approximately'],
+  ['lessdot', '&#x22D6;', 'less dot'],
+  ['gtrdot', '&#x22D7;', 'greater dot'],
+  ['eqslantless', '&#x2A95;', 'equal slant less'],
+  ['eqslantgtr', '&#x2A96;', 'equal slant greater'],
+  ['backsim', '&#x223D;', 'back similar'],
+  ['backsimeq', '&#x22CD;', 'back similar equal'],
+  ['Subset', '&#x22D0;', 'subset'],
+  ['Supset', '&#x22D1;', 'superset'],
+  ['between', '&#x226C;', 'between'],
+  ['blacktriangle', '&#x25B2;', 'black triangle'],
+  ['blacktriangleleft', '&#x25C0;', 'black triangle left'],
+  ['blacktriangleright', '&#x25B6;', 'black triangle right'],
+  ['thickapprox', '&#x2248;', 'thick approximately'],
+  ['thicksim', '&#x223C;', 'thick similar'],
+  ['vartriangle', '&#x25B3;', 'var triangle'],
+  ['trianglelefteq', '&#x22B4;', 'triangle left equal'],
+  ['trianglerighteq', '&#x22B5;', 'triangle right equal'],
+  ['shortmid', '&#x2223;', 'short mid'],
+  ['shortparallel', '&#x2225;', 'short parallel'],
+  ['nshortmid', '&#x2224;', 'not short mid'],
+  ['nshortparallel', '&#x2226;', 'not short parallel'],
+  ['smallsmile', '&#x2323;', 'small smile'],
+  ['smallfrown', '&#x2322;', 'small frown'],
+  ['Join', '&#x22C8;', 'join'],
+  ['coloneq', '&#x2254;', 'colon equal'],
+  ['eqcolon', '&#x2255;', 'equal colon'],
+  ['dblcolon', '&#x2237;', 'double colon'],
+  ['colonsim', '&#x3A;&#x223C;', 'colon similar'],
+  ['Colonsim', '&#x2237;&#x223C;', 'double colon similar'],
+  ['colonapprox', '&#x3A;&#x2248;', 'colon approximately'],
+  ['Colonapprox', '&#x2237;&#x2248;', 'double colon approximately']
+];
+RELS2.forEach(function (a) {
+  (LatexCmds as LatexCmdsAny)[a[0]] = bindBinaryOperator(
+    '\\' + a[0] + ' ',
+    a[1],
+    a[2]
+  );
+});
+LatexCmds.And = bindLiteralCmd('\\And', 'and');
