@@ -68,10 +68,11 @@ test('calculator evaluates each statement row of a multi-line cell', async ({
   await expect(rows.nth(1)).toContainText('5');
 });
 
-// The calculator's issue panel mirrors the python target's overlay, but
-// scoped to the failing row: on a multi-line cell it must sit inside
-// that row and never paint over the other result rows.
-test('a failing statement reports the error in its own row only', async ({
+// The calculator reports issues like the python target's overlay, but
+// in the input column: the message panel mounts under the math-field —
+// in flow, so it never covers the field's other input lines — while
+// the failing statement's output row keeps just its ! marker.
+test('a failing statement reports the error in the input column', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -90,10 +91,11 @@ test('a failing statement reports the error in its own row only', async ({
   const rows = page.locator('.calc-row');
   await expect(rows).toHaveCount(2, { timeout: 90_000 });
   await expect(rows.nth(0).locator('.calc-math')).toContainText('4');
-  const issues = rows.nth(1).locator('.calc-issues');
+  await expect(rows.nth(1).locator('.parse-error-icon')).toBeVisible();
+  const issues = page.locator('.cell-input .calc-issues');
   await expect(issues).toBeVisible();
   await expect(issues).toContainText('missing argument');
-  await expect(rows.nth(0).locator('.calc-issues')).toHaveCount(0);
+  await expect(page.locator('.cell-output .calc-issues')).toHaveCount(0);
 });
 
 test('indefinite integral shows the constant of integration last', async ({

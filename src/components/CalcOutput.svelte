@@ -1,16 +1,16 @@
 <script lang="ts">
-  import { fade } from 'svelte/transition';
   import {
     calcEngine,
+    cellIssues,
     evaluate,
     interimEvaluate,
     type CalcRow,
+    type CalcRowErr,
   } from '../calc/calculator.svelte.ts';
   import { latexToStatementStrings, type Issue } from '../compile/ir';
   import { mountStaticMath } from '../editor/static-math';
   import { highlightPython } from '../calc/python-highlight';
   import { appStore, type Cell } from '../state/store.svelte';
-  import { loadPrefs } from '../state/persistence';
 
   // Per-cell SymPy output for the calculator target. Edits are debounced,
   // then the cell evaluates through the codegen pipeline — one result
@@ -30,32 +30,24 @@
       rows.some((r) => r.ok && r.displayCode && r.displayCode !== r.code),
   );
 
-  // Issue reporting mirrors the python target's overlay dynamics: a
-  // marker shows on the failing row instantly, the message panel mounts
-  // once typing has paused for debounceMs, then stays latched while any
-  // issue remains. Same persisted knobs App.svelte's overlay reads.
-  const animPrefs = loadPrefs();
-  const debounceMs = animPrefs.debounceMs ?? 600;
-  const fadeInMs = animPrefs.fadeInMs ?? 150;
-  const fadeOutMs = animPrefs.fadeOutMs ?? 150;
-  let issuesVisible = $state(false);
-  let issueTimer: ReturnType<typeof setTimeout> | undefined;
-  $effect.pre(() => {
-    // Subscribing to cell.latex + rows + failed re-runs this on every
-    // keystroke and every fresh eval result — either restarts the
-    // pause countdown the panel waits on.
-    const armed = cell.latex;
-    const hasIssues = failed !== '' || rows.some((r) => !r.ok);
-    if (!hasIssues) {
-      clearTimeout(issueTimer);
-      issuesVisible = false;
-      return;
-    }
-    if (issuesVisible) return;
-    clearTimeout(issueTimer);
-    issueTimer = setTimeout(() => {
-      issuesVisible = cell.latex === armed;
-    }, debounceMs);
+  // Issue reporting is split like the python overlay's marker/panel:
+  // the failing row keeps just its ! / i severity marker here, while
+  // the messages go to cellIssues — the input column's CalcIssues
+  // mounts the panel under the field once typing has paused.
+  $effect(() => {
+    const issues: Issue[] =
+      failed !== ''
+        ? [{ severity: 'error', message: failed }]
+        : rows
+            .filter((r): r is CalcRowErr => !r.ok)
+            .map((r) => ({
+              severity: r.severity ?? 'error',
+              message: r.error,
+            }));
+    cellIssues[cell.id] = issues;
+    return () => {
+      delete cellIssues[cell.id];
+    };
   });
 
   const statusLabel = $derived(
@@ -140,7 +132,7 @@
 
 <div class="cell-output calc-output">
   {#if failed !== ''}
-    {@render issue('error', failed)}
+    <span class="parse-error-icon" title={failed}>!</span>
   {:else if rows.length > 0}
     <div class="calc-rows" class:pending>
       {#each rows as row, i (i)}
@@ -197,8 +189,10 @@
                   ></pre>
               {/if}
             {/if}
+          {:else if (row.severity ?? 'error') === 'error'}
+            <span class="parse-error-icon" title={row.error}>!</span>
           {:else}
-            {@render issue(row.severity ?? 'error', row.error)}
+            <span class="note-icon" title={row.error}>i</span>
           {/if}
         </div>
       {/each}
@@ -240,27 +234,3 @@
     </div>
   {/if}
 </div>
-
-<!-- A failing row's issue display: the severity marker mounts instantly
-     (like the python overlay's leading icon), then the message panel
-     fades in once issuesVisible — in flow inside the row, so it can
-     never paint over the cell's other result rows. -->
-{#snippet issue(severity: Issue['severity'], message: string)}
-  {#if issuesVisible}
-    <ul
-      class="calc-issues"
-      in:fade={{ duration: fadeInMs }}
-      out:fade={{ duration: fadeOutMs }}
-    >
-      <li class="issue-{severity}">
-        {#if severity === 'error'}
-          <span class="parse-error-icon" title={message}>!</span>
-        {/if}{message}
-      </li>
-    </ul>
-  {:else if severity === 'error'}
-    <span class="parse-error-icon" title={message}>!</span>
-  {:else}
-    <span class="note-icon" title={message}>i</span>
-  {/if}
-{/snippet}

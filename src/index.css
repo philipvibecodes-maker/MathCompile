@@ -168,6 +168,24 @@ body {
   user-select: none;
 }
 
+/* The math-field plus (calculator target) its issue list below it —
+   messages sit in the input column next to what was typed, in flow so
+   they never cover the field's other lines. */
+.cell-input {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Markers shown under the field before the issue panel debounces in. */
+.calc-issue-markers {
+  display: flex;
+  gap: 4px;
+  padding: 0 2px;
+}
+
 .expr-row math-field {
   flex: 1;
   min-width: 0;

@@ -1,5 +1,9 @@
 import { compileCellForCalc } from '../compile/codegen';
-import { latexToStatementStrings, type MathJson } from '../compile/ir';
+import {
+  latexToStatementStrings,
+  type Issue,
+  type MathJson,
+} from '../compile/ir';
 import { toNerdamerInput } from './nerdamer-latex';
 import { arcTrigNames } from './result-latex';
 
@@ -31,6 +35,10 @@ export const calcEngine = $state<{ status: EngineStatus; error: string }>({
   status: 'idle',
   error: '',
 });
+
+// Issues per cell, published by CalcOutput as evaluation lands — the
+// input column's CalcIssues renders the messages under the field.
+export const cellIssues = $state<Record<number, Issue[]>>({});
 
 interface WorkerReply {
   type?: 'ready' | 'init-error';
