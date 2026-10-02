@@ -1308,8 +1308,10 @@ var LiveFraction =
       // fails. Fall back to a visible `\over` leaf so the input keeps
       // its text instead of blanking the field. The typed `\over`→
       // fraction path is unaffected (it goes through createLeftOf).
+      // MathCommand's own parser is invoked directly: FracNode.parser()
+      // falls back to a bare \frac leaf that would shadow \over's.
       parser() {
-        return super.parser().or(
+        return MathCommand.prototype.parser.call(this).or(
           Parser.succeed(
             new VanillaSymbol(
               '\\over ',

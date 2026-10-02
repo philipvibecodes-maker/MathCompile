@@ -30,11 +30,20 @@ LatexCmds.begin = class extends MathCommand {
         // Starred variants (align*, gather*, …) parse as their
         // unstarred counterpart and serialize canonically.
         var envName = env.replace(/\*/g, '');
-        return (
-          Environments[envName]
-            ? Environments[envName]().parser()
-            : Parser.fail('unknown environment type: ' + env)
-        ).skip(string('\\end{' + env + '}'));
+        if (!Environments[envName]) {
+          // Unknown environment: keep \begin{name} as a visible leaf —
+          // the body and \end{name} parse as ordinary content.
+          return Parser.succeed(
+            new VanillaSymbol(
+              '\\begin{' + env + '} ',
+              h.text('\\begin{' + env + '}'),
+              'begin ' + env
+            ) as MQNode | Fragment
+          );
+        }
+        return Environments[envName]()
+          .parser()
+          .skip(string('\\end{' + env + '}'));
       });
   }
 };
@@ -1001,3 +1010,39 @@ LatexCmds.ointclockwise = boundlessIntegral(
 // \intop / \ointop — boundless integral family members.
 LatexCmds.intop = boundlessIntegral('\\intop ', '&#8747;', 'int op');
 LatexCmds.ointop = boundlessIntegral('\\ointop ', '&#8750;', 'oint op');
+
+// \end{foo} where foo is NOT a registered environment — kept as a
+// visible leaf, paired with the unknown-env \begin leaf. A \end{name}
+// for a known env must fail here so CellGrid parsing still stops at it
+// and the \begin parser's .skip('\\end{...}') consumes it as the close.
+LatexCmds.end = () =>
+  new (class extends MathCommand {
+    env = '';
+    constructor() {
+      super(
+        '\\end',
+        new DOMView(0, () =>
+          h('span', { class: 'mq-non-leaf' }, [h.text('\\end')])
+        )
+      );
+    }
+    parser() {
+      var self = this;
+      return Parser.string('{')
+        .then(Parser.regex(/^[a-z*]+/i))
+        .skip(Parser.string('}'))
+        .then(function (env: string) {
+          if (Environments[env.replace(/\*/g, '')])
+            return Parser.fail(
+              'known environment close handled by the env parser'
+            );
+          self.env = env;
+          return Parser.succeed(self as MQNode | Fragment);
+        });
+    }
+    latexRecursive(ctx: LatexContext) {
+      this.checkCursorContextOpen(ctx);
+      ctx.uncleanedLatex += '\\end{' + this.env + '}';
+      this.checkCursorContextClose(ctx);
+    }
+  })();

@@ -10407,8 +10407,10 @@ var __assign = (this && this.__assign) || function () {
             // fails. Fall back to a visible `\over` leaf so the input keeps
             // its text instead of blanking the field. The typed `\over`\u2192
             // fraction path is unaffected (it goes through createLeftOf).
+            // MathCommand's own parser is invoked directly: FracNode.parser()
+            // falls back to a bare \frac leaf that would shadow \over's.
             class_25.prototype.parser = function () {
-                return _super.prototype.parser.call(this).or(Parser.succeed(new VanillaSymbol('\\over ', h.text('\\over'), 'over')));
+                return MathCommand.prototype.parser.call(this).or(Parser.succeed(new VanillaSymbol('\\over ', h.text('\\over'), 'over')));
             };
             class_25.prototype.createLeftOf = function (cursor) {
                 if (!this.replacedFragment) {
@@ -11944,9 +11946,14 @@ var __assign = (this && this.__assign) || function () {
                 // Starred variants (align*, gather*, \u2026) parse as their
                 // unstarred counterpart and serialize canonically.
                 var envName = env.replace(/\*/g, '');
-                return (Environments[envName]
-                    ? Environments[envName]().parser()
-                    : Parser.fail('unknown environment type: ' + env)).skip(string('\\end{' + env + '}'));
+                if (!Environments[envName]) {
+                    // Unknown environment: keep \begin{name} as a visible leaf \u2014
+                    // the body and \end{name} parse as ordinary content.
+                    return Parser.succeed(new VanillaSymbol('\\begin{' + env + '} ', h.text('\\begin{' + env + '}'), 'begin ' + env));
+                }
+                return Environments[envName]()
+                    .parser()
+                    .skip(string('\\end{' + env + '}'));
             });
         };
         return class_30;
@@ -12883,6 +12890,40 @@ var __assign = (this && this.__assign) || function () {
     // \intop / \ointop \u2014 boundless integral family members.
     LatexCmds.intop = boundlessIntegral('\\intop ', '&#8747;', 'int op');
     LatexCmds.ointop = boundlessIntegral('\\ointop ', '&#8750;', 'oint op');
+    // \end{foo} where foo is NOT a registered environment \u2014 kept as a
+    // visible leaf, paired with the unknown-env \begin leaf. A \end{name}
+    // for a known env must fail here so CellGrid parsing still stops at it
+    // and the \begin parser's .skip('\\end{...}') consumes it as the close.
+    LatexCmds.end = function () {
+        return new (/** @class */ (function (_super) {
+            __extends(class_31, _super);
+            function class_31() {
+                var _this_1 = _super.call(this, '\\end', new DOMView(0, function () {
+                    return h('span', { class: 'mq-non-leaf' }, [h.text('\\end')]);
+                })) || this;
+                _this_1.env = '';
+                return _this_1;
+            }
+            class_31.prototype.parser = function () {
+                var self = this;
+                return Parser.string('{')
+                    .then(Parser.regex(/^[a-z*]+/i))
+                    .skip(Parser.string('}'))
+                    .then(function (env) {
+                    if (Environments[env.replace(/\*/g, '')])
+                        return Parser.fail('known environment close handled by the env parser');
+                    self.env = env;
+                    return Parser.succeed(self);
+                });
+            };
+            class_31.prototype.latexRecursive = function (ctx) {
+                this.checkCursorContextOpen(ctx);
+                ctx.uncleanedLatex += '\\end{' + this.env + '}';
+                this.checkCursorContextClose(ctx);
+            };
+            return class_31;
+        }(MathCommand)))();
+    };
     // For backwards compatibility, set up the global MathQuill object as an instance of API interface v1
     if (window.jQuery) {
         MQ1 = getInterface(1);

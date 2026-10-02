@@ -1521,5 +1521,16 @@ suite('latex', function () {
     assertParsesLatex('\\newtheorem{thm}{Theorem}', '\\newtheorem{thm}{Theorem}');
     assertParsesLatex('a\\atopwithdelims()b', 'a\\atopwithdelims()b');
     assertParsesLatex('\\multicolumn{2}{c}{x}', '\\multicolumn{2}{c}{x}');
+    // infix \over keeps its leaf (FracNode's bare-\frac fallback must
+    // not shadow it); braced args still parse to a real fraction
+    assertParsesLatex('a\\over b', 'a\\over b');
+    assertParsesLatex('\\over{a}{b}', '\\frac{a}{b}');
+    // unknown environments degrade to visible begin/end leaves instead
+    // of blanking the cell
+    assertParsesLatex(
+      '\\begin{foo}x\\end{foo}',
+      '\\begin{foo} x\\end{foo}'
+    );
+    assertParsesLatex('\\end{foo}', '\\end{foo}');
   });
 });
