@@ -1707,11 +1707,41 @@ class Emitter {
         // SymPy's mean lives in stats and takes a random variable.
         if (name === 'Mean' && args.length === 2)
           return [`${this.sp}conjugate(${this.emit(args[1])})`, PREC_ATOM];
-        // `x \text{ for } x>0` — CE's quantifier call parks the
-        // condition first; sympy's ForAll/Exists take (symbol, cond).
-        // Not in sympy 1.14's top level, so emit the honest function
-        // call rather than an sp.ForAll AttributeError.
-        if ((name === 'ForAll' || name === 'Exists') && args.length === 3)
+        // `expr \text{ for } x \in S` — the image of expr over the set,
+        // sp.imageset(Lambda(x, expr), S). The bare-var form
+        // `x for x \in S`/`x for x>0` collapses to the plain set /
+        // ConditionSet; unparseable conditions keep the honest opaque
+        // ForAll call (no sp.ForAll exists in sympy 1.14).
+        if (name === 'ForAll' && args.length === 3) {
+          const cond = args[1];
+          const expr = args[2];
+          if (isArr(cond) && cond[0] === 'Element' && isStr(cond[1])) {
+            const v = cond[1];
+            if (expr === v) return [this.emit(cond[2]), PREC_ATOM];
+            return [
+              `${this.sp}imageset(${this.sp}Lambda(${this.sym(v)}, ${this.emit(expr)}), ${this.emit(cond[2])})`,
+              PREC_ATOM,
+            ];
+          }
+          if (
+            isArr(cond) &&
+            CMP_NESTABLE_HEADS.has(cond[0] as string) &&
+            isStr(cond[1])
+          ) {
+            const v = cond[1];
+            const cset = `${this.sp}ConditionSet(${this.sym(v)}, ${this.emit(cond)}, ${this.sp}S.Reals)`;
+            if (expr === v) return [cset, PREC_ATOM];
+            return [
+              `${this.sp}imageset(${this.sp}Lambda(${this.sym(v)}, ${this.emit(expr)}), ${cset})`,
+              PREC_ATOM,
+            ];
+          }
+          return [
+            `${this.fn(name)}(${this.emit(expr)}, ${this.emit(cond)})`,
+            PREC_ATOM,
+          ];
+        }
+        if (name === 'Exists' && args.length === 3)
           return [
             `${this.fn(name)}(${this.emit(args[2])}, ${this.emit(args[1])})`,
             PREC_ATOM,

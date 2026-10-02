@@ -275,6 +275,22 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     ).toBe('sp.ConditionSet(x, sp.Gt(x, 0), sp.S.Reals)');
   });
 
+  it('lowers `expr \\text{ for } x \\in S` to sp.imageset', () => {
+    expect(
+      calc('2x \\text{ for } x \\in \\{1,2,3\\}').statements[0].code,
+    ).toBe('sp.imageset(sp.Lambda(x, 2 * x), sp.FiniteSet(1, 2, 3))');
+    // `x for x \\in S` / `x for x>0` is just the set itself.
+    expect(calc('x \\text{ for } x \\in \\{1,2\\}').statements[0].code).toBe(
+      'sp.FiniteSet(1, 2)',
+    );
+    expect(calc('x \\text{ for } x>0').statements[0].code).toBe(
+      'sp.ConditionSet(x, sp.Gt(x, 0), sp.S.Reals)',
+    );
+    expect(calc('2x \\text{ for } x>0').statements[0].code).toBe(
+      'sp.imageset(sp.Lambda(x, 2 * x), sp.ConditionSet(x, sp.Gt(x, 0), sp.S.Reals))',
+    );
+  });
+
   it('singleton-wraps non-set operands so set ops compute', () => {
     // `x \cup y` emitted a flagged `Union(x, y)` Function stub — the
     // union of two bare names is the two-element set.
