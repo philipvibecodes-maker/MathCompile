@@ -334,12 +334,14 @@
             >
               {#if calcEngine.status === 'loading'}
                 <span class="engine-spinner" aria-hidden="true"></span>
-                SymPy engine loading — interim results use nerdamer, a
-                faster but less accurate engine
+                <span class="engine-chip-text"
+                  >SymPy engine loading — interim results use nerdamer, a
+                  faster but less accurate engine</span
+                >
               {:else if calcEngine.status === 'error'}
-                SymPy failed to load
+                <span class="engine-chip-text">SymPy failed to load</span>
               {:else}
-                SymPy ready
+                <span class="engine-chip-text">SymPy ready</span>
               {/if}
               <button
                 type="button"

@@ -661,8 +661,20 @@ body {
   gap: 5px;
   font-size: 11px;
   color: var(--faint);
-  white-space: nowrap;
   cursor: default;
+  /* Basis 0 keeps the chip on the selector's line (flex-wrap packs by
+     basis); it grows to fill leftover space up to its content width,
+     and the text ellipsizes below that. */
+  flex: 1 1 0;
+  max-width: max-content;
+  min-width: 0;
+}
+
+.engine-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .engine-chip.engine-error {
