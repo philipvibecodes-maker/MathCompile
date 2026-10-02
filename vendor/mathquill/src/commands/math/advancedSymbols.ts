@@ -408,6 +408,21 @@ LatexCmds['≯'] = LatexCmds.ngtr = bindVanillaSymbol(
   '&#8815;',
   'not greater than'
 );
+LatexCmds['≰'] = LatexCmds.nleq = LatexCmds.nle = bindVanillaSymbol(
+  '\\nleq ',
+  '&#8816;',
+  'not less than or equal to'
+);
+LatexCmds['≱'] = LatexCmds.ngeq = LatexCmds.nge = bindVanillaSymbol(
+  '\\ngeq ',
+  '&#8817;',
+  'not greater than or equal to'
+);
+LatexCmds['≍'] = LatexCmds.asymp = bindVanillaSymbol(
+  '\\asymp ',
+  '&#8781;',
+  'asymptotically equal to'
+);
 
 //arrows
 LatexCmds.longleftarrow = bindVanillaSymbol(

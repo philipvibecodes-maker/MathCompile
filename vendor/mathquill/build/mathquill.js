@@ -4106,10 +4106,20 @@ var __assign = (this && this.__assign) || function () {
         var controlSequence = regex(/^[^\\a-eg-zA-Z]/) // hotfix #164; match MathBlock::write
             .or(string('\\').then(regex(/^[a-z]+/i)
             .or(regex(/^\s+/).result(' '))
-            .or(any)))
+            // \<char> escapes keep a distinguishing '\x' ctrlSeq so their
+            // commands (e.g. \{, \|, \;) never shadow the bare char \u2014 the
+            // same LatexCmds map resolves single chars via the branch above.
+            .or(any.map(function (c) {
+            return '\\' + c;
+        }))))
             .then(function (ctrlSeq) {
             // TODO - is Parser<MQNode> correct?
             var cmdKlass = LatexCmds[ctrlSeq];
+            if (!cmdKlass && ctrlSeq.charAt(0) === '\\') {
+                // '\<char>' with no dedicated escape command falls back to the
+                // bare char's command (previous behavior: \% -> %, \. -> .).
+                cmdKlass = LatexCmds[ctrlSeq.slice(1)];
+            }
             if (cmdKlass) {
                 if (cmdKlass.constructor) {
                     var actualClass = cmdKlass; // TODO - figure out how to know the difference
@@ -6705,6 +6715,9 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds['\u22a3'] = LatexCmds.dashv = bindVanillaSymbol('\\dashv ', '&#8867;', 'dash v');
     LatexCmds['\u226e'] = LatexCmds.nless = bindVanillaSymbol('\\nless ', '&#8814;', 'not less than');
     LatexCmds['\u226f'] = LatexCmds.ngtr = bindVanillaSymbol('\\ngtr ', '&#8815;', 'not greater than');
+    LatexCmds['\u2270'] = LatexCmds.nleq = LatexCmds.nle = bindVanillaSymbol('\\nleq ', '&#8816;', 'not less than or equal to');
+    LatexCmds['\u2271'] = LatexCmds.ngeq = LatexCmds.nge = bindVanillaSymbol('\\ngeq ', '&#8817;', 'not greater than or equal to');
+    LatexCmds['\u224d'] = LatexCmds.asymp = bindVanillaSymbol('\\asymp ', '&#8781;', 'asymptotically equal to');
     //arrows
     LatexCmds.longleftarrow = bindVanillaSymbol('\\longleftarrow ', '&#8592;', 'left arrow');
     LatexCmds.longrightarrow = bindVanillaSymbol('\\longrightarrow ', '&#8594;', 'right arrow');
@@ -7435,6 +7448,30 @@ var __assign = (this && this.__assign) || function () {
             // check for operator names: at each position from left to right, check
             // substrings from longest to shortest
             outer: for (var i = 0, first = l[R] || this.parent.getEnd(L); first && i < str.length; i += 1, first = first[R]) {
+                // A letter run inside \operatorname{...}/\mathrm{...} (its first
+                // letter's ctrlSeq carries the `\name{` prefix and its last carries
+                // `}`) is already an explicit operator name \u2014 keep it whole and
+                // upright. Scanning it for built-in names split e.g.
+                // \operatorname{sign} into "sin" + "g" and \operatorname{atan}
+                // into "a" + "tan".
+                if (first instanceof Letter &&
+                    /^\\(?:operatorname|mathrm|mathsf|mathnormal|mathbf)\{/.test(first.ctrlSeq)) {
+                    var opLetter = first;
+                    var opLen = 0;
+                    while (opLetter instanceof Letter) {
+                        opLetter.italicize(false);
+                        opLen += 1;
+                        var endsRun = opLetter.ctrlSeq.endsWith('}');
+                        opLetter = opLetter[R];
+                        if (endsRun)
+                            break;
+                    }
+                    i += opLen - 1;
+                    first = opLetter instanceof Letter ? opLetter[L] : first;
+                    if (!opLetter)
+                        break;
+                    continue;
+                }
                 for (var len = min(autoOpsLength, str.length - i); len > 0; len -= 1) {
                     var word = str.slice(i, i + len);
                     var last = undefined; // TODO - TS complaining that we use last before assigning to it
@@ -7542,8 +7579,10 @@ var __assign = (this && this.__assign) || function () {
                                 1;
         }
         // compat with some of the nonstandard LaTeX exported by MathQuill
-        // before #247. None of these are real LaTeX commands so, seems safe
-        var moreNonstandardOps = 'gcf hcf lcm proj span'.split(' ');
+        // before #247. None of these are real LaTeX commands so, seems safe.
+        // 'sign' (not built into LaTeX) exports as \operatorname{sign}, which
+        // MathCompile's compile pipeline lowers to SymPy's sign().
+        var moreNonstandardOps = 'gcf hcf lcm proj span sign'.split(' ');
         for (var i = 0; i < moreNonstandardOps.length; i += 1) {
             AutoOpNames[moreNonstandardOps[i]] = 1;
         }
@@ -7700,6 +7739,26 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds[' '] = LatexCmds.space = function () {
         return new DigitGroupingChar('\\ ', h('span', {}, [h.text(U_NO_BREAK_SPACE)]), ' ');
     };
+    // \<char> escapes \u2014 spacing (\, \: \; \!), braces (\{ \}) and the norm
+    // shorthand (\|). These are keyed with a backslash prefix so they only
+    // resolve through the '\'-prefixed parse branch (see latex.ts): bare
+    // ',', ';', '{', ... keep their literal meaning and '}' still closes
+    // groups.
+    LatexCmds['\\,'] =
+        LatexCmds.thinspace =
+            bindVanillaSymbol('\\, ', U_NO_BREAK_SPACE, 'thin space');
+    LatexCmds['\\:'] =
+        LatexCmds.medspace =
+            bindVanillaSymbol('\\: ', U_NO_BREAK_SPACE, 'medium space');
+    LatexCmds['\\;'] =
+        LatexCmds.thickspace =
+            bindVanillaSymbol('\\; ', U_NO_BREAK_SPACE, 'thick space');
+    LatexCmds['\\!'] = function () {
+        return new VanillaSymbol('\\! ', h('span', { style: 'margin-right:-.2em' }), 'negative thin space');
+    };
+    LatexCmds['\\{'] = bindVanillaSymbol('\\{ ', '{', 'open brace');
+    LatexCmds['\\}'] = bindVanillaSymbol('\\} ', '}', 'close brace');
+    LatexCmds['\\|'] = bindVanillaSymbol('\\| ', '&#8741;', 'norm');
     LatexCmds['.'] = function () {
         return new DigitGroupingChar('.', h('span', { class: 'mq-digit' }, [h.text('.')]), '.');
     };
@@ -8492,6 +8551,64 @@ var __assign = (this && this.__assign) || function () {
             ]);
         }));
     };
+    // \boxed{...} \u2014 content with a drawn frame.
+    LatexCmds.boxed = function () {
+        return new Style('\\boxed', 'span', { class: 'mq-non-leaf mq-boxed' }, 'Boxed');
+    };
+    // \underbrace{x}_{label} / \overbrace{x}^{label} \u2014 the label lands as an
+    // ordinary sibling SupSub (same pattern as boundless integral bounds),
+    // so only the grouping command itself is needed here.
+    LatexCmds.underbrace = function () {
+        return new Style('\\underbrace', 'span', { class: 'mq-non-leaf mq-underbrace' }, 'Underbrace');
+    };
+    LatexCmds.overbrace = function () {
+        return new Style('\\overbrace', 'span', { class: 'mq-non-leaf mq-overbrace' }, 'Overbrace');
+    };
+    // \underset{a}{b} renders b with a below it; \overset{a}{b} with a above.
+    var UnderOverSet = /** @class */ (function (_super) {
+        __extends(UnderOverSet, _super);
+        function UnderOverSet(top) {
+            var _this_1 = _super.call(this) || this;
+            _this_1.ctrlSeq = top ? '\\overset' : '\\underset';
+            _this_1.ariaLabel = top ? 'overset' : 'underset';
+            _this_1.domView = new DOMView(2, function (blocks) {
+                return top
+                    ? h('span', { class: 'mq-overunderset mq-non-leaf' }, [
+                        h('span', { class: 'mq-overunderset-label' }, [
+                            h.block('span', {}, blocks[0])
+                        ]),
+                        h.block('span', { class: 'mq-overunderset-main' }, blocks[1])
+                    ])
+                    : h('span', { class: 'mq-overunderset mq-non-leaf' }, [
+                        h.block('span', { class: 'mq-overunderset-main' }, blocks[1]),
+                        h('span', { class: 'mq-overunderset-label' }, [
+                            h.block('span', {}, blocks[0])
+                        ])
+                    ]);
+            });
+            return _this_1;
+        }
+        UnderOverSet.prototype.parser = function () {
+            var self = this;
+            var block = latexMathParser.block;
+            var blocks = (this.blocks = [new MathBlock(), new MathBlock()]);
+            for (var i = 0; i < blocks.length; i += 1) {
+                blocks[i].adopt(self, self.getEnd(R), 0);
+            }
+            return Parser.optWhitespace
+                .then(block)
+                .then(function (b0) {
+                b0.children().adopt(blocks[0], blocks[0].getEnd(R), 0);
+                return Parser.optWhitespace.then(block).then(function (b1) {
+                    b1.children().adopt(blocks[1], blocks[1].getEnd(R), 0);
+                    return Parser.succeed(self);
+                });
+            });
+        };
+        return UnderOverSet;
+    }(MathCommand));
+    LatexCmds.underset = function () { return new UnderOverSet(false); };
+    LatexCmds.overset = function () { return new UnderOverSet(true); };
     // `\textcolor{color}{math}` will apply a color to the given math content, where
     // `color` is any valid CSS Color Value (see [SitePoint docs][] (recommended),
     // [Mozilla docs][], or [W3C spec][]).
@@ -8504,6 +8621,13 @@ var __assign = (this && this.__assign) || function () {
         function class_9() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
+        // Parser-only command: typing '\textcolor' in the command input
+        // can't supply a color argument, so typed insertion is a no-op
+        // (same convention as \operatorname / \mathbb).
+        class_9.prototype.createLeftOf = function () { };
+        class_9.prototype.numBlocks = function () {
+            return 1;
+        };
         class_9.prototype.setColor = function (color) {
             this.color = color;
             this.domView = new DOMView(1, function (blocks) {
@@ -8551,6 +8675,11 @@ var __assign = (this && this.__assign) || function () {
         function class_10() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
+        // Parser-only command, see \textcolor.
+        class_10.prototype.createLeftOf = function () { };
+        class_10.prototype.numBlocks = function () {
+            return 1;
+        };
         class_10.prototype.parser = function () {
             var _this_1 = this;
             var string = Parser.string, regex = Parser.regex;
@@ -9461,6 +9590,9 @@ var __assign = (this && this.__assign) || function () {
         }
         return Hat;
     }(MathCommand));
+    // \widehat is the wide variant of \hat; render it with the same atom
+    // (serializes back as \hat).
+    LatexCmds.widehat = LatexCmds.hat;
     var NthRoot = /** @class */ (function (_super) {
         __extends(NthRoot, _super);
         function NthRoot() {
@@ -9611,7 +9743,9 @@ var __assign = (this && this.__assign) || function () {
         };
         Bracket.prototype.getSymbol = function (side) {
             var ch = this.sides[side || R].ch;
-            return SVG_SYMBOLS[ch] || { width: '0', html: '' };
+            // Unknown delimiters (e.g. the '.' in \left./\right.) render as
+            // invisible zero-width marks.
+            return SVG_SYMBOLS[ch] || { width: '0', html: function () { return h('span'); } };
         };
         Bracket.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
@@ -9888,16 +10022,23 @@ var __assign = (this && this.__assign) || function () {
         return new Bracket(R, '&#8741;', '&#8741;', '\\lVert ', '\\rVert ');
     };
     LatexCmds.left = /** @class */ (function (_super) {
-        __extends(left, _super);
-        function left() {
+        __extends(class_14, _super);
+        function class_14() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        left.prototype.parser = function () {
+        // Parser-only command: the delimiter lives in the argument after
+        // \left, so a typed '\left' inserts nothing and the following
+        // delimiter keystroke auto-pairs the bracket itself.
+        class_14.prototype.createLeftOf = function () { };
+        class_14.prototype.numBlocks = function () {
+            return 1;
+        };
+        class_14.prototype.parser = function () {
             var regex = Parser.regex;
             var string = Parser.string;
             var optWhitespace = Parser.optWhitespace;
             return optWhitespace
-                .then(regex(/^(?:[([|]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z]))/))
+                .then(regex(/^(?:[([|.]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z]))/))
                 .then(function (ctrlSeq) {
                 var open = ctrlSeq.replace(/^\\/, '');
                 if (ctrlSeq == '\\langle') {
@@ -9911,7 +10052,7 @@ var __assign = (this && this.__assign) || function () {
                 return latexMathParser.then(function (block) {
                     return string('\\right')
                         .skip(optWhitespace)
-                        .then(regex(/^(?:[\])|]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z]))/))
+                        .then(regex(/^(?:[\])|.]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z]))/))
                         .map(function (end) {
                         var close = end.replace(/^\\/, '');
                         if (end == '\\rangle') {
@@ -9930,18 +10071,84 @@ var __assign = (this && this.__assign) || function () {
                 });
             });
         };
-        return left;
+        return class_14;
     }(MathCommand));
     LatexCmds.right = /** @class */ (function (_super) {
-        __extends(right, _super);
-        function right() {
+        __extends(class_15, _super);
+        function class_15() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        right.prototype.parser = function () {
+        // Parser-only command, see \left.
+        class_15.prototype.createLeftOf = function () { };
+        class_15.prototype.numBlocks = function () {
+            return 1;
+        };
+        class_15.prototype.parser = function () {
             return Parser.fail('unmatched \\right');
         };
-        return right;
+        return class_15;
     }(MathCommand));
+    // \big| \Big| \bigg| \Bigg| \u2014 fixed-size delimiters. Parser-only (like
+    // \left): they render the delimiter glyph at a fixed scale and keep the
+    // full \big<delim> ctrlSeq so the latex round-trips.
+    var BIG_DELIM_SCALES = {
+        big: '1.2',
+        Big: '1.6',
+        bigg: '2.1',
+        Bigg: '2.6'
+    };
+    var BIG_DELIM_CHARS = {
+        '(': '(',
+        ')': ')',
+        '[': '[',
+        ']': ']',
+        '|': '|',
+        '.': '',
+        '\\{': '{',
+        '\\}': '}',
+        '\\|': '\u2016',
+        '\\langle': '\u27e8',
+        '\\rangle': '\u27e9',
+        '\\lVert': '\u2016',
+        '\\rVert': '\u2016'
+    };
+    var BIG_DELIM_RE = /^(?:\\langle(?![a-zA-Z])|\\rangle(?![a-zA-Z])|\\lVert(?![a-zA-Z])|\\rVert(?![a-zA-Z])|\\\{|\\\}|\\[|.]|[()\[\]|.])/;
+    var BigDelim = /** @class */ (function (_super) {
+        __extends(BigDelim, _super);
+        function BigDelim(sizeSeq) {
+            var _this_1 = _super.call(this) || this;
+            _this_1.sizeSeq = '\\big';
+            _this_1.sizeSeq = '\\' + sizeSeq;
+            return _this_1;
+        }
+        BigDelim.prototype.createLeftOf = function () { };
+        BigDelim.prototype.numBlocks = function () {
+            return 1;
+        };
+        BigDelim.prototype.parser = function () {
+            var self = this;
+            return Parser.optWhitespace
+                .then(Parser.regex(BIG_DELIM_RE))
+                .then(function (delimTok) {
+                var ch = BIG_DELIM_CHARS[delimTok];
+                if (ch === undefined)
+                    return Parser.fail('not a \\big delimiter');
+                var ctrlSeq = self.sizeSeq + (delimTok.length > 1 ? delimTok + ' ' : delimTok);
+                var scale = BIG_DELIM_SCALES[self.sizeSeq.slice(1)];
+                var inner = ch === ''
+                    ? h('span', { style: 'width:0' })
+                    : h('span', { style: 'font-size:' + scale + 'em' }, [
+                        h.text(ch)
+                    ]);
+                return Parser.succeed(new MQSymbol(ctrlSeq, h('span', {}, [inner]), undefined, 'delimiter'));
+            });
+        };
+        return BigDelim;
+    }(MathCommand));
+    LatexCmds.big = function () { return new BigDelim('big'); };
+    LatexCmds.Big = function () { return new BigDelim('Big'); };
+    LatexCmds.bigg = function () { return new BigDelim('bigg'); };
+    LatexCmds.Bigg = function () { return new BigDelim('Bigg'); };
     var leftBinomialSymbol = SVG_SYMBOLS['('];
     var rightBinomialSymbol = SVG_SYMBOLS[')'];
     var Binomial = /** @class */ (function (_super) {
@@ -9991,14 +10198,14 @@ var __assign = (this && this.__assign) || function () {
     }(DelimsNode));
     LatexCmds.binom = LatexCmds.binomial = Binomial;
     LatexCmds.choose = /** @class */ (function (_super) {
-        __extends(class_14, _super);
-        function class_14() {
+        __extends(class_16, _super);
+        function class_16() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_14.prototype.createLeftOf = function (cursor) {
+        class_16.prototype.createLeftOf = function (cursor) {
             LiveFraction.prototype.createLeftOf.call(this, cursor);
         };
-        return class_14;
+        return class_16;
     }(Binomial));
     var MathFieldNode = /** @class */ (function (_super) {
         __extends(MathFieldNode, _super);
@@ -10284,8 +10491,8 @@ var __assign = (this && this.__assign) || function () {
      *************************************************/
     var Environments = {};
     LatexCmds.begin = /** @class */ (function (_super) {
-        __extends(class_15, _super);
-        function class_15() {
+        __extends(class_17, _super);
+        function class_17() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.ctrlSeq = '\\begin';
             _this_1.domView = new DOMView(1, function (blocks) {
@@ -10297,7 +10504,7 @@ var __assign = (this && this.__assign) || function () {
             });
             return _this_1;
         }
-        class_15.prototype.parser = function () {
+        class_17.prototype.parser = function () {
             var string = Parser.string;
             var regex = Parser.regex;
             return string('{')
@@ -10309,7 +10516,7 @@ var __assign = (this && this.__assign) || function () {
                     : Parser.fail('unknown environment type: ' + env)).skip(string('\\end{' + env + '}'));
             });
         };
-        return class_15;
+        return class_17;
     }(MathCommand));
     // A MathCommand whose children ("cells") are laid out in a grid:
     // the matrix family (N columns, optional bracket delimiters) and
@@ -10789,6 +10996,11 @@ var __assign = (this && this.__assign) || function () {
         MatrixCell.prototype.keystroke = function (key, e, ctrlr) {
             switch (key) {
                 case 'Shift-Spacebar':
+                    // \displaylines is a single-column grid: adding a column inside a
+                    // multi-line cell corrupts the row layout (and later crashes
+                    // addColumn on non-contiguous row indices). Matrices only.
+                    if (this.parent instanceof DisplayLines)
+                        return;
                     e === null || e === void 0 ? void 0 : e.preventDefault();
                     return this.parent.insert('addColumn', this, ctrlr);
             }

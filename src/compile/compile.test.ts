@@ -184,23 +184,22 @@ const FIXTURES: {
   {
     latex: '\\operatorname{foo}(x) + 1',
     expectedIR: ['Add', ['call', 'foo', 'x'], 1],
-    // Unknown names call through getattr — a sympy attr when it exists
-    // (sp.besselj), an undefined function otherwise; a bare sp.foo would
-    // AttributeError on any non-sympy name.
+    // Unknown names become worksheet functions — sp.foo(x) would raise
+    // AttributeError at eval time.
     expectedPython: [
       'x = sp.Symbol("x")',
-      'getattr(sp, "foo", sp.Function("foo"))(x) + 1',
+      'foo = sp.Function("foo")',
+      'foo(x) + 1',
     ],
     issues: ['unknown head "foo"'],
   },
   {
     latex: '\\mathrm{solve}(x^2 = 4, x)',
     expectedIR: ['call', 'solve', ['Equal', ['Power', 'x', 2], 4], 'x'],
-    // getattr resolves the real sp.solve — the Function fallback is dead
-    // code at runtime for names sympy has.
+    // `solve` is a real SymPy builtin — the call tier emits it sp.-bound.
     expectedPython: [
       'x = sp.Symbol("x")',
-      'getattr(sp, "solve", sp.Function("solve"))(sp.Eq(x**2, 4), x)',
+      'sp.solve(sp.Eq(x**2, 4), x)',
     ],
     issues: ['unknown head "solve"'],
   },
@@ -300,6 +299,336 @@ const FIXTURES: {
     // emits `a = sp.Symbol('a')` as its output.
     latex: 'a',
     expectedPython: ['a = sp.Symbol("a")'],
+  },
+  {
+    // A bare `f(x)` used to emit `sp.f(x)` — AttributeError in the
+    // worker. Unknown applied names become worksheet Function defs.
+    latex: 'f(x)',
+    expectedIR: ['call', 'f', 'x'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+      'f(x)',
+    ],
+    issues: ['unknown head "f"'],
+  },
+  {
+    // `a'` is a primed name, not an applied derivative — `sp.prime`
+    // doesn't exist; it emits as its own symbol (a_prime ident so it
+    // can't silently collide with `a`).
+    latex: "a'",
+    expectedIR: "a'",
+    expectedPython: ['a_prime = sp.Symbol("a\'")'],
+  },
+  {
+    latex: "x''(t)",
+    expectedIR: ['Apply', ['Derivative', 'x', 2], 't'],
+    expectedPython: [
+      't = sp.Symbol("t")',
+      'x = sp.Function("x")',
+      'sp.diff(x(t), t, 2)',
+    ],
+  },
+  {
+    // \cos^{-1}(x): CE wraps the base as InverseFunction; codegen maps
+    // to the arc- form. Previously emitted InverseFunction garbage.
+    latex: '\\cos^{-1}(x)',
+    expectedIR: ['Apply', ['InverseFunction', 'Cos'], 'x'],
+    expectedPython: ['x = sp.Symbol("x")', 'sp.acos(x)'],
+  },
+  {
+    // \det on a non-matrix emitted `3.det()` / `A.det()` — a
+    // SyntaxError or wrong answer; Determinant(...) displays the form
+    // and flags that it can't evaluate.
+    latex: '\\det(3)',
+    expectedPython: ['sp.Determinant(3)'],
+    issues: ['determinant needs a matrix'],
+  },
+  {
+    latex: 'A^T',
+    expectedPython: [
+      'A = sp.MatrixSymbol("A", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
+      'sp.Transpose(A)',
+    ],
+  },
+  {
+    // \left. f \right|_{lo}^{hi}: folded to EvaluateAt — the
+    // substitution difference, not a mangled power.
+    latex: '\\left. \\frac{x^2}{2} \\right|_{0}^{1}',
+    expectedIR: ['EvaluateAt', ['Divide', ['Power', 'x', 2], 2], 0, 1],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      '(x**2 / 2).subs(x, 1) - (x**2 / 2).subs(x, 0)',
+    ],
+  },
+  {
+    // \; \, spacing commands are layout, not operands — they used to
+    // leak a HorizontalSpacing node into codegen.
+    latex: 'x\\;y',
+    expectedIR: ['Multiply', 'x', 'y'],
+    expectedPython: ["x, y = sp.symbols('x y')", 'x * y'],
+  },
+  {
+    // n!! is factorial2 in SymPy, not a `Factorial2` unknown head.
+    latex: 'n!!',
+    expectedPython: ['n = sp.Symbol("n")', 'sp.factorial2(n)'],
+    issues: ['unknown head "Factorial2"'],
+  },
+  {
+    latex: '\\{1, 2, 3\\}',
+    expectedPython: ['sp.FiniteSet(1, 2, 3)'],
+  },
+  {
+    latex: '\\operatorname{sign}(x)',
+    expectedIR: ['Sign', 'x'],
+    expectedPython: ['x = sp.Symbol("x")', 'sp.sign(x)'],
+  },
+  {
+    // One-sided limits carry a direction arg (±1) — previously the
+    // direction landed as the limit point: limit(f, 0, 1).
+    latex: '\\lim_{x \\to 0^{+}} \\frac{1}{x}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      "sp.limit(1 / x, x, 0, dir='+')",
+    ],
+  },
+  {
+    latex: '\\lim_{x \\to 0^{-}} \\frac{1}{x}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      "sp.limit(1 / x, x, 0, dir='-')",
+    ],
+  },
+  {
+    // Comma-list subscripts keep their name — used to emit 'x_{?}'.
+    latex: 'x_{i,j}',
+    expectedPython: ['x__i_j = sp.Symbol("x_{i,j}")'],
+  },
+  {
+    // \boxed is presentational — emit the wrapped expression.
+    latex: '\\boxed{x^{2}}',
+    expectedPython: ['x = sp.Symbol("x")', 'x**2'],
+  },
+  {
+    // Accent marks denote distinct variables: \hat{x} -> x_hat.
+    latex: '\\hat{x} + \\vec{v}',
+    expectedPython: ["x_hat, v_vec = sp.symbols('x_hat v_vec')", 'x_hat + v_vec'],
+  },
+  {
+    latex: '\\|v\\|',
+    expectedPython: ['v = sp.Symbol("v")', 'sp.Abs(v)'],
+  },
+  {
+    // a \mid b: a divides b.
+    latex: 'a \\mid b',
+    expectedPython: ["b, a = sp.symbols('b a')", 'sp.Eq(sp.Mod(b, a), 0)'],
+  },
+  {
+    // CE can't parse \underset — rewritten to \lim_{x\to0} before parse.
+    latex: '\\underset{x\\to0}{\\lim} f',
+    expectedPython: ["f, x = sp.symbols('f x')", "sp.limit(f, x, 0, dir='+-')"],
+  },
+  {
+    // \Big( ... \Big) sizes are dropped — the parens stay an implicit
+    // application, so `a` resolves as an undefined worksheet function.
+    latex: 'a\\Big(b\\Big)',
+    expectedPython: ['b = sp.Symbol("b")', 'a = sp.Function("a")', 'a(b)'],
+  },
+  {
+    // \; spacing commands are stripped for codegen (implicit multiply).
+    latex: 'x \\; y',
+    expectedPython: ["x, y = sp.symbols('x y')", 'x * y'],
+  },
+  {
+    latex: '\\emptyset',
+    expectedPython: ['sp.EmptySet'],
+  },
+  {
+    // \bigg|_{x=0} is the textbook "evaluated at" bar — \big* sizes are
+    // stripped and the lone | wraps as \left. \right|, and an Equal bound
+    // substitutes the point rather than the equation.
+    latex: '\\frac{dy}{dx}\\bigg|_{x=0}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+      '(sp.diff(y(x), x)).subs(x, 0)',
+    ],
+  },
+  {
+    latex: 'f\\big|_{a}^{b}',
+    expectedPython: [
+      "f, b, a = sp.symbols('f b a')",
+      '(f).subs(f, b) - (f).subs(f, a)',
+    ],
+  },
+  {
+    // \left. \right| with an equation bound — used to emit
+    // subs(x, Eq(x, a)) instead of substituting the point.
+    latex: '\\left. f \\right|_{x=a}',
+    expectedPython: ["f, x, a = sp.symbols('f x a')", '(f).subs(x, a)'],
+  },
+  {
+    // A primed variable is distinct from the unprimed name — the `'` must
+    // survive ident mangling (x' -> x_prime), not collapse onto `x`.
+    latex: "x' + x",
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'x_prime = sp.Symbol("x\'")',
+      'x_prime + x',
+    ],
+  },
+  {
+    // Negated relation heads CE emits directly (\nmid, \nless, \ngtr)
+    // emit the faithful Not(<rel>) — SymPy has no \nless builtins.
+    latex: 'a \\nmid b',
+    expectedPython: [
+      "b, a = sp.symbols('b a')",
+      'sp.Not(sp.Eq(sp.Mod(b, a), 0))',
+    ],
+  },
+  {
+    latex: 'a \\nless b',
+    expectedPython: ["a, b = sp.symbols('a b')", 'sp.Not(sp.Lt(a, b))'],
+  },
+  {
+    latex: 'a \\implies b',
+    expectedPython: ["a, b = sp.symbols('a b')", 'sp.Implies(a, b)'],
+  },
+  {
+    latex: 'a \\equiv b',
+    expectedPython: ["a, b = sp.symbols('a b')", 'sp.Eq(a, b)'],
+  },
+  {
+    // x^{\circ} is degrees — emit the radians conversion, not an
+    // unknown-head flag.
+    latex: 'x^{\\circ}',
+    expectedPython: ['x = sp.Symbol("x")', 'x * sp.pi / 180'],
+  },
+  {
+    // x_{-} is a subscripted name, not an unknown 'Subminus' head.
+    latex: 'x_{-}',
+    expectedPython: ['x = sp.Symbol("x_{-}")'],
+  },
+  {
+    // \min_{x} f minimizes f over x — used to emit sp.Min(_ * x * f)
+    // with a garbage `_` symbol that raised NameError at runtime.
+    latex: '\\min_{x} f',
+    expectedPython: ["x, f = sp.symbols('x f')", 'sp.minimum(f, x)'],
+  },
+  {
+    latex: '\\max_{x} f',
+    expectedPython: ["x, f = sp.symbols('x f')", 'sp.maximum(f, x)'],
+  },
+  {
+    // \min(x,y) keeps the elementwise sp.Min.
+    latex: '\\min(x,y)',
+    expectedPython: ["x, y = sp.symbols('x y')", 'sp.Min(x, y)'],
+  },
+  {
+    // Half-open intervals map to sp.Interval; Open marks the open end.
+    latex: '(a,b]',
+    expectedPython: [
+      "a, b = sp.symbols('a b')",
+      'sp.Interval(a, b, left_open=True)',
+    ],
+  },
+  {
+    latex: '[a,b)',
+    expectedPython: [
+      "a, b = sp.symbols('a b')",
+      'sp.Interval(a, b, right_open=True)',
+    ],
+  },
+  {
+    // \underbrace{x}_{n}: the label annotates, it isn't a subscript —
+    // the statement is x + 1, not a mangled x_{n} symbol.
+    latex: '\\underbrace{x+1}_{n}',
+    expectedPython: ['x = sp.Symbol("x")', 'x + 1'],
+  },
+  {
+    // \mathbb{...} number sets emit the S.* set objects, not bare
+    // symbol names that raise NameError at eval time.
+    latex: '\\mathbb{R}',
+    expectedPython: ['sp.S.Reals'],
+  },
+  {
+    // \in maps to sp.Contains only when the operand is provably a Set —
+    // a bare symbol S keeps the flagged Element(...) stub because
+    // sp.Contains raises TypeError on it. A first-referenced member
+    // also carries the set's domain on its Symbol constructor.
+    latex: 'x \\in \\mathbb{R}',
+    expectedPython: [
+      'x = sp.Symbol("x", real=True)',
+      'sp.Contains(x, sp.S.Reals)',
+    ],
+  },
+  {
+    // Each standard number set contributes the fullest Symbol kwargs
+    // the constructor allows.
+    latex: 'x \\in \\mathbb{Z}',
+    expectedPython: [
+      'x = sp.Symbol("x", integer=True)',
+      'sp.Contains(x, sp.S.Integers)',
+    ],
+  },
+  {
+    latex: 'x \\in \\mathbb{N}',
+    expectedPython: [
+      'x = sp.Symbol("x", integer=True, nonnegative=True)',
+      'sp.Contains(x, sp.S.Naturals0)',
+    ],
+  },
+  {
+    // Interval membership implies the real domain too — first-referenced
+    // symbols get real=True, and the membership emits inside a
+    // `with assuming(Q.real(x)):` block since the interval itself
+    // can't carry the member's assumption.
+    latex: 'x \\in (a,b]',
+    expectedPython: [
+      "a, b = sp.symbols('a b')",
+      'x = sp.Symbol("x", real=True)',
+      'with sp.assuming(sp.Q.real(x)):',
+      '    sp.Contains(x, sp.Interval(a, b, left_open=True))',
+    ],
+  },
+  {
+    // A member already bound (Assign) is not first-referenced — no
+    // Symbol kwargs, but the interval membership still assumes real.
+    latex: '\\displaylines{ x = 1 \\\\ x \\in (0,2] }',
+    expectedPython: [
+      'x = 1',
+      'with sp.assuming(sp.Q.real(x)):',
+      '    sp.Contains(x, sp.Interval(0, 2, left_open=True))',
+    ],
+  },
+  {
+    // \notin asserts the opposite domain — no Symbol kwargs and no
+    // assuming block, only the negated Contains.
+    latex: 'x \\notin \\mathbb{R}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.Not(sp.Contains(x, sp.S.Reals))',
+    ],
+  },
+  {
+    latex: 'x \\in S',
+    expectedPython: [
+      "x, S = sp.symbols('x S')",
+      'Element = sp.Function("Element")',
+      'Element(x, S)',
+    ],
+    issues: ['unknown head "Element"'],
+  },
+  {
+    latex: '\\emptyset \\cup \\mathbb{Z}',
+    expectedPython: ['sp.Union(sp.EmptySet, sp.S.Integers)'],
+  },
+  {
+    latex: 'A^{\\dagger}',
+    expectedPython: [
+      'A = sp.MatrixSymbol("A", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
+      'sp.Adjoint(A)',
+    ],
   },
 ];
 
@@ -503,6 +832,33 @@ describe('error messages + resilient emission', () => {
     const { lines } = compile('x +');
     expect(lines.join('\n')).not.toContain('Error');
     expect(lines.join('\n')).not.toContain('None');
+  });
+
+  it('a \\sum or \\prod with missing bounds names the gap — SymPy has no boundless form', () => {
+    expect(compile('\\sum i').issues).toContain(
+      'sum needs an index and bounds — write \\sum_{i=1}^{n}',
+    );
+    expect(compile('\\prod k').issues).toContain(
+      'product needs an index and bounds',
+    );
+    expect(compile('\\sum_{i=1}^{ }i').issues).toContain(
+      'upper bound is empty — fill it in or delete it',
+    );
+    expect(compile('\\sum_{i= }^{n}i').issues).toContain(
+      'lower bound is empty — fill it in or delete it',
+    );
+    // Previously these emitted Sum(i) / Sum(i, i) — every non-tuple
+    // shape raises ValueError at eval time.
+    expect(compile('\\sum i').lines.join('\n')).not.toContain('summation');
+  });
+
+  it('under-arity builtins say how many args they need', () => {
+    for (const [latex, frag] of [
+      ['\\gcd(10)', 'gcd needs at least 2 arguments'],
+      ['\\mathrm{lcm}(4)', 'lcm needs at least 2 arguments'],
+    ] as const) {
+      expect(compile(latex).issues).toContain(frag);
+    }
   });
 });
 

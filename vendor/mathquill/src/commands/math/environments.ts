@@ -580,6 +580,10 @@ class MatrixCell extends MathBlock {
   keystroke(key: string, e: KeyboardEvent | undefined, ctrlr: Controller) {
     switch (key) {
       case 'Shift-Spacebar':
+        // \displaylines is a single-column grid: adding a column inside a
+        // multi-line cell corrupts the row layout (and later crashes
+        // addColumn on non-contiguous row indices). Matrices only.
+        if (this.parent instanceof DisplayLines) return;
         e?.preventDefault();
         return (this.parent as CellGrid).insert('addColumn', this, ctrlr);
     }

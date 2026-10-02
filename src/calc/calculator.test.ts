@@ -95,12 +95,12 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
 
   it('calls unknown functions through a Function fallback, not sp.<name>', () => {
     // sp.f would AttributeError — f may not exist on sympy.
-    expect(calc('f(3)').statements[0].code).toBe(
-      'getattr(sp, "f", sp.Function("f"))(3)',
+    expect(calc('f(3)').prelude).toContain('f = sp.Function("f")');
+    expect(calc('f(3)').statements[0].code).toBe('f(3)');
+    expect(calc('\\operatorname{foo}(x)').prelude).toContain(
+      'foo = sp.Function("foo")',
     );
-    expect(calc('\\operatorname{foo}(x)').statements[0].code).toBe(
-      'getattr(sp, "foo", sp.Function("foo"))(x)',
-    );
+    expect(calc('\\operatorname{foo}(x)').statements[0].code).toBe('foo(x)');
   });
 
   it('maps \\sin^{-1} to asin and f^{-1} to an inverse-named function', () => {
@@ -133,13 +133,17 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
       'sp.ConditionSet(x, sp.Gt(x, 0))',
     );
     expect(calc('[1,2]\\cap[0,3)').statements[0].code).toBe(
-      'sp.Intersection(sp.Interval(1, 2), sp.Interval.Ropen(0, 3))',
+      'sp.Intersection(sp.Interval(1, 2), sp.Interval(0, 3, right_open=True))',
     );
     expect(calc('x\\equiv1\\mod2').statements[0].code).toBe(
       'sp.Eq(sp.Mod(x, 2), 1)',
     );
-    expect(calc('x\\in\\left[0,\\infty\\right)').statements[0].code).toBe(
-      'sp.Contains(x, sp.Interval.Ropen(0, sp.oo))',
+    // An interval-membership asserts the member's domain in a
+    // `with assuming(...)` wrapper — the set itself stays the display.
+    const mem = calc('x\\in\\left[0,\\infty\\right)');
+    expect(mem.statements[0].code).toContain('with sp.assuming');
+    expect(mem.statements[0].display).toBe(
+      'sp.Contains(x, sp.Interval(0, sp.oo, right_open=True))',
     );
   });
 
@@ -187,8 +191,10 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
   });
 
-  it('emits \\min_{x} f as the body alone (sympy has no bounded Min)', () => {
-    expect(calc('\\min_{x}x^{2}').statements[0].code).toBe('sp.Min(x**2)');
+  it('emits \\min_{x} f as sp.minimum over the variable', () => {
+    expect(calc('\\min_{x}x^{2}').statements[0].code).toBe(
+      'sp.minimum(x**2, x)',
+    );
   });
 
   it('mangles the sp module alias out of the way', () => {
@@ -203,7 +209,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
   });
 
   it('lowers \\setminus, \\emptyset, and \\pmod congruences', () => {
-    expect(calc('\\emptyset').statements[0].code).toBe('sp.S.EmptySet');
+    expect(calc('\\emptyset').statements[0].code).toBe('sp.EmptySet');
     expect(calc('\\{1,2\\}\\setminus\\{2\\}').statements[0].code).toBe(
       'sp.Complement(sp.FiniteSet(1, 2), sp.FiniteSet(2))',
     );
@@ -359,16 +365,17 @@ describe('toNerdamerInput (latex → nerdamer calls)', () => {
       '2^n=sum(factorial(i)/(factorial(n)*factorial(i-n)), i, 0, n)',
     );
   });
-  it('keeps the argument x in x′ (prime on x itself)', () => {
+  it('reads a bare prime as a primed variable name', () => {
     const p = calc("x'");
-    expect(p.statements[0]?.code).toContain('x_2(x)');
-    expect(p.prelude).toContain('x_2 = sp.Function("x")');
+    expect(p.statements[0]?.code).toBe('x_prime');
+    expect(p.prelude).toContain("x_prime = sp.Symbol(\"x'\")");
   });
 
   it('applies nested calls, not a literal call(f, x)', () => {
     const p = calc('g(f(x))');
-    expect(p.statements[0]?.code).not.toContain('call(');
-    expect(p.statements[0]?.code).toContain('Function("f"))(x)');
+    expect(p.statements[0]?.code).toBe('g(f(x))');
+    expect(p.prelude).toContain('f = sp.Function("f")');
+    expect(p.prelude).toContain('g = sp.Function("g")');
   });
 
   it('keeps a comma subscript in the symbol name', () => {
@@ -384,7 +391,7 @@ describe('toNerdamerInput (latex → nerdamer calls)', () => {
 
   it('keeps i a symbol inside a Kronecker delta', () => {
     const p = calc('\\delta_{ij}');
-    expect(p.statements[0]?.code).toContain('KroneckerDelta"))(i, j)');
+    expect(p.statements[0]?.code).toContain('KroneckerDelta(i, j)');
     expect(p.statements[0]?.code).not.toContain('sp.I');
   });
   it("evaluates f'(0) at 0 instead of differentiating a constant", () => {
