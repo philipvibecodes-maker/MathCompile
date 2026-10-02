@@ -126,46 +126,11 @@ suite('autoSubscript', function () {
     assert.equal(mq.latex(), 'x');
   });
 
-  test('autosubscript into an empty exponent drops the stale `^{ }`', function () {
-    mq.latex('x^{ }');
-    mq.moveToRightEnd();
-    mq.typedText('2');
-    assert.equal(mq.latex(), 'x_{2}');
-  });
-
-  test('autosubscript into `x_{ }^{ }` drops the stale `^{ }`', function () {
-    mq.latex('x_{ }^{ }');
-    mq.moveToRightEnd();
-    mq.typedText('2');
-    assert.equal(mq.latex(), 'x_{2}');
-  });
-
-  test('autosubscript into `x_{3}^{ }` drops the stale `^{ }`', function () {
-    mq.latex('x_{3}^{ }');
-    mq.moveToRightEnd();
-    mq.typedText('2');
-    assert.equal(mq.latex(), 'x_{32}');
-  });
-
   test('autosubscript keeps a nonempty exponent', function () {
     mq.latex('x^{5}');
     mq.moveToRightEnd();
     mq.typedText('2');
     assert.equal(mq.latex(), 'x_{2}^{5}');
-  });
-
-  test('typed `_` after an empty `^{ }` drops the stale exponent', function () {
-    mq.typedText('x^');
-    mq.keystroke('Right');
-    mq.typedText('_2');
-    assert.equal(mq.latex(), 'x_{2}');
-  });
-
-  test('typed `^` after an empty `_{ }` drops the stale subscript', function () {
-    mq.typedText('x_');
-    mq.keystroke('Right');
-    mq.typedText('^2');
-    assert.equal(mq.latex(), 'x^{2}');
   });
 
   test('typed `_` keeps a nonempty exponent', function () {
