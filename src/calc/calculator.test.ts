@@ -279,15 +279,25 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(
       calc('2x \\text{ for } x \\in \\{1,2,3\\}').statements[0].code,
     ).toBe('sp.imageset(sp.Lambda(x, 2 * x), sp.FiniteSet(1, 2, 3))');
-    // `x for x \\in S` / `x for x>0` is just the set itself.
+    // `x for x \\in S` / `x for x>0` is just the domain itself.
     expect(calc('x \\text{ for } x \\in \\{1,2\\}').statements[0].code).toBe(
       'sp.FiniteSet(1, 2)',
     );
     expect(calc('x \\text{ for } x>0').statements[0].code).toBe(
-      'sp.ConditionSet(x, sp.Gt(x, 0), sp.S.Reals)',
+      'sp.Interval.open(0, sp.oo)',
+    );
+    // Relational conditions become real domains so imageset evaluates.
+    expect(calc('x+1 \\text{ for } x>0').statements[0].code).toBe(
+      'sp.imageset(sp.Lambda(x, x + 1), sp.Interval.open(0, sp.oo))',
     );
     expect(calc('2x \\text{ for } x>0').statements[0].code).toBe(
-      'sp.imageset(sp.Lambda(x, 2 * x), sp.ConditionSet(x, sp.Gt(x, 0), sp.S.Reals))',
+      'sp.imageset(sp.Lambda(x, 2 * x), sp.Interval.open(0, sp.oo))',
+    );
+    expect(calc('x^{2} \\text{ for } 0<x').statements[0].code).toBe(
+      'sp.imageset(sp.Lambda(x, x**2), sp.Interval.open(0, sp.oo))',
+    );
+    expect(calc('x+1 \\text{ for } x=2').statements[0].code).toBe(
+      'sp.imageset(sp.Lambda(x, x + 1), sp.FiniteSet(2))',
     );
   });
 

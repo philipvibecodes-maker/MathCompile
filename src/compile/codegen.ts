@@ -458,6 +458,56 @@ class Emitter {
     return this.mat(node);
   }
 
+  /** Lower `x cmp b`/`b cmp x` into a real domain emit for
+   * `expr for x <cond>` — returns [domain code, var name] or
+   * undefined when neither side is a bare variable. */
+  private relationalDomain(
+    cond: MathJson | undefined,
+  ): [string, string] | undefined {
+    if (!isArr(cond) || cond.length !== 3) return undefined;
+    const head = headOf(cond) ?? '';
+    let v: string;
+    let b: MathJson;
+    let dir = head;
+    if (isStr(cond[1])) {
+      v = cond[1];
+      b = cond[2];
+    } else if (isStr(cond[2])) {
+      v = cond[2];
+      b = cond[1];
+      dir =
+        head === 'Greater'
+          ? 'Less'
+          : head === 'Less'
+            ? 'Greater'
+            : head === 'GreaterEqual'
+              ? 'LessEqual'
+              : head === 'LessEqual'
+                ? 'GreaterEqual'
+                : head;
+    } else {
+      return undefined;
+    }
+    const rhs = this.emit(b);
+    const sp = this.sp;
+    switch (dir) {
+      case 'Greater':
+        return [`${sp}Interval.open(${rhs}, ${sp}oo)`, v];
+      case 'GreaterEqual':
+        return [`${sp}Interval(${rhs}, ${sp}oo)`, v];
+      case 'Less':
+        return [`${sp}Interval.open(-${sp}oo, ${rhs})`, v];
+      case 'LessEqual':
+        return [`${sp}Interval(-${sp}oo, ${rhs})`, v];
+      case 'Equal':
+        return [`${sp}FiniteSet(${rhs})`, v];
+      case 'NotEqual':
+        return [`${sp}Complement(${sp}S.Reals, ${sp}FiniteSet(${rhs}))`, v];
+      default:
+        return undefined;
+    }
+  }
+
   private isNegated(node: MathJson): boolean {
     if (headOf(node) === 'Negate') return true;
     if (typeof node === 'number') return node < 0;
@@ -1708,31 +1758,35 @@ class Emitter {
         if (name === 'Mean' && args.length === 2)
           return [`${this.sp}conjugate(${this.emit(args[1])})`, PREC_ATOM];
         // `expr \text{ for } x \in S` — the image of expr over the set,
-        // sp.imageset(Lambda(x, expr), S). The bare-var form
-        // `x for x \in S`/`x for x>0` collapses to the plain set /
-        // ConditionSet; unparseable conditions keep the honest opaque
-        // ForAll call (no sp.ForAll exists in sympy 1.14).
-        if (name === 'ForAll' && args.length === 3) {
-          const cond = args[1];
-          const expr = args[2];
+        // sp.imageset(Lambda(x, expr), S). `for x = 2` parses as a
+        // Comprehension with swapped arg order — same lowering. A
+        // relational condition (x>0) becomes a real domain
+        // (Interval/FiniteSet/Complement) so the image actually
+        // evaluates; the bare-var form `x for ...` collapses to the
+        // domain itself. Unhandled conditions keep the honest opaque
+        // call (no sp.ForAll/Comprehension exists in sympy 1.14).
+        if (
+          (name === 'ForAll' || name === 'Comprehension') &&
+          args.length === 3
+        ) {
+          const [cond, expr] =
+            name === 'ForAll' ? [args[1], args[2]] : [args[2], args[1]];
           if (isArr(cond) && cond[0] === 'Element' && isStr(cond[1])) {
             const v = cond[1];
-            if (expr === v) return [this.emit(cond[2]), PREC_ATOM];
+            const dom = this.isSetish(cond[2])
+              ? this.emit(cond[2])
+              : `${this.sp}FiniteSet(${this.emit(cond[2])})`;
+            if (expr === v) return [dom, PREC_ATOM];
             return [
-              `${this.sp}imageset(${this.sp}Lambda(${this.sym(v)}, ${this.emit(expr)}), ${this.emit(cond[2])})`,
+              `${this.sp}imageset(${this.sp}Lambda(${this.sym(v)}, ${this.emit(expr)}), ${dom})`,
               PREC_ATOM,
             ];
           }
-          if (
-            isArr(cond) &&
-            CMP_NESTABLE_HEADS.has(cond[0] as string) &&
-            isStr(cond[1])
-          ) {
-            const v = cond[1];
-            const cset = `${this.sp}ConditionSet(${this.sym(v)}, ${this.emit(cond)}, ${this.sp}S.Reals)`;
-            if (expr === v) return [cset, PREC_ATOM];
+          const dom = this.relationalDomain(cond);
+          if (dom !== undefined) {
+            if (expr === dom[1]) return [dom[0], PREC_ATOM];
             return [
-              `${this.sp}imageset(${this.sp}Lambda(${this.sym(v)}, ${this.emit(expr)}), ${cset})`,
+              `${this.sp}imageset(${this.sp}Lambda(${this.sym(dom[1])}, ${this.emit(expr)}), ${dom[0]})`,
               PREC_ATOM,
             ];
           }
