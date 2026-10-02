@@ -167,7 +167,7 @@ const SP_BUILTIN_CALL = new Set(
     'partition primepi mobius totient reduced_totient divisor_sigma ' +
     'legendre_symbol jacobi_symbol kronecker_symbol rf ff factorial2 ' +
     'subfactorial stirling multinomial nC nP nT Piecewise piecewise ' +
-    'sign ceiling conjugate arg re ' +
+    'sign ceiling conjugate arg re im ' +
     'asinh acosh atanh acoth asech acsch ' +
     'solve solveset linsolve nonlinsolve simplify factor expand cancel ' +
     'collect apart together trigsimp expand_trig powsimp nsimplify ' +
@@ -685,19 +685,25 @@ class Emitter {
         ];
       case 'Multiply': {
         // `\operatorname{sgn}x` flattens to `Multiply(Sign, x)` — the
-        // bare `Sign` factor reads as a name, not the signum function.
-        // Fuse the operator leaf back into a call: unary `Sign`+next
-        // (`a sgn b` → `a*sign(b)`); binary GCD/LCM take the previous
-        // AND next factor (`a \gcd b` → `gcd(a,b)`). A trailing bare
-        // leaf stays a symbol.
-        const FUSE_UNARY = new Set(['Sign']);
+        // bare `Sign`/`Im`/`Re` factor reads as a name, not the signum /
+        // imaginary / real-part function. Fuse the operator leaf back
+        // into a call: unary op+next (`a sgn b` → `a*sign(b)`, `x Im z`
+        // → `x*im(z)`); binary GCD/LCM take the previous AND next factor
+        // (`a \gcd b` → `gcd(a,b)`). A trailing bare leaf stays a symbol.
+        const FUSE_UNARY: Record<string, string> = {
+          Sign: 'Sign',
+          Im: 'Im',
+          Re: 'Re',
+          im: 'Im',
+          re: 'Re',
+        };
         const FUSE_BINARY = new Set(['GCD', 'LCM']);
         const parts: MathJson[] = [];
         for (let i = 0; i < args.length; i++) {
           const a = args[i];
           if (isStr(a) && i + 1 < args.length) {
-            if (FUSE_UNARY.has(a)) {
-              parts.push([a, args[++i]]);
+            if (FUSE_UNARY[a] !== undefined) {
+              parts.push([FUSE_UNARY[a], args[++i]]);
               continue;
             }
             if (FUSE_BINARY.has(a)) {
