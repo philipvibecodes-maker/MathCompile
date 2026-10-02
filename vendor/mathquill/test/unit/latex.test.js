@@ -1635,5 +1635,37 @@ suite('latex', function () {
     assertParsesLatex('\\cdashline{1-2}', '\\cdashline{1-2}');
     assertParsesLatex('\\checkmark', '\\checkmark');
     assertParsesLatex('\\definecolor{c}{rgb}{1,0,0}', '\\definecolor{c}{rgb}{1,0,0}');
+    // unknown commands degrade to verbatim leaves instead of
+    // blanking the whole field
+    assertParsesLatex('x\\foo y', 'x\\foo y');
+    assertParsesLatex('\\expandafter\\foo', '\\expandafter \\foo');
+    // a registered command missing its braces degrades to a leaf
+    assertParsesLatex('\\frac{a}', '\\frac a');
+    assertParsesLatex(
+      '\\begin{matrix}a&\\frac{x}\\end{matrix}',
+      '\\begin{matrix}a&\\frac x\\end{matrix}'
+    );
+    // env spec args: subarray {spec}, alignat {n}
+    assertParsesLatex(
+      '\\begin{subarray}{c}a\\\\b\\end{subarray}',
+      '\\begin{subarray}{c}a\\\\b\\end{subarray}'
+    );
+    assertParsesLatex(
+      '\\begin{alignat}{2}a&=b\\end{alignat}',
+      '\\begin{alignat}{2}a&=b\\end{alignat}'
+    );
+    assertParsesLatex(
+      '\\begin{alignedat}{2}a&=b\\end{alignedat}',
+      '\\begin{alignedat}{2}a&=b\\end{alignedat}'
+    );
+    // font-family switches, font commands, TeX primitives
+    assertParsesLatex('\\bfseries x', '\\bfseries x');
+    assertParsesLatex('\\usefont{T1}{cmr}{m}{n}', '\\usefont{T1}{cmr}{m}{n}');
+    assertParsesLatex('\\fontsize{10}{12}', '\\fontsize{10}{12}');
+    assertParsesLatex('\\selectfont', '\\selectfont');
+    assertParsesLatex('\\everymath{x}', '\\everymath{x}');
+    assertParsesLatex('\\ifmmode', '\\ifmmode');
+    assertParsesLatex('\\expandafter', '\\expandafter');
+    assertParsesLatex('\\romannumeral', '\\romannumeral');
   });
 });

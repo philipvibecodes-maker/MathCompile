@@ -50,24 +50,32 @@ var latexMathParser = (function () {
   });
 
   var controlSequence = regex(/^[^\\a-eg-zA-Z]/) // hotfix #164; match MathBlock::write
+    .map(function (ch: string) {
+      return { cs: ch, isCommand: false };
+    })
     .or(
-      string('\\').then(
-        regex(/^[a-z]+/i)
-          .or(regex(/^\s+/).result(' '))
-          // escaped single-char accents keep their backslash so \'{e}
-          // is distinct from the bare ' prime symbol, \~{n} from ~nbsp;
-          // \[ \( \] \) display wrappers likewise stay distinct from
-          // bare brackets
-          .or(
-            regex(/^['"~.^=`()[\]]/).map(function (c) {
-              return '\\' + c;
-            })
-          )
-          .or(any)
-      )
+      string('\\')
+        .then(
+          regex(/^[a-z]+/i)
+            .or(regex(/^\s+/).result(' '))
+            // escaped single-char accents keep their backslash so \'{e}
+            // is distinct from the bare ' prime symbol, \~{n} from ~nbsp;
+            // \[ \( \] \) display wrappers likewise stay distinct from
+            // bare brackets
+            .or(
+              regex(/^['"~.^=`()[\]]/).map(function (c) {
+                return '\\' + c;
+              })
+            )
+            .or(any)
+        )
+        .map(function (cs: string) {
+          return { cs: cs, isCommand: true };
+        })
     )
-    .then(function (ctrlSeq) {
+    .then(function (info: { cs: string; isCommand: boolean }) {
       // TODO - is Parser<MQNode> correct?
+      var ctrlSeq = info.cs;
       var cmdKlass = (LatexCmds as LatexCmdsSingleChar)[ctrlSeq];
 
       if (cmdKlass) {
@@ -78,6 +86,19 @@ var latexMathParser = (function () {
           var builder = cmdKlass as (c: string) => TempSingleCharNode; // TODO - figure out how to know the difference
           return builder(ctrlSeq).parser();
         }
+      } else if (info.isCommand) {
+        // unknown \command: degrade to a verbatim leaf so one
+        // unrecognized \ctrlseq doesn't blank the whole field
+        var latexName = /^[a-z]+$/i.test(ctrlSeq)
+          ? '\\' + ctrlSeq + ' '
+          : '\\' + ctrlSeq;
+        return succeed(
+          new VanillaSymbol(
+            latexName,
+            h.text(latexName.replace(/ $/, '')),
+            ctrlSeq
+          ) as MQNode | Fragment
+        );
       } else {
         return fail('unknown command: \\' + ctrlSeq);
       }

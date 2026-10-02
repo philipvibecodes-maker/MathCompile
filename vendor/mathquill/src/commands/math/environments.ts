@@ -1065,3 +1065,57 @@ class TabularEnv extends ArrayEnv {
   }
 }
 Environments.tabular = () => new TabularEnv();
+
+// \begin{subarray}{spec}: like smallmatrix but with a required
+// column spec ({c}, {l}, {r}) that round-trips verbatim.
+class SubarrayEnv extends SmallMatrix {
+  spec = '';
+  latexOpen() {
+    return '\\begin{subarray}{' + this.spec + '}';
+  }
+  latexClose() {
+    return '\\end{subarray}';
+  }
+  parser() {
+    var self = this;
+    return Parser.optWhitespace
+      .then(Parser.string('{'))
+      .then(Parser.regex(/^[^{}]*/))
+      .skip(Parser.string('}'))
+      .then(function (spec: string) {
+        self.spec = spec;
+        return self.cellsParser();
+      });
+  }
+}
+Environments.subarray = () => new SubarrayEnv();
+
+// \begin{alignat}{n} / \begin{alignedat}{n}: aligned grid with a
+// required column-pair count; keeps its own env name + spec.
+class AlignatEnv extends Aligned {
+  n = '';
+  envName = 'alignat';
+  latexOpen() {
+    return '\\begin{' + this.envName + '}{' + this.n + '}';
+  }
+  latexClose() {
+    return '\\end{' + this.envName + '}';
+  }
+  parser() {
+    var self = this;
+    return Parser.optWhitespace
+      .then(Parser.string('{'))
+      .then(Parser.regex(/^[^{}]*/))
+      .skip(Parser.string('}'))
+      .then(function (n: string) {
+        self.n = n;
+        return self.cellsParser();
+      });
+  }
+}
+Environments.alignat = () => new AlignatEnv();
+Environments.alignedat = () => {
+  var e = new AlignatEnv();
+  e.envName = 'alignedat';
+  return e;
+};

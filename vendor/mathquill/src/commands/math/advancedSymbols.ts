@@ -2589,3 +2589,92 @@ LatexCmds.definecolor = () =>
   );
 bindMathWrap('cdashline');
 LatexCmds.checkmark = bindVanillaSymbol('\\checkmark ', '&#10003;', 'check mark');
+
+// Declaration-style font switches + remaining sizes (no argument).
+[
+  'bfseries',
+  'mdseries',
+  'upshape',
+  'itshape',
+  'slshape',
+  'scshape',
+  'swshape',
+  'rmfamily',
+  'sffamily',
+  'ttfamily',
+  'normalfont',
+  'mit',
+  'selectfont',
+  'HUGE',
+  'Tiny',
+  'eqalignno',
+  'leqalignno'
+].forEach(function (name) {
+  LatexCmds[name] = bindLiteralCmd('\\' + name + ' ', name);
+});
+// \usefont{enc}{fam}{ser}{shape}, \fontsize{sz}{bl}, \fontfamily{..},
+// \fontseries{..}, \fontshape{..}, \setmainfont{..}, \setsansfont{..},
+// \setmonofont{..}, \setmathfont{..}
+LatexCmds.usefont = () =>
+  new RawArgCommand(
+    '\\usefont',
+    new RegExp('^' + RAW_OPT_GROUP + RAW_GROUP + RAW_GROUP + RAW_GROUP + RAW_GROUP),
+    'use font'
+  );
+['fontsize', 'setmainfont', 'setsansfont', 'setmonofont', 'setmathfont',
+ 'setmathrm', 'setmathsf', 'setmathtt', 'setboldmathrm', 'fontspec',
+ 'newfontfamily', 'newfontface', 'defaultfontfeatures'].forEach(function (name) {
+  var groups = name === 'fontsize' ? 2 : 1;
+  (LatexCmds as Record<string, () => MQNode | Fragment>)[name] = () =>
+    new RawArgCommand(
+      '\\' + name,
+      new RegExp('^' + RAW_OPT_GROUP + RAW_GROUP + (groups > 1 ? RAW_GROUP : '')),
+      name
+    );
+});
+['fontfamily', 'fontseries', 'fontshape', 'fontencoding', 'mathversion',
+ 'everymath', 'everydisplay'].forEach(bindMathWrap);
+// TeX primitive keywords + conditionals — verbatim leaves.
+[
+  'catcode', 'count', 'countdef', 'dimen', 'dimendef', 'skip', 'skipdef',
+  'muskip', 'muskipdef', 'toks', 'toksdef', 'box', 'setbox', 'copy',
+  'lastbox', 'vsplit', 'advance', 'multiply', 'message', 'errmessage',
+  'expandafter', 'noexpand', 'the', 'string', 'number', 'romannumeral',
+  'uppercase', 'lowercase', 'csname', 'endcsname', 'ifx', 'ifnum', 'ifdim',
+  'ifodd', 'ifvmode', 'ifhmode', 'ifmmode', 'ifinner', 'ifvoid', 'ifhbox',
+  'ifvbox', 'ifcat', 'iftrue', 'iffalse', 'ifcase', 'else', 'or', 'fi',
+  'loop', 'repeat', 'bye', 'dump', 'jobname', 'meaning', 'show', 'showthe',
+  'showbox', 'tracingall', 'futurelet', 'afterassignment', 'aftergroup',
+  'global', 'long', 'outer', 'immediate', 'write', 'read', 'openout',
+  'closeout', 'openin', 'closein', 'input', 'endinput', 'include',
+  'shipout', 'mark', 'marks', 'insert', 'vadjust', 'valign', 'halign',
+  'indent', 'noindent', 'unskip', 'unpenalty', 'unkern', 'penalty',
+  'lastpenalty', 'lastskip', 'lastkern', 'ifdefined', 'unless',
+  'unexpanded', 'detokenize', 'scantokens', 'numexpr', 'dimexpr',
+  'glueexpr', 'muexpr', 'protected', 'font', 'fontdimen', 'magnification',
+  'mag', 'parshape', 'hangindent', 'hangafter', 'leftskip', 'rightskip',
+  'baselineskip', 'lineskip', 'parskip', 'topskip', 'tabskip',
+  'spaceskip', 'xspaceskip', 'emergencystretch', 'tolerance',
+  'pretolerance', 'hbadness', 'vbadness', 'hfuzz', 'vfuzz', 'hsize',
+  'vsize', 'maxdepth', 'pagedepth', 'pagetotal', 'pagegoal', 'output',
+  'deadcycles', 'maxdeadcycles', 'batchmode', 'nonstopmode',
+  'scrollmode', 'errorstopmode', 'pausing', 'tracingonline',
+  'tracingmacros', 'tracingstats', 'tracingparagraphs', 'tracingpages',
+  'tracingoutput', 'tracinglostchars', 'tracingcommands',
+  'tracingrestores', 'language', 'uchyph', 'lefthyphenmin',
+  'righthyphenmin', 'defaulthyphenchar', 'defaultskewchar',
+  'hyphenpenalty', 'exhyphenpenalty', 'doublehyphendemerits',
+  'finalhyphendemerits', 'adjdemerits', 'looseness', 'linepenalty',
+  'clubpenalty', 'widowpenalty', 'displaywidowpenalty', 'brokenpenalty',
+  'predisplaypenalty', 'postdisplaypenalty', 'interlinepenalty',
+  'floatingpenalty', 'outputpenalty', 'interfootnotelinepenalty',
+  'delimiterfactor', 'nulldelimiterfurnish', 'defaultdelimiterfactor',
+  'mathsurround', 'nulldelimiterspace', 'scriptspace',
+  'displayindent', 'displaywidth', 'predisplaysize',
+  'abovedisplayskip', 'belowdisplayskip', 'abovedisplayshortskip',
+  'belowdisplayshortskip', 'mathindent', 'everymathdim', 'everyjob',
+  'everycr', 'everyhbox', 'everyvbox', 'everypar', 'outputroutine'
+].forEach(function (name) {
+  if (!LatexCmds[name])
+    LatexCmds[name] = bindLiteralCmd('\\' + name + ' ', name);
+});

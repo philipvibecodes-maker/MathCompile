@@ -4104,7 +4104,11 @@ var __assign = (this && this.__assign) || function () {
             return new VanillaSymbol(c);
         });
         var controlSequence = regex(/^[^\\a-eg-zA-Z]/) // hotfix #164; match MathBlock::write
-            .or(string('\\').then(regex(/^[a-z]+/i)
+            .map(function (ch) {
+            return { cs: ch, isCommand: false };
+        })
+            .or(string('\\')
+            .then(regex(/^[a-z]+/i)
             .or(regex(/^\s+/).result(' '))
             // escaped single-char accents keep their backslash so \'{e}
             // is distinct from the bare ' prime symbol, \~{n} from ~nbsp;
@@ -4113,9 +4117,13 @@ var __assign = (this && this.__assign) || function () {
             .or(regex(/^['"~.^=`()[\]]/).map(function (c) {
             return '\\' + c;
         }))
-            .or(any)))
-            .then(function (ctrlSeq) {
+            .or(any))
+            .map(function (cs) {
+            return { cs: cs, isCommand: true };
+        }))
+            .then(function (info) {
             // TODO - is Parser<MQNode> correct?
+            var ctrlSeq = info.cs;
             var cmdKlass = LatexCmds[ctrlSeq];
             if (cmdKlass) {
                 if (cmdKlass.constructor) {
@@ -4126,6 +4134,14 @@ var __assign = (this && this.__assign) || function () {
                     var builder = cmdKlass; // TODO - figure out how to know the difference
                     return builder(ctrlSeq).parser();
                 }
+            }
+            else if (info.isCommand) {
+                // unknown \command: degrade to a verbatim leaf so one
+                // unrecognized \ctrlseq doesn't blank the whole field
+                var latexName = /^[a-z]+$/i.test(ctrlSeq)
+                    ? '\\' + ctrlSeq + ' '
+                    : '\\' + ctrlSeq;
+                return succeed(new VanillaSymbol(latexName, h.text(latexName.replace(/ $/, '')), ctrlSeq));
             }
             else {
                 return fail('unknown command: \\' + ctrlSeq);
@@ -5305,13 +5321,20 @@ var __assign = (this && this.__assign) || function () {
         MathCommand.prototype.parser = function () {
             var _this_1 = this;
             var block = latexMathParser.block;
-            return block.times(this.numBlocks()).map(function (blocks) {
+            var self = this;
+            return block
+                .times(this.numBlocks())
+                .map(function (blocks) {
                 _this_1.blocks = blocks;
                 for (var i = 0; i < blocks.length; i += 1) {
                     blocks[i].adopt(_this_1, _this_1.getEnd(R), 0);
                 }
                 return _this_1;
-            });
+            })
+                .or(
+            // a command missing its braces degrades to a verbatim leaf
+            // instead of blanking the surrounding content
+            Parser.succeed(new VanillaSymbol(self.ctrlSeq + ' ', h.text(self.ctrlSeq || ''), self.ctrlSeq)));
         };
         // createLeftOf(cursor) and the methods it calls
         MathCommand.prototype.createLeftOf = function (cursor) {
@@ -8182,6 +8205,88 @@ var __assign = (this && this.__assign) || function () {
     };
     bindMathWrap('cdashline');
     LatexCmds.checkmark = bindVanillaSymbol('\\checkmark ', '&#10003;', 'check mark');
+    // Declaration-style font switches + remaining sizes (no argument).
+    [
+        'bfseries',
+        'mdseries',
+        'upshape',
+        'itshape',
+        'slshape',
+        'scshape',
+        'swshape',
+        'rmfamily',
+        'sffamily',
+        'ttfamily',
+        'normalfont',
+        'mit',
+        'selectfont',
+        'HUGE',
+        'Tiny',
+        'eqalignno',
+        'leqalignno'
+    ].forEach(function (name) {
+        LatexCmds[name] = bindLiteralCmd('\\' + name + ' ', name);
+    });
+    // \usefont{enc}{fam}{ser}{shape}, \fontsize{sz}{bl}, \fontfamily{..},
+    // \fontseries{..}, \fontshape{..}, \setmainfont{..}, \setsansfont{..},
+    // \setmonofont{..}, \setmathfont{..}
+    LatexCmds.usefont = function () {
+        return new RawArgCommand('\\usefont', new RegExp('^' + RAW_OPT_GROUP + RAW_GROUP + RAW_GROUP + RAW_GROUP + RAW_GROUP), 'use font');
+    };
+    ['fontsize', 'setmainfont', 'setsansfont', 'setmonofont', 'setmathfont',
+        'setmathrm', 'setmathsf', 'setmathtt', 'setboldmathrm', 'fontspec',
+        'newfontfamily', 'newfontface', 'defaultfontfeatures'].forEach(function (name) {
+        var groups = name === 'fontsize' ? 2 : 1;
+        LatexCmds[name] = function () {
+            return new RawArgCommand('\\' + name, new RegExp('^' + RAW_OPT_GROUP + RAW_GROUP + (groups > 1 ? RAW_GROUP : '')), name);
+        };
+    });
+    ['fontfamily', 'fontseries', 'fontshape', 'fontencoding', 'mathversion',
+        'everymath', 'everydisplay'].forEach(bindMathWrap);
+    // TeX primitive keywords + conditionals \u2014 verbatim leaves.
+    [
+        'catcode', 'count', 'countdef', 'dimen', 'dimendef', 'skip', 'skipdef',
+        'muskip', 'muskipdef', 'toks', 'toksdef', 'box', 'setbox', 'copy',
+        'lastbox', 'vsplit', 'advance', 'multiply', 'message', 'errmessage',
+        'expandafter', 'noexpand', 'the', 'string', 'number', 'romannumeral',
+        'uppercase', 'lowercase', 'csname', 'endcsname', 'ifx', 'ifnum', 'ifdim',
+        'ifodd', 'ifvmode', 'ifhmode', 'ifmmode', 'ifinner', 'ifvoid', 'ifhbox',
+        'ifvbox', 'ifcat', 'iftrue', 'iffalse', 'ifcase', 'else', 'or', 'fi',
+        'loop', 'repeat', 'bye', 'dump', 'jobname', 'meaning', 'show', 'showthe',
+        'showbox', 'tracingall', 'futurelet', 'afterassignment', 'aftergroup',
+        'global', 'long', 'outer', 'immediate', 'write', 'read', 'openout',
+        'closeout', 'openin', 'closein', 'input', 'endinput', 'include',
+        'shipout', 'mark', 'marks', 'insert', 'vadjust', 'valign', 'halign',
+        'indent', 'noindent', 'unskip', 'unpenalty', 'unkern', 'penalty',
+        'lastpenalty', 'lastskip', 'lastkern', 'ifdefined', 'unless',
+        'unexpanded', 'detokenize', 'scantokens', 'numexpr', 'dimexpr',
+        'glueexpr', 'muexpr', 'protected', 'font', 'fontdimen', 'magnification',
+        'mag', 'parshape', 'hangindent', 'hangafter', 'leftskip', 'rightskip',
+        'baselineskip', 'lineskip', 'parskip', 'topskip', 'tabskip',
+        'spaceskip', 'xspaceskip', 'emergencystretch', 'tolerance',
+        'pretolerance', 'hbadness', 'vbadness', 'hfuzz', 'vfuzz', 'hsize',
+        'vsize', 'maxdepth', 'pagedepth', 'pagetotal', 'pagegoal', 'output',
+        'deadcycles', 'maxdeadcycles', 'batchmode', 'nonstopmode',
+        'scrollmode', 'errorstopmode', 'pausing', 'tracingonline',
+        'tracingmacros', 'tracingstats', 'tracingparagraphs', 'tracingpages',
+        'tracingoutput', 'tracinglostchars', 'tracingcommands',
+        'tracingrestores', 'language', 'uchyph', 'lefthyphenmin',
+        'righthyphenmin', 'defaulthyphenchar', 'defaultskewchar',
+        'hyphenpenalty', 'exhyphenpenalty', 'doublehyphendemerits',
+        'finalhyphendemerits', 'adjdemerits', 'looseness', 'linepenalty',
+        'clubpenalty', 'widowpenalty', 'displaywidowpenalty', 'brokenpenalty',
+        'predisplaypenalty', 'postdisplaypenalty', 'interlinepenalty',
+        'floatingpenalty', 'outputpenalty', 'interfootnotelinepenalty',
+        'delimiterfactor', 'nulldelimiterfurnish', 'defaultdelimiterfactor',
+        'mathsurround', 'nulldelimiterspace', 'scriptspace',
+        'displayindent', 'displaywidth', 'predisplaysize',
+        'abovedisplayskip', 'belowdisplayskip', 'abovedisplayshortskip',
+        'belowdisplayshortskip', 'mathindent', 'everymathdim', 'everyjob',
+        'everycr', 'everyhbox', 'everyvbox', 'everypar', 'outputroutine'
+    ].forEach(function (name) {
+        if (!LatexCmds[name])
+            LatexCmds[name] = bindLiteralCmd('\\' + name + ' ', name);
+    });
     /*********************************
      * Symbols for Basic Mathematics
      ********************************/
@@ -13365,6 +13470,70 @@ var __assign = (this && this.__assign) || function () {
         return TabularEnv;
     }(ArrayEnv));
     Environments.tabular = function () { return new TabularEnv(); };
+    // \begin{subarray}{spec}: like smallmatrix but with a required
+    // column spec ({c}, {l}, {r}) that round-trips verbatim.
+    var SubarrayEnv = /** @class */ (function (_super) {
+        __extends(SubarrayEnv, _super);
+        function SubarrayEnv() {
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.spec = '';
+            return _this_1;
+        }
+        SubarrayEnv.prototype.latexOpen = function () {
+            return '\\begin{subarray}{' + this.spec + '}';
+        };
+        SubarrayEnv.prototype.latexClose = function () {
+            return '\\end{subarray}';
+        };
+        SubarrayEnv.prototype.parser = function () {
+            var self = this;
+            return Parser.optWhitespace
+                .then(Parser.string('{'))
+                .then(Parser.regex(/^[^{}]*/))
+                .skip(Parser.string('}'))
+                .then(function (spec) {
+                self.spec = spec;
+                return self.cellsParser();
+            });
+        };
+        return SubarrayEnv;
+    }(SmallMatrix));
+    Environments.subarray = function () { return new SubarrayEnv(); };
+    // \begin{alignat}{n} / \begin{alignedat}{n}: aligned grid with a
+    // required column-pair count; keeps its own env name + spec.
+    var AlignatEnv = /** @class */ (function (_super) {
+        __extends(AlignatEnv, _super);
+        function AlignatEnv() {
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.n = '';
+            _this_1.envName = 'alignat';
+            return _this_1;
+        }
+        AlignatEnv.prototype.latexOpen = function () {
+            return '\\begin{' + this.envName + '}{' + this.n + '}';
+        };
+        AlignatEnv.prototype.latexClose = function () {
+            return '\\end{' + this.envName + '}';
+        };
+        AlignatEnv.prototype.parser = function () {
+            var self = this;
+            return Parser.optWhitespace
+                .then(Parser.string('{'))
+                .then(Parser.regex(/^[^{}]*/))
+                .skip(Parser.string('}'))
+                .then(function (n) {
+                self.n = n;
+                return self.cellsParser();
+            });
+        };
+        return AlignatEnv;
+    }(Aligned));
+    Environments.alignat = function () { return new AlignatEnv(); };
+    Environments.alignedat = function () {
+        var e = new AlignatEnv();
+        e.envName = 'alignedat';
+        return e;
+    };
     // For backwards compatibility, set up the global MathQuill object as an instance of API interface v1
     if (window.jQuery) {
         MQ1 = getInterface(1);
