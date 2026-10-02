@@ -10,12 +10,11 @@
 // `clean_and_simplify` is a reserved identifier — pyIdent mangles a user
 // symbol of the same name to `clean_and_simplify_` so a cell can't
 // shadow it.
-export const CALC_RUNTIME_PY = `def clean_and_simplify(val):  # presentation cleanup — same value, tidier form
-    """Best-effort cleanup applied to every result before display.
+export const CALC_RUNTIME_PY = `def clean_and_simplify(val):  # display cleanup
+    """Post-process a computed result for display.
 
-    Nothing here decides what to compute — the statement above already
-    did that — and nothing approximates or rewrites the math. Each stage
-    keeps the value and returns its input unchanged if it fails:
+    Three best-effort passes — each keeps the value and returns its
+    input unchanged if it fails:
       mc_doit      finish pending operations (integrals, sums, limits)
       mc_simplify  reduce the expression (sp.simplify)
       mc_order     write sums in decreasing degree, constants last
