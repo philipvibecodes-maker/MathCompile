@@ -1,0 +1,24 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch();
+const ctx = await b.newContext();
+await ctx.addInitScript(() => {
+  localStorage.setItem('mathcompile-prefs', JSON.stringify({ target: 'calculator', smartMode: true, guideOpen: false, showCode: false, importAll: false, fadeMs: 150, debounceMs: 600, fadeInMs: 150, fadeOutMs: 150 }));
+  localStorage.setItem('mathcompile-cells', JSON.stringify([{ id: 1, latex: '\\displaylines{aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa+1\\ \\int_{0}^{ }x\\ y^{2}}' }]));
+});
+const p = await ctx.newPage();
+await p.goto('http://localhost:5573/');
+const chip = p.locator('.calc-issues-inline li').first();
+await chip.waitFor({ state: 'visible', timeout: 20000 });
+await p.waitForTimeout(400);
+const before = await chip.boundingBox();
+const input = await p.locator('.cell-input').first().boundingBox();
+console.log('chip before:', JSON.stringify(before));
+console.log('input width:', input.width, '| chip right:', before.x + before.width, '| input right:', input.x + input.width);
+console.log('computed max-width:', await chip.evaluate(el => getComputedStyle(el).maxWidth));
+await chip.hover();
+await p.waitForTimeout(300);
+const after = await chip.boundingBox();
+console.log('chip after hover:', JSON.stringify(after));
+console.log('height grew:', after.height > before.height, '| width grew:', after.width > before.width);
+await p.screenshot({ path: '/tmp/chip-hover.png', fullPage: true });
+await b.close();

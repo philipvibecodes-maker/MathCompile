@@ -630,6 +630,53 @@ body {
   color: var(--faint);
 }
 
+/* Tag under dimmed interim rows: the shown answer is a nerdamer
+   estimate, not the SymPy result that replaces it. */
+.calc-interim {
+  font-size: 11px;
+  color: var(--faint);
+}
+
+/* Persistent engine-state chip inline in the output header — it swaps
+   its label (loading -> ready/failed) rather than unmounting, so the
+   header row never changes size. */
+.engine-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--faint);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.engine-chip.engine-error {
+  color: var(--danger);
+}
+
+/* The chip's nowrap would otherwise stretch the tip's text past the
+   badge; pin it to the icon's right edge too. */
+.engine-chip .info-tip {
+  right: 0;
+  white-space: normal;
+}
+
+
+.engine-spinner {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: engine-spin 0.8s linear infinite;
+}
+
+@keyframes engine-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 /* "Show code" block: the SymPy python() source under each result. */
 .calc-code {
   margin: 2px 0 4px;

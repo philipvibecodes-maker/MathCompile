@@ -11,7 +11,7 @@
   import { appStore, THEME_STORAGE_KEY } from './state/store.svelte';
   import { loadPrefs, savePrefs } from './state/persistence';
   import { copyableLatex, displayLatex } from './compile/latex';
-  import { prewarm } from './calc/calculator.svelte.ts';
+  import { calcEngine, prewarm } from './calc/calculator.svelte.ts';
   import { buildCommands } from './commands';
   import { installGlobalKeymap } from './editor/keymap';
   import { compileWorksheet } from './compile/codegen';
@@ -33,7 +33,7 @@
 
   // Output column width (% of the row's flex width) — shared by every
   // row and the column header; the .col-resize divider drags it.
-  let outputPct = $state(34);
+  let outputPct = $state(50);
 
   function startColDrag(e: PointerEvent) {
     const handle = e.currentTarget as HTMLElement;
@@ -324,6 +324,55 @@
               {/each}
             </select>
           </label>
+          {#if appStore.target === 'calculator'}
+            <!-- Persistent inline chip — swaps its label instead of
+                 unmounting, so the header row never changes size. -->
+            <span
+              class="engine-chip"
+              class:engine-error={calcEngine.status === 'error'}
+              role="status"
+            >
+              {#if calcEngine.status === 'loading'}
+                <span class="engine-spinner" aria-hidden="true"></span>
+                SymPy engine loading — interim results use nerdamer, a
+                faster but less accurate engine
+              {:else if calcEngine.status === 'error'}
+                SymPy failed to load
+              {:else}
+                SymPy ready
+              {/if}
+              <button
+                type="button"
+                class="info-icon"
+                aria-label="Why interim results use a different engine"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="12" r="9" />
+                  <line x1="12" y1="11" x2="12" y2="16.5" />
+                  <circle cx="12" cy="7.5" r="0.75" fill="currentColor" />
+                </svg>
+                <span class="info-tip" role="tooltip" aria-hidden="true">
+                  {#if calcEngine.status === 'error'}
+                    {calcEngine.error}
+                  {:else}
+                    Answers come from SymPy, a full computer-algebra
+                    system running as WebAssembly (Pyodide), which takes
+                    a while to download and boot. Until it's ready,
+                    results come from nerdamer — a lightweight JavaScript
+                    engine that's faster but less accurate — and are
+                    marked "estimate".
+                  {/if}
+                </span>
+              </button>
+            </span>
+          {/if}
           {#if compiled && appStore.target === 'python'}
             <label class="option-checkbox output-import-all">
               <input
