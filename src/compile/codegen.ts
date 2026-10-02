@@ -1541,7 +1541,10 @@ class Emitter {
         // builtins keep the sp.<head> escape hatch, and everything else
         // becomes an undefined worksheet function — `sp.f(x)` raised
         // AttributeError, `f(x)` displays and stays valid.
-        const name = isStr(args[0]) ? args[0] : 'unknown';
+        // `\text{mean}(…)` reaches here with the name still quoted as
+        // 'mean' — unwrap it so pyIdent doesn't mangle to primemean_prime.
+        const rawName = isStr(args[0]) ? args[0] : 'unknown';
+        const name = /^'(.+)'$/.exec(rawName)?.[1] ?? rawName;
         // `\varphi(n)` parses as GoldenRatio applied to n — sympy's
         // GoldenRatio isn't callable and the textbook reading is
         // Euler's totient.
@@ -1595,6 +1598,13 @@ class Emitter {
         // SymPy's mean lives in stats and takes a random variable.
         if (name === 'Mean' && args.length === 2)
           return [`${this.sp}conjugate(${this.emit(args[1])})`, PREC_ATOM];
+        // `x \text{ for } x>0` — CE's quantifier call parks the
+        // condition first; sympy's ForAll/Exists take (symbol, cond).
+        if ((name === 'ForAll' || name === 'Exists') && args.length === 3)
+          return [
+            `${this.sp}${name}(${this.emit(args[2])}, ${this.emit(args[1])})`,
+            PREC_ATOM,
+          ];
         // `f \circ g` — CE's composition head is literally 'Ring',
         // which the tiers below would resolve to sympy's ring-domain
         // constructor.
