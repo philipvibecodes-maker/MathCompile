@@ -462,6 +462,9 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(calc('\\varsigma').prelude).toContain(
       'finalSigma = sp.Symbol("\\\\varsigma")',
     );
+    // `hbar` not `\hbar` — sympy prints the name `hbar` as `\hbar`,
+    // but accent-splits a literal `\hbar` symbol name to `\bar{\h}`.
+    expect(calc('\\hbar').prelude).toContain('hBar = sp.Symbol("hbar")');
   });
 
   it('flags a symbolic derivative order on a function base', () => {

@@ -334,7 +334,9 @@ const CE_DISPLAY_NAMES: Record<string, string> = {
   kappaSymbol: '\\varkappa',
   digamma: '\\digamma',
   ell: '\\ell',
-  hBar: '\\hbar',
+  // `hbar` not `\hbar` — sympy's printer knows the name and emits
+  // `\hbar`; a literal `\hbar` name is accent-split to `\bar{\h}`.
+  hBar: 'hbar',
   bet: '\\beth',
   gimel: '\\gimel',
   daleth: '\\daleth',
