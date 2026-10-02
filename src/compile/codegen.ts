@@ -120,6 +120,7 @@ const SP_FUNCS: Record<string, string> = {
   Intersection: 'Intersection',
   Complement: 'Complement',
   Difference: 'Complement', // sp.Difference(A, B) == Complement(A, B)
+  SetMinus: 'Complement', // CE's \setminus — A \ B == Complement(A, B)
   SymmetricDifference: 'SymmetricDifference',
 };
 
@@ -145,6 +146,7 @@ const SET_CONSTANTS: Record<string, string> = {
   NonNegativeIntegers: 'S.Naturals0',
   ComplexNumbers: 'S.Complexes',
   AlgebraicNumbers: 'S.Algebraics',
+  EmptySet: 'S.EmptySet',
 };
 const SET_ASSUMPTIONS: Record<string, string> = {
   RealNumbers: 'real=True',
@@ -871,6 +873,13 @@ class Emitter {
           ];
         return [
           `${this.sp}Eq(${this.emit(a)}, ${this.emit(rhs)})`,
+          PREC_ATOM,
+        ];
+      }
+      case 'Congruent': {
+        // `x \equiv b \pmod m` — CE's pmod form. [x, b, m] -> Eq(Mod(x, m), b).
+        return [
+          `${this.sp}Eq(${this.sp}Mod(${this.emit(args[0])}, ${this.emit(args[2])}), ${this.emit(args[1])})`,
           PREC_ATOM,
         ];
       }

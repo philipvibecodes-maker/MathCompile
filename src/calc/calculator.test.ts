@@ -201,6 +201,24 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // InvisibleOperator head.
     expect(calc('sp=5').statements[0].code).toBe('sp.Eq(s * p, 5)');
   });
+
+  it('lowers \\setminus, \\emptyset, and \\pmod congruences', () => {
+    expect(calc('\\emptyset').statements[0].code).toBe('sp.S.EmptySet');
+    expect(calc('\\{1,2\\}\\setminus\\{2\\}').statements[0].code).toBe(
+      'sp.Complement(sp.FiniteSet(1, 2), sp.FiniteSet(2))',
+    );
+    expect(calc('x\\equiv3\\pmod{7}').statements[0].code).toBe(
+      'sp.Eq(sp.Mod(x, 7), 3)',
+    );
+  });
+
+  it('distributes differentials across iterated integrals', () => {
+    // CE nests ∫∫ and parks every 'd v' in the innermost body — the last
+    // pair binds the outermost sign.
+    expect(
+      calc('\\int_{0}^{1}\\int_{0}^{x}y\\text{d}y\\text{d}x').statements[0].code,
+    ).toBe('sp.integrate(sp.integrate(y, (y, 0, x)), (x, 0, 1))');
+  });
 });
 
 describe('toNerdamerInput (latex → nerdamer calls)', () => {

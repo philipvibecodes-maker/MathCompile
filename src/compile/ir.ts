@@ -135,7 +135,8 @@ const KNOWN_HEADS = new Set([
   'And', 'Or', 'Not', 'Which', 'Piecewise',
   // sets
   'Element', 'NotElement', 'Interval', 'Set', 'Condition',
-  'IdenticallyEqual', 'Open', 'Union', 'Intersection', 'Complement',
+  'IdenticallyEqual', 'Congruent', 'Open', 'Union', 'Intersection',
+  'Complement', 'SetMinus',
   'Difference', 'InverseFunction',
   // statement-level IR
   'Assign', 'Def', 'Block', 'Function',
@@ -472,6 +473,72 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     // Non-canonical \int/\sum/\prod take Tuple bounds (or a bare variable
     // for indefinite integrals); fold into the canonical Limits shape.
     if (h === 'Integrate' || h === 'Sum' || h === 'Product') {
+      // Iterated integrals nest under the outer sign and park EVERY
+      // differential in the innermost body — `\int_0^1\int_0^x y dy dx`
+      // parses as Integrate(Integrate(y·d·y·d·x, (_,0,x)), (_,0,1)).
+      // Peel trailing `'d'` var pairs off the innermost body — the last
+      // pair binds the outermost integral — then rebuild the chain with
+      // each integral's variable in its Limits slot.
+      if (h === 'Integrate') {
+        const chain: MathJson[][] = [];
+        let inner: MathJson = node;
+        while (isArray(inner) && head(inner) === 'Integrate') {
+          chain.push(inner as MathJson[]);
+          inner = inner[1];
+        }
+        if (chain.length > 1) {
+          const innerBody = normalize(inner, false);
+          const factors =
+            isArray(innerBody) && head(innerBody) === 'Multiply'
+              ? innerBody.slice(1)
+              : [innerBody];
+          const vars: MathJson[] = [];
+          while (
+            vars.length < chain.length &&
+            factors.length >= 2 &&
+            (factors[factors.length - 2] === 'd' ||
+              factors[factors.length - 2] === 'd_upright') &&
+            isString(factors[factors.length - 1]) &&
+            factors[factors.length - 1] !== 'Nothing'
+          ) {
+            vars.push(factors.pop() as string);
+            factors.pop();
+          }
+          if (vars.length === chain.length) {
+            // vars[k] is chain[k]'s variable (vars[0] = outermost).
+            let body: MathJson =
+              factors.length === 1
+                ? factors[0]
+                : factors.length > 1
+                  ? ['Multiply', ...factors]
+                  : 'Nothing';
+            for (let i = chain.length - 1; i >= 0; i--) {
+              const lim = chain[i][2];
+              const lims =
+                isArray(lim) && head(lim) === 'Tuple'
+                  ? [
+                      normalize(lim[1] ?? 'Nothing', false, false, true),
+                      normalize(lim[2] ?? 'Nothing', false, true),
+                      normalize(lim[3] ?? 'Nothing', false, true),
+                    ]
+                  : isString(lim)
+                    ? [lim, 'Nothing', 'Nothing']
+                    : ['Nothing', 'Nothing', 'Nothing'];
+              body = [
+                'Integrate',
+                body,
+                [
+                  'Limits',
+                  lims[0] === 'Nothing' ? vars[i] : lims[0],
+                  lims[1],
+                  lims[2],
+                ],
+              ];
+            }
+            return body;
+          }
+        }
+      }
       const body = normalize(node[1], false);
       const lim = node[2];
       if (isArray(lim) && head(lim) === 'Tuple') {
