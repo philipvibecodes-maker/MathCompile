@@ -437,6 +437,17 @@ LatexCmds.overset = class extends MathCommand {
       h.block('span', {}, blocks[1])
     ])
   );
+  parser() {
+    return super.parser().or(
+      Parser.succeed(
+        new VanillaSymbol(
+          '\\overset ',
+          h.text('\\overset'),
+          'overset'
+        ) as MQNode | Fragment
+      )
+    ) as Parser<MQNode | Fragment>;
+  }
 };
 LatexCmds.stackrel = LatexCmds.overset;
 LatexCmds.underset = class extends MathCommand {
@@ -447,6 +458,17 @@ LatexCmds.underset = class extends MathCommand {
       h.block('span', { class: 'mq-overscript' }, blocks[0])
     ])
   );
+  parser() {
+    return super.parser().or(
+      Parser.succeed(
+        new VanillaSymbol(
+          '\\underset ',
+          h.text('\\underset'),
+          'underset'
+        ) as MQNode | Fragment
+      )
+    ) as Parser<MQNode | Fragment>;
+  }
 };
 
 // \pmod{m} / \pod{m} — parenthesized (mod m) / (m); \bmod is the
@@ -1155,6 +1177,19 @@ var Fraction =
         ])
       );
       textTemplate = ['(', ')/(', ')'];
+      // \frac with fewer than 2 blocks degrades to a bare \frac leaf
+      // instead of failing the whole parse.
+      parser() {
+        return super.parser().or(
+          Parser.succeed(
+            new VanillaSymbol(
+              '\\frac ',
+              h.text('\\frac'),
+              'frac'
+            ) as MQNode | Fragment
+          )
+        ) as Parser<MQNode | Fragment>;
+      }
       finalizeTree() {
         const endsL = this.getEnd(L);
         const endsR = this.getEnd(R);
@@ -2528,6 +2563,18 @@ var leftBinomialSymbol = SVG_SYMBOLS['('];
 var rightBinomialSymbol = SVG_SYMBOLS[')'];
 class Binomial extends DelimsNode {
   ctrlSeq = '\\binom';
+  // \binom with fewer than 2 blocks degrades to a bare \binom leaf.
+  parser() {
+    return super.parser().or(
+      Parser.succeed(
+        new VanillaSymbol(
+          '\\binom ',
+          h.text('\\binom'),
+          'binomial'
+        ) as MQNode | Fragment
+      )
+    ) as Parser<MQNode | Fragment>;
+  }
   domView = new DOMView(2, (blocks) =>
     h('span', { class: 'mq-non-leaf mq-bracket-container' }, [
       h(

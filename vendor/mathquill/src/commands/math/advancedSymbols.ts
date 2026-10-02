@@ -1059,7 +1059,41 @@ LatexCmds.phantom = bindInvisibleBlockCmd('\\phantom', 'mq-phantom');
 LatexCmds.vphantom = bindInvisibleBlockCmd('\\vphantom', 'mq-phantom');
 LatexCmds.hphantom = bindInvisibleBlockCmd('\\hphantom', 'mq-phantom');
 // equation-numbering commands — meaningless in a cell but keep the text
-LatexCmds.tag = bindInvisibleBlockCmd('\\tag', 'mq-invisible');
+// \tag{1} and the starred variant \tag*{1} (unparenthesized tag).
+LatexCmds.tag = class extends MathCommand {
+  starred = false;
+  constructor() {
+    super(
+      '\\tag',
+      new DOMView(1, (blocks) =>
+        h('span', { class: 'mq-non-leaf mq-invisible' }, [
+          h.block('span', {}, blocks[0])
+        ])
+      )
+    );
+  }
+  parser() {
+    var self = this;
+    return Parser.optWhitespace
+      .then(Parser.string('*').or(Parser.succeed('')))
+      .then(function (star: string) {
+        self.starred = !!star;
+        return latexMathParser.block;
+      })
+      .map(function (b: MathBlock) {
+        self.blocks = [b];
+        b.adopt(self, 0, 0);
+        return self;
+      });
+  }
+  latexRecursive(ctx: LatexContext) {
+    this.checkCursorContextOpen(ctx);
+    ctx.uncleanedLatex += '\\tag' + (this.starred ? '*' : '') + '{';
+    this.blocks![0].latexRecursive(ctx);
+    ctx.uncleanedLatex += '}';
+    this.checkCursorContextClose(ctx);
+  }
+};
 LatexCmds.notag = bindStyleModifier('\\notag ', 'no tag');
 LatexCmds.nonumber = bindStyleModifier('\\nonumber ', 'no number');
 
@@ -1564,3 +1598,120 @@ LatexCmds.textendash = bindVanillaSymbol(
   '&#8211;',
   'en dash'
 );
+
+// Arrow family (amssymb/unicode-math).
+var ARROWS: [string, string, string][] = [
+  ['leftrightharpoons', '&#8651;', 'left right harpoons'],
+  ['rightleftharpoons', '&#8652;', 'right left harpoons'],
+  ['upuparrows', '&#8648;', 'up up arrows'],
+  ['downdownarrows', '&#8650;', 'down down arrows'],
+  ['leftleftarrows', '&#8647;', 'left left arrows'],
+  ['rightrightarrows', '&#8649;', 'right right arrows'],
+  ['leftrightarrows', '&#8646;', 'left right arrows'],
+  ['rightleftarrows', '&#8644;', 'right left arrows'],
+  ['Lleftarrow', '&#8666;', 'L left arrow'],
+  ['Rrightarrow', '&#8667;', 'R right arrow'],
+  ['twoheadrightarrow', '&#8608;', 'two head right arrow'],
+  ['twoheadleftarrow', '&#8606;', 'two head left arrow'],
+  ['rightarrowtail', '&#8611;', 'right arrow tail'],
+  ['leftarrowtail', '&#8610;', 'left arrow tail'],
+  ['looparrowleft', '&#8619;', 'loop arrow left'],
+  ['looparrowright', '&#8620;', 'loop arrow right'],
+  ['leftrightsquigarrow', '&#8621;', 'left right squig arrow'],
+  ['rightsquigarrow', '&#8601;', 'right squig arrow'],
+  ['leadsto', '&#8669;', 'leads to'],
+  ['curvearrowleft', '&#8630;', 'curve arrow left'],
+  ['curvearrowright', '&#8631;', 'curve arrow right'],
+  ['circlearrowleft', '&#8634;', 'circle arrow left'],
+  ['circlearrowright', '&#8635;', 'circle arrow right'],
+  ['dashrightarrow', '&#8674;', 'dash right arrow'],
+  ['dashleftarrow', '&#8672;', 'dash left arrow'],
+  ['Lsh', '&#8624;', 'L sh'],
+  ['Rsh', '&#8625;', 'R sh'],
+  ['upharpoonleft', '&#8638;', 'up harpoon left'],
+  ['upharpoonright', '&#8639;', 'up harpoon right'],
+  ['downharpoonleft', '&#8642;', 'down harpoon left'],
+  ['downharpoonright', '&#8643;', 'down harpoon right']
+];
+ARROWS.forEach(function (a) {
+  (LatexCmds as LatexCmdsAny)[a[0]] = bindBinaryOperator(
+    '\\' + a[0] + ' ',
+    a[1],
+    a[2]
+  );
+});
+
+// Relation family: stacked comparisons, curly/n-approx negations,
+// n-triangle, n-dash variants, and the amssymb binary ops.
+var RELS: [string, string, string][] = [
+  ['lesseqgtr', '&#8922;', 'less equal greater'],
+  ['gtreqless', '&#8923;', 'greater equal less'],
+  ['lesseqqgtr', '&#8924;', 'less equal equal greater'],
+  ['gtreqqless', '&#8925;', 'greater equal equal less'],
+  ['curlyeqprec', '&#8926;', 'curly equal precedes'],
+  ['curlyeqsucc', '&#8927;', 'curly equal succeeds'],
+  ['preccurlyeq', '&#8828;', 'precedes curly equal'],
+  ['succcurlyeq', '&#8829;', 'succeeds curly equal'],
+  ['precnapprox', '&#10937;', 'precedes not approximately'],
+  ['succnapprox', '&#10938;', 'succeeds not approximately'],
+  ['lnapprox', '&#10889;', 'less not approximately'],
+  ['gnapprox', '&#10890;', 'greater not approximately'],
+  ['lneqq', '&#8808;', 'less not equal equal'],
+  ['gneqq', '&#8809;', 'greater not equal equal'],
+  ['lnsim', '&#8934;', 'less not similar'],
+  ['gnsim', '&#8935;', 'greater not similar'],
+  ['precnsim', '&#8936;', 'precedes not similar'],
+  ['succnsim', '&#8937;', 'succeeds not similar'],
+  ['ntriangleleft', '&#8938;', 'not triangle left'],
+  ['ntriangleright', '&#8939;', 'not triangle right'],
+  ['ntrianglelefteq', '&#8940;', 'not triangle left equal'],
+  ['ntrianglerighteq', '&#8941;', 'not triangle right equal'],
+  ['nvDash', '&#8877;', 'not v dash'],
+  ['nVdash', '&#8878;', 'not V dash'],
+  ['nVDash', '&#8879;', 'not V Dash']
+];
+RELS.forEach(function (a) {
+  (LatexCmds as LatexCmdsAny)[a[0]] = bindBinaryOperator(
+    '\\' + a[0] + ' ',
+    a[1],
+    a[2]
+  );
+});
+
+var BINOPS: [string, string, string][] = [
+  ['circledcirc', '&#8858;', 'circled circle'],
+  ['circledast', '&#8859;', 'circled asterisk'],
+  ['circleddash', '&#8861;', 'circled dash'],
+  ['divideontimes', '&#8903;', 'divide on times'],
+  ['dotplus', '&#8724;', 'dot plus'],
+  ['boxplus', '&#8862;', 'box plus'],
+  ['boxminus', '&#8863;', 'box minus'],
+  ['boxtimes', '&#8864;', 'box times'],
+  ['boxdot', '&#8865;', 'box dot'],
+  ['boxbar', '&#9531;', 'box bar'],
+  ['merge', '&#x2A24;', 'merge'],
+  ['Cap', '&#8914;', 'cap'],
+  ['Cup', '&#8915;', 'cup'],
+  ['doublecap', '&#8914;', 'double cap'],
+  ['doublecup', '&#8915;', 'double cup'],
+  ['barwedge', '&#8892;', 'bar wedge'],
+  ['veebar', '&#8891;', 'vee bar'],
+  ['curlywedge', '&#8910;', 'curly wedge'],
+  ['curlyvee', '&#8911;', 'curly vee'],
+  ['ltimes', '&#8905;', 'left times'],
+  ['rtimes', '&#8906;', 'right times'],
+  ['centerdot', '&#8901;', 'center dot'],
+  ['smallsetminus', '&#8726;', 'small set minus']
+];
+BINOPS.forEach(function (a) {
+  (LatexCmds as LatexCmdsAny)[a[0]] = bindBinaryOperator(
+    '\\' + a[0] + ' ',
+    a[1],
+    a[2]
+  );
+});
+
+// Old-style environment names kept as visible leaves (the \begin{...}
+// dispatch for the same names lives at the end of environments.ts).
+LatexCmds.eqnarray = bindLiteralCmd('\\eqnarray', 'eqn array');
+LatexCmds.eqalign = bindLiteralCmd('\\eqalign', 'eq align');

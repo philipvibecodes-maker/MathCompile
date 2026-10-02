@@ -60,9 +60,11 @@ class TextBlock extends MQNode {
     var string = Parser.string;
     var regex = Parser.regex;
     var optWhitespace = Parser.optWhitespace;
+    // text content tolerates one level of nested braces (\textit{x_{2}},
+    // \textbf{a{b}c}) so pasted text-mode latex doesn't fail the cell.
     return optWhitespace
       .then(string('{'))
-      .then(regex(/^[^}]*/))
+      .then(regex(/^(?:[^{}]|\{[^{}]*\})*/))
       .skip(string('}'))
       .map(function (text) {
         if (text.length === 0) return new Fragment(0, 0);
@@ -86,9 +88,24 @@ class TextBlock extends MQNode {
     var contents = this.textContents();
     if (contents.length > 0) {
       ctx.uncleanedLatex += this.ctrlSeq + '{';
-      ctx.uncleanedLatex += contents
-        .replace(/\\/g, '\\backslash ')
-        .replace(/[{}]/g, '\\$&');
+      var backslashed = contents.replace(/\\/g, '\\backslash ');
+      // balanced braces round-trip raw (nested text like \textit{x_{2}});
+      // unbalanced ones must stay escaped to parse at all
+      var depth = 0;
+      var balanced = true;
+      for (var i = 0; i < backslashed.length; i += 1) {
+        var ch = backslashed[i];
+        if (ch === '{') depth += 1;
+        else if (ch === '}') depth -= 1;
+        if (depth < 0) {
+          balanced = false;
+          break;
+        }
+      }
+      ctx.uncleanedLatex +=
+        balanced && depth === 0
+          ? backslashed
+          : backslashed.replace(/[{}]/g, '\\$&');
       ctx.uncleanedLatex += '}';
     }
 

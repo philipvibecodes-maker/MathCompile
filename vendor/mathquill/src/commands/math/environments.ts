@@ -961,3 +961,27 @@ function insertLineBreakAtCursor(ctrlr: Controller) {
   ctrlr.notify('edit');
   ctrlr.scrollHoriz();
 }
+
+// Old-style environment names canonicalize to the closest supported
+// grid env; \eqnarray is three-column align, \eqalign is aligned.
+Environments.eqnarray = () => new Aligned();
+Environments.eqalign = () => new Aligned();
+
+// \varliminf / \varlimsup — limit large-ops that take bounds like
+// \varinjlim / \varprojlim.
+LatexCmds.varliminf = () =>
+  new SummationNotation('\\varliminf ', 'lim', 'variable limit inferior');
+LatexCmds.varlimsup = () =>
+  new SummationNotation('\\varlimsup ', 'lim', 'variable limit superior');
+
+// \smallint / \ointclockwise — more boundless integrals.
+LatexCmds.smallint = boundlessIntegral(
+  '\\smallint ',
+  '&#8747;',
+  'small integral'
+);
+LatexCmds.ointclockwise = boundlessIntegral(
+  '\\ointclockwise ',
+  '&#8754;',
+  'clockwise contour integral'
+);

@@ -1437,4 +1437,31 @@ suite('latex', function () {
       '\\left\\langlerfish 123\\right\\ranglerfish)'
     );
   });
+
+  test('bare-arg commands, tag-star, old-style envs, text braces', function () {
+    // 2-block commands with fewer blocks degrade to a bare leaf instead
+    // of failing the whole parse
+    assertParsesLatex('\\overset{a}', '\\overset a');
+    assertParsesLatex('\\underset{a}', '\\underset a');
+    assertParsesLatex('\\frac{1}', '\\frac1');
+    assertParsesLatex('\\binom{n}', '\\binom n');
+    // the starred (unparenthesized) tag keeps its star
+    assertParsesLatex('\\tag*{1}', '\\tag*{1}');
+    assertParsesLatex('\\tag{2}', '\\tag{2}');
+    // old-style env names canonicalize to aligned
+    assertParsesLatex(
+      '\\begin{eqnarray}a&=b\\\\end{eqnarray}',
+      '\\begin{aligned}a&=b\\end{aligned}'
+    );
+    assertParsesLatex('\\eqnarray x', '\\eqnarray x');
+    // one level of nested braces inside text-mode content round-trips
+    assertParsesLatex('\\textit{x_{2}}', '\\textit{x_{2}}');
+    assertParsesLatex('\\textbf{a{b}c}', '\\textbf{a{b}c}');
+    // arrow/relation/binop leaves
+    assertParsesLatex('\\rightsquigarrow', '\\rightsquigarrow');
+    assertParsesLatex('\\precnapprox', '\\precnapprox');
+    assertParsesLatex('\\boxtimes', '\\boxtimes');
+    assertParsesLatex('\\varliminf', '\\varliminf_{ }^{ }');
+    assertParsesLatex('\\smallint', '\\smallint');
+  });
 });
