@@ -10929,11 +10929,30 @@ var __assign = (this && this.__assign) || function () {
         };
         return MatrixEnv;
     }(Matrix));
+    // \begin{cases}...\end{cases}: a left-brace grid \u2014 cells are
+    // left-aligned like real cases blocks (expr & condition columns).
+    var Cases = /** @class */ (function (_super) {
+        __extends(Cases, _super);
+        function Cases() {
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.parens = { left: '{', right: null };
+            _this_1.cellTextAlign = 'left';
+            return _this_1;
+        }
+        Cases.prototype.latexOpen = function () {
+            return '\\begin{cases}';
+        };
+        Cases.prototype.latexClose = function () {
+            return '\\end{cases}';
+        };
+        return Cases;
+    }(Matrix));
     Environments.pmatrix = function () { return new PMatrix(); };
     Environments.bmatrix = function () { return new BMatrix(); };
     Environments.Bmatrix = function () { return new BBMatrix(); };
     Environments.vmatrix = function () { return new VMatrix(); };
     Environments.Vmatrix = function () { return new VVMatrix(); };
+    Environments.cases = function () { return new Cases(); };
     // \displaylines{a\\ b}: a single-column grid for multi-line cells.
     var DisplayLines = /** @class */ (function (_super) {
         __extends(DisplayLines, _super);

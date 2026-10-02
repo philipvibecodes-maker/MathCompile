@@ -682,11 +682,25 @@ class MatrixEnv extends Matrix {
   }
 }
 
+// \begin{cases}...\end{cases}: a left-brace grid — cells are
+// left-aligned like real cases blocks (expr & condition columns).
+class Cases extends Matrix {
+  parens = { left: '{' as const, right: null };
+  cellTextAlign = 'left';
+  latexOpen() {
+    return '\\begin{cases}';
+  }
+  latexClose() {
+    return '\\end{cases}';
+  }
+}
+
 Environments.pmatrix = () => new PMatrix();
 Environments.bmatrix = () => new BMatrix();
 Environments.Bmatrix = () => new BBMatrix();
 Environments.vmatrix = () => new VMatrix();
 Environments.Vmatrix = () => new VVMatrix();
+Environments.cases = () => new Cases();
 
 // \displaylines{a\\ b}: a single-column grid for multi-line cells.
 class DisplayLines extends CellGrid {
