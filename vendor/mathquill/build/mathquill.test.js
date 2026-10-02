@@ -10375,9 +10375,24 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         };
         LatexCommandInput.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
-            ctx.uncleanedLatex += '\\';
-            this.getEnd(L).latexRecursive(ctx);
-            ctx.uncleanedLatex += ' ';
+            // An un-accepted command input holds the raw \name text, which fails
+            // to re-parse whenever the name isn't a real command — a cell left
+            // holding an abandoned \name input then stored unparseable latex
+            // and came back blank on reload. Serialize unknown names as
+            // \text{name} so the stored latex round-trips; the input atom stays
+            // open and editable either way.
+            var name = this.getEnd(L).latex();
+            if (name &&
+                !Object.prototype.hasOwnProperty.call(LatexCmds, name)) {
+                ctx.uncleanedLatex += '\\text{';
+                this.getEnd(L).latexRecursive(ctx);
+                ctx.uncleanedLatex += '}';
+            }
+            else {
+                ctx.uncleanedLatex += '\\';
+                this.getEnd(L).latexRecursive(ctx);
+                ctx.uncleanedLatex += ' ';
+            }
             this.checkCursorContextClose(ctx);
         };
         LatexCommandInput.prototype.renderCommand = function (cursor) {
@@ -10392,7 +10407,12 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             var latex = this.getEnd(L).latex();
             if (!latex)
                 latex = ' ';
-            var cmd = LatexCmds[latex];
+            // LatexCmds is a plain object: a raw [] lookup picks up inherited
+            // members (\toString, \valueOf, \constructor, ...) and calls them
+            // as command factories below, throwing mid-keystroke.
+            var cmd = Object.prototype.hasOwnProperty.call(LatexCmds, latex)
+                ? LatexCmds[latex]
+                : undefined;
             if (cmd) {
                 var node = void 0;
                 if (isMQNodeClass(cmd)) {
@@ -17826,6 +17846,35 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             test('nonexistent LaTeX command, then symbol', function () {
                 mq.typedText('\\asdf+');
                 assertLatex('\\text{asdf}+');
+            });
+            test('an open unknown-name input serializes reparseable latex', function () {
+                mq.typedText('\\asdf');
+                assertLatex('\\text{asdf}');
+                // stored latex round-trips instead of failing to parse entirely
+                mq.latex(mq.latex());
+                assertLatex('\\text{asdf}');
+            });
+            test('an abandoned unknown-name input inside a bound round-trips', function () {
+                mq.latex('x_{a}');
+                mq.keystroke('Ctrl-Home').keystroke('Right').keystroke('Right');
+                mq.typedText('\\asdf').keystroke('Esc');
+                assertLatex('x_{\\text{asdf}a}');
+                mq.latex(mq.latex());
+                assertLatex('x_{\\text{asdf}a}');
+            });
+            test('prototype-member command names do not throw on accept', function () {
+                mq.typedText('\\toString').keystroke('Enter');
+                assertLatex('\\text{toString}');
+                mq.latex('');
+                mq.typedText('\\valueOf').keystroke('Spacebar');
+                assertLatex('\\text{valueOf}');
+                mq.latex('');
+                mq.typedText('\\constructor').keystroke('Tab');
+                assertLatex('\\text{constructor}');
+            });
+            test('an open input holding a real command name serializes it', function () {
+                mq.typedText('\\sqrt');
+                assertLatex('\\sqrt');
             });
             test('dollar sign', function () {
                 mq.typedText('$');

@@ -154,6 +154,39 @@ suite('typing with auto-replaces', function () {
       assertLatex('\\text{asdf}+');
     });
 
+    test('an open unknown-name input serializes reparseable latex', function () {
+      mq.typedText('\\asdf');
+      assertLatex('\\text{asdf}');
+      // stored latex round-trips instead of failing to parse entirely
+      mq.latex(mq.latex());
+      assertLatex('\\text{asdf}');
+    });
+
+    test('an abandoned unknown-name input inside a bound round-trips', function () {
+      mq.latex('x_{a}');
+      mq.keystroke('Ctrl-Home').keystroke('Right').keystroke('Right');
+      mq.typedText('\\asdf').keystroke('Esc');
+      assertLatex('x_{\\text{asdf}a}');
+      mq.latex(mq.latex());
+      assertLatex('x_{\\text{asdf}a}');
+    });
+
+    test('prototype-member command names do not throw on accept', function () {
+      mq.typedText('\\toString').keystroke('Enter');
+      assertLatex('\\text{toString}');
+      mq.latex('');
+      mq.typedText('\\valueOf').keystroke('Spacebar');
+      assertLatex('\\text{valueOf}');
+      mq.latex('');
+      mq.typedText('\\constructor').keystroke('Tab');
+      assertLatex('\\text{constructor}');
+    });
+
+    test('an open input holding a real command name serializes it', function () {
+      mq.typedText('\\sqrt');
+      assertLatex('\\sqrt');
+    });
+
     test('dollar sign', function () {
       mq.typedText('$');
       assertLatex('\\$');
