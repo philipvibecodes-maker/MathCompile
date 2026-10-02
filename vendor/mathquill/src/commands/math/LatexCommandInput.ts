@@ -45,7 +45,32 @@ CharCmds['\\'] = class LatexCommandInput extends MathCommand {
         // TODO needs tests
         cursor.controller.aria.alert(ch);
       } else {
-        var cmd = (this.parent as LatexCommandInput).renderCommand(cursor);
+        var input = this.parent as LatexCommandInput;
+        if (this.isEmpty() && ch !== '\\') {
+          // An empty input ended by a non-letter is a single \<char>
+          // escape, not a '\ ' space followed by the bare char: \; \:
+          // \! \, \| \_ \# resolve to their atoms, \{ / \} take the
+          // usual bracket paths (auto-pair / close), anything else just
+          // writes the char.
+          input.setDOM(input.domFrag().children().lastElement());
+          input.remove();
+          if (input[R]) cursor.insLeftOf(input[R] as MQNode);
+          else cursor.insAtRightEnd(input.parent);
+          var esc =
+            ch === '{' || ch === '}'
+              ? CharCmds[ch]
+              : LatexCmds['\\' + ch];
+          if (esc) {
+            var node = isMQNodeClass(esc)
+              ? new (esc as typeof TempSingleCharNode)('\\' + ch)
+              : (esc as (s: string) => MQNode)('\\' + ch);
+            node.createLeftOf(cursor.show());
+          } else {
+            cursor.parent.write(cursor, ch);
+          }
+          return;
+        }
+        var cmd = input.renderCommand(cursor);
         // TODO needs tests
         cursor.controller.aria.queue(cmd.mathspeak({ createdLeftOf: cursor }));
         if (ch !== '\\' || !this.isEmpty()) cursor.parent.write(cursor, ch);

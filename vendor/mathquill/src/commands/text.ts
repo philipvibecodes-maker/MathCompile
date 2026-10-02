@@ -60,9 +60,13 @@ class TextBlock extends MQNode {
     var string = Parser.string;
     var regex = Parser.regex;
     var optWhitespace = Parser.optWhitespace;
+    // text content tolerates nested braces up to depth 3 (\textit{x_{2}},
+    // \textbf{a{b{c}d}e}) so pasted text-mode latex doesn't fail the cell.
     return optWhitespace
       .then(string('{'))
-      .then(regex(/^[^}]*/))
+      .then(
+        regex(/^(?:[^{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*/)
+      )
       .skip(string('}'))
       .map(function (text) {
         if (text.length === 0) return new Fragment(0, 0);
@@ -86,9 +90,24 @@ class TextBlock extends MQNode {
     var contents = this.textContents();
     if (contents.length > 0) {
       ctx.uncleanedLatex += this.ctrlSeq + '{';
-      ctx.uncleanedLatex += contents
-        .replace(/\\/g, '\\backslash ')
-        .replace(/[{}]/g, '\\$&');
+      var backslashed = contents.replace(/\\/g, '\\backslash ');
+      // balanced braces round-trip raw (nested text like \textit{x_{2}});
+      // unbalanced ones must stay escaped to parse at all
+      var depth = 0;
+      var balanced = true;
+      for (var i = 0; i < backslashed.length; i += 1) {
+        var ch = backslashed[i];
+        if (ch === '{') depth += 1;
+        else if (ch === '}') depth -= 1;
+        if (depth < 0) {
+          balanced = false;
+          break;
+        }
+      }
+      ctx.uncleanedLatex +=
+        balanced && depth === 0
+          ? backslashed
+          : backslashed.replace(/[{}]/g, '\\$&');
       ctx.uncleanedLatex += '}';
     }
 
@@ -458,18 +477,56 @@ LatexCmds.strong =
   LatexCmds.bold =
   LatexCmds.textbf =
     makeTextBlock('\\textbf', 'Bold', 'b', { class: 'mq-text-mode' });
-LatexCmds.sf = LatexCmds.textsf = makeTextBlock(
+LatexCmds.textsf = makeTextBlock(
   '\\textsf',
   'Sans serif font',
   'span',
   { class: 'mq-sans-serif mq-text-mode' }
 );
-LatexCmds.tt = LatexCmds.texttt = makeTextBlock(
+// \sf — old-style declaration form of \textsf: parses a braced group
+// as sans-serif text, or a bare font switch like \it when unbraced.
+LatexCmds.sf = (function () {
+  var Base = makeTextBlock('\\sf', 'Sans serif font', 'span', {
+    class: 'mq-sans-serif mq-text-mode'
+  });
+  return class extends Base {
+    parser() {
+      return super
+        .parser()
+        .or(
+          Parser.succeed(
+            new VanillaSymbol('\\sf ', h.text('\\sf'), 'sans serif font')
+          )
+        );
+    }
+  };
+})();
+LatexCmds.texttt = makeTextBlock(
   '\\texttt',
   'Mono space font',
   'span',
   { class: 'mq-monospace mq-text-mode' }
 );
+// \tt — same: braced group or bare font switch.
+LatexCmds.tt = (function () {
+  var Base = makeTextBlock('\\tt', 'Mono space font', 'span', {
+    class: 'mq-monospace mq-text-mode'
+  });
+  return class extends Base {
+    parser() {
+      return super
+        .parser()
+        .or(
+          Parser.succeed(
+            new VanillaSymbol('\\tt ', h.text('\\tt'), 'mono space font')
+          )
+        );
+    }
+  };
+})();
+LatexCmds.mbox = makeTextBlock('\\mbox', 'Box', 'span', {
+  class: 'mq-text-mode'
+});
 LatexCmds.textsc = makeTextBlock('\\textsc', 'Variable font', 'span', {
   style: 'font-variant:small-caps',
   class: 'mq-text-mode'

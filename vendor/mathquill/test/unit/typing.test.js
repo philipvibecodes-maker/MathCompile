@@ -165,6 +165,89 @@ suite('typing with auto-replaces', function () {
     });
   });
 
+  suite('typed single-char command escapes', function () {
+    test('\\; \\: \\! \\, resolve to spacing atoms', function () {
+      mq.typedText('\\;');
+      assertLatex('\\; ');
+      mq.latex('');
+      mq.typedText('\\:');
+      assertLatex('\\: ');
+      mq.latex('');
+      mq.typedText('\\!');
+      assertLatex('\\! ');
+      mq.latex('');
+      mq.typedText('\\,');
+      assertLatex('\\, ');
+    });
+
+    test('\\| resolves to the pipe escape, not space + pair', function () {
+      mq.typedText('\\|');
+      assertLatex('\\| ');
+    });
+
+    test('\\{ types a brace pair', function () {
+      mq.typedText('\\{');
+      assertLatex('\\left\\{\\right\\}');
+    });
+
+    test('\\{x\\} wraps x in a brace pair', function () {
+      mq.typedText('\\{x\\}');
+      assertLatex('\\left\\{x\\right\\}');
+    });
+
+    test('\\_ \\# resolve to escaped literal atoms', function () {
+      mq.typedText('\\_');
+      assertLatex('\\_');
+      mq.latex('');
+      mq.typedText('\\#');
+      assertLatex('\\#');
+    });
+  });
+
+  suite('typed argument braces', function () {
+    test('\\frac{a}{b} types into the arg blocks', function () {
+      mq.typedText('\\frac{a}{b}');
+      assertLatex('\\frac{a}{b}');
+    });
+
+    test('\\frac{ leaves two empty arg blocks', function () {
+      mq.typedText('\\frac{');
+      assertLatex('\\frac{ }{ }');
+    });
+
+    test('\\sqrt{x} types into the arg block', function () {
+      mq.typedText('\\sqrt{x}');
+      assertLatex('\\sqrt{x}');
+    });
+
+    test('\\pmatrix{ opens the grid', function () {
+      mq.typedText('\\pmatrix{');
+      assertLatex('\\begin{pmatrix}&\\\\&\\end{pmatrix}');
+    });
+
+    test('braces typed at top level still pair', function () {
+      mq.typedText('x{');
+      assertLatex('x\\left\\{\\right\\}');
+    });
+  });
+
+  suite('typed \\begin{env}', function () {
+    test('\\begin{cases} resolves to the cases grid', function () {
+      mq.typedText('\\begin{cases}');
+      assertLatex('\\begin{cases}&\\\\&\\end{cases}');
+    });
+
+    test('\\begin{matrix} resolves to the matrix grid', function () {
+      mq.typedText('\\begin{matrix}');
+      assertLatex('\\begin{matrix}&\\\\&\\end{matrix}');
+    });
+
+    test('\\begin{foo} resolves to a verbatim begin leaf', function () {
+      mq.typedText('\\begin{foo}');
+      assertLatex('\\begin{foo} ');
+    });
+  });
+
   suite('MathspeakShorthand', function () {
     test('operatornames', function () {
       mq.config(mathspeakConfig);

@@ -50,22 +50,30 @@ var latexMathParser = (function () {
   });
 
   var controlSequence = regex(/^[^\\a-eg-zA-Z]/) // hotfix #164; match MathBlock::write
+    .map(function (ch: string) {
+      return { cs: ch, isCommand: false };
+    })
     .or(
-      string('\\').then(
-        regex(/^[a-z]+/i)
-          .or(regex(/^\s+/).result(' '))
-          // \<char> escapes keep a distinguishing '\x' ctrlSeq so their
-          // commands (e.g. \{, \|, \;) never shadow the bare char — the
-          // same LatexCmds map resolves single chars via the branch above.
-          .or(
-            any.map(function (c) {
-              return '\\' + c;
-            })
-          )
-      )
+      string('\\')
+        .then(
+          regex(/^[a-z]+/i)
+            .or(regex(/^\s+/).result(' '))
+            // \<char> escapes keep a distinguishing '\x' ctrlSeq so their
+            // commands (e.g. \{, \|, \;) never shadow the bare char — the
+            // same LatexCmds map resolves single chars via the branch above.
+            .or(
+              any.map(function (c) {
+                return '\\' + c;
+              })
+            )
+        )
+        .map(function (cs: string) {
+          return { cs: cs, isCommand: true };
+        })
     )
-    .then(function (ctrlSeq) {
+    .then(function (info: { cs: string; isCommand: boolean }) {
       // TODO - is Parser<MQNode> correct?
+      var ctrlSeq = info.cs;
       var cmdKlass = (LatexCmds as LatexCmdsSingleChar)[ctrlSeq];
       if (!cmdKlass && ctrlSeq.charAt(0) === '\\') {
         // '\<char>' with no dedicated escape command falls back to the
@@ -81,6 +89,19 @@ var latexMathParser = (function () {
           var builder = cmdKlass as (c: string) => TempSingleCharNode; // TODO - figure out how to know the difference
           return builder(ctrlSeq).parser();
         }
+      } else if (info.isCommand) {
+        // unknown \command: degrade to a verbatim leaf so one
+        // unrecognized \ctrlseq doesn't blank the whole field
+        var latexName = /^[a-z]+$/i.test(ctrlSeq)
+          ? '\\' + ctrlSeq + ' '
+          : '\\' + ctrlSeq;
+        return succeed(
+          new VanillaSymbol(
+            latexName,
+            h.text(latexName.replace(/ $/, '')),
+            ctrlSeq
+          ) as MQNode | Fragment
+        );
       } else {
         return fail('unknown command: \\' + ctrlSeq);
       }

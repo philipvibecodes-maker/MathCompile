@@ -96,6 +96,10 @@ const matchInt: Matcher = (src, rec) => {
   const [lo, hi, end] = readBounds(src, start + 4);
   const [body, dvar] = splitDifferential(src.slice(end));
   const inner = nonempty(body) ? rec(body) : 'x';
+  if (nonempty(lo) !== nonempty(hi))
+    // Half-empty bounds are an error on the real engine — produce an
+    // empty interim rather than a wrong definite/indefinite guess.
+    return { start, end: src.length, out: '' };
   if (nonempty(lo) && nonempty(hi)) {
     return {
       start,
@@ -120,7 +124,14 @@ const matchSumProd =
     if (start < 0) return null;
     const [lo, hi, end] = readBounds(src, start + cmd.length + 1);
     const idx = /^\s*([a-zA-Z])\s*=\s*(.*)$/.exec(lo);
-    if (!idx || !nonempty(idx[2]) || !nonempty(hi)) return null;
+    if (!idx || !nonempty(idx[2]) || !nonempty(hi)) {
+      // Bounds were written but don't form a complete i=lo..hi pair —
+      // poison the interim rather than letting leaf-fallback text
+      // produce a nonsense row.
+      if (nonempty(lo) || nonempty(hi))
+        return { start, end: src.length, out: '' };
+      return null;
+    }
     const inner = rec(src.slice(end));
     return {
       start,
@@ -135,7 +146,12 @@ const matchLim: Matcher = (src, rec) => {
   if (start < 0) return null;
   const [lo, , end] = readBounds(src, start + 4);
   const m = /^\s*([a-zA-Z])\s*(?:\\to|\\rightarrow)\s*(.*)$/.exec(lo);
-  if (!m || !nonempty(m[2])) return null;
+  if (!m || !nonempty(m[2])) {
+    // \lim with bound text it can't read (\lim_{x\to}) — poison the
+    // interim rather than showing stripped-latex garbage.
+    if (nonempty(lo)) return { start, end: src.length, out: '' };
+    return null;
+  }
   const inner = rec(src.slice(end));
   return {
     start,

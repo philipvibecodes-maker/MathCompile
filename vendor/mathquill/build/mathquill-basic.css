@@ -265,9 +265,22 @@
   vertical-align: -1.1em;
   padding-right: 0.2em;
 }
+.mq-math-mode .mq-int + .mq-supsub.mq-sup-only,
+.mq-math-mode .mq-int + .mq-cursor + .mq-supsub.mq-sup-only {
+  vertical-align: -1.1em;
+}
+.mq-math-mode .mq-int + .mq-supsub.mq-sup-only > .mq-sup,
+.mq-math-mode .mq-int + .mq-cursor + .mq-supsub.mq-sup-only > .mq-sup {
+  vertical-align: 1.9em;
+}
 .mq-math-mode .mq-int + .mq-supsub > .mq-sup,
 .mq-math-mode .mq-int + .mq-cursor + .mq-supsub > .mq-sup {
   margin-bottom: 0.4em;
+}
+.mq-math-mode .mq-int + .mq-supsub:not(.mq-sup-only) > .mq-sup,
+.mq-math-mode .mq-int + .mq-cursor + .mq-supsub:not(.mq-sup-only) > .mq-sup {
+  position: relative;
+  top: -0.45em;
 }
 .mq-math-mode .mq-int + .mq-supsub > .mq-sub,
 .mq-math-mode .mq-int + .mq-cursor + .mq-supsub > .mq-sub {
@@ -282,6 +295,38 @@
 .mq-math-mode .mq-monospace {
   font-family: monospace, Symbola, serif;
 }
+.mq-math-mode .mq-caligraphic {
+  font-family: 'Lucida Calligraphy', 'Apple Chancery', cursive, Symbola, serif;
+}
+.mq-math-mode .mq-fraktur {
+  font-family: 'Old English Text MT', 'UnifrakturMaguntia', fantasy, Symbola, serif;
+}
+.mq-math-mode .mq-fbox {
+  border: 1px solid;
+  padding: 0 0.1em;
+}
+.mq-math-mode .mq-overunderset {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.2;
+}
+.mq-math-mode .mq-overscript {
+  font-size: 0.7em;
+}
+.mq-math-mode .mq-underscript {
+  font-size: 0.7em;
+}
+.mq-math-mode .mq-colorbox {
+  padding: 0 0.15em;
+  border: 1px solid transparent;
+}
+.mq-math-mode .mq-fcolorbox {
+  padding: 0 0.15em;
+}
+.mq-math-mode .mq-href {
+  text-decoration: underline;
+}
 .mq-math-mode .mq-overline {
   border-top: 1px solid;
   margin-top: 1px;
@@ -289,6 +334,54 @@
 .mq-math-mode .mq-underline {
   border-bottom: 1px solid;
   margin-bottom: 1px;
+}
+.mq-math-mode .mq-diacritic-below {
+  display: block;
+  text-align: center;
+  line-height: 0.4em;
+  font-size: 0.8em;
+}
+.mq-math-mode .mq-underoverbrace {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+}
+.mq-math-mode .mq-underbrace-arc {
+  font-size: 0.8em;
+  line-height: 0.7em;
+}
+.mq-math-mode .mq-xarrow {
+  font-size: 1.3em;
+  line-height: 0.9;
+}
+.mq-math-mode .mq-invisible {
+  visibility: hidden;
+  width: 0;
+  display: inline-block;
+  overflow: hidden;
+}
+.mq-math-mode .mq-phantom {
+  visibility: hidden;
+}
+.mq-math-mode .mq-sized-delim {
+  font-size: 1.5em;
+  line-height: 1;
+}
+.mq-math-mode .mq-substack td {
+  font-size: 0.8em;
+}
+.mq-math-mode .mq-aligned td:nth-child(odd) {
+  text-align: right;
+}
+.mq-math-mode .mq-cancel-forward {
+  background: linear-gradient(to left top, transparent 46%, currentColor 49%, transparent 52%);
+}
+.mq-math-mode .mq-cancel-back {
+  background: linear-gradient(to right top, transparent 46%, currentColor 49%, transparent 52%);
+}
+.mq-math-mode .mq-cancel-both {
+  background: linear-gradient(to left top, transparent 46%, currentColor 49%, transparent 52%), linear-gradient(to right top, transparent 46%, currentColor 49%, transparent 52%);
 }
 .mq-math-mode .mq-binary-operator {
   padding: 0 0.2em;
@@ -462,10 +555,14 @@
   margin-right: 0.1em;
   padding-top: 1px;
 }
+.mq-math-mode .mq-bra-ket-delim {
+  padding: 0 0.1em;
+}
 .mq-math-mode .mq-diacritic-above {
   display: block;
   text-align: center;
   line-height: 0.4em;
+  margin-top: 0.3em;
 }
 .mq-math-mode .mq-diacritic-stem {
   display: block;
@@ -518,6 +615,46 @@
   border-top-left-radius: 50% 0.3em;
   margin-top: 1px;
   padding-top: 0.15em;
+}
+.mq-math-mode .mq-boxed {
+  border: 1px solid;
+  padding: 0.05em 0.15em;
+}
+.mq-math-mode .mq-underbrace {
+  border-bottom: 1px solid;
+  -webkit-border-bottom-right-radius: 50% 0.3em;
+  -moz-border-radius-bottomright: 50% 0.3em;
+  border-bottom-right-radius: 50% 0.3em;
+  -webkit-border-bottom-left-radius: 50% 0.3em;
+  -moz-border-radius-bottomleft: 50% 0.3em;
+  border-bottom-left-radius: 50% 0.3em;
+  margin-bottom: 1px;
+  padding-bottom: 0.15em;
+}
+.mq-math-mode .mq-overbrace {
+  border-top: 1px solid;
+  -webkit-border-top-right-radius: 50% 0.3em;
+  -moz-border-radius-topright: 50% 0.3em;
+  border-top-right-radius: 50% 0.3em;
+  -webkit-border-top-left-radius: 50% 0.3em;
+  -moz-border-radius-topleft: 50% 0.3em;
+  border-top-left-radius: 50% 0.3em;
+  margin-top: 1px;
+  padding-top: 0.15em;
+}
+.mq-math-mode .mq-overunderset {
+  display: -moz-inline-box;
+  display: inline-block;
+  text-align: center;
+  vertical-align: -0.1em;
+}
+.mq-math-mode .mq-overunderset-label {
+  display: block;
+  font-size: 80%;
+  line-height: 1;
+}
+.mq-math-mode .mq-overunderset-main {
+  display: block;
 }
 .mq-math-mode .mq-overarrow {
   min-width: 0.5em;

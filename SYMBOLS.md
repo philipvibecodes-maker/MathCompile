@@ -118,9 +118,17 @@ coprod coproduct int integral oint bigcap bigcup bigodot bigoplus
 bigotimes bigsqcup bigtriangledown bigtriangleup biguplus bigvee
 bigwedge vec hat dot tilde bar overline underline overarc overleftarrow
 overrightarrow overleftrightarrow mathbb mathbf mathit mathrm mathsf
-mathtt operatorname text textcolor ans percent percentof class editable
+mathtt text textcolor ans percent percentof class editable
 MathQuillMathField embed token tokenName left right
 ```
+
+> `\operatorname{...}` still works (MathQuill knows it) but is
+> unsupported — its parse treats the name as an operator, which
+> letter-splits (`Im` → `I·m`), lands infix (`x \operatorname{gcd} y`),
+> or applies without parens (`Im z` → `Im * z`). Existing emit-side
+> handling is kept, but don't recommend it; prefer `\text{...}` or
+> `\mathrm{...}` for named functions, which parse as a single atomic
+> name.
 
 ### Text-style words
 

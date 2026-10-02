@@ -43,10 +43,105 @@ export interface NormResult {
 let engine: ComputeEngine | undefined;
 const ce = (): ComputeEngine => (engine ??= new ComputeEngine());
 
-const isArray = (v: MathJson): v is MathJson[] => Array.isArray(v);
-const isString = (v: MathJson): v is string => typeof v === 'string';
-const head = (v: MathJson): string | undefined =>
+const isArray = (v: MathJson | undefined): v is MathJson[] => Array.isArray(v);
+const isString = (v: MathJson | undefined): v is string => typeof v === 'string';
+const head = (v: MathJson | undefined): string | undefined =>
   isArray(v) && isString(v[0]) ? v[0] : undefined;
+
+// Differential marks: plain `d`/`d_upright` symbols and the quoted
+// `'d'` string literal that `\text{d}` produces.
+const DIFF_MARKS = new Set(['d', 'd_upright', "'d'", "'d_upright'"]);
+const isDiffMark = (v: MathJson | undefined): boolean =>
+  v !== undefined && isString(v) && DIFF_MARKS.has(v);
+
+// A `d`-power: `d`, `d^2`, or the same inside a Power node.
+const diffPower = (
+  v: MathJson | undefined,
+): { is: boolean; order: MathJson | undefined } => {
+  if (isDiffMark(v)) return { is: true, order: undefined };
+  if (isArray(v) && head(v) === 'Power' && v.length === 3 && isDiffMark(v[1]))
+    return { is: true, order: v[2] };
+  return { is: false, order: undefined };
+};
+
+// `\frac{d f}{d x}` written with \text{d} (or d_upright) never becomes
+// CE's `D` — it survives as Divide('d', Multiply('d', x)) and the calc
+// pipeline would emit `d / (d * x) * f` = f/x — silently wrong. Match
+// the quotient shape so the caller can fold it to D(body, x[, order]).
+const dQuotient = (
+  num: MathJson,
+  den: MathJson,
+):
+  | { body?: MathJson; x: MathJson; order: MathJson | undefined }
+  | null => {
+  if (!isArray(den) || (head(den) !== 'Multiply' && head(den) !== 'InvisibleOperator'))
+    return null;
+  const dp = diffPower(den[1]);
+  if (!dp.is || den.length !== 3) return null;
+  let order = dp.order;
+  let x: MathJson;
+  if (isArray(den[2]) && head(den[2]) === 'Power' && den[2].length === 3) {
+    x = den[2][1];
+    if (order !== undefined && JSON.stringify(order) !== JSON.stringify(den[2][2]))
+      return null;
+    order = den[2][2];
+  } else {
+    x = den[2];
+    if (order !== undefined) return null; // d^2 / (d x) — not a clean
+    // nth-order quotient; leave it a fraction.
+  }
+  const np = diffPower(num);
+  if (np.is) {
+    if (np.order !== undefined && order !== undefined &&
+        JSON.stringify(np.order) !== JSON.stringify(order))
+      return null;
+    return { x, order: order ?? np.order };
+  }
+  if (
+    isArray(num) &&
+    (head(num) === 'Multiply' || head(num) === 'InvisibleOperator')
+  ) {
+    const nq = diffPower(num[1]);
+    if (!nq.is) return null;
+    if (nq.order !== undefined && order !== undefined &&
+        JSON.stringify(nq.order) !== JSON.stringify(order))
+      return null;
+    const tail = num.slice(2);
+    return {
+      body: tail.length === 1 ? tail[0] : ['Multiply', ...tail],
+      x,
+      order: order ?? nq.order,
+    };
+  }
+  return null;
+};
+
+// Scan a product's normalized factors for a d-quotient and fold it to
+// `D(body, x[, order])` — returns the rewritten factor list, or null.
+const foldDQuotient = (args: MathJson[]): MathJson[] | null => {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (!isArray(a) || head(a) !== 'Divide' || a.length !== 3) continue;
+    const q = dQuotient(a[1], a[2]);
+    if (!q) continue;
+    const rest = args.filter((_, j) => j !== i);
+    if (q.body !== undefined) {
+      // `\frac{df}{dx} g` — g stays a factor outside the derivative.
+      const d: MathJson =
+        q.order !== undefined
+          ? ['D', q.body, q.x, q.order]
+          : ['D', q.body, q.x];
+      return [...args.slice(0, i), d, ...args.slice(i + 1)];
+    }
+    if (rest.length === 0) return null; // `\frac{d}{dx}` alone — leave it.
+    const body: MathJson =
+      rest.length === 1 ? rest[0] : ['Multiply', ...rest];
+    return [
+      q.order !== undefined ? ['D', body, q.x, q.order] : ['D', body, q.x],
+    ];
+  }
+  return null;
+};
 
 // A cell's LaTeX may hold multiple statements: MathQuill wraps multi-line
 // content as \displaylines{a \\ b \\ c}. CE cannot parse that wrapper (it
@@ -55,7 +150,24 @@ const head = (v: MathJson): string | undefined =>
 // environment is a matrix/cases row separator, not a statement break, so
 // environment depth is tracked alongside brace depth.
 export function latexToStatementStrings(latex: string): string[] {
-  const inner = outputLatex(latex);
+  // \limits/\nolimits/\displaylimits are display hints, not semantics —
+  // CE chokes on `\sum\limits_{i=1}^{n}` while `\sum_{i=1}^{n}` parses
+  // fine, so they are stripped before parsing.
+  const inner = outputLatex(latex)
+    .replace(/\\(?:limits|nolimits|displaylimits)(?![a-zA-Z])/g, '')
+    // Thin spaces (\, \; \: \!) are layout hints — CE wraps them as an
+    // InvisibleOperator call which then looks like a function
+    // application (`\int x\,dx` → integrate(InvisibleOperator(x), x)).
+    .replace(/\\[,;:!]|(?<!\\)\\ /g, ' ')
+    // `\partial_{x}` is the partial operator applied as a subscript —
+    // CE glues it to the next factor (`\partial_{x}x^{2}` → x**x*2).
+    // The \frac{\partial}{\partial x} form routes through D() cleanly
+    // for every operand.
+    .replace(
+      /\\partial_(?:\{([^}]*)\}|([a-zA-Z]))(?!\s*\^)/g,
+      (_m, braced: string | undefined, bare: string | undefined) =>
+        `\\frac{\\partial}{\\partial ${braced ?? bare}}`,
+    );
   const statements: string[] = [];
   let depth = 0;
   let envDepth = 0;
@@ -99,7 +211,15 @@ export function parseCellLatex(latex: string): MathJson | undefined {
       return ['Error', `'parse-failed'`] as MathJson;
     }
   });
-  return parsed.length === 1 ? parsed[0] : (['Block', ...parsed] as MathJson);
+  // A single statement can itself parse to a Block (`x² \text{ where }
+  // x>0` — CE parks the condition first). Tag those so real `\\` rows
+  // keep written order while where-blocks still flip body-first.
+  const tagged = parsed.map((p) =>
+    isArray(p) && head(p) === 'Block'
+      ? (['WhereBlock', ...p.slice(1)] as MathJson)
+      : p,
+  );
+  return tagged.length === 1 ? tagged[0] : (['Block', ...tagged] as MathJson);
 }
 
 // Heads the normalizer understands and passes through (children still get
@@ -118,9 +238,11 @@ const KNOWN_HEADS = new Set([
   'Sinh', 'Cosh', 'Tanh', 'Coth', 'Sech', 'Csch',
   'Arcsin', 'Arccos', 'Arctan', 'Arcsec', 'Arccsc', 'Arccot',
   'Arcsinh', 'Arccosh', 'Arctanh',
+  // functions CE emits with different names than the codegen map
+  'Conjugate', 'Real', 'Imaginary', 'Argument', 'Erf', 'Zeta',
   // calculus
   'D', 'Derivative', 'Apply', 'Integrate', 'Sum', 'Product', 'Limit',
-  'InverseFunction', 'EvaluateAt',
+  'Prime', 'EvaluateAt', 'InverseFunction',
   // linear algebra
   'Matrix', 'Determinant', 'Transpose', 'ConjugateTranspose', 'Inverse',
   // relations / logic / piecewise
@@ -134,8 +256,12 @@ const KNOWN_HEADS = new Set([
   'Subset', 'SubsetEqual', 'Superset', 'SupersetEqual',
   'NotSubset', 'NotSubsetNotEqual', 'NotSuperset', 'NotSupersetNotEqual',
   'And', 'Or', 'Not', 'Which', 'Piecewise',
+  // sets
+  'Set', 'Condition', 'Congruent',
+  'Complement',
+  'Difference',
   // statement-level IR
-  'Assign', 'Def', 'Block', 'Function',
+  'Assign', 'Def', 'Block', 'WhereBlock', 'Function',
   // structural helpers
   'Limits', 'Tuple', 'List', 'Subscript', 'Delimiters', 'Error',
   // 'Set' reaches codegen directly (FiniteSet / ConditionSet / ImageSet
@@ -227,8 +353,8 @@ function flattenSubscript(node: MathJson): string {
     if (h === 'Negate') return `-${flattenSubscript(node[1])}`;
     if (h === 'Power')
       return `${flattenSubscript(node[1])}^${flattenSubscript(node[2])}`;
-    // x_{i,j}: Sequence/Delimiter wrap the comma-list — join with
-    // commas, dropping delimiter-marker text literals like '(,)'.
+    // x_{i,j}/P_{5,2}: Sequence/Delimiter wrap the comma-list — join
+    // with commas, dropping delimiter-marker text literals like '(,)'.
     if (h === 'Sequence' || h === 'Delimiter')
       return node
         .slice(1)
@@ -269,6 +395,17 @@ function delimiterArgs(delim: MathJson): MathJson[] {
 const isDelimiterGroup = (v: MathJson): v is MathJson[] =>
   isArray(v) && (head(v) === 'Delimiter' || head(v) === 'Delimiters');
 
+// TeX spacing commands CE wraps in nodes (`\,` -> HorizontalSpacing).
+// They carry no value — dropped from implicit-multiplication chains so
+// `x\,y` stays `x * y` instead of leaking `sp.HorizontalSpacing`.
+const SPACING_HEADS = new Set([
+  'HorizontalSpacing', 'Spacing', 'Space', 'TextSpace', 'Quad', 'Qquad',
+]);
+const isSpacing = (v: MathJson): boolean => {
+  const h = head(v);
+  return h !== undefined && SPACING_HEADS.has(h);
+};
+
 // f(x, y) shape: lowercase-ish head applied to bare symbols. Canonical CE
 // encodes application as ["name", arg1, ...]; non-canonical parses give
 // InvisibleOperator("name", Delimiter(args...)) — both resolve to a Def.
@@ -276,7 +413,17 @@ function functionDefShape(
   node: MathJson,
 ): { name: string; params: string[] } | null {
   if (!isArray(node) || node.length < 2) return null;
-  if (isSymbolString(node[0])) {
+  // A builtin or structural head applied to symbols is an application,
+  // not a def: `\frac{dN}{dt} = rN`, `|x| = cases`, and `sp = 5` (CE reads
+  // `sp` as juxtaposed s·p) must stay equations — they would otherwise
+  // `def D(N, t)` / `def Abs(x)` / `def InvisibleOperator(s, p)` and
+  // shadow SymPy.
+  if (
+    isSymbolString(node[0]) &&
+    !KNOWN_HEADS.has(node[0]) &&
+    node[0] !== 'call' &&
+    node[0] !== 'InvisibleOperator'
+  ) {
     const params = node.slice(1);
     // `D` is CE's derivative operator head (\dot{x}, \frac{dy}{dx}) —
     // `D(x,t) = rhs` is an ODE equation, never `def D(x,t)`.
@@ -285,7 +432,11 @@ function functionDefShape(
   }
   if (head(node) === 'InvisibleOperator' && node.length === 3) {
     const [, fn, delim] = node;
-    if (isSymbolString(fn) && isDelimiterGroup(delim)) {
+    if (
+      isSymbolString(fn) &&
+      !KNOWN_HEADS.has(fn) &&
+      isDelimiterGroup(delim)
+    ) {
       const params = delimiterArgs(delim);
       if (params.every(isSymbolString)) return { name: fn, params };
     }
@@ -657,8 +808,8 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       return ['Error', "'unexpected-command'"];
     }
 
-    if (h === 'Block') {
-      return ['Block', ...node.slice(1).map((n) => normalize(n, true))];
+    if (h === 'Block' || h === 'WhereBlock') {
+      return [h, ...node.slice(1).map((n) => normalize(n, true))];
     }
 
     // \left. f \right|_{a}^{b}: CE emits the evaluation bar as
@@ -725,6 +876,21 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       ];
     }
 
+    // `f^{(3)}(x)` — a parenthesized superscript on a name is the nth
+    // derivative, not a power: fold Power(f, Delimiter(n)) into the
+    // Derivative node the Apply path already knows how to emit.
+    if (
+      h === 'Power' &&
+      node.length === 3 &&
+      isString(node[1]) &&
+      isArray(node[2]) &&
+      head(node[2]) === 'Delimiter' &&
+      (node[2] as MathJson[]).length === 2
+    ) {
+      const order = normalize((node[2] as MathJson[])[1], false);
+      return ['Derivative', node[1], order];
+    }
+
     // `a'` / `x'` unapplied: a primed variable name, not sp.prime.
     if (h === 'Prime' && node.length >= 2 && isString(node[1])) {
       const ticks = typeof node[2] === 'number' ? node[2] : 1;
@@ -754,6 +920,8 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       head(node[1]) === 'InvisibleOperator' &&
       node[1][1] === '_'
     ) {
+      // Keep every factor after the bound var — `\max_{x} f(x)` parses
+      // as ('_', x, f, (x)) and dropping the delimiter loses the apply.
       const io = node[1];
       const under = io[2];
       const rest = io.slice(3);
@@ -906,6 +1074,7 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       OverDot: 'dot',
       OverDDot: 'ddot',
       OverTilde: 'tilde',
+      Overtilde: 'tilde',
       UnderBar: 'ubar', // \underline{x}
       OverRightArrow: 'vec', // \overrightarrow{v}
       OverLeftArrow: 'vec', // \overleftarrow{v}
@@ -939,16 +1108,50 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     // group marks the argument list). Calls reshape to ["name", ...args]
     // so they join the same unknown-head/call path canonical f(x) takes.
     if (h === 'InvisibleOperator' && node.length >= 3) {
-      const last = node[node.length - 1];
+      // Spacing commands (x\,y) carry no value — they would otherwise
+      // leak into the product as `sp.HorizontalSpacing`.
+      const items = node.slice(1).filter((n) => !isSpacing(n));
+      if (items.length === 0) return 'Nothing';
+      if (items.length === 1) return normalize(items[0], atStatement);
+      const last = items[items.length - 1];
       if (isDelimiterGroup(last)) {
         const callArgs = delimiterArgs(last).map((n) => normalize(n, false));
-        const mid = node.slice(2, -1).map((n) => normalize(n, false));
-        const fn = node[1];
+        const mid = items.slice(1, -1).map((n) => normalize(n, false));
+        const fn = items[0];
         if (isString(fn) && mid.length === 0)
           return normalize([fn, ...callArgs], atStatement);
         return ['Apply', normalize(fn, false), ...mid, ...callArgs];
       }
-      const args = node.slice(1).map((n) => normalize(n, false));
+      // `\iint f dx dy` / `\iiint` — a single sign binds only the FIRST
+      // differential; the rest land as `d v` pairs in the juxtaposition.
+      // Repark every pair inside the integral so codegen sees one
+      // iterated integral instead of `∫f dx * d * y`.
+      if (isArray(items[0]) && head(items[0]) === 'Integrate') {
+        const inner = normalize(items[0], false) as MathJson[];
+        const integ =
+          isArray(inner) && head(inner) === 'Integrate' ? inner : null;
+        const rest = items.slice(1);
+        const pairs: MathJson[] = [];
+        if (
+          integ &&
+          rest.length >= 2 &&
+          rest.every(
+            (n, i) =>
+              (i % 2 === 0 && isDiffMark(n)) ||
+              (i % 2 === 1 && isString(n)),
+          )
+        ) {
+          for (const n of rest) pairs.push(n);
+          const integBody = integ.length > 1 ? integ[1] : 'Nothing';
+          const lims = integ.length > 2 ? integ[2] : 'Nothing';
+          return [
+            'Integrate',
+            ['Multiply', integBody, ...pairs],
+            lims,
+          ];
+        }
+      }
+      const args = items.map((n) => normalize(n, false));
       // `\mathrm{trace}(M)`-style word ops fused to a matrix literal
       // arrive as InvisibleOperator(word, Matrix) — a method call, not
       // a product (the Delimiter-less pmatrix shape).
@@ -966,6 +1169,10 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
         )
           return ['MatrixMethod', w, m as MathJson];
       }
+      const folded = foldDQuotient(args);
+      if (folded) {
+        return folded.length === 1 ? folded[0] : ['Multiply', ...folded];
+      }
       // `2i` — and `\pi i`, `e^{i\pi}` (i alongside a number or a named
       // constant) — mean the imaginary unit, matching the canonical
       // Complex-node output. `xi`/`ij` keep i as a symbol.
@@ -978,9 +1185,121 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       ];
     }
 
+    // A canonical Multiply can still carry a `\text{d}` quotient — same
+    // fold as the InvisibleOperator path above.
+    if (h === 'Multiply') {
+      const args = node.slice(1).map((n) => normalize(n, false));
+      const folded = foldDQuotient(args);
+      if (folded)
+        return folded.length === 1 ? folded[0] : ['Multiply', ...folded];
+    }
+
+    // A standalone `\frac{df}{dx}` (no surrounding product) — the same
+    // quotient fold, directly on the Divide node.
+    if (h === 'Divide' && node.length === 3) {
+      const q = dQuotient(
+        normalize(node[1], false),
+        normalize(node[2], false),
+      );
+      if (q && q.body !== undefined)
+        return q.order !== undefined
+          ? ['D', q.body, q.x, q.order]
+          : ['D', q.body, q.x];
+    }
+
     // Non-canonical \int/\sum/\prod take Tuple bounds (or a bare variable
     // for indefinite integrals); fold into the canonical Limits shape.
     if (h === 'Integrate' || h === 'Sum' || h === 'Product') {
+      // Iterated integrals nest under the outer sign and park EVERY
+      // differential in the innermost body — `\int_0^1\int_0^x y dy dx`
+      // parses as Integrate(Integrate(y·d·y·d·x, (_,0,x)), (_,0,1)).
+      // Peel trailing `'d'` var pairs off the innermost body — the last
+      // pair binds the outermost integral — then rebuild the chain with
+      // each integral's variable in its Limits slot.
+      if (h === 'Integrate') {
+        const chain: MathJson[][] = [];
+        let inner: MathJson = node;
+        while (isArray(inner) && head(inner) === 'Integrate') {
+          chain.push(inner as MathJson[]);
+          inner = inner[1];
+        }
+        if (chain.length > 1) {
+          const innerBody = normalize(inner, false);
+          const factors =
+            isArray(innerBody) && head(innerBody) === 'Multiply'
+              ? innerBody.slice(1)
+              : [innerBody];
+          const vars: MathJson[] = [];
+          while (
+            vars.length < chain.length &&
+            factors.length >= 2 &&
+            isDiffMark(factors[factors.length - 2]) &&
+            isString(factors[factors.length - 1]) &&
+            factors[factors.length - 1] !== 'Nothing'
+          ) {
+            vars.push(factors.pop() as string);
+            factors.pop();
+          }
+          if (
+            vars.length === chain.length &&
+            chain.every((n) => n[2] === 'Nothing' || n[2] === undefined)
+          ) {
+            // Boundless chain — repark every pair innermost-first on one
+            // Integrate node so codegen emits a single iterated integral
+            // with ONE +C (nested nodes would each append their own).
+            const pairs: MathJson[] = [];
+            for (let i = vars.length - 1; i >= 0; i--)
+              pairs.push('d', vars[i]);
+            return ['Integrate', ['Multiply', ...factors, ...pairs], 'Nothing'];
+          }
+          if (vars.length === chain.length) {
+            // vars[k] is chain[k]'s variable (vars[0] = outermost).
+            let body: MathJson =
+              factors.length === 1
+                ? factors[0]
+                : factors.length > 1
+                  ? ['Multiply', ...factors]
+                  : 'Nothing';
+            for (let i = chain.length - 1; i >= 0; i--) {
+              const lim = chain[i][2];
+              const lims =
+                isArray(lim) && head(lim) === 'Tuple'
+                  ? [
+                      normalize(lim[1] ?? 'Nothing', false, false, true),
+                      normalize(lim[2] ?? 'Nothing', false, true),
+                      normalize(lim[3] ?? 'Nothing', false, true),
+                    ]
+                  : isString(lim)
+                    ? [lim, 'Nothing', 'Nothing']
+                    : ['Nothing', 'Nothing', 'Nothing'];
+              body = [
+                'Integrate',
+                body,
+                [
+                  'Limits',
+                  lims[0] === 'Nothing' ? vars[i] : lims[0],
+                  lims[1],
+                  lims[2],
+                ],
+              ];
+            }
+            return body;
+          }
+        }
+      }
+      // `\iiint`/`{\iiiint}` — one sign binds every following `d v`:
+      // Integrate(body, 'x','y','z'). Repark all pairs on the body so
+      // codegen emits one iterated integral with a single +C.
+      if (
+        h === 'Integrate' &&
+        node.length > 3 &&
+        node.slice(2).every((n) => isString(n))
+      ) {
+        const intBody = normalize(node[1], false);
+        const pairs: MathJson[] = [];
+        for (const v of node.slice(2)) pairs.push('d', v);
+        return ['Integrate', ['Multiply', intBody, ...pairs], 'Nothing'];
+      }
       const body = normalize(node[1], false);
       const lim = node[2];
       if (isArray(lim) && head(lim) === 'Tuple') {
@@ -1036,11 +1355,21 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       ];
     }
 
+
     if (h === 'Subscript' && node.length === 3) {
       // Normalize the base first so decorative wrappers (UnderBrace,
       // Accent marks) resolve to their flattened name before the
       // subscript suffix is appended.
-      return `${flattenSubscript(normalize(node[1], false))}_{${flattenSubscript(node[2])}}`;
+      const base = flattenSubscript(normalize(node[1], false));
+      const sub = flattenSubscript(node[2]);
+      // A non-name base (\binom{n}{k}_{n=3}) or a subscript position
+      // that isn't name-able flattens to '?' — a '?'-riddled name
+      // mangles to `sym`/strips silently. Emit the base instead.
+      if (base.includes('?') || sub.includes('?')) {
+        issues.push(issue('note', 'complex subscript — showing the base'));
+        return normalize(node[1], false);
+      }
+      return `${base}_{${sub}}`;
     }
 
     if (h === 'Function') {
@@ -1194,6 +1523,26 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       if (w !== undefined && isArray(m) && head(m) === 'Matrix')
         return ['MatrixMethod', w, normalize(m as MathJson, false)];
     }
+
+    // CE tags an environment's delimiter style onto the Matrix node as
+    // a trailing text-literal arg ('..', '[]', '()'): it's metadata for
+    // the latex emitter, not a matrix row — strip it so codegen doesn't
+    // see a stray "text literal" symbol.
+    if (
+      h === 'Matrix' &&
+      node.length >= 2 &&
+      isArray(node[1]) &&
+      head(node[1]) === 'List'
+    ) {
+      return [
+        'Matrix',
+        ...node
+          .slice(1)
+          .filter((a) => !(isString(a) && TEXT_LITERAL.test(a)))
+          .map((n) => normalize(n, false)),
+      ];
+    }
+
 
     if (!KNOWN_HEADS.has(h)) {
       // Heads codegen remaps to real SymPy functions (sp.conjugate,

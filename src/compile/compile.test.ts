@@ -128,7 +128,12 @@ const FIXTURES: {
   },
   {
     latex: '\\lim_{x\\to 0} \\frac{\\sin x}{x}',
-    expectedPython: ['x = sp.Symbol("x")', 'sp.limit(sp.sin(x) / x, x, 0)'],
+    // A bare \lim is two-sided — sympy's dir='+' default would silently
+    // right-hand it (1/x at 0 gives oo instead of zoo).
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      "sp.limit(sp.sin(x) / x, x, 0, dir='+-')",
+    ],
   },
   {
     latex: '\\frac{d}{dx} x^2',
@@ -191,7 +196,11 @@ const FIXTURES: {
   {
     latex: '\\mathrm{solve}(x^2 = 4, x)',
     expectedIR: ['call', 'solve', ['Equal', ['Power', 'x', 2], 4], 'x'],
-    expectedPython: ['x = sp.Symbol("x")', 'sp.solve(sp.Eq(x**2, 4), x)'],
+    // `solve` is a real SymPy builtin — the call tier emits it sp.-bound.
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.solve(sp.Eq(x**2, 4), x)',
+    ],
   },
   {
     latex: '\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}',
@@ -341,7 +350,10 @@ const FIXTURES: {
   },
   {
     latex: 'A^T',
-    expectedPython: ['A = sp.Symbol("A")', 'sp.Transpose(A)'],
+    expectedPython: [
+      'A = sp.MatrixSymbol("A", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
+      'sp.Transpose(A)',
+    ],
   },
   {
     // \left. f \right|_{lo}^{hi}: folded to EvaluateAt — the
@@ -417,7 +429,7 @@ const FIXTURES: {
   {
     // CE can't parse \underset — rewritten to \lim_{x\to0} before parse.
     latex: '\\underset{x\\to0}{\\lim} f',
-    expectedPython: ["f, x = sp.symbols('f x')", 'sp.limit(f, x, 0)'],
+    expectedPython: ["f, x = sp.symbols('f x')", "sp.limit(f, x, 0, dir='+-')"],
   },
   {
     // \Big( ... \Big) sizes are dropped — the parens stay an implicit
@@ -439,11 +451,12 @@ const FIXTURES: {
     // stripped and the lone | wraps as \left. \right|, and an Equal bound
     // substitutes the point rather than the equation.
     latex: '\\frac{dy}{dx}\\bigg|_{x=0}',
-    // dy/dx on two independent symbols stays unevaluated (sp.diff would
-    // diff y w.r.t. x to 0) — the eval bar still substitutes the point.
+    // dy/dx treats y as a function of x (y = sp.Function('y')) —
+    // sp.diff(y(x), x) keeps the intended dy/dx reading.
     expectedPython: [
-      "y, x = sp.symbols('y x')",
-      '(sp.Derivative(y, x)).subs(x, 0)',
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+      '(sp.diff(y(x), x)).subs(x, 0)',
     ],
   },
   {
@@ -603,13 +616,14 @@ const FIXTURES: {
     ],
   },
   {
+    // A bare symbol is not provably a set — `x \in S` reads it as a
+    // singleton `x \in {S}` rather than a TypeError or a flagged stub,
+    // the same convention the set ops use (`x \cup y` -> `{x, y}`).
     latex: 'x \\in S',
     expectedPython: [
       "x, S = sp.symbols('x S')",
-      'Element = sp.Function("Element")',
-      'Element(x, S)',
+      'sp.Contains(x, sp.FiniteSet(S))',
     ],
-    issues: ['unknown head "Element"'],
   },
   {
     latex: '\\emptyset \\cup \\mathbb{Z}',
@@ -617,7 +631,10 @@ const FIXTURES: {
   },
   {
     latex: 'A^{\\dagger}',
-    expectedPython: ['A = sp.Symbol("A")', 'sp.Adjoint(A)'],
+    expectedPython: [
+      'A = sp.MatrixSymbol("A", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
+      'sp.Adjoint(A)',
+    ],
   },
   {
     // Nested application used to re-wrap the inner call as
@@ -701,17 +718,17 @@ const FIXTURES: {
     // variable — diff at a fresh symbol, then substitute the point.
     latex: "f'(0)",
     expectedPython: [
-      '_ev0 = sp.Symbol("_ev0")',
+      'x = sp.Symbol("x")',
       'f = sp.Function("f")',
-      '(sp.diff(f(_ev0), _ev0)).subs(_ev0, 0)',
+      'sp.diff(f(x), x).subs(x, 0)',
     ],
   },
   {
     latex: "f'(\\pi)",
     expectedPython: [
-      '_ev0 = sp.Symbol("_ev0")',
+      'x = sp.Symbol("x")',
       'f = sp.Function("f")',
-      '(sp.diff(f(_ev0), _ev0)).subs(_ev0, sp.pi)',
+      'sp.diff(f(x), x).subs(x, sp.pi)',
     ],
   },
   {
@@ -770,12 +787,13 @@ const FIXTURES: {
     issues: ['Minimum'],
   },
   {
-    // \dot{x} parses as D(x, t) — sp.diff(x, t) is 0 (independence);
-    // unevaluated Derivative keeps the Newtonian notation. Provisional.
+    // \dot{x} parses as D(x, t) — x is a function of t, so it emits
+    // diff(x(t), t) rather than an independence-zero derivative.
     latex: '\\dot{x}',
     expectedPython: [
-      "x, t = sp.symbols('x t')",
-      'sp.Derivative(x, t)',
+      't = sp.Symbol("t")',
+      'x = sp.Function("x")',
+      'sp.diff(x(t), t)',
     ],
   },
   {
@@ -910,16 +928,18 @@ const FIXTURES: {
     // function name in functionDefShape (`def D(x,t): return f(x)`).
     latex: '\\dot{x} = f(x)',
     expectedPython: [
-      "x, t = sp.symbols('x t')",
+      't = sp.Symbol("t")',
+      'x = sp.Function("x")',
       'f = sp.Function("f")',
-      'sp.Eq(sp.Derivative(x, t), f(x))',
+      'sp.Eq(sp.diff(x(t), t), f(x))',
     ],
   },
   {
     latex: '\\frac{dy}{dx} = 0',
     expectedPython: [
-      "y, x = sp.symbols('y x')",
-      'sp.Eq(sp.Derivative(y, x), 0)',
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+      'sp.Eq(sp.diff(y(x), x), 0)',
     ],
   },
   {
@@ -943,7 +963,7 @@ const FIXTURES: {
     // `(x \mapsto x^2)(3)` applies the lambda — `(lambda x: x**2)(3)`,
     // not `(lambda ...) * 3` (TypeError).
     latex: '(x \\mapsto x^2)(3)',
-    expectedPython: ['x = sp.Symbol("x")', '(lambda x: x**2)(3)'],
+    expectedPython: ['x = sp.Symbol("x")', 'sp.Lambda(x, x**2)(3)'],
   },
   {
     // A bare-point eval bound on a multi-free body names the actual
@@ -963,12 +983,7 @@ const FIXTURES: {
     // A forward reference still flags — g(3) precedes the def and
     // NameErrors at exec, so the note is honest.
     latex: '\\displaylines{g(3) \\\\ g(x) = x+1}',
-    expectedPython: [
-      'g = sp.Function("g")',
-      'g(3)',
-      'def g(x):',
-      '    return x + 1',
-    ],
+    expectedPython: ['g(3)', 'def g(x):', '    return x + 1'],
     issues: ['unknown head "g"'],
   },
   {
@@ -1046,7 +1061,7 @@ const FIXTURES: {
       'A = \\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix} \\\\ \\det(A) \\\\ \\mathrm{trace}(A)',
     expectedPython: [
       'A = sp.Matrix([[1, 2], [3, 4]])',
-      'A.det()',
+      'sp.Determinant(A)',
       '(A).trace()',
     ],
   },
@@ -1074,7 +1089,10 @@ const FIXTURES: {
     // M^{\mathrm{T}} reads as transpose — CE wraps the text superscript
     // as a __unit__ node.
     latex: 'M^{\\mathrm{T}}',
-    expectedPython: ['M = sp.Symbol("M")', 'sp.Transpose(M)'],
+    expectedPython: [
+      'M = sp.MatrixSymbol("M", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
+      'sp.Transpose(M)',
+    ],
   },
 ];
 
@@ -1095,13 +1113,13 @@ describe('worksheet matrix tracking', () => {
       'import sympy as sp',
       'A = sp.Matrix([[1, 2], [3, 4]])',
     ]);
-    // Cell 2's standalone program declares A as a Symbol — `A.det()`
-    // would raise TypeError, so it degrades to the flagged stub.
-    expect(out.cellLines[1]).toContain('A = sp.Symbol("A")');
-    expect(out.cellLines[1]).toContain('Determinant(A)');
-    expect(
-      out.cellIssues[1].some((i) => i.message.includes('needs a matrix')),
-    ).toBe(true);
+    // Cell 2's standalone program declares A as a MatrixSymbol — a bare
+    // name in matrix position reads as an unknown matrix (same as
+    // `\det A` on an undeclared name), not `A.det()` on a scalar Symbol.
+    expect(out.cellLines[1]).toContain(
+      'A = sp.MatrixSymbol("A", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
+    );
+    expect(out.cellLines[1]).toContain('sp.Determinant(A)');
   });
 
   it('word-op calls on a same-cell matrix emit methods', () => {
@@ -1128,9 +1146,13 @@ describe('worksheet matrix tracking', () => {
       { importAll: false },
     );
     expect(out.cellLines[0]).toContain('A = 5');
-    expect(out.cellLines[0]).toContain('Determinant(A)');
+    // `\det A` on the rebound scalar flags an error and drops the row
+    // (Determinant(5) would TypeError in the worker).
+    expect(out.cellLines[0].join('\n')).not.toContain('Determinant');
     expect(
-      out.cellIssues[0].some((i) => i.message.includes('needs a matrix')),
+      out.cellIssues[0].some(
+        (i) => i.severity === 'error' && i.message.includes('needs a matrix'),
+      ),
     ).toBe(true);
   });
 });
