@@ -21,6 +21,8 @@
   let failed = $state('');
   // Per-cell opt-in to the `e = ...` display plumbing lines in .calc-code.
   let showPlumbing = $state(false);
+  // Folded body of the clean_and_simplify helper block in row-0 code.
+  let showHelpers = $state(false);
   const hasPlumbing = $derived(
     appStore.showCode &&
       rows.some((r) => r.ok && r.displayCode && r.displayCode !== r.code),
@@ -75,6 +77,30 @@
     return () => clearTimeout(timer);
   });
 
+  // Split shown code around the emitted `def clean_and_simplify`
+  // block: head is everything before the signature line, sig is the
+  // `def` line itself, body is its indented suite, rest is the
+  // remainder of the program.
+  // Only row-0 code contains the block.
+  function splitHelperBlock(
+    code: string,
+  ): { head: string; sig: string; body: string; rest: string } | null {
+    const lines = code.split('\n');
+    const i = lines.findIndex((l) =>
+      l.startsWith('def clean_and_simplify('),
+    );
+    if (i < 0) return null;
+    let j = i + 1;
+    while (j < lines.length && (lines[j] === '' || /^\s/.test(lines[j])))
+      j++;
+    return {
+      head: lines.slice(0, i).join('\n'),
+      sig: lines[i],
+      body: lines.slice(i + 1, j).join('\n'),
+      rest: lines.slice(j).join('\n'),
+    };
+  }
+
   function staticMath(el: HTMLElement, latex: string) {
     const sm = mountStaticMath(el);
     sm.set(latex);
@@ -103,13 +129,43 @@
             {#if appStore.showCode && row.code}
               {@const shown =
                 showPlumbing && row.displayCode ? row.displayCode : row.code}
-              {@const toks = highlightPython(shown)}
-              <pre class="calc-code"><code
-                  >{#each toks as tok, j (j)}<span
-                      class={tok.cls ? `tok-${tok.cls}` : undefined}
-                      >{tok.text}</span
-                    >{/each}</code
-                ></pre>
+              {@const split = splitHelperBlock(shown)}
+              {#if split}
+                <pre class="calc-code"><code
+                    >{#each highlightPython(split.head) as tok, j (j)}<span
+                        class={tok.cls ? `tok-${tok.cls}` : undefined}
+                        >{tok.text}</span
+                      >{/each}{split.head === '' ? '' : '\n'}<button
+                      type="button"
+                      class="code-fold"
+                      title="Toggle the clean_and_simplify helper definitions"
+                      aria-expanded={showHelpers}
+                      onclick={() => (showHelpers = !showHelpers)}
+                      >{showHelpers ? '▾' : '▸'}</button
+                    >{#each highlightPython(split.sig) as tok, j (j)}<span
+                        class={tok.cls ? `tok-${tok.cls}` : undefined}
+                        >{tok.text}</span
+                      >{/each}{#if !showHelpers}<span
+                        class="code-elide"> ⋯</span>{/if}{'\n'}{#if showHelpers}{#each highlightPython(
+                          split.body + '\n',
+                        ) as tok, j (j)}<span
+                          class={tok.cls ? `tok-${tok.cls}` : undefined}
+                          >{tok.text}</span
+                        >{/each}{/if}{#each highlightPython(
+                        split.rest,
+                      ) as tok, j (j)}<span
+                        class={tok.cls ? `tok-${tok.cls}` : undefined}
+                        >{tok.text}</span
+                      >{/each}</code
+                  ></pre>
+              {:else}
+                <pre class="calc-code"><code
+                    >{#each highlightPython(shown) as tok, j (j)}<span
+                        class={tok.cls ? `tok-${tok.cls}` : undefined}
+                        >{tok.text}</span
+                      >{/each}</code
+                  ></pre>
+              {/if}
             {/if}
           {:else}
             <code class="calc-error" title={row.error}>{row.error}</code>
