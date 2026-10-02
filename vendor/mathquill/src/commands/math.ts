@@ -672,6 +672,26 @@ class MathBlock extends MathElement {
     } else return new VanillaSymbol(ch);
   }
   write(cursor: Cursor, ch: string) {
+    // `{` typed at the left end of a command's empty arg block is the
+    // user writing the arg's own braces — the block already is the
+    // group, so don't grow a \left\{ \right\} pair inside it. `}` at the
+    // right end closes the arg: hop to the next arg block or out of the
+    // command. (Bracket blocks keep the pair/close behavior, and `{`/`}`
+    // elsewhere keep making real braces.)
+    var owner = this.parent;
+    if (owner instanceof MathCommand && !(owner instanceof Bracket)) {
+      if (ch === '{' && this.isEmpty() && !cursor[L] && !cursor.selection) {
+        return;
+      }
+      if (ch === '}' && !cursor[R] && !cursor.selection) {
+        if (owner instanceof SupSub || !(this as MQNode)[R]) {
+          cursor.insRightOf(owner);
+        } else {
+          cursor.insAtLeftEnd((this as MQNode)[R] as MQNode);
+        }
+        return;
+      }
+    }
     var cmd = this.chToCmd(ch, cursor.options);
     if (cursor.selection) cmd.replaces(cursor.replaceSelection());
     if (!cursor.isTooDeep()) {

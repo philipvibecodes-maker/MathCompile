@@ -5788,6 +5788,27 @@ var __assign = (this && this.__assign) || function () {
                 return new VanillaSymbol(ch);
         };
         MathBlock.prototype.write = function (cursor, ch) {
+            // `{` typed at the left end of a command's empty arg block is the
+            // user writing the arg's own braces \u2014 the block already is the
+            // group, so don't grow a \left\{ \right\} pair inside it. `}` at the
+            // right end closes the arg: hop to the next arg block or out of the
+            // command. (Bracket blocks keep the pair/close behavior, and `{`/`}`
+            // elsewhere keep making real braces.)
+            var owner = this.parent;
+            if (owner instanceof MathCommand && !(owner instanceof Bracket)) {
+                if (ch === '{' && this.isEmpty() && !cursor[L] && !cursor.selection) {
+                    return;
+                }
+                if (ch === '}' && !cursor[R] && !cursor.selection) {
+                    if (owner instanceof SupSub || !this[R]) {
+                        cursor.insRightOf(owner);
+                    }
+                    else {
+                        cursor.insAtLeftEnd(this[R]);
+                    }
+                    return;
+                }
+            }
             var cmd = this.chToCmd(ch, cursor.options);
             if (cursor.selection)
                 cmd.replaces(cursor.replaceSelection());
@@ -12562,7 +12583,34 @@ var __assign = (this && this.__assign) || function () {
                     cursor.controller.aria.alert(ch);
                 }
                 else {
-                    var cmd = this.parent.renderCommand(cursor);
+                    var input = this.parent;
+                    if (this.isEmpty() && ch !== '\\') {
+                        // An empty input ended by a non-letter is a single \<char>
+                        // escape, not a '\ ' space followed by the bare char: \; \:
+                        // \! \, \| \_ \# resolve to their atoms, \{ / \} take the
+                        // usual bracket paths (auto-pair / close), anything else just
+                        // writes the char.
+                        input.setDOM(input.domFrag().children().lastElement());
+                        input.remove();
+                        if (input[R])
+                            cursor.insLeftOf(input[R]);
+                        else
+                            cursor.insAtRightEnd(input.parent);
+                        var esc = ch === '{' || ch === '}'
+                            ? CharCmds[ch]
+                            : LatexCmds['\\' + ch];
+                        if (esc) {
+                            var node = isMQNodeClass(esc)
+                                ? new esc('\\' + ch)
+                                : esc('\\' + ch);
+                            node.createLeftOf(cursor.show());
+                        }
+                        else {
+                            cursor.parent.write(cursor, ch);
+                        }
+                        return;
+                    }
+                    var cmd = input.renderCommand(cursor);
                     // TODO needs tests
                     cursor.controller.aria.queue(cmd.mathspeak({ createdLeftOf: cursor }));
                     if (ch !== '\\' || !this.isEmpty())
@@ -12673,6 +12721,50 @@ var __assign = (this && this.__assign) || function () {
             });
             return _this_1;
         }
+        class_33.prototype.createBlocks = function () {
+            _super.prototype.createBlocks.call(this);
+            var beginNode = this;
+            var nameBlock = this.getEnd(L);
+            // `\begin{<name>` typed in the field: once the env name is closed
+            // (a `}` keystroke/char, Enter, or Tab) swap this wrapper for the
+            // real environment grid \u2014 or an unknown-env leaf, mirroring the
+            // parser. Before this, `}` hopped out and `{` grew a bracket pair
+            // inside the name (typed `\begin{cases}` mangled to
+            // `\begin{\left\{cases\right\}}`).
+            var resolve = function (cursor) {
+                var env = nameBlock.latex().trim();
+                var grid = Environments[env.replace(/\*/g, '')] &&
+                    Environments[env.replace(/\*/g, '')]();
+                var node = grid ||
+                    new VanillaSymbol('\\begin{' + env + '} ', h.text('\\begin{' + env + '}'), 'begin ' + env);
+                beginNode.setDOM(beginNode.domFrag().children().lastElement());
+                beginNode.remove();
+                if (beginNode[R])
+                    cursor.insLeftOf(beginNode[R]);
+                else
+                    cursor.insAtRightEnd(beginNode.parent);
+                node.createLeftOf(cursor.show());
+                if (grid)
+                    cursor.insAtLeftEnd(grid.getEnd(L));
+            };
+            var origWrite = nameBlock.write;
+            nameBlock.write = function (cursor, ch) {
+                if (ch === '}') {
+                    resolve(cursor);
+                    return;
+                }
+                origWrite.call(this, cursor, ch);
+            };
+            var origKeystroke = nameBlock.keystroke;
+            nameBlock.keystroke = function (key, e, ctrlr) {
+                if (key === 'Enter' || key === 'Tab') {
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    resolve(ctrlr.cursor);
+                    return;
+                }
+                return origKeystroke.call(this, key, e, ctrlr);
+            };
+        };
         class_33.prototype.parser = function () {
             var string = Parser.string;
             var regex = Parser.regex;

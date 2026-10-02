@@ -5788,6 +5788,27 @@ var __assign = (this && this.__assign) || function () {
                 return new VanillaSymbol(ch);
         };
         MathBlock.prototype.write = function (cursor, ch) {
+            // `{` typed at the left end of a command's empty arg block is the
+            // user writing the arg's own braces \u2014 the block already is the
+            // group, so don't grow a \left\{ \right\} pair inside it. `}` at the
+            // right end closes the arg: hop to the next arg block or out of the
+            // command. (Bracket blocks keep the pair/close behavior, and `{`/`}`
+            // elsewhere keep making real braces.)
+            var owner = this.parent;
+            if (owner instanceof MathCommand && !(owner instanceof Bracket)) {
+                if (ch === '{' && this.isEmpty() && !cursor[L] && !cursor.selection) {
+                    return;
+                }
+                if (ch === '}' && !cursor[R] && !cursor.selection) {
+                    if (owner instanceof SupSub || !this[R]) {
+                        cursor.insRightOf(owner);
+                    }
+                    else {
+                        cursor.insAtLeftEnd(this[R]);
+                    }
+                    return;
+                }
+            }
             var cmd = this.chToCmd(ch, cursor.options);
             if (cursor.selection)
                 cmd.replaces(cursor.replaceSelection());

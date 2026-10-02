@@ -20,6 +20,57 @@ LatexCmds.begin = class extends MathCommand {
     ])
   );
 
+  createBlocks() {
+    super.createBlocks();
+    const beginNode = this;
+    const nameBlock = this.getEnd(L);
+
+    // `\begin{<name>` typed in the field: once the env name is closed
+    // (a `}` keystroke/char, Enter, or Tab) swap this wrapper for the
+    // real environment grid — or an unknown-env leaf, mirroring the
+    // parser. Before this, `}` hopped out and `{` grew a bracket pair
+    // inside the name (typed `\begin{cases}` mangled to
+    // `\begin{\left\{cases\right\}}`).
+    const resolve = function (cursor: Cursor) {
+      const env = nameBlock.latex().trim();
+      const grid =
+        Environments[env.replace(/\*/g, '')] &&
+        Environments[env.replace(/\*/g, '')]();
+      const node: MQNode =
+        grid ||
+        new VanillaSymbol(
+          '\\begin{' + env + '} ',
+          h.text('\\begin{' + env + '}'),
+          'begin ' + env
+        );
+      beginNode.setDOM(beginNode.domFrag().children().lastElement());
+      beginNode.remove();
+      if (beginNode[R]) cursor.insLeftOf(beginNode[R] as MQNode);
+      else cursor.insAtRightEnd(beginNode.parent);
+      node.createLeftOf(cursor.show());
+      if (grid) cursor.insAtLeftEnd(grid.getEnd(L) as MQNode);
+    };
+
+    const origWrite = nameBlock.write;
+    nameBlock.write = function (cursor: Cursor, ch: string) {
+      if (ch === '}') {
+        resolve(cursor);
+        return;
+      }
+      origWrite.call(this, cursor, ch);
+    };
+
+    const origKeystroke = nameBlock.keystroke;
+    nameBlock.keystroke = function (key, e, ctrlr) {
+      if (key === 'Enter' || key === 'Tab') {
+        e?.preventDefault();
+        resolve(ctrlr.cursor);
+        return;
+      }
+      return origKeystroke.call(this, key, e, ctrlr);
+    };
+  }
+
   parser() {
     var string = Parser.string;
     var regex = Parser.regex;
