@@ -165,7 +165,7 @@ const SP_BUILTIN_CALL = new Set(
     'partition primepi mobius totient reduced_totient divisor_sigma ' +
     'legendre_symbol jacobi_symbol kronecker_symbol rf ff factorial2 ' +
     'subfactorial stirling multinomial nC nP nT Piecewise piecewise ' +
-    'sign ceiling conjugate arg re im ' +
+    'sign ceiling conjugate arg re ' +
     'asinh acosh atanh acoth asech acsch ' +
     'solve solveset linsolve nonlinsolve simplify factor expand cancel ' +
     'collect apart together trigsimp expand_trig powsimp nsimplify ' +
@@ -228,6 +228,11 @@ const CALL_RENAMES: Record<string, string> = {
   // are a-prefixed; the bare name displays `Arsinh(x)` unevaluated.
   Arsinh: 'asinh', Arcosh: 'acosh', Artanh: 'atanh',
   Arcsinh: 'asinh', Arccosh: 'acosh', Arctanh: 'atanh',
+  // \operatorname{Im}/\operatorname{Re} — imaginary/real part. The
+  // lowercase \operatorname{im} is deliberately NOT renamed: "im" is
+  // the image of a function, not sp.im.
+  Im: 'im',
+  Re: 're',
 };
 
 // \sin^{-1}(x) etc.: CE wraps the base name as ['InverseFunction', 'Sin'].
