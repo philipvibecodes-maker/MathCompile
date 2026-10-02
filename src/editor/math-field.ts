@@ -241,6 +241,11 @@ export function attachField(
     getValue: () => el.value,
     setValue: (latex) => {
       el.value = latex;
+      // A programmatic set fires no input event — if MathQuill rejected
+      // or canonicalized the value (unparseable latex wipes the field),
+      // push the effective value back so the store/output column can't
+      // keep displaying latex the field doesn't contain.
+      if (el.value !== latex) cb.onChange(el.value);
     },
     setSmartMode: (v) =>
       el.config({

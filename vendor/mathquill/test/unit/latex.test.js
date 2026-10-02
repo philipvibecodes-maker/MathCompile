@@ -331,6 +331,10 @@ suite('latex', function () {
       '\\begin{smallmatrix}a\\end{smallmatrix}',
       '\\begin{smallmatrix}a\\end{smallmatrix}'
     );
+    assertParsesLatex(
+      '\\begin{array}{cc}a&b\\\\c&d\\end{array}',
+      '\\begin{array}{cc}a&b\\\\ c&d\\end{array}'
+    );
   });
 
   test('escaped accents, bra-ket, display wrappers, rules', function () {
@@ -388,6 +392,92 @@ suite('latex', function () {
     assertParsesLatex('\\yen', '\\yen');
     assertParsesLatex('\\euro', '\\euro');
     assertParsesLatex('a\\not\\sim b', 'a\\nsim b');
+  });
+
+  test('infix ops, macro defs, genfrac: honest verbatim output', function () {
+    assertParsesLatex('a\\over b', 'a\\over b');
+    assertParsesLatex('a\\choose b', 'a\\choose b');
+    assertParsesLatex('a\\atop b', 'a\\atop b');
+    assertParsesLatex('\\newcommand{\\foo}{x}', '\\newcommand{\\foo}{x}');
+    assertParsesLatex(
+      '\\renewcommand{\\foo}[1]{#1x}',
+      '\\renewcommand{\\foo}[1]{#1x}'
+    );
+    assertParsesLatex(
+      '\\providecommand{\\bar}{z}',
+      '\\providecommand{\\bar}{z}'
+    );
+    assertParsesLatex('\\def\\foo{bar}', '\\def\\foo{bar}');
+    assertParsesLatex(
+      '\\DeclareMathOperator{\\Tr}{Tr}',
+      '\\DeclareMathOperator{\\Tr}{Tr}'
+    );
+    assertParsesLatex('\\genfrac(){}{}{x}{y}', '\\genfrac(){}{}{x}{y}');
+    assertParsesLatex(
+      '\\genfrac(]{0pt}{0}{x}{y}',
+      '\\genfrac(]{0pt}{0}{x}{y}'
+    );
+    assertParsesLatex('\\t{oo}', '\\t{oo}');
+    assertParsesLatex(
+      '\\textsuperscript{th}',
+      '\\textsuperscript{th}'
+    );
+    assertParsesLatex(
+      '\\textsubscript{2}',
+      '\\textsubscript{2}'
+    );
+  });
+
+  test('refs, text-cmds, boxes, links round-trip', function () {
+    assertParsesLatex('\\ref{1}', '\\ref{1}');
+    assertParsesLatex('\\eqref{1}', '\\eqref{1}');
+    assertParsesLatex('\\label{sec:a}', '\\label{sec:a}');
+    assertParsesLatex('\\cite[see]{key}', '\\cite[see]{key}');
+    assertParsesLatex('\\url{http://x_y}', '\\url{http://x_y}');
+    assertParsesLatex('\\intertext{and}', '\\intertext{and}');
+    assertParsesLatex('\\vspace{1em}', '\\vspace{1em}');
+    assertParsesLatex('\\colorbox{red}{x}', '\\colorbox{red}{x}');
+    assertParsesLatex(
+      '\\fcolorbox{blue}{yellow}{x}',
+      '\\fcolorbox{blue}{yellow}{x}'
+    );
+    assertParsesLatex('\\href{http://a_b}{x}', '\\href{http://a_b}{x}');
+  });
+
+  test('xarrows with optional under-label, word accents, ligo/dash', function () {
+    assertParsesLatex('\\xrightarrow{a}', '\\xrightarrow{a}');
+    assertParsesLatex('\\xrightarrow[u]{o}', '\\xrightarrow[u]{o}');
+    assertParsesLatex('\\xLeftarrow{a}', '\\xLeftarrow{a}');
+    assertParsesLatex('\\xLeftrightarrow{a}', '\\xLeftrightarrow{a}');
+    assertParsesLatex('\\xhookrightarrow{a}', '\\xhookrightarrow{a}');
+    assertParsesLatex('\\xtwoheadrightarrow{a}', '\\xtwoheadrightarrow{a}');
+    assertParsesLatex('\\check{a}', '\\check{a}');
+    assertParsesLatex('\\breve{a}', '\\breve{a}');
+    assertParsesLatex('\\acute{a}', '\\acute{a}');
+    assertParsesLatex('\\grave{a}', '\\grave{a}');
+    assertParsesLatex('\\ddddot{a}', '\\ddddot{a}');
+    assertParsesLatex('\\mathclap{x}', '\\mathclap{x}');
+    assertParsesLatex('\\underbracket{x}', '\\underbracket{x}');
+    assertParsesLatex('\\overparen{x}', '\\overparen{x}');
+    assertParsesLatex('\\AA', '\\AA');
+    assertParsesLatex('\\Bumpeq', '\\Bumpeq');
+    assertParsesLatex('\\bumpeq', '\\bumpeq');
+    assertParsesLatex('\\ae', '\\ae');
+    assertParsesLatex('\\ss', '\\ss');
+    assertParsesLatex('\\i', '\\i');
+    assertParsesLatex('\\lll', '\\lll');
+    assertParsesLatex('\\gggtr', '\\ggg');
+    assertParsesLatex('\\subseteqq', '\\subseteqq');
+    assertParsesLatex('\\eqsim', '\\eqsim');
+    assertParsesLatex('\\intercal', '\\intercal');
+    assertParsesLatex('\\dotsc', '\\dotsc');
+    assertParsesLatex('\\iddots', '\\iddots');
+    assertParsesLatex('\\hslash', '\\hslash');
+    assertParsesLatex('\\Bbbk', '\\Bbbk');
+    assertParsesLatex('\\bigstar', '\\bigstar');
+    assertParsesLatex('\\maltese', '\\maltese');
+    assertParsesLatex('\\glqq', '\\glqq');
+    assertParsesLatex('\\textemdash', '\\textemdash');
   });
 
   test('\\operatorname* consumes the star', function () {

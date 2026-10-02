@@ -301,6 +301,19 @@
 .mq-math-mode .mq-overscript {
   font-size: 0.7em;
 }
+.mq-math-mode .mq-underscript {
+  font-size: 0.7em;
+}
+.mq-math-mode .mq-colorbox {
+  padding: 0 0.15em;
+  border: 1px solid transparent;
+}
+.mq-math-mode .mq-fcolorbox {
+  padding: 0 0.15em;
+}
+.mq-math-mode .mq-href {
+  text-decoration: underline;
+}
 .mq-math-mode .mq-overline {
   border-top: 1px solid;
   margin-top: 1px;

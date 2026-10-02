@@ -320,6 +320,113 @@ LatexCmds.boxed = () =>
     'Boxed'
   );
 
+// \colorbox{color}{math} — a filled box around content; the color arg is
+// raw text like \textcolor's, emitted back verbatim.
+LatexCmds.colorbox = class extends MathCommand {
+  color = '';
+  parser() {
+    var self = this;
+    return Parser.optWhitespace
+      .then(Parser.string('{'))
+      .then(Parser.regex(/^[#\w\s.,()%-]*/))
+      .skip(Parser.string('}'))
+      .then((color: string) => {
+        self.color = color;
+        self.domView = new DOMView(1, (blocks) =>
+          h.block(
+            'span',
+            { class: 'mq-colorbox', style: 'background-color:' + color },
+            blocks[0]
+          )
+        );
+        return super.parser();
+      });
+  }
+  latexRecursive(ctx: LatexContext) {
+    this.checkCursorContextOpen(ctx);
+    ctx.uncleanedLatex += '\\colorbox{' + this.color + '}{';
+    this.blocks![0].latexRecursive(ctx);
+    ctx.uncleanedLatex += '}';
+    this.checkCursorContextClose(ctx);
+  }
+  isStyleBlock() {
+    return true;
+  }
+};
+
+// \fcolorbox{frame}{bg}{math} — framed + filled box; two raw color args.
+LatexCmds.fcolorbox = class extends MathCommand {
+  frameColor = '';
+  bgColor = '';
+  parser() {
+    var self = this;
+    var colorGroup = Parser.string('{')
+      .then(Parser.regex(/^[#\w\s.,()%-]*/))
+      .skip(Parser.string('}'));
+    return Parser.optWhitespace
+      .then(colorGroup)
+      .then((frame: string) => {
+        self.frameColor = frame;
+        return colorGroup;
+      })
+      .then((bg: string) => {
+        self.bgColor = bg;
+        self.domView = new DOMView(1, (blocks) =>
+          h.block(
+            'span',
+            {
+              class: 'mq-fcolorbox',
+              style:
+                'border:1px solid ' +
+                self.frameColor +
+                ';background-color:' +
+                bg
+            },
+            blocks[0]
+          )
+        );
+        return super.parser();
+      });
+  }
+  latexRecursive(ctx: LatexContext) {
+    this.checkCursorContextOpen(ctx);
+    ctx.uncleanedLatex +=
+      '\\fcolorbox{' + this.frameColor + '}{' + this.bgColor + '}{';
+    this.blocks![0].latexRecursive(ctx);
+    ctx.uncleanedLatex += '}';
+    this.checkCursorContextClose(ctx);
+  }
+  isStyleBlock() {
+    return true;
+  }
+};
+
+// \href{url}{math} — link wrapper; the url arg is raw text.
+LatexCmds.href = class extends MathCommand {
+  url = '';
+  parser() {
+    var self = this;
+    return Parser.optWhitespace
+      .then(Parser.string('{'))
+      .then(Parser.regex(/^[^{}]*/))
+      .skip(Parser.string('}'))
+      .then((url: string) => {
+        self.url = url;
+        self.domView = new DOMView(1, (blocks) =>
+          h.block('span', { class: 'mq-href' }, blocks[0])
+        );
+        return super.parser();
+      });
+  }
+  latexRecursive(ctx: LatexContext) {
+    this.checkCursorContextOpen(ctx);
+    ctx.uncleanedLatex += '\\href{' + this.url + '}{';
+    this.blocks![0].latexRecursive(ctx);
+    ctx.uncleanedLatex += '}';
+    this.checkCursorContextClose(ctx);
+  }
+};
+
 // \overset{label}{base} stacks a small label above; \underset below;
 // \stackrel is the plain-TeX name for \overset
 LatexCmds.overset = class extends MathCommand {
@@ -1165,6 +1272,21 @@ var LiveFraction =
   (LatexCmds.over =
   CharCmds['/'] =
     class extends Fraction {
+      // Pasted `a\over b` (infix) can't bind `a` — the two-block parse
+      // fails. Fall back to a visible `\over` leaf so the input keeps
+      // its text instead of blanking the field. The typed `\over`→
+      // fraction path is unaffected (it goes through createLeftOf).
+      parser() {
+        return super.parser().or(
+          Parser.succeed(
+            new VanillaSymbol(
+              '\\over ',
+              h.text('\\over'),
+              'over'
+            ) as MQNode | Fragment
+          )
+        ) as Parser<MQNode | Fragment>;
+      }
       createLeftOf(cursor: Cursor) {
         if (!this.replacedFragment) {
           var leftward = cursor[L];
@@ -1490,11 +1612,11 @@ class DiacriticBelow extends DiacriticAbove {
 // drawn under/over; a following _ or ^ block grows an ordinary sibling
 // SupSub so the bound round-trips verbatim.
 class UnderOverBrace extends MathCommand {
-  constructor(ctrlSeq: string, below: boolean) {
+  constructor(ctrlSeq: string, below: boolean, glyph?: string) {
     super();
     this.ctrlSeq = ctrlSeq;
     var mark = h('span', { class: 'mq-underbrace-arc' }, [
-      h.text(below ? '⏟' : '⏞')
+      h.text(glyph || (below ? '⏟' : '⏞'))
     ]);
     this.domView = new DOMView(1, (blocks) =>
       h('span', { class: 'mq-non-leaf mq-underoverbrace' }, below
@@ -1507,23 +1629,77 @@ class UnderOverBrace extends MathCommand {
 LatexCmds.underbrace = () => new UnderOverBrace('\\underbrace', true);
 LatexCmds.overbrace = () => new UnderOverBrace('\\overbrace', false);
 
-// \xrightarrow{label} / \xleftarrow / \xmapsto — a small label over an
-// extensible-looking arrow; the arrow is a fixed glyph.
-function bindArrowLabelCmd(ctrlSeq: string, arrow: string) {
-  return () =>
-    new MathCommand(
+// \xrightarrow{label} / \xleftarrow / \xmapsto and friends — a small
+// label over an extensible-looking arrow; the arrow is a fixed glyph.
+// \xrightarrow[under]{over} puts a second label below the arrow
+// (amsmath), parsed like \sqrt[n]{x}'s optional block.
+class XArrowWithUnder extends MathCommand {
+  constructor(ctrlSeq: string, arrow: string) {
+    super(
       ctrlSeq,
-      new DOMView(1, (blocks) =>
+      new DOMView(2, (blocks) =>
         h('span', { class: 'mq-non-leaf mq-overunderset' }, [
-          h.block('span', { class: 'mq-overscript' }, blocks[0]),
-          h('span', { class: 'mq-xarrow' }, [h.text(arrow)])
+          h.block('span', { class: 'mq-overscript' }, blocks[1]),
+          h('span', { class: 'mq-xarrow' }, [h.text(arrow)]),
+          h.block('span', { class: 'mq-underscript' }, blocks[0])
         ])
       )
     );
+  }
+  latexRecursive(ctx: LatexContext) {
+    this.checkCursorContextOpen(ctx);
+    ctx.uncleanedLatex += this.ctrlSeq + '[';
+    this.getEnd(L).latexRecursive(ctx);
+    ctx.uncleanedLatex += ']{';
+    this.getEnd(R).latexRecursive(ctx);
+    ctx.uncleanedLatex += '}';
+    this.checkCursorContextClose(ctx);
+  }
+}
+function bindArrowLabelCmd(ctrlSeq: string, arrow: string) {
+  return () =>
+    new (class extends MathCommand {
+      constructor() {
+        super(
+          ctrlSeq,
+          new DOMView(1, (blocks) =>
+            h('span', { class: 'mq-non-leaf mq-overunderset' }, [
+              h.block('span', { class: 'mq-overscript' }, blocks[0]),
+              h('span', { class: 'mq-xarrow' }, [h.text(arrow)])
+            ])
+          )
+        );
+      }
+      parser() {
+        var self = this;
+        return latexMathParser.optBlock
+          .then(function (optBlock) {
+            return latexMathParser.block.map(function (block) {
+              var xa = new XArrowWithUnder(ctrlSeq, arrow);
+              xa.blocks = [optBlock, block];
+              optBlock.adopt(xa, 0, 0);
+              block.adopt(xa, optBlock, 0);
+              return xa;
+            });
+          })
+          .or(super.parser());
+      }
+    })();
 }
 LatexCmds.xrightarrow = bindArrowLabelCmd('\\xrightarrow', '⟶');
 LatexCmds.xleftarrow = bindArrowLabelCmd('\\xleftarrow', '⟵');
 LatexCmds.xmapsto = bindArrowLabelCmd('\\xmapsto', '⟼');
+LatexCmds.xRightarrow = bindArrowLabelCmd('\\xRightarrow', '⟹');
+LatexCmds.xLeftarrow = bindArrowLabelCmd('\\xLeftarrow', '⟸');
+LatexCmds.xLeftrightarrow = bindArrowLabelCmd('\\xLeftrightarrow', '⟺');
+LatexCmds.xleftrightarrow = bindArrowLabelCmd('\\xleftrightarrow', '⟷');
+LatexCmds.xhookleftarrow = bindArrowLabelCmd('\\xhookleftarrow', '↩');
+LatexCmds.xhookrightarrow = bindArrowLabelCmd('\\xhookrightarrow', '↪');
+LatexCmds.xLongrightarrow = bindArrowLabelCmd('\\xLongrightarrow', '⟶');
+LatexCmds.xLongleftarrow = bindArrowLabelCmd('\\xLongleftarrow', '⟵');
+LatexCmds.xtwoheadrightarrow = bindArrowLabelCmd('\\xtwoheadrightarrow', '↠');
+LatexCmds.xtwoheadleftarrow = bindArrowLabelCmd('\\xtwoheadleftarrow', '↞');
+LatexCmds.xtofrom = bindArrowLabelCmd('\\xtofrom', '⇄');
 
 // \cancel \bcancel \xcancel — struck-through content.
 function bindCancelCmd(ctrlSeq: string, cls: string) {
@@ -1671,6 +1847,27 @@ LatexCmds.underrightarrow = () =>
   new DiacriticBelow('\\underrightarrow', h.text('→'), ['underrightarrow(', ')']);
 LatexCmds.overgroup = () => new UnderOverBrace('\\overgroup', false);
 LatexCmds.undergroup = () => new UnderOverBrace('\\undergroup', true);
+LatexCmds.overbracket = () =>
+  new UnderOverBrace('\\overbracket', false, '⎴');
+LatexCmds.underbracket = () =>
+  new UnderOverBrace('\\underbracket', true, '⎵');
+LatexCmds.underparen = () =>
+  new UnderOverBrace('\\underparen', true, '⏝');
+LatexCmds.overparen = () =>
+  new UnderOverBrace('\\overparen', false, '⏜');
+
+// Word-form accents missing upstream (the bare-word variants of the
+// escaped accents \' \` \v \u and \ddddot).
+LatexCmds.check = () =>
+  new DiacriticAbove('\\check', h.text('ˇ'), ['check(', ')']);
+LatexCmds.breve = () =>
+  new DiacriticAbove('\\breve', h.text('˘'), ['breve(', ')']);
+LatexCmds.acute = () =>
+  new DiacriticAbove('\\acute', h.text('´'), ['acute(', ')']);
+LatexCmds.grave = () =>
+  new DiacriticAbove('\\grave', h.text('`'), ['grave(', ')']);
+LatexCmds.ddddot = () =>
+  new DiacriticAbove('\\ddddot', h.text('....'), ['ddddot(', ')']);
 LatexCmds.overleftharp = () =>
   new DiacriticAbove('\\overleftharp', h.text('↼'), ['overleft harp(', ')']);
 LatexCmds.overrightharp = () =>
@@ -1775,6 +1972,9 @@ LatexCmds.llap = bindOverlapCmd('\\llap', 'mq-llap');
 LatexCmds.rlap = bindOverlapCmd('\\rlap', 'mq-rlap');
 LatexCmds.clap = bindOverlapCmd('\\clap', 'mq-clap');
 LatexCmds.smash = bindOverlapCmd('\\smash', 'mq-smash');
+LatexCmds.mathllap = bindOverlapCmd('\\mathllap', 'mq-llap');
+LatexCmds.mathrlap = bindOverlapCmd('\\mathrlap', 'mq-rlap');
+LatexCmds.mathclap = bindOverlapCmd('\\mathclap', 'mq-clap');
 LatexCmds.mathstrut = bindStyleModifier('\\mathstrut ', 'math strut');
 LatexCmds.strut = bindStyleModifier('\\strut ', 'strut');
 
@@ -2366,6 +2566,17 @@ LatexCmds.dbinom = LatexCmds.tbinom = LatexCmds.binom;
 LatexCmds.choose = class extends Binomial {
   createLeftOf(cursor: Cursor) {
     LiveFraction.prototype.createLeftOf.call(this, cursor);
+  }
+  parser() {
+    return super.parser().or(
+      Parser.succeed(
+        new VanillaSymbol(
+          '\\choose ',
+          h.text('\\choose'),
+          'choose'
+        ) as MQNode | Fragment
+      )
+    ) as Parser<MQNode | Fragment>;
   }
 };
 

@@ -714,7 +714,7 @@ LatexCmds['Å'] =
   LatexCmds.AA =
   LatexCmds.Angstrom =
   LatexCmds.angstrom =
-    bindVanillaSymbol('\\text\\AA ', '&#8491;', 'AA');
+    bindVanillaSymbol('\\AA ', '&#8491;', 'AA');
 
 LatexCmds['∘'] =
   LatexCmds.circ =
@@ -1200,10 +1200,15 @@ LatexCmds['≜'] = LatexCmds.triangleq = bindBinaryOperator(
   '&#8796;',
   'triangle equals'
 );
-LatexCmds['≎'] = LatexCmds.bumpeq = LatexCmds.Bumpeq = bindBinaryOperator(
+LatexCmds['≏'] = LatexCmds.bumpeq = bindBinaryOperator(
   '\\bumpeq ',
-  '&#8782;',
+  '&#8781;',
   'bump equals'
+);
+LatexCmds['≎'] = LatexCmds.Bumpeq = bindBinaryOperator(
+  '\\Bumpeq ',
+  '&#8782;',
+  'Bump equals'
 );
 LatexCmds['⊨'] = LatexCmds.vDash = bindBinaryOperator(
   '\\vDash ',
@@ -1295,3 +1300,267 @@ LatexCmds['¥'] = LatexCmds.yen = bindVanillaSymbol('\\yen ', '&yen;', 'yen');
 LatexCmds['€'] = LatexCmds.euro = bindVanillaSymbol('\\euro ', '&euro;', 'euro');
 LatexCmds.LaTeX = bindVanillaSymbol('\\LaTeX ', 'LaTeX', 'LaTeX');
 LatexCmds.TeX = bindVanillaSymbol('\\TeX ', 'TeX', 'TeX');
+
+// ===== Honest verbatim leaves for constructs the field can't structure =====
+// Infix operators (\choose/\atop/\above/\overwithdelims/\genfrac),
+// macro definitions (\newcommand/\def/\DeclareMathOperator), and the tie
+// accent previously blanked the whole expression. Each parses as a leaf
+// that shows the literal \name and serializes back verbatim, so pasted
+// latex survives as its own text instead of wiping the cell.
+
+// A command that consumes its arguments raw (brace groups / single
+// tokens) so unknown macro names inside them can't fail the parse.
+class RawArgCommand extends MQSymbol {
+  argRe: RegExp;
+  constructor(cmdName: string, argRe: RegExp, speak: string) {
+    super(cmdName, h.text(cmdName + '…'), speak);
+    this.argRe = argRe;
+  }
+  parser(): Parser<MQNode | Fragment> {
+    var self = this;
+    return Parser.optWhitespace
+      .then(Parser.regex(self.argRe))
+      .map(function (args: string) {
+        self.ctrlSeq = (self.ctrlSeq as string) + args;
+        return self;
+      })
+      .or(Parser.succeed(self as MQNode | Fragment));
+  }
+}
+// One brace group with a single level of nesting allowed.
+var RAW_GROUP = '\\{(?:[^{}]|\\{[^{}]*\\})*\\}';
+LatexCmds.newcommand = () =>
+  new RawArgCommand(
+    '\\newcommand',
+    new RegExp(
+      '^' + RAW_GROUP + '(?:\\[[0-9]\\])?(?:' + RAW_GROUP + ')?'
+    ),
+    'new command'
+  );
+LatexCmds.renewcommand = () =>
+  new RawArgCommand(
+    '\\renewcommand',
+    new RegExp(
+      '^' + RAW_GROUP + '(?:\\[[0-9]\\])?(?:' + RAW_GROUP + ')?'
+    ),
+    'renew command'
+  );
+LatexCmds.providecommand = () =>
+  new RawArgCommand(
+    '\\providecommand',
+    new RegExp(
+      '^' + RAW_GROUP + '(?:\\[[0-9]\\])?(?:' + RAW_GROUP + ')?'
+    ),
+    'provide command'
+  );
+LatexCmds.DeclareMathOperator = () =>
+  new RawArgCommand(
+    '\\DeclareMathOperator',
+    new RegExp('^\\*?' + RAW_GROUP + '(?:' + RAW_GROUP + ')?'),
+    'declare math operator'
+  );
+LatexCmds.def = () =>
+  new RawArgCommand(
+    '\\def',
+    new RegExp(
+      '^(?:\\\\[a-zA-Z]+|\\S)(?:#[0-9])*(?:' + RAW_GROUP + ')?'
+    ),
+    'def'
+  );
+
+// Literal-marker symbols: a visible \name leaf so a\choose b keeps its
+// text and shows the command rather than blanking or silently dropping it.
+function bindLiteralCmd(ctrlSeq: string, speak: string) {
+  return () =>
+    new VanillaSymbol(ctrlSeq + ' ', h.text(ctrlSeq), speak);
+}
+LatexCmds.choose = bindLiteralCmd('\\choose', 'choose');
+LatexCmds.atop = bindLiteralCmd('\\atop', 'atop');
+LatexCmds.above = bindLiteralCmd('\\above', 'above');
+LatexCmds.overwithdelims = bindLiteralCmd('\\overwithdelims', 'over with delims');
+// \genfrac{l}{r}{thick}{style}{num}{denom}: consume the 6 args raw so
+// the full signature survives; each arg is a brace group or a single
+// delimiter token like ( ) [ ] | .
+var RAW_ARG = '(?:' + RAW_GROUP + '|\\\\[a-zA-Z]+|[^\\s{}])';
+LatexCmds.genfrac = () =>
+  new RawArgCommand(
+    '\\genfrac',
+    new RegExp('^((?:\\s*' + RAW_ARG + '){1,6})'),
+    'gen frac'
+  );
+LatexCmds.brace = bindLiteralCmd('\\brace', 'brace');
+LatexCmds.brack = bindLiteralCmd('\\brack', 'brack');
+
+// Text-mode super/subscripts and the tie accent — kept verbatim.
+bindMathWrap('textsuperscript');
+bindMathWrap('textsubscript');
+// \t{oo}: double inverted breve (tie) over its argument.
+LatexCmds.t = () =>
+  new (class extends MathCommand {
+    constructor() {
+      super(
+        '\\t',
+        new DOMView(1, (blocks) =>
+          h('span', { class: 'mq-non-leaf' }, [
+            h('span', { class: 'mq-diacritic-above' }, [h.entityText('&#865;')]),
+            h.block('span', { class: 'mq-diacritic-stem' }, blocks[0]),
+          ])
+        )
+      );
+    }
+  })();
+
+// Document-level reference commands — kept verbatim as visible leaves
+// rather than blanking the cell (they have no math meaning here, but the
+// text survives the round-trip).
+var RAW_OPT_GROUP = '(?:\\[[^\\]]*\\])?';
+[
+  'ref',
+  'eqref',
+  'pageref',
+  'autoref',
+  'label',
+  'url',
+  'footnote',
+  'cite',
+  'index'
+].forEach(function (name) {
+  (LatexCmds as LatexCmdsAny)[name] = () =>
+    new RawArgCommand(
+      '\\' + name,
+      new RegExp(
+        '^' + RAW_OPT_GROUP + RAW_GROUP + '(?:' + RAW_GROUP + ')?'
+      ),
+      name
+    );
+});
+
+// \intertext / \shortintertext — text-mode material between aligned
+// lines; render like \text but keep the command name on emit.
+LatexCmds.intertext = makeTextBlock('\\intertext', 'Inter text', 'span', {
+  class: 'mq-text-mode'
+});
+LatexCmds.shortintertext = makeTextBlock(
+  '\\shortintertext',
+  'Short inter text',
+  'span',
+  { class: 'mq-text-mode' }
+);
+
+// \vspace{len} — vertical analogue of \hspace: keep the arg, show a
+// gap-ish wrapper rather than dropping the cell.
+bindMathWrap('vspace');
+
+// Missing leaves: relations, ellipsis variants, misc glyphs, latin
+// letters/ligatures, quotes and dashes.
+LatexCmds.lll = LatexCmds.llless = bindBinaryOperator(
+  '\\lll ',
+  '&#8810;',
+  'much less than'
+);
+LatexCmds.ggg = LatexCmds.gggtr = bindBinaryOperator(
+  '\\ggg ',
+  '&#8811;',
+  'much greater than'
+);
+LatexCmds.subseteqq = bindBinaryOperator(
+  '\\subseteqq ',
+  '&#10949;',
+  'subset of or equal to variant'
+);
+LatexCmds.supseteqq = bindBinaryOperator(
+  '\\supseteqq ',
+  '&#10950;',
+  'superset of or equal to variant'
+);
+LatexCmds.subsetneqq = bindBinaryOperator(
+  '\\subsetneqq ',
+  '&#10955;',
+  'subset of not equal to variant'
+);
+LatexCmds.supsetneqq = bindBinaryOperator(
+  '\\supsetneqq ',
+  '&#10956;',
+  'superset of not equal to variant'
+);
+LatexCmds.eqsim = bindBinaryOperator('\\eqsim ', '&#8770;', 'equivalent to');
+LatexCmds.intercal = bindBinaryOperator(
+  '\\intercal ',
+  '&#8890;',
+  'intercal'
+);
+LatexCmds.dotsc = bindBinaryOperator('\\dotsc ', '&#8230;', 'dots c');
+LatexCmds.dotsb = bindBinaryOperator('\\dotsb ', '&#8230;', 'dots b');
+LatexCmds.dotsm = bindBinaryOperator('\\dotsm ', '&#8230;', 'dots m');
+LatexCmds.dotsi = bindBinaryOperator('\\dotsi ', '&#8230;', 'dots i');
+LatexCmds.dotso = bindBinaryOperator('\\dotso ', '&#8230;', 'dots o');
+LatexCmds.iddots = bindBinaryOperator('\\iddots ', '&#8944;', 'inverse dots');
+LatexCmds.hslash = bindVanillaSymbol('\\hslash ', '&#8463;', 'h slash');
+LatexCmds.Bbbk = bindVanillaSymbol('\\Bbbk ', '&#120107;', 'bbb k');
+LatexCmds.blacktriangledown = bindVanillaSymbol(
+  '\\blacktriangledown ',
+  '&#9660;',
+  'black triangle down'
+);
+LatexCmds.lozenge = bindVanillaSymbol('\\lozenge ', '&#9674;', 'lozenge');
+LatexCmds.blacklozenge = bindVanillaSymbol(
+  '\\blacklozenge ',
+  '&#10731;',
+  'black lozenge'
+);
+LatexCmds.bigstar = bindVanillaSymbol('\\bigstar ', '&#9733;', 'big star');
+LatexCmds.varclubsuit = bindVanillaSymbol(
+  '\\varclubsuit ',
+  '&#9831;',
+  'var club suit'
+);
+LatexCmds.vardiamondsuit = bindVanillaSymbol(
+  '\\vardiamondsuit ',
+  '&#9830;',
+  'var diamond suit'
+);
+LatexCmds.varheartsuit = bindVanillaSymbol(
+  '\\varheartsuit ',
+  '&#9829;',
+  'var heart suit'
+);
+LatexCmds.varspadesuit = bindVanillaSymbol(
+  '\\varspadesuit ',
+  '&#9828;',
+  'var spade suit'
+);
+LatexCmds.maltese = bindVanillaSymbol('\\maltese ', '&#10016;', 'maltese');
+
+// Latin letters and ligatures that real LaTeX produces (\o/\O stay the
+// fork's \varnothing alias by design).
+LatexCmds.ae = bindVanillaSymbol('\\ae ', '&#230;', 'ae');
+LatexCmds.AE = bindVanillaSymbol('\\AE ', '&#198;', 'AE');
+LatexCmds.oe = bindVanillaSymbol('\\oe ', '&#339;', 'oe');
+LatexCmds.OE = bindVanillaSymbol('\\OE ', '&#338;', 'OE');
+LatexCmds.aa = bindVanillaSymbol('\\aa ', '&#229;', 'aa');
+LatexCmds.l = bindVanillaSymbol('\\l ', '&#322;', 'l');
+LatexCmds.L = bindVanillaSymbol('\\L ', '&#321;', 'L');
+LatexCmds.ss = bindVanillaSymbol('\\ss ', '&#223;', 'ss');
+LatexCmds.i = bindVanillaSymbol('\\i ', '&#305;', 'dotless i');
+LatexCmds.j = bindVanillaSymbol('\\j ', '&#567;', 'dotless j');
+
+// Quote and dash glyphs.
+LatexCmds.glqq = bindVanillaSymbol('\\glqq ', '&#8222;', 'glqq');
+LatexCmds.grqq = bindVanillaSymbol('\\grqq ', '&#8220;', 'grqq');
+LatexCmds.glq = bindVanillaSymbol('\\glq ', '&#8218;', 'glq');
+LatexCmds.lq = bindVanillaSymbol('\\lq ', '&#8216;', 'left quote');
+LatexCmds.rq = bindVanillaSymbol('\\rq ', '&#8217;', 'right quote');
+LatexCmds.flqq = bindVanillaSymbol('\\flqq ', '&#171;', 'flqq');
+LatexCmds.frqq = bindVanillaSymbol('\\frqq ', '&#187;', 'frqq');
+LatexCmds.flq = bindVanillaSymbol('\\flq ', '&#8249;', 'flq');
+LatexCmds.frq = bindVanillaSymbol('\\frq ', '&#8250;', 'frq');
+LatexCmds.textemdash = bindVanillaSymbol(
+  '\\textemdash ',
+  '&#8212;',
+  'em dash'
+);
+LatexCmds.textendash = bindVanillaSymbol(
+  '\\textendash ',
+  '&#8211;',
+  'en dash'
+);

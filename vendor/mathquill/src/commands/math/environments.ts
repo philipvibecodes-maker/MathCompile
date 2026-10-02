@@ -760,6 +760,32 @@ Environments.alignat = () => new Aligned();
 Environments.align = () => new Aligned();
 Environments.split = () => new Aligned();
 
+// \begin{array}{spec}: a matrix grid preceded by a column-spec argument
+// ({cc}, {|l|c|r|}, …) which round-trips verbatim.
+class ArrayEnv extends Matrix {
+  spec = '';
+  latexOpen() {
+    return '\\begin{array}{' + this.spec + '}';
+  }
+  latexClose() {
+    return '\\end{array}';
+  }
+  parser() {
+    var self = this;
+    return Parser.optWhitespace
+      .then(
+        Parser.string('{')
+          .then(Parser.regex(/^[^{}]*/))
+          .skip(Parser.string('}'))
+      )
+      .then(function (spec: string) {
+        self.spec = spec;
+        return self.cellsParser();
+      });
+  }
+}
+Environments.array = () => new ArrayEnv();
+
 // \substack{i=1\\ j=2}: a braced single-column stack used as a bound.
 class Substack extends DisplayLines {
   gridClass = 'mq-substack mq-non-leaf';
