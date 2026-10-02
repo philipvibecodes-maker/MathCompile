@@ -31,13 +31,22 @@
       rows.some((r) => r.ok && r.displayCode && r.displayCode !== r.code),
   );
 
+  // What the UI presents — the debug pin overrides the real status.
+  const shownStatus = $derived(
+    calcEngine.debugLoading ? 'loading' : calcEngine.status,
+  );
+
   const statusLabel = $derived(
-    calcEngine.status === 'loading'
+    shownStatus === 'loading'
       ? 'Loading SymPy engine…'
-      : calcEngine.status === 'error'
+      : shownStatus === 'error'
         ? 'SymPy engine failed to load'
         : '…',
   );
+
+  // Real rows that landed while the debug pin was on — applied the
+  // moment it's unchecked.
+  let deferred = $state<CalcRow[] | null>(null);
 
   let seq = 0;
   $effect(() => {
@@ -47,6 +56,7 @@
       rows = [];
       pending = false;
       interim = false;
+      deferred = null;
       failed = '';
       return;
     }
@@ -59,7 +69,7 @@
       // result — rendered dimmed since the real eval is still pending.
       // The `pending` guard keeps a late interim from overwriting real
       // rows that already landed.
-      if (calcEngine.status !== 'ready') {
+      if (calcEngine.status !== 'ready' || calcEngine.debugLoading) {
         interimEvaluate(latex).then((r) => {
           if (mine === seq && pending && r.length > 0) {
             rows = r;
@@ -70,6 +80,12 @@
       evaluate(cell).then(
         (r) => {
           if (mine !== seq) return;
+          if (calcEngine.debugLoading) {
+            // Pinned: keep the loading presentation; the real rows
+            // wait in `deferred` until the pin comes off.
+            deferred = r;
+            return;
+          }
           rows = r;
           pending = false;
           interim = false;
@@ -84,6 +100,16 @@
       );
     }, 200);
     return () => clearTimeout(timer);
+  });
+
+  // Unpinning applies the deferred real rows and drops the interim look.
+  $effect(() => {
+    if (!calcEngine.debugLoading && deferred) {
+      rows = deferred;
+      deferred = null;
+      pending = false;
+      interim = false;
+    }
   });
 
   // Split shown code around the emitted `def clean_and_simplify`
@@ -121,7 +147,7 @@
   {#if failed !== ''}
     <span class="calc-error" title={failed}>{failed}</span>
   {:else if rows.length > 0}
-    <div class="calc-rows" class:pending>
+    <div class="calc-rows" class:pending={pending || calcEngine.debugLoading}>
       {#each rows as row, i (i)}
         <div class="calc-row">
           {#if row.ok}

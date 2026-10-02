@@ -23,9 +23,16 @@ export type EngineStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 // Engine status is shared UI state (the CalcOutput components read it for
 // their loading labels), so it lives in a rune like the app store.
-export const calcEngine = $state<{ status: EngineStatus; error: string }>({
+export const calcEngine = $state<{
+  status: EngineStatus;
+  error: string;
+  // Testing aid: when true the UI presents 'loading' even after the
+  // engine is ready — the chip, dimming, and interim tags stay up.
+  debugLoading: boolean;
+}>({
   status: 'idle',
   error: '',
+  debugLoading: false,
 });
 
 interface WorkerReply {

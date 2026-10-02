@@ -573,6 +573,13 @@ body {
   white-space: nowrap;
 }
 
+/* Testing aid next to the engine chip — keeps the loading presentation
+   up after the engine is ready. */
+.pin-loading {
+  font-size: 11px;
+  color: var(--faint);
+}
+
 .engine-spinner {
   flex: 0 0 auto;
   width: 10px;

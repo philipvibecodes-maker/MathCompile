@@ -30,6 +30,12 @@
   let fadeOutMs = $state(animPrefs.fadeOutMs ?? 150);
   let settingsOpen = $state(false);
 
+  // What the chip/cells present — the debug pin overrides the real
+  // engine status (see the 'pin loading' testing aid below).
+  const engineShown = $derived(
+    calcEngine.debugLoading ? 'loading' : calcEngine.status,
+  );
+
   // Output column width (% of the row's flex width) — shared by every
   // row and the column header; the .col-resize divider drags it.
   let outputPct = $state(40);
@@ -328,24 +334,33 @@
                  unmounting, so the header row never changes size. -->
             <span
               class="engine-chip"
-              class:engine-error={calcEngine.status === 'error'}
+              class:engine-error={engineShown === 'error'}
               role="status"
-              title={calcEngine.status === 'loading'
+              title={engineShown === 'loading'
                 ? 'The SymPy engine is still loading — interim results use a faster, less accurate engine.'
-                : calcEngine.status === 'error'
+                : engineShown === 'error'
                   ? calcEngine.error
                   : 'SymPy engine ready'}
             >
-              {#if calcEngine.status === 'loading'}
+              {#if engineShown === 'loading'}
                 <span class="engine-spinner" aria-hidden="true"></span>
                 SymPy engine loading — interim results are less accurate
                 estimates
-              {:else if calcEngine.status === 'error'}
+              {:else if engineShown === 'error'}
                 SymPy failed to load
               {:else}
                 SymPy ready
               {/if}
             </span>
+            <!-- Testing aid: keeps the loading presentation up after
+                 the engine is ready so it can be inspected. -->
+            <label
+              class="option-checkbox pin-loading"
+              title="Keep showing the loading state after the SymPy engine is ready"
+            >
+              <input type="checkbox" bind:checked={calcEngine.debugLoading} />
+              pin loading
+            </label>
           {/if}
           <!-- Live readout of the input column's width share — a tuning
                aid for picking the divider's default position. -->

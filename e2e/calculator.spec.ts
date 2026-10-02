@@ -186,6 +186,38 @@ test('flags interim results and the engine-loading banner while SymPy boots', as
   await expect(page.locator('.calc-row').first()).toContainText('4');
 });
 
+test('pin loading keeps the loading presentation after the engine is ready', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await setTarget(page, 'calculator');
+  await page.getByLabel('pin loading').check();
+
+  const mf = cell(page, 0);
+  await mf.click();
+  await mf.pressSequentially('2+2', { delay: 40 });
+
+  const chip = page.locator('.engine-chip');
+  await expect(chip).toContainText('SymPy engine loading');
+  await expect(page.locator('.calc-interim').first()).toBeVisible({
+    timeout: 10_000,
+  });
+
+  // Well past the engine boot — the pinned UI must still show loading.
+  await page.waitForTimeout(20_000);
+  await expect(chip).toContainText('SymPy engine loading');
+  await expect(page.locator('.calc-interim').first()).toBeVisible();
+
+  // Unpinning applies the deferred real result and flips the chip.
+  await page.getByLabel('pin loading').uncheck();
+  await expect(chip).toContainText('SymPy ready');
+  await expect(page.locator('.calc-interim')).toHaveCount(0);
+  await expect(
+    page.locator('.calc-rows').first(),
+  ).not.toHaveClass(/pending/);
+  await expect(page.locator('.calc-row').first()).toContainText('4');
+});
+
 test('reload evaluates each persisted cell to its own result', async ({
   page,
 }) => {
