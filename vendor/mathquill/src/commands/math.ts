@@ -128,7 +128,8 @@ class MathCommand extends MathElement {
     });
   }
 
-  parser(): Parser<MQNode | Fragment> {
+  // the bare block-counting parse, without the verbatim-leaf fallback
+  strictParser(): Parser<MQNode | Fragment> {
     var block = latexMathParser.block;
 
     return block.times(this.numBlocks()).map((blocks) => {
@@ -140,6 +141,25 @@ class MathCommand extends MathElement {
 
       return this;
     });
+  }
+
+  parser(): Parser<MQNode | Fragment> {
+    var self = this;
+
+    return this.strictParser().or(
+      // a command missing its braces degrades to a verbatim leaf
+      // instead of blanking the surrounding content — but only when
+      // non-space input follows: a lone trailing \frac still fails
+      Parser.regex(/^(?=\S)/).then(() =>
+        Parser.succeed(
+          new VanillaSymbol(
+            self.ctrlSeq + ' ',
+            h.text(self.ctrlSeq || ''),
+            self.ctrlSeq
+          ) as MQNode | Fragment
+        )
+      )
+    );
   }
 
   // createLeftOf(cursor) and the methods it calls
@@ -652,6 +672,26 @@ class MathBlock extends MathElement {
     } else return new VanillaSymbol(ch);
   }
   write(cursor: Cursor, ch: string) {
+    // `{` typed at the left end of a command's empty arg block is the
+    // user writing the arg's own braces — the block already is the
+    // group, so don't grow a \left\{ \right\} pair inside it. `}` at the
+    // right end closes the arg: hop to the next arg block or out of the
+    // command. (Bracket blocks keep the pair/close behavior, and `{`/`}`
+    // elsewhere keep making real braces.)
+    var owner = this.parent;
+    if (owner instanceof MathCommand && !(owner instanceof Bracket)) {
+      if (ch === '{' && this.isEmpty() && !cursor[L] && !cursor.selection) {
+        return;
+      }
+      if (ch === '}' && !cursor[R] && !cursor.selection) {
+        if (owner instanceof SupSub || !(this as MQNode)[R]) {
+          cursor.insRightOf(owner);
+        } else {
+          cursor.insAtLeftEnd((this as MQNode)[R] as MQNode);
+        }
+        return;
+      }
+    }
     var cmd = this.chToCmd(ch, cursor.options);
     if (cursor.selection) cmd.replaces(cursor.replaceSelection());
     if (!cursor.isTooDeep()) {

@@ -9,7 +9,7 @@
   import HowToGuide from './components/HowToGuide.svelte';
   import { appStore, THEME_STORAGE_KEY } from './state/store.svelte';
   import { loadPrefs, savePrefs } from './state/persistence';
-  import { displayLatex, outputLatex } from './compile/latex';
+  import { copyableLatex, displayLatex } from './compile/latex';
   import { prewarm } from './calc/calculator.svelte.ts';
   import { buildCommands } from './commands';
   import { installGlobalKeymap } from './editor/keymap';
@@ -105,7 +105,7 @@
   const copyText = (text: string) =>
     navigator.clipboard.writeText(text).catch(() => {});
   function copyLatex(cell: { id: number; latex: string }) {
-    copyText(outputLatex(cell.latex));
+    copyText(copyableLatex(cell.latex));
     copiedId = cell.id;
     clearTimeout(copiedTimer);
     copiedTimer = setTimeout(() => (copiedId = null), 1200);

@@ -45,9 +45,6 @@ suite('latex', function () {
     assert.throws(function () {
       assertParsesLatex('\\mathbb + 2');
     });
-    assert.throws(function () {
-      assertParsesLatex('\\mathbb{A}');
-    });
   });
 
   test('simple exponent', function () {
@@ -162,6 +159,24 @@ suite('latex', function () {
     });
   });
 
+  test('invisible \\left./\\right. null delimiters (evaluation bars)', function () {
+    assertParsesLatex('\\left.x\\right|', '\\left.x\\right|');
+    assertParsesLatex('\\left|x\\right.', '\\left|x\\right.');
+    assertParsesLatex('\\left.x\\right.', '\\left.x\\right.');
+    assertParsesLatex(
+      '\\left.\\frac{a}{b}\\right|_{x=1}',
+      '\\left.\\frac{a}{b}\\right|_{x=1}'
+    );
+    assertParsesLatex('\\left\\|x\\right\\|', '\\left\\|x\\right\\|');
+    assertParsesLatex('\\left\\|x\\right.', '\\left\\|x\\right.');
+
+    var tree = latexMathParser.parse('\\left.x\\right|');
+    var brack = tree.ends[L];
+    assert.ok(brack instanceof Bracket);
+    assert.equal(brack.sides[L].ch, '.');
+    assert.equal(brack.sides[R].ch, '|');
+  });
+
   test('parens with whitespace', function () {
     assertParsesLatex('\\left ( 123 \\right ) ', '\\left(123\\right)');
   });
@@ -171,6 +186,360 @@ suite('latex', function () {
     assertParsesLatex('\\      ', '\\ ');
     assertParsesLatex('  \\   \\\t\t\t\\   \\\n\n\n', '\\ \\ \\ \\ ');
     assertParsesLatex('\\space\\   \\   space  ', '\\ \\ \\ space');
+  });
+
+  test('spacing commands \\, \\; \\: \\!', function () {
+    assertParsesLatex('\\,', '\\, ');
+    assertParsesLatex('\\;', '\\; ');
+    assertParsesLatex('\\:', '\\: ');
+    assertParsesLatex('\\!', '\\! ');
+    assertParsesLatex('\\int_{a}^{b}x\\,dx', '\\int _{a}^{b}x\\, dx');
+    assertParsesLatex(
+      'x\\,dx x\\;dy x\\:dz x\\!dw',
+      'x\\, dxx\\; dyx\\: dzx\\! dw'
+    );
+    // bare punctuation is unaffected
+    assertParsesLatex('a,b;c:d!e', 'a,b;c:d!e');
+  });
+
+  test('escaped delimiters and specials \\{ \\} \\_ \\# \\|', function () {
+    assertParsesLatex('\\{', '\\{ ');
+    assertParsesLatex('\\{x\\}', '\\{ x\\} ');
+    assertParsesLatex('\\{x,y\\}', '\\{ x,y\\} ');
+    assertParsesLatex(
+      '\\{x\\in\\mathbb{R}\\}',
+      '\\{ x\\in \\mathbb{R}\\} '
+    );
+    assertParsesLatex('a\\_b', 'a\\_b');
+    assertParsesLatex('x\\#y', 'x\\#y');
+    assertParsesLatex('\\|x\\|', '\\| x\\| ');
+    // bare characters are unaffected
+    assertParsesLatex('x|y', 'x|y');
+    assertParsesLatex('a#b', 'a#b');
+  });
+
+  test('standalone \\langle \\rangle \\lVert \\rVert', function () {
+    assertParsesLatex('\\langle x\\rangle', '\\langle x\\rangle ');
+    assertParsesLatex('\\langle a,b\\rangle', '\\langle a,b\\rangle ');
+    assertParsesLatex('\\lVert x\\rVert', '\\lVert x\\rVert ');
+  });
+
+  test('\\not + relation produces the negated relation', function () {
+    assertParsesLatex('x\\not\\in A', 'x\\notin A');
+    assertParsesLatex('x\\notin A', 'x\\notin A');
+    assertParsesLatex('a\\not=b', 'a\\ne b');
+    assertParsesLatex('A\\not\\subset B', 'A\\not\\subset B');
+    assertParsesLatex('A\\not\\subseteq B', 'A\\not\\subseteq B');
+    assertParsesLatex('a\\not<b', 'a\\nless b');
+    assertParsesLatex('a\\not>b', 'a\\ngtr b');
+    assertParsesLatex('a\\not\\approx b', 'a\\not\\approx b');
+    assertParsesLatex('a\\not\\equiv b', 'a\\not\\equiv b');
+    // unknown followers keep a standalone \not that round-trips
+    assertParsesLatex('\\not\\oplus', '\\not \\oplus ');
+  });
+
+  test('font and accent commands round-trip', function () {
+    assertParsesLatex('\\mathcal{F}', '\\mathcal{F}');
+    assertParsesLatex('\\mathscr{F}', '\\mathscr{F}');
+    assertParsesLatex('\\mathfrak{g}', '\\mathfrak{g}');
+    assertParsesLatex('\\bold{x}', '\\mathbf{x}');
+    assertParsesLatex('\\ddot{x}', '\\ddot{x}');
+    assertParsesLatex('\\dddot{x}', '\\dddot{x}');
+    assertParsesLatex('\\ring{x}', '\\ring{x}');
+    assertParsesLatex('\\mathring{x}', '\\mathring{x}');
+    assertParsesLatex('\\Bbb{R}', '\\mathbb{R}');
+    assertParsesLatex('\\mathds{R}', '\\mathbb{R}');
+  });
+
+  test('fraction variants and binomials canonicalize', function () {
+    assertParsesLatex('\\tfrac{1}{2}', '\\frac{1}{2}');
+    assertParsesLatex('\\dfrac{1}{2}', '\\frac{1}{2}');
+    assertParsesLatex('\\dbinom{n}{k}', '\\binom{n}{k}');
+    assertParsesLatex('\\tbinom{n}{k}', '\\binom{n}{k}');
+  });
+
+  test('mod, boxed, overset, style commands', function () {
+    assertParsesLatex('x\\pmod{m}', 'x\\pmod{m}');
+    assertParsesLatex('a\\bmod b', 'a\\bmod b');
+    assertParsesLatex('\\boxed{x=1}', '\\boxed{x=1}');
+    assertParsesLatex('\\overset{?}{=}', '\\overset{?}{=}');
+    assertParsesLatex('\\underset{x}{\\max}', '\\underset{x}{\\max }');
+    assertParsesLatex(
+      '\\displaystyle\\sum_{i=0}^{n}x',
+      '\\displaystyle \\sum _{i=0}^{n}x'
+    );
+    assertParsesLatex(
+      '\\sum\\limits_{i=0}^{n}x',
+      '\\sum \\limits _{i=0}^{n}x'
+    );
+    assertParsesLatex(
+      '\\sum\\nolimits_{i=0}^{n}x',
+      '\\sum \\nolimits _{i=0}^{n}x'
+    );
+    assertParsesLatex(
+      '\\left(\\sum\\limits_{i=0}^{n}\\right)',
+      '\\left(\\sum \\limits _{i=0}^{n}\\right)'
+    );
+    assertParsesLatex('\\oiint', '\\oiint ');
+    assertParsesLatex('\\oiiint', '\\oiiint ');
+    assertParsesLatex('\\lnot p', '\\neg p');
+  });
+
+  test('\\big-sized delimiters and \\middle', function () {
+    assertParsesLatex('\\bigl(x\\bigr)', '\\bigl(x\\bigr)');
+    assertParsesLatex(
+      '\\Bigl[\\frac{1}{2}\\Bigr]',
+      '\\Bigl[\\frac{1}{2}\\Bigr]'
+    );
+    assertParsesLatex('\\big|x\\big|', '\\big|x\\big|');
+    assertParsesLatex('\\bigl.', '\\bigl.');
+    assertParsesLatex(
+      '\\left(x\\middle|y\\right)',
+      '\\left(x\\middle|y\\right)'
+    );
+    // letter-name delimiters keep a separating space so the emitted
+    // text re-parses (\langlex would glue into an unknown command)
+    assertParsesLatex(
+      '\\big\\langle a,b\\big\\rangle',
+      '\\big\\langle a,b\\big\\rangle '
+    );
+  });
+
+  test('\\mathbb accepts any capital or digit', function () {
+    assertParsesLatex('\\mathbb{R}', '\\mathbb{R}');
+    assertParsesLatex('\\mathbb{F}', '\\mathbb{F}');
+    assertParsesLatex('\\mathbb{A}', '\\mathbb{A}');
+    assertParsesLatex('\\mathbb{1}', '\\mathbb{1}');
+    assertParsesLatex('\\mathds{F}', '\\mathbb{F}');
+  });
+
+  test('named spacing, hspace, phantom, invisible wrappers', function () {
+    assertParsesLatex('x\\thinspace y', 'x\\, y');
+    assertParsesLatex('x\\enspace y', 'x\\enspace y');
+    assertParsesLatex('x\\negthickspace y', 'x\\negthickspace y');
+    assertParsesLatex('a\\hspace{1em}b', 'a\\hspace{1em}b');
+    assertParsesLatex('a\\mspace{5mu}b', 'a\\mspace{5mu}b');
+    assertParsesLatex('x\\phantom{y}z', 'x\\phantom{y}z');
+    assertParsesLatex('\\vphantom{x}', '\\vphantom{x}');
+    assertParsesLatex('x\\mathrel{=}y', 'x\\mathrel{=}y');
+    assertParsesLatex('\\mathnormal{x}', '\\mathnormal{x}');
+    assertParsesLatex('x\\tag{1}', 'x\\tag{1}');
+    assertParsesLatex('x\\notag', 'x\\notag ');
+  });
+
+  test('under/overbrace, xarrows, cancel, accents', function () {
+    assertParsesLatex(
+      '\\underbrace{x+y}_{n}',
+      '\\underbrace{x+y}_{n}'
+    );
+    assertParsesLatex(
+      '\\overbrace{x+y}^{n}',
+      '\\overbrace{x+y}^{n}'
+    );
+    assertParsesLatex('\\widehat{xy}', '\\hat{xy}');
+    assertParsesLatex('\\widetilde{xy}', '\\widetilde{xy}');
+    assertParsesLatex('\\xrightarrow{a}', '\\xrightarrow{a}');
+    assertParsesLatex('\\xmapsto{a}', '\\xmapsto{a}');
+    assertParsesLatex('\\cancel{x}', '\\cancel{x}');
+    assertParsesLatex('\\bcancel{x}', '\\bcancel{x}');
+    assertParsesLatex('\\v{s}', '\\v{s}');
+    assertParsesLatex('\\r{a}', '\\r{a}');
+    assertParsesLatex('\\c{c}', '\\c{c}');
+    assertParsesLatex('\\d{u}', '\\d{u}');
+  });
+
+  test('grid environments: gathered, aligned, substack, line break', function () {
+    assertParsesLatex(
+      '\\begin{gathered}a\\\\b\\end{gathered}',
+      '\\begin{gathered}a\\\\ b\\end{gathered}'
+    );
+    assertParsesLatex(
+      '\\begin{aligned}a&=b\\\\c&=d\\end{aligned}',
+      '\\begin{aligned}a&=b\\\\c&=d\\end{aligned}'
+    );
+    assertParsesLatex(
+      '\\substack{i=1\\\\j=2}',
+      '\\substack{i=1\\\\ j=2}'
+    );
+    // bare \\ outside a grid parses as a line break and re-parses
+    assertParsesLatex('x\\\\y', 'x\\\\y');
+  });
+
+  test('named environments canonicalize to gathered/aligned', function () {
+    assertParsesLatex(
+      '\\begin{align}a&=b\\\\c&=d\\end{align}',
+      '\\begin{aligned}a&=b\\\\c&=d\\end{aligned}'
+    );
+    assertParsesLatex(
+      '\\begin{align*}a&=b\\end{align*}',
+      '\\begin{aligned}a&=b\\end{aligned}'
+    );
+    assertParsesLatex(
+      '\\begin{equation}x=1\\end{equation}',
+      '\\begin{gathered}x=1\\end{gathered}'
+    );
+    assertParsesLatex(
+      '\\begin{smallmatrix}a\\end{smallmatrix}',
+      '\\begin{smallmatrix}a\\end{smallmatrix}'
+    );
+    assertParsesLatex(
+      '\\begin{array}{cc}a&b\\\\c&d\\end{array}',
+      '\\begin{array}{cc}a&b\\\\c&d\\end{array}'
+    );
+  });
+
+  test('escaped accents, bra-ket, display wrappers, rules', function () {
+    assertParsesLatex("\\'e", "'e");
+    assertParsesLatex('\\~n', '\\~{n}');
+    assertParsesLatex('\\^o', '\\^{o}');
+    assertParsesLatex('\\.{i}', '\\.{i}');
+    // a trailing escaped accent without a block stays a bare mark
+    assertParsesLatex("f\\'", "f'");
+    assertParsesLatex('\\bra{x}', '\\bra{x}');
+    assertParsesLatex('\\ket{x}', '\\ket{x}');
+    assertParsesLatex('\\braket{x|y}', '\\braket{x|y}');
+    assertParsesLatex('\\ketbra{x}{y}', '\\ketbra{x}{y}');
+    assertParsesLatex('\\[x\\]', '\\[x\\]');
+    assertParsesLatex('\\(x\\)', '\\(x\\)');
+    assertParsesLatex('\\hline', '\\hline ');
+    assertParsesLatex('\\cline{1-2}', '\\cline{1-2}');
+    assertParsesLatex('\\iiint', '\\iiint ');
+    assertParsesLatex('\\varinjlim', '\\varinjlim _{ }^{ }');
+    assertParsesLatex('\\boldsymbol{x}', '\\boldsymbol{x}');
+    assertParsesLatex('\\pmb{x}', '\\pmb{x}');
+    assertParsesLatex('\\llap{x}', '\\llap{x}');
+    assertParsesLatex('\\smash{x}', '\\smash{x}');
+    assertParsesLatex('\\fbox{x}', '\\fbox{x}');
+    assertParsesLatex('\\framebox{x}', '\\framebox{x}');
+    assertParsesLatex('\\nicefrac{1}{2}', '\\frac{1}{2}');
+    assertParsesLatex('\\underleftarrow{x}', '\\underleftarrow{x}');
+    assertParsesLatex('\\underrightarrow{x}', '\\underrightarrow{x}');
+    assertParsesLatex('\\overleftharpoon{x}', '\\overleftharpoon{x}');
+    // bare brackets are unaffected by the \[ wrapper registration
+    assertParsesLatex('x[y]', 'x[y]');
+    assertParsesLatex('(x)', '(x)');
+  });
+
+  test('more relations and symbols parse', function () {
+    assertParsesLatex('x\\subsetneq y', 'x\\subsetneq y');
+    assertParsesLatex('x\\subsetneqq y', 'x\\subsetneqq y');
+    assertParsesLatex('x\\lesssim y', 'x\\lesssim y');
+    assertParsesLatex('x\\precsim y', 'x\\precsim y');
+    assertParsesLatex('x\\approxeq y', 'x\\approxeq y');
+    assertParsesLatex('x\\doteqdot y', 'x\\doteqdot y');
+    assertParsesLatex('x\\eqcirc y', 'x\\eqcirc y');
+    assertParsesLatex('x\\triangleq y', 'x\\triangleq y');
+    assertParsesLatex('x\\vDash y', 'x\\vDash y');
+    assertParsesLatex('x\\Vvdash y', 'x\\Vvdash y');
+    assertParsesLatex('x\\coloneqq y', 'x\\coloneqq y');
+    assertParsesLatex('x\\complement', 'x\\complement ');
+    assertParsesLatex('\\sphericalangle', '\\sphericalangle ');
+    assertParsesLatex('\\imath', '\\imath ');
+    assertParsesLatex('\\beth', '\\beth ');
+    assertParsesLatex('\\Finv', '\\Finv ');
+    assertParsesLatex('\\backepsilon x', '\\backepsilon x');
+    assertParsesLatex('\\LaTeX', '\\LaTeX ');
+    assertParsesLatex('\\S', '\\S ');
+    assertParsesLatex('\\yen', '\\yen ');
+    assertParsesLatex('\\euro', '\\euro ');
+    assertParsesLatex('a\\not\\sim b', 'a\\nsim b');
+  });
+
+  test('infix ops, macro defs, genfrac: honest verbatim output', function () {
+    assertParsesLatex('a\\over b', 'a\\over b');
+    assertParsesLatex('a\\choose b', 'a\\choose b');
+    assertParsesLatex('a\\atop b', 'a\\atop b');
+    assertParsesLatex('\\newcommand{\\foo}{x}', '\\newcommand{\\foo}{x}');
+    assertParsesLatex(
+      '\\renewcommand{\\foo}[1]{#1x}',
+      '\\renewcommand{\\foo}[1]{#1x}'
+    );
+    assertParsesLatex(
+      '\\providecommand{\\bar}{z}',
+      '\\providecommand{\\bar}{z}'
+    );
+    assertParsesLatex('\\def\\foo{bar}', '\\def\\foo{bar}');
+    assertParsesLatex(
+      '\\DeclareMathOperator{\\Tr}{Tr}',
+      '\\DeclareMathOperator{\\Tr}{Tr}'
+    );
+    assertParsesLatex('\\genfrac(){}{}{x}{y}', '\\genfrac(){}{}{x}{y}');
+    assertParsesLatex(
+      '\\genfrac(]{0pt}{0}{x}{y}',
+      '\\genfrac(]{0pt}{0}{x}{y}'
+    );
+    assertParsesLatex('\\t{oo}', '\\t{oo}');
+    assertParsesLatex(
+      '\\textsuperscript{th}',
+      '\\textsuperscript{th}'
+    );
+    assertParsesLatex(
+      '\\textsubscript{2}',
+      '\\textsubscript{2}'
+    );
+  });
+
+  test('refs, text-cmds, boxes, links round-trip', function () {
+    assertParsesLatex('\\ref{1}', '\\ref{1}');
+    assertParsesLatex('\\eqref{1}', '\\eqref{1}');
+    assertParsesLatex('\\label{sec:a}', '\\label{sec:a}');
+    assertParsesLatex('\\cite[see]{key}', '\\cite[see]{key}');
+    assertParsesLatex('\\url{http://x_y}', '\\url{http://x_y}');
+    assertParsesLatex('\\intertext{and}', '\\intertext{and}');
+    assertParsesLatex('\\vspace{1em}', '\\vspace{1em}');
+    assertParsesLatex('\\colorbox{red}{x}', '\\colorbox{red}{x}');
+    assertParsesLatex(
+      '\\fcolorbox{blue}{yellow}{x}',
+      '\\fcolorbox{blue}{yellow}{x}'
+    );
+    assertParsesLatex('\\href{http://a_b}{x}', '\\href{http://a_b}{x}');
+  });
+
+  test('xarrows with optional under-label, word accents, ligo/dash', function () {
+    assertParsesLatex('\\xrightarrow{a}', '\\xrightarrow{a}');
+    assertParsesLatex('\\xrightarrow[u]{o}', '\\xrightarrow[u]{o}');
+    assertParsesLatex('\\xLeftarrow{a}', '\\xLeftarrow{a}');
+    assertParsesLatex('\\xLeftrightarrow{a}', '\\xLeftrightarrow{a}');
+    assertParsesLatex('\\xhookrightarrow{a}', '\\xhookrightarrow{a}');
+    assertParsesLatex('\\xtwoheadrightarrow{a}', '\\xtwoheadrightarrow{a}');
+    assertParsesLatex('\\check{a}', '\\check{a}');
+    assertParsesLatex('\\breve{a}', '\\breve{a}');
+    assertParsesLatex('\\acute{a}', '\\acute{a}');
+    assertParsesLatex('\\grave{a}', '\\grave{a}');
+    assertParsesLatex('\\ddddot{a}', '\\ddddot{a}');
+    assertParsesLatex('\\mathclap{x}', '\\mathclap{x}');
+    assertParsesLatex('\\underbracket{x}', '\\underbracket{x}');
+    assertParsesLatex('\\overparen{x}', '\\overparen{x}');
+    assertParsesLatex('\\AA', '\\AA ');
+    assertParsesLatex('\\Bumpeq', '\\Bumpeq ');
+    assertParsesLatex('\\bumpeq', '\\bumpeq ');
+    assertParsesLatex('\\ae', '\\ae ');
+    assertParsesLatex('\\ss', '\\ss ');
+    assertParsesLatex('\\i', '\\i ');
+    assertParsesLatex('\\lll', '\\lll ');
+    assertParsesLatex('\\gggtr', '\\ggg ');
+    assertParsesLatex('\\subseteqq', '\\subseteqq ');
+    assertParsesLatex('\\eqsim', '\\eqsim ');
+    assertParsesLatex('\\intercal', '\\intercal ');
+    assertParsesLatex('\\dotsc', '\\dotsc ');
+    assertParsesLatex('\\iddots', '\\iddots ');
+    assertParsesLatex('\\hslash', '\\hslash ');
+    assertParsesLatex('\\Bbbk', '\\Bbbk ');
+    assertParsesLatex('\\bigstar', '\\bigstar ');
+    assertParsesLatex('\\maltese', '\\maltese ');
+    assertParsesLatex('\\glqq', '\\glqq ');
+    assertParsesLatex('\\textemdash', '\\textemdash ');
+    // an overlap command with no following block stays a bare leaf
+    assertParsesLatex('\\mathclap', '\\mathclap ');
+    assertParsesLatex('x\\smash', 'x\\smash ');
+  });
+
+  test('\\operatorname* consumes the star', function () {
+    assertParsesLatex('\\operatorname{tr}(A)', 'tr(A)');
+    assertParsesLatex(
+      '\\operatorname*{argmin}_{x}',
+      '\\arg \\min _{x}'
+    );
   });
 
   test('\\text', function () {
@@ -1121,5 +1490,236 @@ suite('latex', function () {
       'langlerfish/ranglerfish (checking for confusion with langle/rangle)',
       '\\left\\langlerfish 123\\right\\ranglerfish)'
     );
+  });
+
+  test('bare-arg commands, tag-star, old-style envs, text braces', function () {
+    // 2-block commands with fewer blocks degrade to a bare leaf instead
+    // of failing the whole parse
+    assertParsesLatex('\\overset{a}', '\\overset a');
+    assertParsesLatex('\\underset{a}', '\\underset a');
+    assertParsesLatex('\\frac{1}', '\\frac 1');
+    assertParsesLatex('\\binom{n}', '\\binom n');
+    // the starred (unparenthesized) tag keeps its star
+    assertParsesLatex('\\tag*{1}', '\\tag*{1}');
+    assertParsesLatex('\\tag{2}', '\\tag{2}');
+    // old-style env names canonicalize to aligned
+    assertParsesLatex(
+      '\\begin{eqnarray}a&=b\\\\\\end{eqnarray}',
+      '\\begin{aligned}a&=b\\\\&\\end{aligned}'
+    );
+    assertParsesLatex('\\eqnarray x', '\\eqnarray x');
+    // one level of nested braces inside text-mode content round-trips
+    assertParsesLatex('\\textit{x_{2}}', '\\textit{x_{2}}');
+    assertParsesLatex('\\textbf{a{b}c}', '\\textbf{a{b}c}');
+    // arrow/relation/binop leaves
+    assertParsesLatex('\\rightsquigarrow', '\\rightsquigarrow ');
+    assertParsesLatex('\\precnapprox', '\\precnapprox ');
+    assertParsesLatex('\\boxtimes', '\\boxtimes ');
+    assertParsesLatex('\\varliminf', '\\varliminf _{ }^{ }');
+    assertParsesLatex('\\smallint', '\\smallint ');
+    // bare xarrows degrade to a glyph leaf; named arrows keep their names
+    assertParsesLatex('\\xrightarrow', '\\xrightarrow ');
+    assertParsesLatex('\\xhookleftarrow', '\\xhookleftarrow ');
+    assertParsesLatex('\\implies', '\\implies ');
+    assertParsesLatex('\\iff', '\\iff ');
+    assertParsesLatex('\\impliedby', '\\impliedby ');
+    assertParsesLatex('\\varGamma', '\\varGamma ');
+    assertParsesLatex('\\leqslant', '\\leqslant ');
+    assertParsesLatex('\\Join', '\\Join ');
+    assertParsesLatex('\\coloneq', '\\coloneq ');
+    assertParsesLatex('\\And', '\\And ');
+    // declarations, wrappers, and remaining bare-arg cases
+    assertParsesLatex('\\tiny', '\\tiny ');
+    assertParsesLatex('\\it x', '\\it x');
+    assertParsesLatex('\\sf x', '\\sf x');
+    assertParsesLatex('\\sf{x}', '\\sf{x}');
+    assertParsesLatex('\\ensuremath{x}', '\\ensuremath{x}');
+    assertParsesLatex('\\mbox{a b}', '\\mbox{a b}');
+    assertParsesLatex('\\mod', '\\mod ');
+    assertParsesLatex('\\sideset{^a_b}{^c_d}\\sum', '\\sideset{^a_b}{^c_d}\\sum _{ }^{ }');
+    assertParsesLatex(
+      '\\newenvironment{foo}{a}{b}',
+      '\\newenvironment{foo}{a}{b}'
+    );
+    // bare \sqrt at EOF is a parse error (matches testCantParse above)
+    assertParsesLatex('\\cancelto{0}{x}', '\\cancelto{0}{x}');
+    assertParsesLatex('\\intop', '\\intop ');
+    assertParsesLatex('\\unlhd', '\\unlhd ');
+    // {a\choose b} keeps the infix leaf (Binomial's bare-arg fallback
+    // must not shadow \choose's own)
+    assertParsesLatex('{a\\choose b}', 'a\\choose b');
+    assertParsesLatex('\\choose{a}{b}', '\\binom{a}{b}');
+    // \begin{array}[t]{spec} keeps the optional position arg
+    assertParsesLatex(
+      '\\begin{array}[t]{cc}a&b\\end{array}',
+      '\\begin{array}[t]{cc}a&b\\end{array}'
+    );
+    assertParsesLatex('\\multicolumn{2}{c}{x}', '\\multicolumn{2}{c}{x}');
+    assertParsesLatex('\\colon', '\\colon ');
+    assertParsesLatex('\\hdots', '\\hdots ');
+    assertParsesLatex('\\hfill', '\\hfill ');
+    assertParsesLatex('\\noalign{\\hline}', '\\noalign{\\hline }');
+    // opt-bracket boxes, raw-arg bookkeeping, starred spacing
+    assertParsesLatex('\\makebox[1em][l]{x}', '\\makebox[1em][l]{x}');
+    assertParsesLatex('\\framebox[2em]{x}', '\\framebox[2em]{x}');
+    assertParsesLatex('\\raisebox{1pt}{x}', '\\raisebox{1pt}{x}');
+    assertParsesLatex(
+      '\\raisebox{1pt}[0pt][0pt]{x}',
+      '\\raisebox{1pt}[0pt][0pt]{x}'
+    );
+    assertParsesLatex('\\hspace*{1em}', '\\hspace*{1em}');
+    assertParsesLatex('\\vspace*{1em}', '\\vspace*{1em}');
+    assertParsesLatex('\\setcounter{c}{1}', '\\setcounter{c}{1}');
+    assertParsesLatex('\\setlength{l}{1pt}', '\\setlength{l}{1pt}');
+    assertParsesLatex('\\arabic{c}', '\\arabic{c}');
+    assertParsesLatex('\\newtheorem{thm}{Theorem}', '\\newtheorem{thm}{Theorem}');
+    assertParsesLatex('a\\atopwithdelims()b', 'a\\atopwithdelims ()b');
+    assertParsesLatex('\\multicolumn{2}{c}{x}', '\\multicolumn{2}{c}{x}');
+    // infix \over keeps its leaf (FracNode's bare-\frac fallback must
+    // not shadow it); braced args still parse to a real fraction
+    assertParsesLatex('a\\over b', 'a\\over b');
+    assertParsesLatex('\\over{a}{b}', '\\frac{a}{b}');
+    // unknown environments degrade to visible begin/end leaves instead
+    // of blanking the cell
+    assertParsesLatex(
+      '\\begin{foo}x\\end{foo}',
+      '\\begin{foo} x\\end{foo}'
+    );
+    assertParsesLatex('\\end{foo}', '\\end{foo}');
+    // null delimiters: \left. and \right. close a pair with a
+    // zero-width side (the SVG_SYMBOLS fallback renders nothing)
+    assertParsesLatex('\\left(x\\right.', '\\left(x\\right.');
+    assertParsesLatex('\\left.x\\right|', '\\left.x\\right|');
+    assertParsesLatex(
+      '\\displaylines{\\left(x\\right.\\\\ \\left.y\\right)}',
+      '\\displaylines{\\left(x\\right.\\\\ \\left.y\\right)}'
+    );
+    // definition + text-mode commands keep their arguments verbatim
+    assertParsesLatex('\\let\\x\\y', '\\let\\x\\y');
+    assertParsesLatex('\\gdef\\x{y}', '\\gdef\\x{y}');
+    assertParsesLatex('\\section{a}', '\\section{a}');
+    assertParsesLatex('\\documentclass[12pt]{article}', '\\documentclass[12pt]{article}');
+    assertParsesLatex('\\k{x}', '\\k{x}');
+    assertParsesLatex('\\item', '\\item ');
+    assertParsesLatex('\\item[x]', '\\item [x]');
+    assertParsesLatex('\\genfrac(){}{0}{}{a}{b}', '\\genfrac(){}{0}{}{a}{b}');
+    // \genfrac inside delimiters: its raw args must not swallow the
+    // enclosing \right / \Bigg…\rangle close
+    assertParsesLatex(
+      '\\left(\\genfrac(){}{0}{}{a}{b}\\right)',
+      '\\left(\\genfrac(){}{0}{}{a}{b}\\right)'
+    );
+    assertParsesLatex(
+      '\\Bigg\\langle\\genfrac(){}{0}{}{a}{b}\\Bigg\\rangle',
+      '\\Bigg\\langle \\genfrac(){}{0}{}{a}{b}\\Bigg\\rangle '
+    );
+    assertParsesLatex('\\genfrac\\langle\\rangle{0}{}{a}{b}', '\\genfrac\\langle\\rangle{0}{}{a}{b}');
+    // text blocks tolerate nested braces up to depth 3
+    assertParsesLatex('\\textbf{a{b{c}d}e}', '\\textbf{a{b{c}d}e}');
+    // \verb<delim>text<delim> keeps its delimiter + star
+    assertParsesLatex('\\verb|x|', '\\verb|x|');
+    assertParsesLatex('\\verb*|x y|', '\\verb*|x y|');
+    // \cfrac[lcr] optional alignment is consumed, not misparsed as
+    // a { [ } { l ] fraction; canonical emit is \frac
+    assertParsesLatex('\\cfrac[l]{a}{b}', '\\frac{a}{b}');
+    // \smash[tb] keeps its optional arg
+    assertParsesLatex('\\smash[b]{x}', '\\smash[b]{x}');
+    assertParsesLatex('\\smash{x}', '\\smash{x}');
+    // multi-group text commands stay verbatim
+    assertParsesLatex('\\prescript{a}{b}{c}', '\\prescript{a}{b}{c}');
+    assertParsesLatex('\\mathchoice{a}{b}{c}{d}', '\\mathchoice{a}{b}{c}{d}');
+    assertParsesLatex('\\includegraphics[width=1cm]{x}', '\\includegraphics[width=1cm]{x}');
+    assertParsesLatex('\\path{x}', '\\path{x}');
+    // \matrix{...} emits the \begin{matrix} env form like \pmatrix
+    assertParsesLatex('\\matrix{a&b}', '\\begin{matrix}a&b\\end{matrix}');
+    // TeX boxes keep 'to <dim>'; siunitx + skip commands stay verbatim
+    assertParsesLatex('\\hbox to 3em{x}', '\\hbox to 3em{x}');
+    assertParsesLatex('\\hbox{x}', '\\hbox {x}');
+    assertParsesLatex('\\vbox to 2in{x}', '\\vbox to 2in{x}');
+    assertParsesLatex('\\SI{1}{m}', '\\SI{1}{m}');
+    assertParsesLatex('\\si{m}', '\\si{m}');
+    assertParsesLatex('\\num{1e3}', '\\num{1e3}');
+    assertParsesLatex('\\celsius', '\\celsius ');
+    assertParsesLatex('\\hskip{3pt}', '\\hskip{3pt}');
+    assertParsesLatex('\\kern{2pt}', '\\kern{2pt}');
+    assertParsesLatex('\\mathbfsf{x}', '\\mathbfsf{x}');
+    assertParsesLatex('\\texteuro', '\\texteuro ');
+    assertParsesLatex('\\oldstylenums{0}', '\\oldstylenums{0}');
+    assertParsesLatex('\\cases{a&b}', '\\cases a\\&b');
+    // tabular parses as an array twin (spec + pos + cells)
+    assertParsesLatex(
+      '\\begin{tabular}{cc}a&b\\end{tabular}',
+      '\\begin{tabular}{cc}a&b\\end{tabular}'
+    );
+    assertParsesLatex(
+      '\\begin{tabular}[t]{|c|c|}a&b\\end{tabular}',
+      '\\begin{tabular}[t]{|c|c|}a&b\\end{tabular}'
+    );
+    // unicode-math fonts, primes, colortbl + fancybox commands
+    assertParsesLatex('\\symbf{x}', '\\symbf{x}');
+    assertParsesLatex('\\cprime', '\\cprime ');
+    assertParsesLatex('\\sslash', '\\sslash ');
+    assertParsesLatex('\\rowcolor[rgb]{1,0,0}', '\\rowcolor[rgb]{1,0,0}');
+    assertParsesLatex('\\dashbox{1}(2,3){x}', '\\dashbox{1}(2,3){x}');
+    assertParsesLatex('\\sout{x}', '\\sout{x}');
+    // color commands keep an optional [model]
+    assertParsesLatex(
+      '\\textcolor[rgb]{1,0,0}{x}',
+      '\\textcolor[rgb]{1,0,0}{x}'
+    );
+    assertParsesLatex(
+      '\\color[rgb]{1,0,0}x',
+      '\\textcolor[rgb]{1,0,0}{x}'
+    );
+    assertParsesLatex(
+      '\\colorbox[rgb]{1,0,0}{x}',
+      '\\colorbox[rgb]{1,0,0}{x}'
+    );
+    assertParsesLatex(
+      '\\fcolorbox[rgb]{1,0,0}{0,0,1}{x}',
+      '\\fcolorbox[rgb]{1,0,0}{0,0,1}{x}'
+    );
+    // starred spacing, multicolumn in a grid, misc
+    assertParsesLatex('\\hspace*{3pt}', '\\hspace*{3pt}');
+    assertParsesLatex('\\vspace*{3pt}', '\\vspace*{3pt}');
+    assertParsesLatex(
+      '\\begin{array}{cc}\\multicolumn{2}{c}{x}\\end{array}',
+      '\\begin{array}{cc}\\multicolumn{2}{c}{x}\\end{array}'
+    );
+    assertParsesLatex('\\cdashline{1-2}', '\\cdashline{1-2}');
+    assertParsesLatex('\\checkmark', '\\checkmark ');
+    assertParsesLatex('\\definecolor{c}{rgb}{1,0,0}', '\\definecolor{c}{rgb}{1,0,0}');
+    // unknown commands degrade to verbatim leaves instead of
+    // blanking the whole field
+    assertParsesLatex('x\\foo y', 'x\\foo y');
+    assertParsesLatex('\\expandafter\\foo', '\\expandafter  \\foo ');
+    // a registered command missing its braces degrades to a leaf
+    assertParsesLatex('\\frac{a}', '\\frac a');
+    assertParsesLatex(
+      '\\begin{matrix}a&\\frac{x}\\end{matrix}',
+      '\\begin{matrix}a&\\frac x\\end{matrix}'
+    );
+    // env spec args: subarray {spec}, alignat {n}
+    assertParsesLatex(
+      '\\begin{subarray}{c}a\\\\b\\end{subarray}',
+      '\\begin{subarray}{c}a\\\\b\\end{subarray}'
+    );
+    assertParsesLatex(
+      '\\begin{alignat}{2}a&=b\\end{alignat}',
+      '\\begin{alignat}{2}a&=b\\end{alignat}'
+    );
+    assertParsesLatex(
+      '\\begin{alignedat}{2}a&=b\\end{alignedat}',
+      '\\begin{alignedat}{2}a&=b\\end{alignedat}'
+    );
+    // font-family switches, font commands, TeX primitives
+    assertParsesLatex('\\bfseries x', '\\bfseries  x');
+    assertParsesLatex('\\usefont{T1}{cmr}{m}{n}', '\\usefont{T1}{cmr}{m}{n}');
+    assertParsesLatex('\\fontsize{10}{12}', '\\fontsize{10}{12}');
+    assertParsesLatex('\\selectfont', '\\selectfont  ');
+    assertParsesLatex('\\everymath{x}', '\\everymath{x}');
+    assertParsesLatex('\\ifmmode', '\\ifmmode  ');
+    assertParsesLatex('\\expandafter', '\\expandafter  ');
+    assertParsesLatex('\\romannumeral', '\\romannumeral  ');
   });
 });

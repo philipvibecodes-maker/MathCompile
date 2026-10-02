@@ -201,10 +201,30 @@
       vertical-align: -1.1em;
       padding-right: 0.2em;
 
+      // A sign carrying only an upper bound still sets that bound above
+      // itself; the generic `.mq-supsub.mq-sup-only` rule below would
+      // float it as an ordinary exponent.
+      &.mq-sup-only {
+        vertical-align: -1.1em;
+
+        // Lift the lone bound to the definite-bound height (same top as
+        // the .mq-sup-inner bound of the large-operator template).
+        > .mq-sup {
+          vertical-align: 1.9em;
+        }
+      }
+
       // Plain SupSub has no .mq-sup-inner (unlike the large-operator
-      // template), so spread the bounds with margins instead.
+      // template), so spread the bounds with margins instead. The upper
+      // bound is display:block so vertical-align does not apply — shift
+      // it visually to the definite-bound height instead.
       > .mq-sup {
         margin-bottom: 0.4em;
+      }
+
+      &:not(.mq-sup-only) > .mq-sup {
+        position: relative;
+        top: -0.45em;
       }
 
       > .mq-sub {
@@ -225,6 +245,45 @@
     font-family: monospace, Symbola, serif;
   }
 
+  .mq-caligraphic {
+    font-family: 'Lucida Calligraphy', 'Apple Chancery', cursive, Symbola,
+      serif;
+  }
+
+  .mq-fraktur {
+    font-family: 'Old English Text MT', 'UnifrakturMaguntia', fantasy,
+      Symbola, serif;
+  }
+
+  .mq-fbox {
+    border: 1px solid;
+    padding: 0 0.1em;
+  }
+
+  .mq-overunderset {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.2;
+  }
+
+  .mq-overscript {
+    font-size: 0.7em;
+  }
+  .mq-underscript {
+    font-size: 0.7em;
+  }
+  .mq-colorbox {
+    padding: 0 0.15em;
+    border: 1px solid transparent;
+  }
+  .mq-fcolorbox {
+    padding: 0 0.15em;
+  }
+  .mq-href {
+    text-decoration: underline;
+  }
+
   .mq-overline {
     border-top: 1px solid;
     margin-top: 1px;
@@ -232,6 +291,84 @@
   .mq-underline {
     border-bottom: 1px solid;
     margin-bottom: 1px;
+  }
+
+  .mq-diacritic-below {
+    display: block;
+    text-align: center;
+    line-height: 0.4em;
+    font-size: 0.8em;
+  }
+
+  .mq-underoverbrace {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.1;
+  }
+  .mq-underbrace-arc {
+    font-size: 0.8em;
+    line-height: 0.7em;
+  }
+
+  .mq-xarrow {
+    font-size: 1.3em;
+    line-height: 0.9;
+  }
+
+  .mq-invisible {
+    visibility: hidden;
+    width: 0;
+    display: inline-block;
+    overflow: hidden;
+  }
+  .mq-phantom {
+    visibility: hidden;
+  }
+
+  .mq-sized-delim {
+    font-size: 1.5em;
+    line-height: 1;
+  }
+
+  .mq-substack td {
+    font-size: 0.8em;
+  }
+
+  .mq-aligned td:nth-child(odd) {
+    text-align: right;
+  }
+
+  .mq-cancel-forward {
+    background: linear-gradient(
+      to left top,
+      transparent 46%,
+      currentColor 49%,
+      transparent 52%
+    );
+  }
+  .mq-cancel-back {
+    background: linear-gradient(
+      to right top,
+      transparent 46%,
+      currentColor 49%,
+      transparent 52%
+    );
+  }
+  .mq-cancel-both {
+    background:
+      linear-gradient(
+        to left top,
+        transparent 46%,
+        currentColor 49%,
+        transparent 52%
+      ),
+      linear-gradient(
+        to right top,
+        transparent 46%,
+        currentColor 49%,
+        transparent 52%
+      );
   }
 
   ////

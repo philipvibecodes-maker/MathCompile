@@ -46,7 +46,6 @@ const PYODIDE_BASE = 'https://cdn.jsdelivr.net/pyodide/v0.29.0/full/';
 const SETUP_PY = `
 import json
 import sympy as sp
-from sympy.printing.python import python as _pycode
 
 def _mc_eval_stmt(stmt, ns):
     # Expression statements eval their code directly; statements carrying
@@ -148,13 +147,6 @@ def _mc_row(val):
             out['approx'] = str(sp.N(val, 12))
     except Exception:
         pass
-    try:
-        out['code'] = _pycode(val, order='none')
-    except Exception:
-        try:
-            out['code'] = sp.sstr(val, order='none')
-        except Exception:
-            pass
     return out
 
 def mc_run(prog_json):
@@ -171,6 +163,16 @@ def mc_run(prog_json):
         try:
             row = _mc_row(_mc_eval_stmt(stmt, ns))
             row['ok'] = True
+            # Show code = the emitted program for this row (prelude defs
+            # + e = <eval'd source>), not the result's python() repr.
+            lines = list(prog['prelude'])
+            disp = stmt.get('display')
+            if disp is None:
+                lines.append('e = ' + stmt['code'])
+            else:
+                lines.append(stmt['code'])
+                lines.append('e = ' + disp)
+            row['code'] = '\\n'.join(lines)
             out.append(row)
         except Exception as e:
             out.append({'ok': False, 'error': str(e)})
@@ -193,7 +195,8 @@ function ensureEngine(): Promise<PyodideLike> {
       scope.postMessage({ type: 'ready' });
       return py;
     });
-    boot.catch(() => {
+    boot.catch((err) => {
+      console.error('[calc] boot failed:', err);
       // Report once, then allow the next eval to retry a failed boot
       // (e.g. a transient CDN fetch error).
       boot = undefined;

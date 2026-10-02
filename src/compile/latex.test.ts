@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { displayLatex, outputLatex } from './latex';
+import { copyableLatex, displayLatex, outputLatex } from './latex';
 
 describe('outputLatex', () => {
   it('returns single-line latex unchanged', () => {
@@ -34,6 +34,34 @@ describe('outputLatex', () => {
     );
     // Bounds grow as a sibling SupSub — the alias still maps.
     expect(outputLatex('\\antid_{1} xdx')).toBe('\\int_{1} xdx');
+  });
+
+  it('only maps the alias when its \\ is not half of a \\\\ separator', () => {
+    // `x\\antid y` lexes as `\\` + the literal letters antid — not an
+    // alias — while `\\\antid` is `\\` + a real \antid command.
+    expect(outputLatex('x\\\\antid y')).toBe('x\\\\antid y');
+    expect(outputLatex('x\\\\iint y')).toBe('x\\\\iint y');
+    expect(outputLatex('x\\\\\\antid y')).toBe('x\\\\\\int y');
+    expect(outputLatex('x\\\\\\iint y')).toBe('x\\\\\\int y');
+  });
+});
+
+describe('copyableLatex', () => {
+  it('keeps the displaylines wrapper so a pasted multi-line cell parses', () => {
+    // The unwrapped display form 'x\\ y' is not valid field input —
+    // MathQuill blanks on a top-level \\ — so the clipboard gets the
+    // stored (wrapped) serialization instead.
+    expect(copyableLatex('\\displaylines{x\\\\ y}')).toBe(
+      '\\displaylines{x\\\\ y}',
+    );
+  });
+
+  it('still canonicalizes \\antid/\\iint to \\int', () => {
+    expect(copyableLatex('\\antid xdx')).toBe('\\int xdx');
+  });
+
+  it('returns single-line latex unchanged', () => {
+    expect(copyableLatex('x+1')).toBe('x+1');
   });
 });
 

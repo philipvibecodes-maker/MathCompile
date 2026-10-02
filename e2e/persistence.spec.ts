@@ -52,6 +52,26 @@ test('deleted cells stay deleted after reload', async ({ page }) => {
   expect(await cellValue(cell(page, 0))).toBe('z');
 });
 
+test('unparseable stored latex does not linger in the output column', async ({
+  page,
+}) => {
+  // A persisted value the field can't accept gets wiped on hydration —
+  // the store must learn that so .cell-latex doesn't show text the
+  // field doesn't contain ('a}b' is a permanently unparseable stray
+  // close-brace).
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      'mathcompile-cells',
+      JSON.stringify([{ id: 1, latex: 'a}b' }]),
+    );
+  });
+  await page.goto('/');
+  await page.waitForSelector('math-field');
+  const mf = page.locator('math-field').first();
+  expect(await cellValue(mf)).toBe('');
+  await expect(page.locator('.cell-latex').first()).toHaveText('');
+});
+
 test('guide collapsed state survives reload', async ({ page }) => {
   const guide = page.locator('details.howto');
   await expect(guide).toHaveAttribute('open', '');
