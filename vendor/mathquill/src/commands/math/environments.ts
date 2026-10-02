@@ -985,3 +985,7 @@ LatexCmds.ointclockwise = boundlessIntegral(
   '&#8754;',
   'clockwise contour integral'
 );
+
+// \intop / \ointop — boundless integral family members.
+LatexCmds.intop = boundlessIntegral('\\intop ', '&#8747;', 'int op');
+LatexCmds.ointop = boundlessIntegral('\\ointop ', '&#8750;', 'oint op');

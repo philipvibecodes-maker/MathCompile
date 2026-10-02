@@ -497,11 +497,8 @@ LatexCmds.pod = () =>
     ),
     ['(', ')']
   );
-LatexCmds.bmod = LatexCmds.mod = bindBinaryOperator(
-  '\\bmod ',
-  'mod',
-  'mod'
-);
+LatexCmds.bmod = bindBinaryOperator('\\bmod ', 'mod', 'binary mod');
+LatexCmds.mod = bindBinaryOperator('\\mod ', 'mod', 'mod');
 
 // Very similar to the \textcolor command, but will add the given CSS class.
 // Usage: \class{classname}{math}
@@ -1506,7 +1503,16 @@ class SquareRoot extends MathCommand {
           return nthroot;
         });
       })
-      .or(super.parser());
+      .or(super.parser())
+      .or(
+        Parser.succeed(
+          new VanillaSymbol(
+            '\\sqrt ',
+            h.text('\\sqrt'),
+            'sqrt'
+          ) as MQNode | Fragment
+        )
+      );
   }
   deleteTowards(dir: Direction, cursor: Cursor) {
     if (!this.isEmpty() && dir === 1) {
@@ -1765,6 +1771,18 @@ function bindCancelCmd(ctrlSeq: string, cls: string) {
       )
     );
 }
+// \cancelto{result}{expr} — content struck through with an arrow
+// pointing at the result term.
+LatexCmds.cancelto = () =>
+  new MathCommand(
+    '\\cancelto',
+    new DOMView(2, (blocks) =>
+      h('span', { class: 'mq-non-leaf mq-cancel mq-cancelto' }, [
+        h.block('span', { class: 'mq-cancelto-arrow' }, blocks[0]),
+        h.block('span', {}, blocks[1])
+      ])
+    )
+  );
 LatexCmds.cancel = bindCancelCmd('\\cancel', 'mq-cancel-forward');
 LatexCmds.bcancel = bindCancelCmd('\\bcancel', 'mq-cancel-back');
 LatexCmds.xcancel = bindCancelCmd('\\xcancel', 'mq-cancel-both');

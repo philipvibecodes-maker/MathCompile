@@ -1786,3 +1786,77 @@ RELS2.forEach(function (a) {
   );
 });
 LatexCmds.And = bindLiteralCmd('\\And', 'and');
+
+// Font-size declarations — like \displaystyle, a visible style
+// modifier leaf so the command round-trips.
+LatexCmds.tiny = bindStyleModifier('\\tiny ', 'tiny');
+LatexCmds.scriptsize = bindStyleModifier('\\scriptsize ', 'script size');
+LatexCmds.footnotesize = bindStyleModifier(
+  '\\footnotesize ',
+  'footnote size'
+);
+LatexCmds.small = bindStyleModifier('\\small ', 'small');
+LatexCmds.normalsize = bindStyleModifier('\\normalsize ', 'normal size');
+LatexCmds.large = bindStyleModifier('\\large ', 'large');
+LatexCmds.Large = bindStyleModifier('\\Large ', 'Large');
+LatexCmds.LARGE = bindStyleModifier('\\LARGE ', 'LARGE');
+LatexCmds.huge = bindStyleModifier('\\huge ', 'huge');
+LatexCmds.Huge = bindStyleModifier('\\Huge ', 'Huge');
+
+// Old-style font declarations (\it, \bf, ... apply to the rest of the
+// current scope). \sf/\tt have text-block variants in text.ts; these
+// stay visible verbatim leaves so pasted declarations keep their text.
+var OLDSTYLE: [string, string][] = [
+  ['it', 'italic'],
+  ['bf', 'bold'],
+  ['rm', 'roman'],
+  ['sc', 'small caps'],
+  ['sl', 'slanted'],
+  ['cal', 'calligraphic'],
+  ['Bbb', 'blackboard bold'],
+  ['frak', 'fraktur'],
+  ['goth', 'gothic']
+];
+OLDSTYLE.forEach(function (a) {
+  (LatexCmds as LatexCmdsAny)[a[0]] = bindLiteralCmd('\\' + a[0], a[1]);
+});
+
+// \ensuremath{...} — math-wrapper passthrough (self-registers).
+bindMathWrap('ensuremath');
+
+// \newenvironment{name}{beg}{end} — macro env definition; keep args
+// verbatim like \newcommand.
+LatexCmds.newenvironment = () =>
+  new RawArgCommand(
+    '\\newenvironment',
+    new RegExp('^' + RAW_GROUP + '(?:' + RAW_GROUP + '){0,2}'),
+    'new environment'
+  );
+LatexCmds.renewenvironment = () =>
+  new RawArgCommand(
+    '\\renewenvironment',
+    new RegExp('^' + RAW_GROUP + '(?:' + RAW_GROUP + '){0,2}'),
+    'renew environment'
+  );
+
+// \sideset{^a_b}{^c_d}\sum — prescripted large operator; keep args raw.
+LatexCmds.sideset = () =>
+  new RawArgCommand(
+    '\\sideset',
+    new RegExp('^' + RAW_GROUP + RAW_GROUP),
+    'sideset'
+  );
+
+// Circled letters and plain-TeX rules/tags.
+LatexCmds.circledR = bindVanillaSymbol('\\circledR ', '&#xAE;', 'circled R');
+LatexCmds.circledS = bindVanillaSymbol('\\circledS ', '&#x24C8;', 'circled S');
+LatexCmds.vrule = bindLiteralCmd('\\vrule', 'vertical rule');
+LatexCmds.hrule = bindLiteralCmd('\\hrule', 'horizontal rule');
+LatexCmds.eqno = bindLiteralCmd('\\eqno', 'equation number');
+LatexCmds.leqno = bindLiteralCmd('\\leqno', 'left equation number');
+
+// \lhd \rhd \unlhd \unrhd — (un)normal-subgroup triangles.
+LatexCmds.lhd = bindBinaryOperator('\\lhd ', '&#x22B2;', 'lhd');
+LatexCmds.rhd = bindBinaryOperator('\\rhd ', '&#x22B3;', 'rhd');
+LatexCmds.unlhd = bindBinaryOperator('\\unlhd ', '&#x22B4;', 'unlhd');
+LatexCmds.unrhd = bindBinaryOperator('\\unrhd ', '&#x22B5;', 'unrhd');

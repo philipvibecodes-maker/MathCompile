@@ -1474,5 +1474,22 @@ suite('latex', function () {
     assertParsesLatex('\\Join', '\\Join');
     assertParsesLatex('\\coloneq', '\\coloneq');
     assertParsesLatex('\\And', '\\And');
+    // declarations, wrappers, and remaining bare-arg cases
+    assertParsesLatex('\\tiny', '\\tiny');
+    assertParsesLatex('\\it x', '\\it x');
+    assertParsesLatex('\\sf x', '\\sf x');
+    assertParsesLatex('\\sf{x}', '\\sf{x}');
+    assertParsesLatex('\\ensuremath{x}', '\\ensuremath{x}');
+    assertParsesLatex('\\mbox{a b}', '\\mbox{a b}');
+    assertParsesLatex('\\mod', '\\mod');
+    assertParsesLatex('\\sideset{^a_b}{^c_d}\\sum', '\\sideset{^a_b}{^c_d}\\sum_{ }^{ }');
+    assertParsesLatex(
+      '\\newenvironment{foo}{a}{b}',
+      '\\newenvironment{foo}{a}{b}'
+    );
+    assertParsesLatex('\\sqrt', '\\sqrt');
+    assertParsesLatex('\\cancelto{0}{x}', '\\cancelto{0}{x}');
+    assertParsesLatex('\\intop', '\\intop');
+    assertParsesLatex('\\unlhd', '\\unlhd');
   });
 });
