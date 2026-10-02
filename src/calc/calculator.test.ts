@@ -271,7 +271,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
       'sp.diff(t**2, t)',
     );
     expect(calc('\\frac{\\text{d}f}{\\text{d}x}').statements[0].code).toBe(
-      'sp.diff(f, x)',
+      'sp.diff(f(x), x)',
     );
     expect(
       calc('\\frac{\\text{d}^{2}}{\\text{d}x^{2}}x^{3}').statements[0].code,

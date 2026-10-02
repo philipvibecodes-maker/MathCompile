@@ -533,7 +533,13 @@ class Emitter {
         const savedBound = this.scope.lambdaBound;
         if (isStr(args[1]))
           this.scope.lambdaBound = new Set([...savedBound, args[1]]);
-        const f = this.emit(args[0]);
+        // \frac{df}{dx} — a bare name as the body is a function of the
+        // variable, not an independent symbol: `diff(f, x)` would
+        // evaluate to 0. Emit `diff(f(x), x)` -> Derivative(f(x), x).
+        const f =
+          isStr(args[0]) && args[0] !== args[1]
+            ? `${this.fn(args[0])}(${this.emit(args[1])})`
+            : this.emit(args[0]);
         const x = this.emit(args[1]);
         const out: [string, number] =
           args.length >= 3
