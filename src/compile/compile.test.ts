@@ -917,6 +917,14 @@ const FIXTURES: {
     latex: '(x \\mapsto x^2)(3)',
     expectedPython: ['x = sp.Symbol("x")', '(lambda x: x**2)(3)'],
   },
+  {
+    // A bare-point eval bound on a multi-free body names the actual
+    // fallback var (x) — and an `x=a` bound pins the var explicitly so
+    // no infer note fires (\dot{x}|_{t=0} subs t, not "w.r.t. x").
+    latex: '\\left. x + y \\right|_{0}',
+    expectedPython: ["x, y = sp.symbols('x y')", '(x + y).subs(x, 0)'],
+    issues: ['evaluated w.r.t. x'],
+  },
 ];
 
 describe('latexToStatementStrings', () => {

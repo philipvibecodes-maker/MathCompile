@@ -1182,18 +1182,23 @@ class Emitter {
         const body = args[0];
         const free = freeNames(body);
         const v = free.length === 1 ? free[0] : 'x';
-        if (free.length !== 1)
-          this.scope.flag(
-            'note',
-            "can't infer the evaluation variable — evaluated w.r.t. x",
-          );
         const bodyText = this.emit(body);
         // A bound can be an equation `x=a` — substitute the point, not
-        // the Eq node itself (`subs(x, Eq(x,a))` is meaningless).
+        // the Eq node itself (`subs(x, Eq(x,a))` is meaningless). The
+        // equation also pins the variable explicitly, so the
+        // infer-the-variable note only applies to bare-point bounds.
+        let inferNoted = false;
         const boundSub = (b: MathJson | undefined): string => {
           if (isHead(b, 'Equal') && b.length === 3) {
             const varText = isStr(b[1]) ? this.sym(b[1]) : this.emit(b[1]);
             return `(${bodyText}).subs(${varText}, ${this.emit(b[2])})`;
+          }
+          if (free.length !== 1 && !inferNoted) {
+            inferNoted = true;
+            this.scope.flag(
+              'note',
+              `can't infer the evaluation variable — evaluated w.r.t. ${v}`,
+            );
           }
           return `(${bodyText}).subs(${this.sym(v)}, ${this.emit(b)})`;
         };
