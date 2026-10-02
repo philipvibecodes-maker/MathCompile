@@ -577,6 +577,32 @@ class Letter extends Variable {
       first && i < str.length;
       i += 1, first = (first as MQNode)[R]
     ) {
+      // A letter run inside \operatorname{...}/\mathrm{...} (its first
+      // letter's ctrlSeq carries the `\name{` prefix and its last carries
+      // `}`) is already an explicit operator name — keep it whole and
+      // upright. Scanning it for built-in names split e.g.
+      // \operatorname{sign} into "sin" + "g" and \operatorname{atan}
+      // into "a" + "tan".
+      if (
+        first instanceof Letter &&
+        /^\\(?:operatorname|mathrm|mathsf|mathnormal|mathbf)\{/.test(
+          first.ctrlSeq
+        )
+      ) {
+        var opLetter: NodeRef = first;
+        var opLen = 0;
+        while (opLetter instanceof Letter) {
+          opLetter.italicize(false);
+          opLen += 1;
+          var endsRun = opLetter.ctrlSeq.endsWith('}');
+          opLetter = opLetter[R];
+          if (endsRun) break;
+        }
+        i += opLen - 1;
+        first = opLetter instanceof Letter ? ((opLetter[L] as MQNode)) : first;
+        if (!opLetter) break;
+        continue;
+      }
       for (var len = min(autoOpsLength, str.length - i); len > 0; len -= 1) {
         var word = str.slice(i, i + len);
         var last: Letter = undefined!; // TODO - TS complaining that we use last before assigning to it
@@ -704,8 +730,10 @@ function defaultAutoOpNames() {
   }
 
   // compat with some of the nonstandard LaTeX exported by MathQuill
-  // before #247. None of these are real LaTeX commands so, seems safe
-  var moreNonstandardOps = 'gcf hcf lcm proj span'.split(' ');
+  // before #247. None of these are real LaTeX commands so, seems safe.
+  // 'sign' (not built into LaTeX) exports as \operatorname{sign}, which
+  // MathCompile's compile pipeline lowers to SymPy's sign().
+  var moreNonstandardOps = 'gcf hcf lcm proj span sign'.split(' ');
   for (var i = 0; i < moreNonstandardOps.length; i += 1) {
     AutoOpNames[moreNonstandardOps[i]] = 1;
   }
@@ -862,6 +890,30 @@ LatexCmds.f = class extends Letter {
 // VanillaSymbol's
 LatexCmds[' '] = LatexCmds.space = () =>
   new DigitGroupingChar('\\ ', h('span', {}, [h.text(U_NO_BREAK_SPACE)]), ' ');
+
+// \<char> escapes — spacing (\, \: \; \!), braces (\{ \}) and the norm
+// shorthand (\|). These are keyed with a backslash prefix so they only
+// resolve through the '\'-prefixed parse branch (see latex.ts): bare
+// ',', ';', '{', ... keep their literal meaning and '}' still closes
+// groups.
+LatexCmds['\\,'] =
+  LatexCmds.thinspace =
+    bindVanillaSymbol('\\, ', U_NO_BREAK_SPACE, 'thin space');
+LatexCmds['\\:'] =
+  LatexCmds.medspace =
+    bindVanillaSymbol('\\: ', U_NO_BREAK_SPACE, 'medium space');
+LatexCmds['\\;'] =
+  LatexCmds.thickspace =
+    bindVanillaSymbol('\\; ', U_NO_BREAK_SPACE, 'thick space');
+LatexCmds['\\!'] = () =>
+  new VanillaSymbol(
+    '\\! ',
+    h('span', { style: 'margin-right:-.2em' }),
+    'negative thin space'
+  );
+LatexCmds['\\{'] = bindVanillaSymbol('\\{ ', '{', 'open brace');
+LatexCmds['\\}'] = bindVanillaSymbol('\\} ', '}', 'close brace');
+LatexCmds['\\|'] = bindVanillaSymbol('\\| ', '&#8741;', 'norm');
 
 LatexCmds['.'] = () =>
   new DigitGroupingChar(
