@@ -62,6 +62,7 @@ const RESERVED_IDENTS = new Set([
   'mc_doit',
   'mc_simplify',
   'mc_order',
+  'mc_simplify_organize',
 ]);
 
 // Mangle an arbitrary symbol name (e.g. `a_{n+1}`) into a valid python
@@ -2461,7 +2462,7 @@ export interface CalcProgram {
 // emitted program itself applies doit -> simplify -> degree-order —
 // auditing the shown code explains the shown result.
 const calcEval = (expr: string): string =>
-  `mc_order(mc_simplify(mc_doit(${expr})))`;
+  `mc_simplify_organize(${expr})`;
 
 // Compile a single cell for the calculator target: same pipeline as
 // compileWorksheet (always `sp.`-qualified — the worker execs against

@@ -549,6 +549,23 @@ body {
   color: #4078f2;
 }
 
+/* Caret folding the mc_simplify_organize helper body in row-0 code. */
+.calc-code .code-fold {
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 10px;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.calc-code .code-fold:hover,
+.calc-code .code-fold:focus-visible {
+  color: var(--accent-text);
+}
+
 /* Per-cell opt-in to reveal the `e = ...` display-plumbing lines — a
    small control pinned to the output cell's top-right corner. */
 .calc-plumbing {

@@ -9,8 +9,8 @@ const toN = (s: string) => toNerdamerInput(s, nerdamer);
 const calc = (latex: string) => compileCellForCalc({ json: parseCellLatex(latex) });
 // The calc pipeline wraps every evaluated expression — expectations
 // spell the inner emitted expression; F() applies the worker's
-// mc_doit/mc_simplify/mc_order wrap.
-const F = (e: string) => `mc_order(mc_simplify(mc_doit(${e})))`;
+// mc_simplify_organize wrap.
+const F = (e: string) => `mc_simplify_organize(${e})`;
 
 describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
   it('compiles an expression to a prelude + one eval statement', () => {
@@ -18,9 +18,9 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(prog.issues).toEqual([]);
     expect(prog.prelude).toEqual([
       'import sympy as sp',
-      // The emitted program defines its own pipeline helpers so the
+      // The emitted program defines its own pipeline helper so the
       // shown code runs standalone.
-      expect.stringContaining('def mc_order'),
+      expect.stringContaining('def mc_simplify_organize'),
       'x = sp.Symbol("x")',
     ]);
     expect(prog.statements).toEqual([{ code: F('x + 1'), display: undefined }]);
@@ -39,7 +39,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // Assignments bind a python name — no Symbol def is emitted.
     expect(prog.prelude).toEqual([
       'import sympy as sp',
-      expect.stringContaining('def mc_order'),
+      expect.stringContaining('def mc_simplify_organize'),
     ]);
     expect(prog.statements).toEqual([
       { code: 'a = 5', display: F('sp.Eq(sp.Symbol("a"), 5)') },
@@ -230,6 +230,10 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
     expect(calc('\\text{mc_doit}(x)=x^{2}').statements[0].code).toBe(
       F('sp.Eq(mc_doit_(x), x**2)'),
+    );
+    // The composed helper name is reserved too.
+    expect(calc('\\text{mc_simplify_organize}+1').statements[0].code).toBe(
+      F('mc_simplify_organize_ + 1'),
     );
   });
 

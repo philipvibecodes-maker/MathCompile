@@ -83,20 +83,21 @@ def mc_run(prog_json):
     # Each cell is a standalone program: prelude (import + Symbol/Function
     # defs) execs once, then every statement yields one result row.
     prog = json.loads(prog_json)
-    # The prelude defines the mc_* pipeline helpers the statements call
-    # (emitted per cell so the program is self-contained) — exec brings
-    # them into the namespace.
+    # The prelude defines mc_simplify_organize, the pipeline helper the
+    # statements call (emitted per cell so the program is
+    # self-contained) — exec brings it into the namespace.
     ns = {'sp': sp}
     try:
         exec('\\n'.join(prog['prelude']), ns)
     except Exception as e:
         return json.dumps([{'ok': False, 'error': str(e)}])
     prelude = list(prog['prelude'])
-    # Boilerplate — import lines and the comment-headed runtime block —
-    # shows only in the first row's code block; later rows keep the
-    # Symbol/Function defs.
+    # Boilerplate — import lines and the mc_simplify_organize runtime
+    # block — shows only in the first row's code block; later rows keep
+    # the Symbol/Function defs.
     tail = [l for l in prelude
-            if not l.startswith(('import ', 'from ', '# '))]
+            if not l.startswith(('import ', 'from ', '# ',
+                                 'def mc_simplify_organize'))]
     out = []
     for i, stmt in enumerate(prog['statements']):
         try:
@@ -110,7 +111,7 @@ def mc_run(prog_json):
             row['ok'] = True
             # Show code = the emitted program for this row (prelude
             # defs + statement source, which itself applies the
-            # mc_doit/mc_simplify/mc_order pipeline), not the result's
+            # mc_simplify_organize pipeline), not the result's
             # python() repr. The 'e = ...' capture lines exist only to
             # drive row rendering — display plumbing, split out so the
             # UI can hide it by default.

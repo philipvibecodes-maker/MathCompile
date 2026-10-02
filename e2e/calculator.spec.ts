@@ -229,7 +229,7 @@ test('show code toggle reveals highlighted SymPy code under the result', async (
   const plumbing = page.getByLabel('display plumbing').first();
   await expect(plumbing).toBeVisible();
   await plumbing.check();
-  await expect(code).toContainText('e = mc_order(');
+  await expect(code).toContainText('e = mc_simplify_organize(');
 
   await toggle.uncheck();
   await expect(page.locator('.calc-code')).toHaveCount(0);
