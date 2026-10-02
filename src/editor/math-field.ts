@@ -1,4 +1,5 @@
 import { mq3, type MQ, type MQConfig } from './mathquill';
+import { repairLatex, textFallback } from './latex-repair';
 
 export type MoveDirection = 'upward' | 'downward' | 'forward' | 'backward';
 
@@ -241,6 +242,17 @@ export function attachField(
     getValue: () => el.value,
     setValue: (latex) => {
       el.value = latex;
+      // mq.latex() silently blanks the field when it can't parse — a
+      // corrupted stored cell then renders empty while .cell-latex still
+      // shows its latex. Salvage to the nearest parseable string, falling
+      // back to showing the raw text rather than a blank field.
+      if (latex.trim() !== '' && el.value === '') {
+        const repaired = repairLatex(latex, (candidate) => {
+          el.value = candidate;
+          return el.value !== '';
+        });
+        el.value = repaired ?? textFallback(latex);
+      }
     },
     setSmartMode: (v) =>
       el.config({

@@ -266,6 +266,18 @@ suite('latex', function () {
         assertParsesLatex('   {}{} {{{}}  }', '');
       });
 
+      test('malformed LaTeX is repaired instead of dropped', function () {
+        function assertRepairs(str, latex) {
+          mq.write(str);
+          assert.equal(mq.latex(), latex);
+          mq.latex('');
+        }
+        assertRepairs('x_{a}^', 'x_{a}');
+        assertRepairs('\\frac{1}{', '\\frac{1}{ }');
+        assertRepairs('}}}}', '\\text{    }');
+        assertRepairs('x\\\\y', '\\displaylines{x\\\\ y}');
+      });
+
       test('overflow triggers automatic horizontal scroll', function (done) {
         var mqEl = mq.el();
         var rootEl = mq.__controller.root.domFrag().oneElement();

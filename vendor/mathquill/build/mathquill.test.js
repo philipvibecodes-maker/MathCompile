@@ -217,6 +217,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var U_NARY_PRODUCT = '\u220F';
     var U_NARY_COPRODUCT = '\u2210';
     var U_INTEGRAL = '\u222B';
+    var U_DOUBLE_INTEGRAL = '\u222C';
     /**
      * Like `el.getBoundingClientRect()` but avoids throwing for
      * disconnected and hidden elements in IE <= 11.
@@ -3369,6 +3370,65 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         };
         return Controller_exportText;
     }(ControllerBase));
+    // Salvage ladder for latex the math parser rejects outright. Used by
+    // writeLatex so pasting a corrupted latex fragment inserts a repaired
+    // approximation instead of silently doing nothing. Kept in sync with
+    // src/editor/latex-repair.ts (the app-side copy used for hydration repair).
+    function repairLatex(input, parses, maxAttempts) {
+        if (input.trim() === '')
+            return null;
+        var attempts = 0;
+        var tries = function (candidate) {
+            if (attempts >= maxAttempts)
+                return false;
+            attempts += 1;
+            return parses(candidate);
+        };
+        // 1. an unclosed trailing group closes happily: `x_{` -> `x_{ }`
+        var unescaped = input.replace(/\\./g, '');
+        var opens = 0;
+        var closes = 0;
+        for (var ci = 0; ci < unescaped.length; ci += 1) {
+            if (unescaped.charAt(ci) === '{')
+                opens += 1;
+            else if (unescaped.charAt(ci) === '}')
+                closes += 1;
+        }
+        if (opens > closes) {
+            var balanced = input;
+            for (var bi = 0; bi < opens - closes; bi += 1)
+                balanced += '}';
+            if (tries(balanced))
+                return balanced;
+        }
+        // 2. a raw `\\` row break only parses inside an environment
+        if (/\\\\/.test(input) && input.indexOf('\\displaylines') === -1) {
+            var wrapped = '\\displaylines{' + input + '}';
+            if (tries(wrapped))
+                return wrapped;
+        }
+        var tokens = input.match(/\\[a-zA-Z]+|\\.|./gs) || [];
+        // 3. one stray token mid-string (`x_{a}}y` -> `x_{a}y`)
+        for (var i = 0; i < tokens.length; i += 1) {
+            var candidate = tokens.slice(0, i).join('') + tokens.slice(i + 1).join('');
+            if (tries(candidate))
+                return candidate;
+        }
+        // 4. right-trim: `x_{a}^` -> `x_{a}`, `x_{a}\right)` -> `x_{a}`
+        for (var r = tokens.length - 1; r > 0; r -= 1) {
+            var trimmed = tokens.slice(0, r).join('');
+            if (trimmed.trim() === '')
+                return null;
+            if (tries(trimmed))
+                return trimmed;
+        }
+        return null;
+    }
+    // Last resort: show the raw text rather than a blank field. Braces and
+    // backslashes are stripped since they can't safely appear inside \text.
+    function latexTextFallback(latex) {
+        return '\\text{' + latex.replace(/[{}\\]/g, ' ') + '}';
+    }
     ControllerBase.onNotify(function (cursor, e) {
         // these try to cover all ways that mathquill can be modified
         if (e === 'edit' || e === 'replace' || e === undefined) {
@@ -5777,10 +5837,27 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         MathBlock.prototype.writeLatex = function (cursor, latex) {
             var all = Parser.all;
             var eof = Parser.eof;
+            var parses = function (candidate) {
+                return latexMathParser
+                    .skip(eof)
+                    .or(all.result(false))
+                    .parse(candidate) !== false;
+            };
             var block = latexMathParser
                 .skip(eof)
                 .or(all.result(false))
                 .parse(latex);
+            if (block === false) {
+                // a malformed pasted fragment used to vanish silently; salvage the
+                // nearest parseable string and insert that instead
+                var repaired = repairLatex(latex, parses, 60);
+                if (repaired === null)
+                    repaired = latexTextFallback(latex);
+                block = latexMathParser
+                    .skip(eof)
+                    .or(all.result(false))
+                    .parse(repaired);
+            }
             if (block && !block.isEmpty() && block.prepareInsertionAt(cursor)) {
                 block
                     .children()
@@ -8677,6 +8754,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 var thisDir = this[dir];
                 var pt = void 0;
                 if (thisDir instanceof SupSub) {
+                    // Bounds present before the weld; a bound the weld leaves empty
+                    // was never filled, so it's dropped below (e.g. `x^{ }` typed
+                    // then `2` is `x_{2}`, not `x_{2}^{ }`).
+                    var hadSub = !!thisDir.sub, hadSup = !!thisDir.sup;
                     // equiv. to 'sub sup'.split(' ').forEach(function(supsub) { ... });
                     for (var supsub = 'sub'; supsub; supsub = supsub === 'sub' ? 'sup' : false) {
                         var src = this[supsub], dest = thisDir[supsub];
@@ -8706,6 +8787,15 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                                 cursor.insAtDirEnd(-dir, dest || src);
                             };
                         })(dest, src);
+                        // A bound that was already there and the weld leaves empty was
+                        // never filled — drop it (e.g. `x^{ }` then `2` is `x_{2}`,
+                        // not `x_{2}^{ }`). The bound just welded may itself be empty;
+                        // it's the cursor's landing spot, so only the opposite side is
+                        // a prune candidate.
+                        var oppositeSupsub = supsub === 'sub' ? 'sup' : 'sub';
+                        if ((oppositeSupsub === 'sub' ? hadSub : hadSup) &&
+                            thisDir[oppositeSupsub].isEmpty())
+                            thisDir.removeEmptyBound(oppositeSupsub);
                     }
                     this.remove();
                     if (cursor && cursor[L] === this) {
@@ -8918,6 +9008,26 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 _loop_4(i);
             }
         };
+        // Drops a bound block that has no contents, e.g. the stale `^{ }` left
+        // behind when a digit autosub welds into `x^{ }` (`x_{2}^{ }` ->
+        // `x_{2}`). Mirrors the teardown `deleteOutOf` performs per bound.
+        SupSub.prototype.removeEmptyBound = function (supsub) {
+            var block = this[supsub];
+            if (!block || !block.isEmpty())
+                return;
+            var oppositeSupsub = supsub === 'sub' ? 'sup' : 'sub';
+            var updown = supsub === 'sub' ? 'down' : 'up';
+            this.supsub = oppositeSupsub;
+            delete this[supsub];
+            delete this["".concat(updown, "Into")];
+            var remaining = this[oppositeSupsub];
+            remaining["".concat(updown, "OutOf")] = insLeftOfMeUnlessAtEnd;
+            delete remaining.deleteOutOf;
+            if (supsub === 'sub') {
+                this.domFrag().addClass('mq-sup-only').children().last().remove();
+            }
+            block.remove();
+        };
         return SupSub;
     }(MathCommand));
     function insLeftOfMeUnlessAtEnd(cursor) {
@@ -9111,14 +9221,26 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     // grow an ordinary sibling SupSub for bounds. `\antid` is a MathCompile
     // insertion alias: the app maps it to `\int` at compile time; `\iint`
     // parses to Integrate in the compute engine on its own.
+    //
+    // BoundlessIntegral is its own class so left-scanning code (a typed `/`
+    // wrapping the preceding run into a numerator) can stop at the sign —
+    // for a SummationNotation like `\sum` the scan already breaks there, and
+    // a boundless ∫ should behave the same way.
+    var BoundlessIntegral = /** @class */ (function (_super) {
+        __extends(BoundlessIntegral, _super);
+        function BoundlessIntegral() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        return BoundlessIntegral;
+    }(MQSymbol));
     var boundlessIntegral = function (ctrlSeq, glyph, speak) {
         return function () {
-            return new MQSymbol(ctrlSeq, h('span', { class: 'mq-int' }, [
+            return new BoundlessIntegral(ctrlSeq, h('span', { class: 'mq-int' }, [
                 h('big', {}, [h.text(glyph)])
             ]), undefined, speak);
         };
     };
-    LatexCmds['∬'] = LatexCmds.iint = boundlessIntegral('\\iint ', U_INTEGRAL, 'indefinite integral');
+    LatexCmds['∬'] = LatexCmds.iint = boundlessIntegral('\\iint ', U_DOUBLE_INTEGRAL, 'double integral');
     LatexCmds.antid = boundlessIntegral('\\antid ', U_INTEGRAL, 'antiderivative');
     var Fraction = (LatexCmds.frac =
         LatexCmds.dfrac =
@@ -9271,12 +9393,14 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                                     leftward._groupingClass === 'mq-ellipsis-end') ||
                                 leftward instanceof (LatexCmds.text || noop) ||
                                 leftward instanceof SummationNotation ||
+                                leftward instanceof BoundlessIntegral ||
                                 leftward.ctrlSeq === '\\ ' ||
                                 /^[,;:]$/.test(leftward.ctrlSeq)) //lookbehind for operator
                         )
                             leftward = leftward[L];
                     }
-                    if (leftward instanceof SummationNotation &&
+                    if ((leftward instanceof SummationNotation ||
+                        leftward instanceof BoundlessIntegral) &&
                         leftward[R] instanceof SupSub) {
                         // The previous step scanned too far. `\sum_1^5` looks like [SummationNotation,SupSub],
                         // so scan back right
@@ -9671,11 +9795,38 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                         this.matchBrack(opts, R, cursor[R]) ||
                             this.matchBrack(opts, L, cursor[L]) ||
                             this.matchBrack(opts, 0, cursor.parent.parent);
+                    if (!brack) {
+                        // a pipe typed inside a non-bracket block also closes an
+                        // enclosing open bracket — but never across a bracket boundary:
+                        // inside another bracket the pipe auto-expands locally instead
+                        var ancestor = cursor.parent.parent;
+                        while (ancestor && !brack) {
+                            brack = this.matchBrack(opts, 0, ancestor);
+                            if (ancestor instanceof Bracket)
+                                break;
+                            ancestor = ancestor.parent ? ancestor.parent.parent : undefined;
+                        }
+                    }
                 }
                 else {
                     brack =
                         this.matchBrack(opts, -this.side, cursor[-this.side]) ||
                             this.matchBrack(opts, -this.side, cursor.parent.parent);
+                    if (!brack) {
+                        // No match beside or just above the caret — a close bracket
+                        // typed inside a block (e.g. `)` inside the bound of `(x_{1|}`)
+                        // should close a matching open bracket enclosing the caret at
+                        // any depth, not auto-expand around the block's contents. The
+                        // climb never crosses a bracket boundary: a typed bracket must
+                        // not leapfrog an inner bracket to match an outer one.
+                        var ancestor = cursor.parent.parent;
+                        while (ancestor && !brack) {
+                            brack = this.matchBrack(opts, -this.side, ancestor);
+                            if (ancestor instanceof Bracket)
+                                break;
+                            ancestor = ancestor.parent ? ancestor.parent.parent : undefined;
+                        }
+                    }
                 }
             }
             if (brack) {
@@ -11927,6 +12078,48 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             assert.equal(mq.latex(), 'x_{ }');
             mq.keystroke('Backspace');
             assert.equal(mq.latex(), 'x');
+        });
+        test('autosubscript into an empty exponent drops the stale `^{ }`', function () {
+            mq.latex('x^{ }');
+            mq.moveToRightEnd();
+            mq.typedText('2');
+            assert.equal(mq.latex(), 'x_{2}');
+        });
+        test('autosubscript into `x_{ }^{ }` drops the stale `^{ }`', function () {
+            mq.latex('x_{ }^{ }');
+            mq.moveToRightEnd();
+            mq.typedText('2');
+            assert.equal(mq.latex(), 'x_{2}');
+        });
+        test('autosubscript into `x_{3}^{ }` drops the stale `^{ }`', function () {
+            mq.latex('x_{3}^{ }');
+            mq.moveToRightEnd();
+            mq.typedText('2');
+            assert.equal(mq.latex(), 'x_{32}');
+        });
+        test('autosubscript keeps a nonempty exponent', function () {
+            mq.latex('x^{5}');
+            mq.moveToRightEnd();
+            mq.typedText('2');
+            assert.equal(mq.latex(), 'x_{2}^{5}');
+        });
+        test('typed `_` after an empty `^{ }` drops the stale exponent', function () {
+            mq.typedText('x^');
+            mq.keystroke('Right');
+            mq.typedText('_2');
+            assert.equal(mq.latex(), 'x_{2}');
+        });
+        test('typed `^` after an empty `_{ }` drops the stale subscript', function () {
+            mq.typedText('x_');
+            mq.keystroke('Right');
+            mq.typedText('^2');
+            assert.equal(mq.latex(), 'x^{2}');
+        });
+        test('typed `_` keeps a nonempty exponent', function () {
+            mq.typedText('x^5');
+            mq.keystroke('Right');
+            mq.typedText('_2');
+            assert.equal(mq.latex(), 'x_{2}^{5}');
         });
     });
     suite('backspace', function () {
@@ -14381,6 +14574,17 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     assertParsesLatex('{}', '');
                     assertParsesLatex('   {}{} {{{}}  }', '');
                 });
+                test('malformed LaTeX is repaired instead of dropped', function () {
+                    function assertRepairs(str, latex) {
+                        mq.write(str);
+                        assert.equal(mq.latex(), latex);
+                        mq.latex('');
+                    }
+                    assertRepairs('x_{a}^', 'x_{a}');
+                    assertRepairs('\\frac{1}{', '\\frac{1}{ }');
+                    assertRepairs('}}}}', '\\text{    }');
+                    assertRepairs('x\\\\y', '\\displaylines{x\\\\ y}');
+                });
                 test('overflow triggers automatic horizontal scroll', function (done) {
                     var mqEl = mq.el();
                     var rootEl = mq.__controller.root.domFrag().oneElement();
@@ -15395,6 +15599,24 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 mq.moveToLeftEnd();
                 simulatePaste(mq, 'sqrt');
                 assertLatex('sqrt1+');
+            });
+        });
+        suite('malformed latex repair', function () {
+            test('dangling bound marker pastes a repaired approximation', function () {
+                simulatePaste(mq, 'x_{a}^');
+                assertLatex('x_{a}');
+            });
+            test('unclosed group is closed on paste', function () {
+                simulatePaste(mq, '\\frac{1}{');
+                assertLatex('\\frac{1}{ }');
+            });
+            test('raw row break pastes inside \\displaylines', function () {
+                simulatePaste(mq, 'x\\\\y');
+                assertLatex('\\displaylines{x\\\\ y}');
+            });
+            test('irrecoverable paste shows the raw text', function () {
+                simulatePaste(mq, '}}}}');
+                assertLatex('\\text{    }');
             });
         });
     });
@@ -17797,6 +18019,34 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 test('nested parens 1+(2+(3+4)+5)+6', function () {
                     mq.typedText('1+(2+(3+4)+5)+6');
                     assertLatex('1+\\left(2+\\left(3+4\\right)+5\\right)+6');
+                });
+                test('close-paren typed inside a subscript closes the outer pair (x_1)', function () {
+                    mq.typedText('(x_1)');
+                    assertLatex('\\left(x_{1}\\right)');
+                });
+                test('close-paren typed inside a superscript closes the outer pair (x^1)', function () {
+                    mq.typedText('(x^1)');
+                    assertLatex('\\left(x^{1}\\right)');
+                });
+                test('close-brace typed inside a subscript closes the outer pair {x_1}', function () {
+                    mq.typedText('{x_1}');
+                    assertLatex('\\left\\{x_{1}\\right\\}');
+                });
+                test('close-paren inside a bound reaches past siblings to the open pair (x_1)(y_2)', function () {
+                    mq.typedText('(x_1)(y_2)');
+                    assertLatex('\\left(x_{1}\\right)\\left(y_{2}\\right)');
+                });
+                test('close-paren inside a bound still prefers an open bracket inside the bound', function () {
+                    mq.typedText('(x_(1)');
+                    assertLatex('\\left(x_{\\left(1\\right)}\\right)');
+                });
+                test('close-paren inside a bound with no open bracket wraps the bound (x_1)', function () {
+                    mq.typedText('x_1)');
+                    assertLatex('x_{\\left(1\\right)}');
+                });
+                test('close-paren inside a nested bound closes the outer pair (a_{i_j})', function () {
+                    mq.typedText('(a_{i_j})');
+                    assertLatex('\\left(a_{\\left\\{i_{j}\\right\\}}\\right)');
                 });
             });
             suite('mismatched brackets', function () {

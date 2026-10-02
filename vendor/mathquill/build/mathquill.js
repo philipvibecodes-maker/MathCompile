@@ -3361,6 +3361,65 @@ var __assign = (this && this.__assign) || function () {
         };
         return Controller_exportText;
     }(ControllerBase));
+    // Salvage ladder for latex the math parser rejects outright. Used by
+    // writeLatex so pasting a corrupted latex fragment inserts a repaired
+    // approximation instead of silently doing nothing. Kept in sync with
+    // src/editor/latex-repair.ts (the app-side copy used for hydration repair).
+    function repairLatex(input, parses, maxAttempts) {
+        if (input.trim() === '')
+            return null;
+        var attempts = 0;
+        var tries = function (candidate) {
+            if (attempts >= maxAttempts)
+                return false;
+            attempts += 1;
+            return parses(candidate);
+        };
+        // 1. an unclosed trailing group closes happily: `x_{` -> `x_{ }`
+        var unescaped = input.replace(/\\./g, '');
+        var opens = 0;
+        var closes = 0;
+        for (var ci = 0; ci < unescaped.length; ci += 1) {
+            if (unescaped.charAt(ci) === '{')
+                opens += 1;
+            else if (unescaped.charAt(ci) === '}')
+                closes += 1;
+        }
+        if (opens > closes) {
+            var balanced = input;
+            for (var bi = 0; bi < opens - closes; bi += 1)
+                balanced += '}';
+            if (tries(balanced))
+                return balanced;
+        }
+        // 2. a raw `\\` row break only parses inside an environment
+        if (/\\\\/.test(input) && input.indexOf('\\displaylines') === -1) {
+            var wrapped = '\\displaylines{' + input + '}';
+            if (tries(wrapped))
+                return wrapped;
+        }
+        var tokens = input.match(/\\[a-zA-Z]+|\\.|./gs) || [];
+        // 3. one stray token mid-string (`x_{a}}y` -> `x_{a}y`)
+        for (var i = 0; i < tokens.length; i += 1) {
+            var candidate = tokens.slice(0, i).join('') + tokens.slice(i + 1).join('');
+            if (tries(candidate))
+                return candidate;
+        }
+        // 4. right-trim: `x_{a}^` -> `x_{a}`, `x_{a}\right)` -> `x_{a}`
+        for (var r = tokens.length - 1; r > 0; r -= 1) {
+            var trimmed = tokens.slice(0, r).join('');
+            if (trimmed.trim() === '')
+                return null;
+            if (tries(trimmed))
+                return trimmed;
+        }
+        return null;
+    }
+    // Last resort: show the raw text rather than a blank field. Braces and
+    // backslashes are stripped since they can't safely appear inside \text.
+    function latexTextFallback(latex) {
+        return '\\text{' + latex.replace(/[{}\\]/g, ' ') + '}';
+    }
     ControllerBase.onNotify(function (cursor, e) {
         // these try to cover all ways that mathquill can be modified
         if (e === 'edit' || e === 'replace' || e === undefined) {
@@ -5769,10 +5828,27 @@ var __assign = (this && this.__assign) || function () {
         MathBlock.prototype.writeLatex = function (cursor, latex) {
             var all = Parser.all;
             var eof = Parser.eof;
+            var parses = function (candidate) {
+                return latexMathParser
+                    .skip(eof)
+                    .or(all.result(false))
+                    .parse(candidate) !== false;
+            };
             var block = latexMathParser
                 .skip(eof)
                 .or(all.result(false))
                 .parse(latex);
+            if (block === false) {
+                // a malformed pasted fragment used to vanish silently; salvage the
+                // nearest parseable string and insert that instead
+                var repaired = repairLatex(latex, parses, 60);
+                if (repaired === null)
+                    repaired = latexTextFallback(latex);
+                block = latexMathParser
+                    .skip(eof)
+                    .or(all.result(false))
+                    .parse(repaired);
+            }
             if (block && !block.isEmpty() && block.prepareInsertionAt(cursor)) {
                 block
                     .children()
@@ -9711,11 +9787,14 @@ var __assign = (this && this.__assign) || function () {
                             this.matchBrack(opts, L, cursor[L]) ||
                             this.matchBrack(opts, 0, cursor.parent.parent);
                     if (!brack) {
-                        // a pipe typed inside a block also closes an enclosing open
-                        // bracket at any depth
+                        // a pipe typed inside a non-bracket block also closes an
+                        // enclosing open bracket \u2014 but never across a bracket boundary:
+                        // inside another bracket the pipe auto-expands locally instead
                         var ancestor = cursor.parent.parent;
                         while (ancestor && !brack) {
                             brack = this.matchBrack(opts, 0, ancestor);
+                            if (ancestor instanceof Bracket)
+                                break;
                             ancestor = ancestor.parent ? ancestor.parent.parent : undefined;
                         }
                     }
@@ -9728,10 +9807,14 @@ var __assign = (this && this.__assign) || function () {
                         // No match beside or just above the caret \u2014 a close bracket
                         // typed inside a block (e.g. `)` inside the bound of `(x_{1|}`)
                         // should close a matching open bracket enclosing the caret at
-                        // any depth, not auto-expand around the block's contents.
+                        // any depth, not auto-expand around the block's contents. The
+                        // climb never crosses a bracket boundary: a typed bracket must
+                        // not leapfrog an inner bracket to match an outer one.
                         var ancestor = cursor.parent.parent;
                         while (ancestor && !brack) {
                             brack = this.matchBrack(opts, -this.side, ancestor);
+                            if (ancestor instanceof Bracket)
+                                break;
                             ancestor = ancestor.parent ? ancestor.parent.parent : undefined;
                         }
                     }

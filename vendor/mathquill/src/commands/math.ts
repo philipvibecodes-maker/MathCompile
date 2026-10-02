@@ -669,10 +669,27 @@ class MathBlock extends MathElement {
     var all = Parser.all;
     var eof = Parser.eof;
 
-    var block = latexMathParser
+    var parses = (candidate: string) =>
+      latexMathParser
+        .skip(eof)
+        .or(all.result<false>(false))
+        .parse(candidate) !== false;
+
+    var block: false | MathBlock = latexMathParser
       .skip(eof)
       .or(all.result<false>(false))
       .parse(latex);
+
+    if (block === false) {
+      // a malformed pasted fragment used to vanish silently; salvage the
+      // nearest parseable string and insert that instead
+      var repaired = repairLatex(latex, parses, 60);
+      if (repaired === null) repaired = latexTextFallback(latex);
+      block = latexMathParser
+        .skip(eof)
+        .or(all.result<false>(false))
+        .parse(repaired);
+    }
 
     if (block && !block.isEmpty() && block.prepareInsertionAt(cursor)) {
       block
