@@ -931,11 +931,19 @@ class Emitter {
           // where that derivative is evaluated (f'(0) is the derivative
           // at 0, not `diff(f(0), 0)` which has no differentiation var).
           const [, f, n] = callee;
-          // `f^{(n)}(x)` — symbolic order: `n` is a name, not a numeral.
-          const order =
-            n === undefined || n === 'Nothing' || n === 1
-              ? ''
-              : `, ${isNum(n) ? numText(n) : this.emit(n)}`;
+          // `f^{(n)}(x)` — a symbolic order has no sympy form this
+          // sympy version can hold: `diff(f, x, n)` differentiates by
+          // x then n (→ 0) and `diff(f, (x, n))` hard-aborts the wasm
+          // runtime — flag it rather than crash the worker.
+          const diffBy = (v: string): string => {
+            if (n === undefined || n === 'Nothing' || n === 1) return v;
+            if (isNum(n)) return `${v}, ${numText(n)}`;
+            this.scope.flag(
+              'error',
+              'symbolic derivative order is unsupported',
+            );
+            return v;
+          };
           const argNodes = args.slice(1);
           const fname = isStr(f) ? this.fn(f) : null;
           const applied = (argsList: string) =>
@@ -945,17 +953,17 @@ class Emitter {
           if (argNodes.length === 1 && isStr(argNodes[0])) {
             const a = this.sym(argNodes[0]);
             return [
-              `${this.sp}diff(${applied(a)}, ${a}${order})`,
+              `${this.sp}diff(${applied(a)}, ${diffBy(a)})`,
               PREC_ATOM,
             ];
           }
           if (argNodes.length === 1) {
-            const base = `${this.sp}diff(${applied(this.sym('x'))}, x${order})`;
+            const base = `${this.sp}diff(${applied(this.sym('x'))}, ${diffBy('x')})`;
             return [`${base}.subs(x, ${this.emit(argNodes[0])})`, PREC_ATOM];
           }
           const argList = argNodes.map((a) => this.emit(a)).join(', ');
           return [
-            `${this.sp}diff(${applied(argList)}, ${argList}${order})`,
+            `${this.sp}diff(${applied(argList)}, ${diffBy(argList)})`,
             PREC_ATOM,
           ];
         }
@@ -1009,13 +1017,35 @@ class Emitter {
             : '';
         return [`${this.sp}Derivative(${name}, x${n})`, PREC_ATOM];
       }
-      case 'Derivative':
+      case 'Derivative': {
+        // Bare `f^{(n)}` / `x^{(2)}` — a string callee arrives unapplied
+        // and `Derivative(f, n)` raises TypeError ('cannot represent
+        // derivative of UndefinedFunction'). Diff the applied function
+        // like \ddot does: `sp.diff(f(x), x, n)` → dⁿf/dxⁿ.
+        if (isStr(args[0])) {
+          const f = this.fn(args[0]);
+          // `x^{(2)}` can't differentiate `x(x)` by `x` — the var must
+          // differ from the callee name.
+          const v = this.sym(args[0] === 'x' ? 't' : 'x');
+          if (args[1] !== undefined && !isNum(args[1])) {
+            // Same wasm-crashing (v, n) tuple as the applied path.
+            this.scope.flag(
+              'error',
+              'symbolic derivative order is unsupported',
+            );
+            return [`${this.sp}diff(${f}(${v}), ${v})`, PREC_ATOM];
+          }
+          const order =
+            args[1] === undefined ? `, ${v}` : `, ${v}, ${numText(args[1])}`;
+          return [`${this.sp}diff(${f}(${v})${order})`, PREC_ATOM];
+        }
         return [
           `${this.sp}Derivative(${args
-            .map((a, i) => (i === 0 && isStr(a) ? this.fn(a) : this.emit(a)))
+            .map((a) => this.emit(a))
             .join(', ')})`,
           PREC_ATOM,
         ];
+      }
       case 'Function': {
         // Anonymous lambda — CE wraps calculus bodies this way. Emitted
         // directly only when it escapes an operator that unwraps it

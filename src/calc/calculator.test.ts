@@ -395,6 +395,36 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(prog.issues.some((i) => i.severity === 'error')).toBe(true);
     expect(prog.statements).toHaveLength(0);
   });
+
+  it('lowers bare `f^{(n)}` to an applied derivative, not Derivative(f, n)', () => {
+    // Bare `x^{(2)}` emitted `sp.Derivative(x, 2)` — TypeError ('cannot
+    // represent derivative of UndefinedFunction'); and `x^{(2)}` must
+    // not self-apply the function (diff(x(x), x, 2) hard-aborts wasm).
+    expect(calc('x^{(2)}').statements[0].code).toBe(
+      'sp.diff(x(t), t, 2)',
+    );
+    expect(calc('f^{(3)}').statements[0].code).toBe(
+      'sp.diff(f(x), x, 3)',
+    );
+    expect(calc('t^{(2)}').statements[0].code).toBe(
+      'sp.diff(t(x), x, 2)',
+    );
+  });
+
+  it('flags a symbolic derivative order instead of emitting 0 or crashing', () => {
+    // `f^{(n)}` in sympy is `diff(f, x, n)` (differentiates by n too —
+    // → 0) or `diff(f, (x, n))` — which hard-aborts this pyodide's
+    // sympy. An honest error row is the only safe answer.
+    for (const l of ['f^{(n)}', 'f^{(n)}(x)', 'f^{(n)}(2)']) {
+      const prog = calc(l);
+      expect(prog.statements).toHaveLength(0);
+      expect(
+        prog.issues.some(
+          (i) => i.severity === 'error' && /derivative order/.test(i.message),
+        ),
+      ).toBe(true);
+    }
+  });
 });
 
 describe('toNerdamerInput (latex → nerdamer calls)', () => {
