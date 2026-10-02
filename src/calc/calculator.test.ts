@@ -181,7 +181,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
   it('flags half-empty bounds on sums like integrals', () => {
     const prog = calc('\\sum_{i=0}^{ }i');
     expect(prog.statements).toEqual([
-      { code: '', display: undefined, error: expect.any(String) },
+      { code: '', display: undefined, error: expect.any(String), line: expect.any(Number) },
     ]);
   });
 
@@ -448,7 +448,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
   it('flags a stray differential under \\prod at compile time', () => {
     const prog = calc('\\prod x^{2}\\text{d}x');
     expect(prog.statements).toEqual([
-      { code: '', display: undefined, error: expect.any(String) },
+      { code: '', display: undefined, error: expect.any(String), line: expect.any(Number) },
     ]);
   });
 
