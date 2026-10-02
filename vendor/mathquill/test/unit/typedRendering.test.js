@@ -96,4 +96,36 @@ suite('typed rendering', function () {
       });
     });
   });
+
+  suite('parser-only commands typed in the field do not crash', function () {
+    var cases = [
+      // sized-delimiter prefixes (\big \bigl \middle …) are parser-only,
+      // like \left — a typed one inserts nothing and the following
+      // delimiter keystroke auto-pairs on its own
+      ['\\bigl(x\\bigr)', '\\left(x\\right)'],
+      ['\\Bigl[x\\Bigr]', '\\left[x\\right]'],
+      ['\\left(x\\middle|y\\right)', '\\left(\\left(x\\right|y\\right)'],
+      // raw-arg commands can't collect their argument typed — they
+      // insert nothing (same convention as \textcolor)
+      ['\\colorbox{red}{x}', '\\left\\{red\\right\\}\\left\\{x\\right\\}'],
+      [
+        '\\fcolorbox{blue}{yellow}{x}',
+        '\\left\\{blue\\right\\}\\left\\{yellow\\right\\}\\left\\{x\\right\\}'
+      ],
+      ['\\href{u}{x}', '\\left\\{u\\right\\}\\left\\{x\\right\\}']
+    ];
+    cases.forEach(function (pair) {
+      var input = pair[0],
+        latex = pair[1];
+      test(input, function () {
+        typed(input);
+        assert.equal(mq.latex(), latex);
+      });
+    });
+
+    test('\\begin{array}{cc}a&b typed mid-cell does not crash', function () {
+      typed('\\begin{array}{cc}a&b\\end{array}');
+      assert.ok(mq.latex().length > 0);
+    });
+  });
 });

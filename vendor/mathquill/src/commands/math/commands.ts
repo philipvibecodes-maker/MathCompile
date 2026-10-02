@@ -406,6 +406,13 @@ LatexCmds.color = LatexCmds.textcolor;
 LatexCmds.colorbox = class extends MathCommand {
   color = '';
   model = '';
+  // Parser-only command: typing '\colorbox' in the command input can't
+  // supply a color argument, so typed insertion is a no-op (same
+  // convention as \textcolor).
+  createLeftOf() {}
+  numBlocks() {
+    return 1 as const;
+  }
   parser() {
     var self = this;
     return Parser.optWhitespace
@@ -450,6 +457,13 @@ LatexCmds.fcolorbox = class extends MathCommand {
   frameColor = '';
   bgColor = '';
   model = '';
+  // Parser-only command: typing '\fcolorbox' in the command input can't
+  // supply color arguments, so typed insertion is a no-op (same
+  // convention as \textcolor).
+  createLeftOf() {}
+  numBlocks() {
+    return 1 as const;
+  }
   parser() {
     var self = this;
     var colorGroup = Parser.string('{')
@@ -506,6 +520,13 @@ LatexCmds.fcolorbox = class extends MathCommand {
 // \href{url}{math} — link wrapper; the url arg is raw text.
 LatexCmds.href = class extends MathCommand {
   url = '';
+  // Parser-only command: typing '\href' in the command input can't
+  // supply a url argument, so typed insertion is a no-op (same
+  // convention as \textcolor).
+  createLeftOf() {}
+  numBlocks() {
+    return 1 as const;
+  }
   parser() {
     var self = this;
     return Parser.optWhitespace
@@ -1896,6 +1917,10 @@ class SizedDelimiter extends MQSymbol {
     super();
     this.prefix = prefix;
   }
+  // Parser-only command: typing '\bigl' in the command input can't
+  // supply a delimiter token, so typed insertion is a no-op (same
+  // convention as \textcolor / \big).
+  createLeftOf() {}
   parser() {
     var self = this;
     return Parser.optWhitespace
