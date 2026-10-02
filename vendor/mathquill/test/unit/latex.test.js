@@ -191,6 +191,17 @@ suite('latex', function () {
     assertParsesLatex('\\space\\   \\   space  ', '\\ \\ \\ space');
   });
 
+  test('spacing commands \\, \\; \\: \\!', function () {
+    assertParsesLatex('\\,', '\\,');
+    assertParsesLatex('\\;', '\\;');
+    assertParsesLatex('\\:', '\\:');
+    assertParsesLatex('\\!', '\\!');
+    assertParsesLatex('\\int_{a}^{b}x\\,dx', '\\int_{a}^{b}x\\,dx');
+    assertParsesLatex('x\\,dx x\\;dy x\\:dz x\\!dw', 'x\\,dxx\\;dyx\\:dzx\\!dw');
+    // bare punctuation is unaffected
+    assertParsesLatex('a,b;c:d!e', 'a,b;c:d!e');
+  });
+
   test('\\text', function () {
     assertParsesLatex('\\text { lol! } ', '\\text{ lol! }');
     assertParsesLatex(

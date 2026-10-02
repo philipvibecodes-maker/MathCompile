@@ -4106,6 +4106,11 @@ var __assign = (this && this.__assign) || function () {
         var controlSequence = regex(/^[^\\a-eg-zA-Z]/) // hotfix #164; match MathBlock::write
             .or(string('\\').then(regex(/^[a-z]+/i)
             .or(regex(/^\s+/).result(' '))
+            // `\,` `\;` `\:` `\!` spacing commands \u2014 keep the backslash in
+            // ctrlSeq so they don't collide with the bare characters
+            .or(regex(/^[,;:!]/).map(function (c) {
+            return '\\' + c;
+        }))
             .or(any)))
             .then(function (ctrlSeq) {
             // TODO - is Parser<MQNode> correct?
@@ -6652,16 +6657,21 @@ var __assign = (this && this.__assign) || function () {
     //spacing
     LatexCmds.quad = LatexCmds.emsp = bindVanillaSymbol('\\quad ', '    ', '4 spaces');
     LatexCmds.qquad = bindVanillaSymbol('\\qquad ', '        ', '8 spaces');
-    /* spacing special characters, gonna have to implement this in LatexCommandInput::onText somehow
-    case ',':
-      return VanillaSymbol('\\, ',' ', 'comma');
-    case ':':
-      return VanillaSymbol('\\: ','  ', 'colon');
-    case ';':
-      return VanillaSymbol('\\; ','   ', 'semicolon');
-    case '!':
-      return MQSymbol('\\! ','<span style="margin-right:-.2em"></span>', 'exclamation point');
-    */
+    // `\,` `\:` `\;` `\!` \u2014 thin/medium/thick/negative spaces. The parser
+    // passes the backslash through in ctrlSeq ('\,') so these are distinct
+    // from the bare punctuation.
+    LatexCmds['\\,'] = function () {
+        return new VanillaSymbol('\\,', h('span', { style: 'margin-right:.1667em' }), 'thin space');
+    };
+    LatexCmds['\\:'] = function () {
+        return new VanillaSymbol('\\:', h('span', { style: 'margin-right:.2222em' }), 'medium space');
+    };
+    LatexCmds['\\;'] = function () {
+        return new VanillaSymbol('\\;', h('span', { style: 'margin-right:.2778em' }), 'thick space');
+    };
+    LatexCmds['\\!'] = function () {
+        return new VanillaSymbol('\\!', h('span', { style: 'margin-right:-.1667em' }), 'negative thin space');
+    };
     //binary operators
     LatexCmds['\u25c7'] = LatexCmds.diamond = bindVanillaSymbol('\\diamond ', '&#9671;', 'diamond');
     LatexCmds.bigtriangleup = bindVanillaSymbol('\\bigtriangleup ', '&#9651;', 'triangle up');

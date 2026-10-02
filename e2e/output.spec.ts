@@ -202,6 +202,7 @@ test('latex output shows \\antid and \\iint as \\int', async ({ page }) => {
   );
 });
 
+<<<<<<< HEAD
 // \left.…\right| evaluation bars use the invisible null delimiter — the
 // field must parse them (not wipe) and keep the bar's latex verbatim.
 test('latex output round-trips \\left. evaluation bars', async ({ page }) => {
@@ -240,6 +241,21 @@ test('latex output round-trips \\begin{cases}', async ({ page }) => {
   );
 });
 
+||||||| 062b1b9
+=======
+// `\,` `\;` `\:` `\!` spacing commands parse (previously `\,` degraded
+// to a literal comma and the rest wiped the field).
+test('latex output round-trips \\, \\; \\: \\! spacing', async ({ page }) => {
+  const mf = cell(page, 0);
+  await mf.evaluate(
+    (el) => ((el as { value: string }).value = '\\int_{a}^{b}x\\,dx'),
+  );
+  await expect(page.locator('.cell-latex').first()).toHaveText(
+    '\\int_{a}^{b}x\\,dx',
+  );
+});
+
+>>>>>>> origin/devin/bughunt-latex-spacing-cmds
 test('latex output shows multi-line cells as separate lines', async ({
   page,
 }) => {

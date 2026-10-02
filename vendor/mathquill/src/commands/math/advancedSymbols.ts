@@ -221,16 +221,34 @@ LatexCmds.quad = LatexCmds.emsp = bindVanillaSymbol(
   '4 spaces'
 );
 LatexCmds.qquad = bindVanillaSymbol('\\qquad ', '        ', '8 spaces');
-/* spacing special characters, gonna have to implement this in LatexCommandInput::onText somehow
-case ',':
-  return VanillaSymbol('\\, ',' ', 'comma');
-case ':':
-  return VanillaSymbol('\\: ','  ', 'colon');
-case ';':
-  return VanillaSymbol('\\; ','   ', 'semicolon');
-case '!':
-  return MQSymbol('\\! ','<span style="margin-right:-.2em"></span>', 'exclamation point');
-*/
+
+// `\,` `\:` `\;` `\!` — thin/medium/thick/negative spaces. The parser
+// passes the backslash through in ctrlSeq ('\,') so these are distinct
+// from the bare punctuation.
+LatexCmds['\\,'] = () =>
+  new VanillaSymbol(
+    '\\,',
+    h('span', { style: 'margin-right:.1667em' }),
+    'thin space'
+  );
+LatexCmds['\\:'] = () =>
+  new VanillaSymbol(
+    '\\:',
+    h('span', { style: 'margin-right:.2222em' }),
+    'medium space'
+  );
+LatexCmds['\\;'] = () =>
+  new VanillaSymbol(
+    '\\;',
+    h('span', { style: 'margin-right:.2778em' }),
+    'thick space'
+  );
+LatexCmds['\\!'] = () =>
+  new VanillaSymbol(
+    '\\!',
+    h('span', { style: 'margin-right:-.1667em' }),
+    'negative thin space'
+  );
 
 //binary operators
 LatexCmds['◇'] = LatexCmds.diamond = bindVanillaSymbol(
