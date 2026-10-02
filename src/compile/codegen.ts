@@ -131,6 +131,10 @@ const SP_FUNCS: Record<string, string> = {
   Arcsec: 'asec', Arccsc: 'acsc', Arccot: 'acot',
   Arcsinh: 'asinh', Arccosh: 'acosh', Arctanh: 'atanh',
   Conjugate: 'conjugate', Re: 're', Im: 'im', Arg: 'arg',
+  // `\Re`/`\Im`/`\arg`/`\operatorname{erf}` parse to these CE heads —
+  // `sp.Real`/`sp.Imaginary`/`sp.Argument`/`sp.Erf` don't exist and
+  // each produced a 'has no attribute' error row.
+  Real: 're', Imaginary: 'im', Argument: 'arg', Erf: 'erf',
 };
 
 // Statement-position heads that only lower to Python.
@@ -455,6 +459,15 @@ class Emitter {
     return SETISH_HEADS.has(headOf(n) ?? '');
   }
 
+  /** Emit `n` as a set op's operand: set-ish nodes emit directly, plain
+   * expressions wrap as `sp.FiniteSet(...)` so Union/Intersection/
+   * Complement compute instead of raising TypeError on bare Symbols. */
+  private setArg(n: MathJson): string {
+    return this.isSetish(n)
+      ? this.emit(n)
+      : `${this.sp}FiniteSet(${this.emit(n)})`;
+  }
+
   /** Emit a `call`-tier Function stub for a head we know but can't map —
    * same flag + output shape normalizeIR's unknown-head path produces. */
   private unknownCall(h: string, args: MathJson[]): [string, number] {
@@ -730,14 +743,13 @@ class Emitter {
       case 'Complement':
       case 'Difference':
       case 'SymmetricDifference': {
-        // A \ B, A \triangle B — sympy has no set variable, so bare
-        // names can't be differenced; degrade to the flagged stub.
-        if (!args.every((a) => this.isSetish(a)))
-          return this.unknownCall(h, args);
+        // A \ B, A \triangle B — non-set operands wrap as singletons so
+        // `x \ y` shows `{x} \ {y}` instead of a flagged stub (sympy has
+        // no set variables; `A \ B` can't be held abstractly anyway).
         const fn =
           h === 'SymmetricDifference' ? 'SymmetricDifference' : 'Complement';
         return [
-          `${this.sp}${fn}(${args.map((a) => this.emit(a)).join(', ')})`,
+          `${this.sp}${fn}(${args.map((a) => this.setArg(a)).join(', ')})`,
           PREC_ATOM,
         ];
       }
@@ -798,10 +810,9 @@ class Emitter {
       case 'Union':
       case 'Intersection':
       case 'SetMinus': {
-        // Same caveat as Element: Union/Intersection/Complement raise on
-        // non-Set operands, so plain symbols keep the flagged stub.
-        if (!args.every((a) => this.isSetish(a)))
-          return this.unknownCall(h, args);
+        // Union/Intersection/Complement raise on non-Set operands —
+        // `x \cup y` wraps each side as a singleton so it computes
+        // `{x, y}` instead of echoing a flagged `Union(x, y)` stub.
         const fn =
           h === 'Union'
             ? 'Union'
@@ -809,7 +820,7 @@ class Emitter {
               ? 'Intersection'
               : 'Complement';
         return [
-          `${this.sp}${fn}(${args.map((a) => this.emit(a)).join(', ')})`,
+          `${this.sp}${fn}(${args.map((a) => this.setArg(a)).join(', ')})`,
           PREC_ATOM,
         ];
       }
@@ -1686,6 +1697,47 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     return {
       lines: [`def ${pyIdent(name)}(${idents}):`, `    return ${body}`],
       display,
+    };
+  }
+  // `f: x ↦ body` — the colon names the lambda's result; bind it (like
+  // `f = x ↦ x²`) or a later `f(2)` stays unevaluated. Normalization
+  // rewrites the typed signature two ways: a single param wraps into the
+  // Function node as `call Typed(f, x)`, several params split out as a
+  // top-level `call Colon(f, Function(body, x, y))`.
+  if (h === 'Function' && node.length === 3) {
+    const typed = node[2];
+    if (
+      isArr(typed) &&
+      headOf(typed) === 'call' &&
+      typed[1] === 'Typed' &&
+      isStr(typed[2])
+    ) {
+      const name = typed[2];
+      const sig = isStr(typed[3]) ? typed[3] : 'x';
+      const before = emitter.scope.errorCount;
+      const rhs = emitter.emit(['Function', node[1], sig]);
+      emitter.scope.defined.add(name);
+      if (emitter.scope.errorCount > before) return { lines: [] };
+      return {
+        lines: [`${pyIdent(name)} = ${rhs}`],
+        display: `${sp}Eq(${sp}Symbol(${JSON.stringify(name)}), ${rhs})`,
+      };
+    }
+  }
+  if (
+    h === 'call' &&
+    node[1] === 'Colon' &&
+    isStr(node[2]) &&
+    isHead(node[3], 'Function')
+  ) {
+    const name = node[2];
+    const before = emitter.scope.errorCount;
+    const rhs = emitter.emit(node[3]);
+    emitter.scope.defined.add(name);
+    if (emitter.scope.errorCount > before) return { lines: [] };
+    return {
+      lines: [`${pyIdent(name)} = ${rhs}`],
+      display: `${sp}Eq(${sp}Symbol(${JSON.stringify(name)}), ${rhs})`,
     };
   }
   if (h === 'Block')

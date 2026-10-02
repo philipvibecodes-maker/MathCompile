@@ -254,10 +254,53 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
   });
 
+  it('binds the `f:` colon form so later references resolve', () => {
+    // `f: x ↦ x²` emitted `sp.Lambda(x, x**2)` bare — `f` stayed an
+    // unapplied Function and a following `f(2)` showed `f(2)`, not `4`.
+    const prog = calc('f: x \\mapsto x^{2}');
+    expect(prog.statements[0].code).toBe('f = sp.Lambda(x, x**2)');
+    expect(prog.statements[0].display).toBe(
+      'sp.Eq(sp.Symbol("f"), sp.Lambda(x, x**2))',
+    );
+    // Multi-param colon form `f: (x,y) ↦ x+y` lowers the same way.
+    expect(calc('f: (x,y) \\mapsto x + y').statements[0].code).toBe(
+      'f = sp.Lambda((x, y), x + y)',
+    );
+  });
+
   it('emits a ConditionSet for \\{x \\in S : cond\\}', () => {
     expect(
       calc('\\{x\\in\\mathbb{R}:x>0\\}').statements[0].code,
     ).toBe('sp.ConditionSet(x, sp.Gt(x, 0), sp.S.Reals)');
+  });
+
+  it('singleton-wraps non-set operands so set ops compute', () => {
+    // `x \cup y` emitted a flagged `Union(x, y)` Function stub — the
+    // union of two bare names is the two-element set.
+    expect(calc('x \\cup y').statements[0].code).toBe(
+      'sp.Union(sp.FiniteSet(x), sp.FiniteSet(y))',
+    );
+    expect(calc('x \\cap y').statements[0].code).toBe(
+      'sp.Intersection(sp.FiniteSet(x), sp.FiniteSet(y))',
+    );
+    expect(calc('x \\setminus y').statements[0].code).toBe(
+      'sp.Complement(sp.FiniteSet(x), sp.FiniteSet(y))',
+    );
+    // Set-ish operands keep the direct emission.
+    expect(calc('\\mathbb{R} \\cup \\mathbb{Z}').statements[0].code).toBe(
+      'sp.Union(sp.S.Reals, sp.S.Integers)',
+    );
+  });
+
+  it('lowers \\Re/\\Im/\\arg/\\operatorname{erf} to real sympy names', () => {
+    // These parse to Real/Imaginary/Argument/Erf — `sp.<Head>` doesn't
+    // exist, so each row raised 'module sympy has no attribute'.
+    expect(calc('\\Re(z)').statements[0].code).toBe('sp.re(z)');
+    expect(calc('\\Im(z)').statements[0].code).toBe('sp.im(z)');
+    expect(calc('\\arg(z)').statements[0].code).toBe('sp.arg(z)');
+    expect(calc('\\operatorname{erf}(x)').statements[0].code).toBe(
+      'sp.erf(x)',
+    );
   });
 
   it('lowers `x!!` to sp.factorial2 and `f \\circ g` to composition', () => {
