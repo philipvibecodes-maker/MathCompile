@@ -8136,8 +8136,7 @@ var __assign = (this && this.__assign) || function () {
     bindMathWrap('mskip');
     bindMathWrap('kern');
     bindMathWrap('mkern');
-    bindMathWrap('hspace');
-    bindMathWrap('vspace');
+    // hspace/vspace already registered star-aware via bindStarBlockCmd above
     // TeX boxes: optional 'to <dim>' before the braced content.
     LatexCmds.hbox = function () {
         return new RawArgCommand('\\hbox ', new RegExp('^(?:to\\s+[^\\s{]+)?' + RAW_GROUP), 'h box');
@@ -8177,6 +8176,12 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.dashbox = function () {
         return new RawArgCommand('\\dashbox', new RegExp('^' + RAW_GROUP + '(?:\\([0-9.,]*\\))?(?:\\[[a-z]*\\])?' + RAW_GROUP), 'dash box');
     };
+    // \definecolor{name}{model}{spec}
+    LatexCmds.definecolor = function () {
+        return new RawArgCommand('\\definecolor', new RegExp('^' + RAW_GROUP + RAW_GROUP + RAW_GROUP), 'define color');
+    };
+    bindMathWrap('cdashline');
+    LatexCmds.checkmark = bindVanillaSymbol('\\checkmark ', '&#10003;', 'check mark');
     /*********************************
      * Symbols for Basic Mathematics
      ********************************/
@@ -9783,7 +9788,9 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.textcolor = /** @class */ (function (_super) {
         __extends(class_18, _super);
         function class_18() {
-            return _super !== null && _super.apply(this, arguments) || this;
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.model = '';
+            return _this_1;
         }
         class_18.prototype.setColor = function (color) {
             this.color = color;
@@ -9799,7 +9806,12 @@ var __assign = (this && this.__assign) || function () {
         class_18.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
             var blocks0 = this.blocks[0];
-            ctx.uncleanedLatex += '\\textcolor{' + this.color + '}{';
+            ctx.uncleanedLatex +=
+                '\\textcolor' +
+                    (this.model ? '[' + this.model + ']' : '') +
+                    '{' +
+                    this.color +
+                    '}{';
             blocks0.latexRecursive(ctx);
             ctx.uncleanedLatex += '}';
             this.checkCursorContextClose(ctx);
@@ -9809,10 +9821,16 @@ var __assign = (this && this.__assign) || function () {
             var optWhitespace = Parser.optWhitespace;
             var string = Parser.string;
             var regex = Parser.regex;
+            var self = this;
             return optWhitespace
-                .then(string('{'))
-                .then(regex(/^[#\w\s.,()%-]*/))
-                .skip(string('}'))
+                .then(regex(/^\[[a-zA-Z]+\]/).or(Parser.succeed('')))
+                .then(function (model) {
+                if (model)
+                    self.model = model.slice(1, -1);
+                return string('{')
+                    .then(regex(/^[#\w\s.,()%-]*/))
+                    .skip(string('}'));
+            })
                 .then(function (color) {
                 _this_1.setColor(color);
                 return _super.prototype.parser.call(_this_1);
@@ -9837,15 +9855,21 @@ var __assign = (this && this.__assign) || function () {
         function class_19() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.color = '';
+            _this_1.model = '';
             return _this_1;
         }
         class_19.prototype.parser = function () {
             var _this_1 = this;
             var self = this;
             return Parser.optWhitespace
-                .then(Parser.string('{'))
-                .then(Parser.regex(/^[#\w\s.,()%-]*/))
-                .skip(Parser.string('}'))
+                .then(Parser.regex(/^\[[a-zA-Z]+\]/).or(Parser.succeed('')))
+                .then(function (model) {
+                if (model)
+                    self.model = model.slice(1, -1);
+                return Parser.string('{')
+                    .then(Parser.regex(/^[#\w\s.,()%-]*/))
+                    .skip(Parser.string('}'));
+            })
                 .then(function (color) {
                 self.color = color;
                 self.domView = new DOMView(1, function (blocks) {
@@ -9856,7 +9880,12 @@ var __assign = (this && this.__assign) || function () {
         };
         class_19.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
-            ctx.uncleanedLatex += '\\colorbox{' + this.color + '}{';
+            ctx.uncleanedLatex +=
+                '\\colorbox' +
+                    (this.model ? '[' + this.model + ']' : '') +
+                    '{' +
+                    this.color +
+                    '}{';
             this.blocks[0].latexRecursive(ctx);
             ctx.uncleanedLatex += '}';
             this.checkCursorContextClose(ctx);
@@ -9873,6 +9902,7 @@ var __assign = (this && this.__assign) || function () {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.frameColor = '';
             _this_1.bgColor = '';
+            _this_1.model = '';
             return _this_1;
         }
         class_20.prototype.parser = function () {
@@ -9882,7 +9912,12 @@ var __assign = (this && this.__assign) || function () {
                 .then(Parser.regex(/^[#\w\s.,()%-]*/))
                 .skip(Parser.string('}'));
             return Parser.optWhitespace
-                .then(colorGroup)
+                .then(Parser.regex(/^\[[a-zA-Z]+\]/).or(Parser.succeed('')))
+                .then(function (model) {
+                if (model)
+                    self.model = model.slice(1, -1);
+                return colorGroup;
+            })
                 .then(function (frame) {
                 self.frameColor = frame;
                 return colorGroup;
@@ -9904,7 +9939,13 @@ var __assign = (this && this.__assign) || function () {
         class_20.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
             ctx.uncleanedLatex +=
-                '\\fcolorbox{' + this.frameColor + '}{' + this.bgColor + '}{';
+                '\\fcolorbox' +
+                    (this.model ? '[' + this.model + ']' : '') +
+                    '{' +
+                    this.frameColor +
+                    '}{' +
+                    this.bgColor +
+                    '}{';
             this.blocks[0].latexRecursive(ctx);
             ctx.uncleanedLatex += '}';
             this.checkCursorContextClose(ctx);

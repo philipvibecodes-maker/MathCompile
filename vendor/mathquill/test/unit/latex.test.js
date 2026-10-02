@@ -1608,5 +1608,32 @@ suite('latex', function () {
     assertParsesLatex('\\rowcolor[rgb]{1,0,0}', '\\rowcolor[rgb]{1,0,0}');
     assertParsesLatex('\\dashbox{1}(2,3){x}', '\\dashbox{1}(2,3){x}');
     assertParsesLatex('\\sout{x}', '\\sout{x}');
+    // color commands keep an optional [model]
+    assertParsesLatex(
+      '\\textcolor[rgb]{1,0,0}{x}',
+      '\\textcolor[rgb]{1,0,0}{x}'
+    );
+    assertParsesLatex(
+      '\\color[rgb]{1,0,0}x',
+      '\\textcolor[rgb]{1,0,0}{x}'
+    );
+    assertParsesLatex(
+      '\\colorbox[rgb]{1,0,0}{x}',
+      '\\colorbox[rgb]{1,0,0}{x}'
+    );
+    assertParsesLatex(
+      '\\fcolorbox[rgb]{1,0,0}{0,0,1}{x}',
+      '\\fcolorbox[rgb]{1,0,0}{0,0,1}{x}'
+    );
+    // starred spacing, multicolumn in a grid, misc
+    assertParsesLatex('\\hspace*{3pt}', '\\hspace*{3pt}');
+    assertParsesLatex('\\vspace*{3pt}', '\\vspace*{3pt}');
+    assertParsesLatex(
+      '\\begin{array}{cc}\\multicolumn{2}{c}{x}\\end{array}',
+      '\\begin{array}{cc}\\multicolumn{2}{c}{x}\\end{array}'
+    );
+    assertParsesLatex('\\cdashline{1-2}', '\\cdashline{1-2}');
+    assertParsesLatex('\\checkmark', '\\checkmark');
+    assertParsesLatex('\\definecolor{c}{rgb}{1,0,0}', '\\definecolor{c}{rgb}{1,0,0}');
   });
 });

@@ -2518,8 +2518,7 @@ bindMathWrap('vskip');
 bindMathWrap('mskip');
 bindMathWrap('kern');
 bindMathWrap('mkern');
-bindMathWrap('hspace');
-bindMathWrap('vspace');
+// hspace/vspace already registered star-aware via bindStarBlockCmd above
 
 // TeX boxes: optional 'to <dim>' before the braced content.
 LatexCmds.hbox = () =>
@@ -2579,3 +2578,14 @@ LatexCmds.dashbox = () =>
     ),
     'dash box'
   );
+
+
+// \definecolor{name}{model}{spec}
+LatexCmds.definecolor = () =>
+  new RawArgCommand(
+    '\\definecolor',
+    new RegExp('^' + RAW_GROUP + RAW_GROUP + RAW_GROUP),
+    'define color'
+  );
+bindMathWrap('cdashline');
+LatexCmds.checkmark = bindVanillaSymbol('\\checkmark ', '&#10003;', 'check mark');

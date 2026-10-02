@@ -264,6 +264,7 @@ LatexCmds.dot = () => {
 // [W3C spec]: http://dev.w3.org/csswg/css3-color/#colorunits
 LatexCmds.textcolor = class extends MathCommand {
   color: string | undefined;
+  model = '';
 
   setColor(color: string) {
     this.color = color;
@@ -283,7 +284,12 @@ LatexCmds.textcolor = class extends MathCommand {
   latexRecursive(ctx: LatexContext) {
     this.checkCursorContextOpen(ctx);
     var blocks0 = this.blocks![0];
-    ctx.uncleanedLatex += '\\textcolor{' + this.color + '}{';
+    ctx.uncleanedLatex +=
+      '\\textcolor' +
+      (this.model ? '[' + this.model + ']' : '') +
+      '{' +
+      this.color +
+      '}{';
     blocks0.latexRecursive(ctx);
     ctx.uncleanedLatex += '}';
     this.checkCursorContextClose(ctx);
@@ -292,11 +298,16 @@ LatexCmds.textcolor = class extends MathCommand {
     var optWhitespace = Parser.optWhitespace;
     var string = Parser.string;
     var regex = Parser.regex;
+    var self = this;
 
     return optWhitespace
-      .then(string('{'))
-      .then(regex(/^[#\w\s.,()%-]*/))
-      .skip(string('}'))
+      .then(regex(/^\[[a-zA-Z]+\]/).or(Parser.succeed('')))
+      .then(function (model: string) {
+        if (model) self.model = model.slice(1, -1);
+        return string('{')
+          .then(regex(/^[#\w\s.,()%-]*/))
+          .skip(string('}'));
+      })
       .then((color) => {
         this.setColor(color);
         return super.parser();
@@ -324,12 +335,17 @@ LatexCmds.boxed = () =>
 // raw text like \textcolor's, emitted back verbatim.
 LatexCmds.colorbox = class extends MathCommand {
   color = '';
+  model = '';
   parser() {
     var self = this;
     return Parser.optWhitespace
-      .then(Parser.string('{'))
-      .then(Parser.regex(/^[#\w\s.,()%-]*/))
-      .skip(Parser.string('}'))
+      .then(Parser.regex(/^\[[a-zA-Z]+\]/).or(Parser.succeed('')))
+      .then(function (model: string) {
+        if (model) self.model = model.slice(1, -1);
+        return Parser.string('{')
+          .then(Parser.regex(/^[#\w\s.,()%-]*/))
+          .skip(Parser.string('}'));
+      })
       .then((color: string) => {
         self.color = color;
         self.domView = new DOMView(1, (blocks) =>
@@ -344,7 +360,12 @@ LatexCmds.colorbox = class extends MathCommand {
   }
   latexRecursive(ctx: LatexContext) {
     this.checkCursorContextOpen(ctx);
-    ctx.uncleanedLatex += '\\colorbox{' + this.color + '}{';
+    ctx.uncleanedLatex +=
+      '\\colorbox' +
+      (this.model ? '[' + this.model + ']' : '') +
+      '{' +
+      this.color +
+      '}{';
     this.blocks![0].latexRecursive(ctx);
     ctx.uncleanedLatex += '}';
     this.checkCursorContextClose(ctx);
@@ -358,13 +379,18 @@ LatexCmds.colorbox = class extends MathCommand {
 LatexCmds.fcolorbox = class extends MathCommand {
   frameColor = '';
   bgColor = '';
+  model = '';
   parser() {
     var self = this;
     var colorGroup = Parser.string('{')
       .then(Parser.regex(/^[#\w\s.,()%-]*/))
       .skip(Parser.string('}'));
     return Parser.optWhitespace
-      .then(colorGroup)
+      .then(Parser.regex(/^\[[a-zA-Z]+\]/).or(Parser.succeed('')))
+      .then(function (model: string) {
+        if (model) self.model = model.slice(1, -1);
+        return colorGroup;
+      })
       .then((frame: string) => {
         self.frameColor = frame;
         return colorGroup;
@@ -391,7 +417,13 @@ LatexCmds.fcolorbox = class extends MathCommand {
   latexRecursive(ctx: LatexContext) {
     this.checkCursorContextOpen(ctx);
     ctx.uncleanedLatex +=
-      '\\fcolorbox{' + this.frameColor + '}{' + this.bgColor + '}{';
+      '\\fcolorbox' +
+      (this.model ? '[' + this.model + ']' : '') +
+      '{' +
+      this.frameColor +
+      '}{' +
+      this.bgColor +
+      '}{';
     this.blocks![0].latexRecursive(ctx);
     ctx.uncleanedLatex += '}';
     this.checkCursorContextClose(ctx);
