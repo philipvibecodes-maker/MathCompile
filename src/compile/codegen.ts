@@ -493,16 +493,6 @@ class Emitter {
       : `${this.sp}FiniteSet(${this.emit(n)})`;
   }
 
-  /** Emit a `call`-tier Function stub for a head we know but can't map —
-   * same flag + output shape normalizeIR's unknown-head path produces. */
-  private unknownCall(h: string, args: MathJson[]): [string, number] {
-    this.scope.flag('note', `unknown head "${h}" — emitted as ${h}(...)`);
-    return [
-      `${this.fn(h)}(${args.map((a) => this.emit(a)).join(', ')})`,
-      PREC_ATOM,
-    ];
-  }
-
   /** Emit `node`, wrapping in parens when its precedence is below minPrec. */
   emit(node: MathJson | undefined, minPrec = PREC_LOW): string {
     if (node === undefined || node === null) {
@@ -844,19 +834,15 @@ class Emitter {
       }
       case 'Subset':
       case 'SubsetEqual': {
-        if (!args.every((a) => this.isSetish(a)))
-          return this.unknownCall(h, args);
         return [
-          `(${this.emit(args[0], PREC_ATOM)}).is_subset(${this.emit(args[1])})`,
+          `(${this.setArg(args[0])}).is_subset(${this.setArg(args[1])})`,
           PREC_ATOM,
         ];
       }
       case 'Superset':
       case 'SupersetEqual': {
-        if (!args.every((a) => this.isSetish(a)))
-          return this.unknownCall(h, args);
         return [
-          `(${this.emit(args[1], PREC_ATOM)}).is_subset(${this.emit(args[0])})`,
+          `(${this.setArg(args[1])}).is_subset(${this.setArg(args[0])})`,
           PREC_ATOM,
         ];
       }
@@ -864,11 +850,9 @@ class Emitter {
       case 'NotSubsetNotEqual':
       case 'NotSuperset':
       case 'NotSupersetNotEqual': {
-        if (!args.every((a) => this.isSetish(a)))
-          return this.unknownCall(h, args);
         const [l, r] = h.startsWith('NotSub') ? [0, 1] : [1, 0];
         return [
-          `${this.sp}Not((${this.emit(args[l], PREC_ATOM)}).is_subset(${this.emit(args[r])}))`,
+          `${this.sp}Not((${this.setArg(args[l])}).is_subset(${this.setArg(args[r])}))`,
           PREC_ATOM,
         ];
       }

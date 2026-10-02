@@ -436,6 +436,18 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
   });
 
+  it('singleton-wraps bare names in subset/superset ops too', () => {
+    expect(calc('A \\subseteq B').statements[0].code).toBe(
+      '(sp.FiniteSet(A)).is_subset(sp.FiniteSet(B))',
+    );
+    expect(calc('\\mathbb{Z} \\subseteq \\mathbb{R}').statements[0].code).toBe(
+      '(sp.S.Integers).is_subset(sp.S.Reals)',
+    );
+    expect(calc('A \\not\\subseteq B').statements[0].code).toBe(
+      'sp.Not((sp.FiniteSet(A)).is_subset(sp.FiniteSet(B)))',
+    );
+  });
+
   it('names greek-variant symbols after their glyph, not the CE id', () => {
     // `\varepsilon` emitted `Symbol("epsilonSymbol")` — the row showed
     // the word "epsilonSymbol".
