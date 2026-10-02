@@ -202,8 +202,6 @@ test('latex output shows \\antid and \\iint as \\int', async ({ page }) => {
   );
 });
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 // \left.…\right| evaluation bars use the invisible null delimiter — the
 // field must parse them (not wipe) and keep the bar's latex verbatim.
 test('latex output round-trips \\left. evaluation bars', async ({ page }) => {
@@ -254,8 +252,6 @@ test('latex output round-trips \\, \\; \\: \\! spacing', async ({ page }) => {
   );
 });
 
-||||||| 062b1b9
-=======
 // Escaped delimiters and standalone angle/norm delimiters parse
 // (previously each wiped the whole field to a blank cell).
 test('latex output round-trips escaped delimiters and set literals', async ({
@@ -272,9 +268,6 @@ test('latex output round-trips escaped delimiters and set literals', async ({
   );
 });
 
->>>>>>> origin/devin/bughunt-latex-escaped-delims
-||||||| 062b1b9
-=======
 // Common latex constructs that previously blanked the field now
 // round-trip: fonts/accents, negated relations, mod, boxed, overset.
 test('latex output round-trips fonts, negations, mod, boxed, overset', async ({
@@ -306,7 +299,6 @@ test('latex output round-trips fonts, negations, mod, boxed, overset', async ({
   }
 });
 
->>>>>>> origin/devin/bughunt-latex-round2
 test('latex output shows multi-line cells as separate lines', async ({
   page,
 }) => {

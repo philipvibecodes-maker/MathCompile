@@ -4110,31 +4110,16 @@ var __assign = (this && this.__assign) || function () {
             .or(string('\\')
             .then(regex(/^[a-z]+/i)
             .or(regex(/^\s+/).result(' '))
-<<<<<<< HEAD
             // \<char> escapes keep a distinguishing '\x' ctrlSeq so their
             // commands (e.g. \{, \|, \;) never shadow the bare char \u2014 the
             // same LatexCmds map resolves single chars via the branch above.
             .or(any.map(function (c) {
             return '\\' + c;
-        }))))
-            .then(function (ctrlSeq) {
-||||||| 062b1b9
-            .or(any)))
-            .then(function (ctrlSeq) {
-=======
-            // escaped single-char accents keep their backslash so \'{e}
-            // is distinct from the bare ' prime symbol, \~{n} from ~nbsp;
-            // \[ \( \] \) display wrappers likewise stay distinct from
-            // bare brackets
-            .or(regex(/^['"~.^=`()[\]]/).map(function (c) {
-            return '\\' + c;
-        }))
-            .or(any))
+        })))
             .map(function (cs) {
             return { cs: cs, isCommand: true };
         }))
             .then(function (info) {
->>>>>>> origin/devin/bughunt-latex-round2
             // TODO - is Parser<MQNode> correct?
             var ctrlSeq = info.cs;
             var cmdKlass = LatexCmds[ctrlSeq];
@@ -6784,7 +6769,6 @@ var __assign = (this && this.__assign) || function () {
     //spacing
     LatexCmds.quad = LatexCmds.emsp = bindVanillaSymbol('\\quad ', '    ', '4 spaces');
     LatexCmds.qquad = bindVanillaSymbol('\\qquad ', '        ', '8 spaces');
-<<<<<<< HEAD
     // `\,` `\:` `\;` `\!` \u2014 thin/medium/thick/negative spaces. The parser
     // passes the backslash through in ctrlSeq ('\,') so these are distinct
     // from the bare punctuation.
@@ -6800,18 +6784,6 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds['\\!'] = function () {
         return new VanillaSymbol('\\!', h('span', { style: 'margin-right:-.1667em' }), 'negative thin space');
     };
-||||||| 062b1b9
-    /* spacing special characters, gonna have to implement this in LatexCommandInput::onText somehow
-    case ',':
-      return VanillaSymbol('\\, ',' ', 'comma');
-    case ':':
-      return VanillaSymbol('\\: ','  ', 'colon');
-    case ';':
-      return VanillaSymbol('\\; ','   ', 'semicolon');
-    case '!':
-      return MQSymbol('\\! ','<span style="margin-right:-.2em"></span>', 'exclamation point');
-    */
-=======
     // style switches (\displaystyle \u2026 \nolimits) \u2014 invisible atoms that
     // serialize their command verbatim. \limits/\nolimits sit between an
     // operator and its bounds; the bound then attaches to this zero-width
@@ -6837,7 +6809,6 @@ var __assign = (this && this.__assign) || function () {
     case '!':
       return MQSymbol('\\! ','<span style="margin-right:-.2em"></span>', 'exclamation point');
     */
->>>>>>> origin/devin/bughunt-latex-round2
     //binary operators
     LatexCmds['\u25c7'] = LatexCmds.diamond = bindVanillaSymbol('\\diamond ', '&#9671;', 'diamond');
     LatexCmds.bigtriangleup = bindVanillaSymbol('\\bigtriangleup ', '&#9651;', 'triangle up');
@@ -10064,20 +10035,14 @@ var __assign = (this && this.__assign) || function () {
             _this_1.model = '';
             return _this_1;
         }
-<<<<<<< HEAD
         // Parser-only command: typing '\textcolor' in the command input
         // can't supply a color argument, so typed insertion is a no-op
         // (same convention as \operatorname / \mathbb).
-        class_9.prototype.createLeftOf = function () { };
-        class_9.prototype.numBlocks = function () {
+        class_18.prototype.createLeftOf = function () { };
+        class_18.prototype.numBlocks = function () {
             return 1;
         };
-        class_9.prototype.setColor = function (color) {
-||||||| 062b1b9
-        class_9.prototype.setColor = function (color) {
-=======
         class_18.prototype.setColor = function (color) {
->>>>>>> origin/devin/bughunt-latex-round2
             this.color = color;
             this.domView = new DOMView(1, function (blocks) {
                 return h.block('span', { class: 'mq-textcolor', style: 'color:' + color }, blocks[0]);
@@ -10342,18 +10307,12 @@ var __assign = (this && this.__assign) || function () {
         function class_24() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-<<<<<<< HEAD
         // Parser-only command, see \textcolor.
-        class_10.prototype.createLeftOf = function () { };
-        class_10.prototype.numBlocks = function () {
+        class_24.prototype.createLeftOf = function () { };
+        class_24.prototype.numBlocks = function () {
             return 1;
         };
-        class_10.prototype.parser = function () {
-||||||| 062b1b9
-        class_10.prototype.parser = function () {
-=======
         class_24.prototype.parser = function () {
->>>>>>> origin/devin/bughunt-latex-round2
             var _this_1 = this;
             var string = Parser.string, regex = Parser.regex;
             return Parser.optWhitespace
@@ -11949,20 +11908,9 @@ var __assign = (this && this.__assign) || function () {
         };
         Bracket.prototype.getSymbol = function (side) {
             var ch = this.sides[side || R].ch;
-<<<<<<< HEAD
             // a delimiter with no glyph (the invisible `\left.`/`\right.` null
             // delimiter) renders as a zero-width span
             return SVG_SYMBOLS[ch] || { width: '0', html: function () { return h.text(''); } };
-||||||| 062b1b9
-            return SVG_SYMBOLS[ch] || { width: '0', html: '' };
-=======
-            return (SVG_SYMBOLS[ch] || {
-                width: '0',
-                html: function () {
-                    return h.text('');
-                }
-            });
->>>>>>> origin/devin/bughunt-latex-round2
         };
         Bracket.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
@@ -12237,29 +12185,23 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.lVert = bindVanillaSymbol('\\lVert ', '&#8741;', 'left norm');
     LatexCmds.rVert = bindVanillaSymbol('\\rVert ', '&#8741;', 'right norm');
     LatexCmds.left = /** @class */ (function (_super) {
-        __extends(class_14, _super);
-        function class_14() {
+        __extends(class_30, _super);
+        function class_30() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
         // Parser-only command: the delimiter lives in the argument after
         // \left, so a typed '\left' inserts nothing and the following
         // delimiter keystroke auto-pairs the bracket itself.
-        class_14.prototype.createLeftOf = function () { };
-        class_14.prototype.numBlocks = function () {
+        class_30.prototype.createLeftOf = function () { };
+        class_30.prototype.numBlocks = function () {
             return 1;
         };
-        class_14.prototype.parser = function () {
+        class_30.prototype.parser = function () {
             var regex = Parser.regex;
             var string = Parser.string;
             var optWhitespace = Parser.optWhitespace;
             return optWhitespace
-<<<<<<< HEAD
                 .then(regex(/^(?:[([|.]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z])|\\\|)/))
-||||||| 062b1b9
-                .then(regex(/^(?:[([|]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z]))/))
-=======
-                .then(regex(/^(?:[([|.]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z]))/))
->>>>>>> origin/devin/bughunt-latex-round2
                 .then(function (ctrlSeq) {
                 var open = ctrlSeq.replace(/^\\/, '');
                 if (ctrlSeq == '\\langle') {
@@ -12276,13 +12218,7 @@ var __assign = (this && this.__assign) || function () {
                 return latexMathParser.then(function (block) {
                     return string('\\right')
                         .skip(optWhitespace)
-<<<<<<< HEAD
                         .then(regex(/^(?:[\])|.]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z])|\\\|)/))
-||||||| 062b1b9
-                        .then(regex(/^(?:[\])|]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z]))/))
-=======
-                        .then(regex(/^(?:[\])|.]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z]))/))
->>>>>>> origin/devin/bughunt-latex-round2
                         .map(function (end) {
                         var close = end.replace(/^\\/, '');
                         if (end == '\\rangle') {
@@ -12304,22 +12240,22 @@ var __assign = (this && this.__assign) || function () {
                 });
             });
         };
-        return class_14;
+        return class_30;
     }(MathCommand));
     LatexCmds.right = /** @class */ (function (_super) {
-        __extends(class_15, _super);
-        function class_15() {
+        __extends(class_31, _super);
+        function class_31() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
         // Parser-only command, see \left.
-        class_15.prototype.createLeftOf = function () { };
-        class_15.prototype.numBlocks = function () {
+        class_31.prototype.createLeftOf = function () { };
+        class_31.prototype.numBlocks = function () {
             return 1;
         };
-        class_15.prototype.parser = function () {
+        class_31.prototype.parser = function () {
             return Parser.fail('unmatched \\right');
         };
-        return class_15;
+        return class_31;
     }(MathCommand));
     // \big| \Big| \bigg| \Bigg| \u2014 fixed-size delimiters. Parser-only (like
     // \left): they render the delimiter glyph at a fixed scale and keep the
@@ -12439,41 +12375,21 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.tfrac = LatexCmds.frac;
     LatexCmds.dbinom = LatexCmds.tbinom = LatexCmds.binom;
     LatexCmds.choose = /** @class */ (function (_super) {
-<<<<<<< HEAD
-        __extends(class_16, _super);
-        function class_16() {
-||||||| 062b1b9
-        __extends(class_14, _super);
-        function class_14() {
-=======
-        __extends(class_30, _super);
-        function class_30() {
->>>>>>> origin/devin/bughunt-latex-round2
+        __extends(class_32, _super);
+        function class_32() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-<<<<<<< HEAD
-        class_16.prototype.createLeftOf = function (cursor) {
-||||||| 062b1b9
-        class_14.prototype.createLeftOf = function (cursor) {
-=======
-        class_30.prototype.createLeftOf = function (cursor) {
->>>>>>> origin/devin/bughunt-latex-round2
+        class_32.prototype.createLeftOf = function (cursor) {
             LiveFraction.prototype.createLeftOf.call(this, cursor);
         };
-<<<<<<< HEAD
-        return class_16;
-||||||| 062b1b9
-        return class_14;
-=======
-        class_30.prototype.parser = function () {
+        class_32.prototype.parser = function () {
             // DelimsNode's two-block parser (Binomial.parser() itself falls back
             // to a \binom leaf, which would shadow \choose's own fallback).
             return DelimsNode.prototype.parser
                 .call(this)
                 .or(Parser.succeed(new VanillaSymbol('\\choose ', h.text('\\choose'), 'choose')));
         };
-        return class_30;
->>>>>>> origin/devin/bughunt-latex-round2
+        return class_32;
     }(Binomial));
     var MathFieldNode = /** @class */ (function (_super) {
         __extends(MathFieldNode, _super);
@@ -12759,16 +12675,8 @@ var __assign = (this && this.__assign) || function () {
      *************************************************/
     var Environments = {};
     LatexCmds.begin = /** @class */ (function (_super) {
-<<<<<<< HEAD
-        __extends(class_17, _super);
-        function class_17() {
-||||||| 062b1b9
-        __extends(class_15, _super);
-        function class_15() {
-=======
-        __extends(class_31, _super);
-        function class_31() {
->>>>>>> origin/devin/bughunt-latex-round2
+        __extends(class_33, _super);
+        function class_33() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.ctrlSeq = '\\begin';
             _this_1.domView = new DOMView(1, function (blocks) {
@@ -12780,13 +12688,7 @@ var __assign = (this && this.__assign) || function () {
             });
             return _this_1;
         }
-<<<<<<< HEAD
-        class_17.prototype.parser = function () {
-||||||| 062b1b9
-        class_15.prototype.parser = function () {
-=======
-        class_31.prototype.parser = function () {
->>>>>>> origin/devin/bughunt-latex-round2
+        class_33.prototype.parser = function () {
             var string = Parser.string;
             var regex = Parser.regex;
             return string('{')
@@ -12806,13 +12708,7 @@ var __assign = (this && this.__assign) || function () {
                     .skip(string('\\end{' + env + '}'));
             });
         };
-<<<<<<< HEAD
-        return class_17;
-||||||| 062b1b9
-        return class_15;
-=======
-        return class_31;
->>>>>>> origin/devin/bughunt-latex-round2
+        return class_33;
     }(MathCommand));
     // A MathCommand whose children ("cells") are laid out in a grid:
     // the matrix family (N columns, optional bracket delimiters) and
@@ -13777,15 +13673,15 @@ var __assign = (this && this.__assign) || function () {
     // and the \begin parser's .skip('\\end{...}') consumes it as the close.
     LatexCmds.end = function () {
         return new (/** @class */ (function (_super) {
-            __extends(class_32, _super);
-            function class_32() {
+            __extends(class_34, _super);
+            function class_34() {
                 var _this_1 = _super.call(this, '\\end', new DOMView(0, function () {
                     return h('span', { class: 'mq-non-leaf' }, [h.text('\\end')]);
                 })) || this;
                 _this_1.env = '';
                 return _this_1;
             }
-            class_32.prototype.parser = function () {
+            class_34.prototype.parser = function () {
                 var self = this;
                 return Parser.string('{')
                     .then(Parser.regex(/^[a-z*]+/i))
@@ -13797,12 +13693,12 @@ var __assign = (this && this.__assign) || function () {
                     return Parser.succeed(self);
                 });
             };
-            class_32.prototype.latexRecursive = function (ctx) {
+            class_34.prototype.latexRecursive = function (ctx) {
                 this.checkCursorContextOpen(ctx);
                 ctx.uncleanedLatex += '\\end{' + this.env + '}';
                 this.checkCursorContextClose(ctx);
             };
-            return class_32;
+            return class_34;
         }(MathCommand)))();
     };
     // \begin{tabular}{spec} \u2014 the text-mode twin of \begin{array}, same
