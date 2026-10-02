@@ -1050,6 +1050,63 @@ const FIXTURES: {
   },
 ];
 
+describe('worksheet matrix tracking', () => {
+  const cells = (...latex: string[]) =>
+    latex.map((l) => ({ json: parseCellLatex(l) }));
+
+  it('cross-cell matrix methods do not leak — a matrix from another cell is a bare Symbol here', () => {
+    const out = compileWorksheet(
+      cells(
+        'A = \\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix}',
+        '\\det(A)',
+      ),
+      'python',
+      { importAll: false },
+    );
+    expect(out.cellLines[0]).toEqual([
+      'import sympy as sp',
+      'A = sp.Matrix([[1, 2], [3, 4]])',
+    ]);
+    // Cell 2's standalone program declares A as a Symbol — `A.det()`
+    // would raise TypeError, so it degrades to the flagged stub.
+    expect(out.cellLines[1]).toContain('A = sp.Symbol("A")');
+    expect(out.cellLines[1]).toContain('Determinant(A)');
+    expect(
+      out.cellIssues[1].some((i) => i.message.includes('needs a matrix')),
+    ).toBe(true);
+  });
+
+  it('word-op calls on a same-cell matrix emit methods', () => {
+    const out = compileWorksheet(
+      cells(
+        '\\displaylines{ B = \\begin{pmatrix} 1 & 0 \\\\ 0 & 1 \\end{pmatrix} \\\\ \\mathrm{rank}(B) \\\\ \\mathrm{inverse}(B) \\\\ \\mathrm{transpose}(B) \\\\ \\mathrm{eigenvals}(B) }',
+      ),
+      'python',
+      { importAll: false },
+    );
+    const lines = out.cellLines[0];
+    expect(lines).toContain('(B).rank()');
+    expect(lines).toContain('(B).inv()');
+    expect(lines).toContain('(B).T');
+    expect(lines).toContain('(B).eigenvals()');
+  });
+
+  it('a name rebound to a non-matrix loses its matrix methods', () => {
+    const out = compileWorksheet(
+      cells(
+        '\\displaylines{ A = \\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix} \\\\ A = 5 \\\\ \\det(A) }',
+      ),
+      'python',
+      { importAll: false },
+    );
+    expect(out.cellLines[0]).toContain('A = 5');
+    expect(out.cellLines[0]).toContain('Determinant(A)');
+    expect(
+      out.cellIssues[0].some((i) => i.message.includes('needs a matrix')),
+    ).toBe(true);
+  });
+});
+
 describe('issue deduplication', () => {
   it('identical normalize errors collapse to one issue', () => {
     const out = compileWorksheet(

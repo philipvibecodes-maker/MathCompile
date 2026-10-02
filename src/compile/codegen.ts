@@ -298,6 +298,20 @@ interface Scope {
 }
 
 const isArr = (v: MathJson | undefined): v is MathJson[] => Array.isArray(v);
+// Matrix word ops emitted as method calls (`\mathrm{trace}(A)` ->
+// `(A).trace()`); CE may capitalize `tr` -> `Trace`.
+const MATRIX_METHODS: Record<string, string> = {
+  trace: 'trace()',
+  Trace: 'trace()',
+  tr: 'trace()',
+  rank: 'rank()',
+  eigenvals: 'eigenvals()',
+  eigenvects: 'eigenvects()',
+  inverse: 'inv()',
+  transpose: 'T',
+  norm: 'norm()',
+};
+
 const isStr = (v: MathJson | undefined): v is string => typeof v === 'string';
 const headOf = (v: MathJson | undefined): string | undefined =>
   isArr(v) && isStr(v[0]) ? v[0] : undefined;
@@ -1252,17 +1266,8 @@ class Emitter {
       case 'MatrixMethod': {
         // `\mathrm{trace}(A)`-style word ops fused onto a matrix literal
         // — method calls on the emitted Matrix.
-        const method: Record<string, string> = {
-          trace: 'trace()',
-          rank: 'rank()',
-          eigenvals: 'eigenvals()',
-          eigenvects: 'eigenvects()',
-          inverse: 'inv()',
-          transpose: 'T',
-          norm: 'norm()',
-        };
         const w = isStr(args[0]) ? args[0] : 'trace';
-        const m = method[w] ?? `${w}()`;
+        const m = MATRIX_METHODS[w] ?? `${w}()`;
         return [`(${this.emit(args[1])}).${m}`, PREC_ATOM];
       }
       case 'Norm':
@@ -1296,17 +1301,20 @@ class Emitter {
           .slice(1)
           .map((a) => this.emit(a))
           .join(', ');
-        // `\mathrm{trace}(M)`/`\mathrm{tr}(M)`: sp.trace raises
-        // TypeError on a non-matrix — only a literal or worksheet-
-        // declared matrix is safe; anything else gets an honest stub.
-        if ((name === 'trace' || name === 'Trace') && args.length === 2) {
+        // `\mathrm{trace|rank|inverse|transpose|norm|eigenvals|
+        // eigenvects|tr}(A)`: sympy exposes these as Matrix methods,
+        // so a literal or worksheet-declared matrix argument emits the
+        // method call; on anything else the bare `sp.<word>` either
+        // doesn't exist or raises TypeError — flag + honest stub.
+        const mm = MATRIX_METHODS[name];
+        if (mm !== undefined && args.length === 2) {
           if (isHead(args[1], 'Matrix') || this.matrixRef(args[1]))
-            return [`(${this.emit(args[1])}).trace()`, PREC_ATOM];
+            return [`(${this.emit(args[1])}).${mm}`, PREC_ATOM];
           this.scope.flag(
             'note',
-            "trace needs a matrix — the argument isn't one",
+            `${name === 'Trace' || name === 'tr' ? 'trace' : name} needs a matrix — the argument isn't one`,
           );
-          return [`${this.fn('trace')}(${this.emit(args[1])})`, PREC_ATOM];
+          return [`${this.fn(name)}(${this.emit(args[1])})`, PREC_ATOM];
         }
         // `a \equiv b \pmod{m}` — SymPy has no modular-congruence
         // relation, but Eq(Mod(a, m), b) states it faithfully.
@@ -1670,21 +1678,24 @@ export function compileWorksheet(
   }
 
   const declared = new Set<string>();
-  const matrixNames = new Set<string>();
   for (const r of perCell)
-    if (r.ir !== undefined) {
-      collectDeclared(r.ir, declared);
-      collectMatrices(r.ir, matrixNames);
-    }
+    if (r.ir !== undefined) collectDeclared(r.ir, declared);
 
   // Each cell emits with fresh defined/symbols/functions state — cells
   // are independent, so a name used in a cell is always defined there.
+  // matrixNames is likewise cell-scoped: `A` declared a matrix in cell 1
+  // is a fresh Symbol in cell 2's program, so `\det(A)` there must flag
+  // rather than emit `A.det()` on a Symbol (TypeError at exec).
   const genIssues: Issue[][] = cells.map(() => []);
-  const makeScope = (cell: number): Scope =>
-    buildScope(qualified, declared, matrixNames, issues, genIssues, cell);
-  const cellBodies = perCell.map((r, i) =>
-    r.ir === undefined ? [] : cellStatements(r.ir, makeScope(i + 1)),
-  );
+  const cellBodies = perCell.map((r, i) => {
+    if (r.ir === undefined) return [];
+    const matrixNames = new Set<string>();
+    collectMatrices(r.ir, matrixNames);
+    return cellStatements(
+      r.ir,
+      buildScope(qualified, declared, matrixNames, issues, genIssues, i + 1),
+    );
+  });
   const cellLines = cellBodies.map((body) =>
     body.length === 0 ? [] : [importLine, ...body],
   );
@@ -1721,14 +1732,18 @@ function collectDeclared(ir: MathJson, declared: Set<string>): void {
   collect(ir);
 }
 
-// Names bound to a Matrix literal anywhere in the IR — `A.det()`,
-// `A.norm()` etc. are valid on the emitted `A = sp.Matrix(...)`.
+// Names bound to a Matrix literal by the end of the IR — `A.det()`,
+// `A.norm()` etc. are valid on the emitted `A = sp.Matrix(...)`. A later
+// `A = <non-matrix>` rebinds the name back to a scalar, so a name only
+// counts when its last assignment is a Matrix.
 function collectMatrices(ir: MathJson, matrixNames: Set<string>): void {
   const collect = (n: MathJson) => {
     if (!isArr(n)) return;
     const h = headOf(n);
-    if (h === 'Assign' && isStr(n[1]) && isHead(n[2], 'Matrix'))
-      matrixNames.add(n[1]);
+    if (h === 'Assign' && isStr(n[1])) {
+      if (isHead(n[2], 'Matrix')) matrixNames.add(n[1]);
+      else matrixNames.delete(n[1]);
+    }
     if (h === 'Block') n.slice(1).forEach(collect);
   };
   collect(ir);

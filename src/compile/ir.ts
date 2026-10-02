@@ -424,6 +424,13 @@ const CALL_RENAMED = new Set([
   'Pi',
   'Trace',
   'trace',
+  'tr',
+  'rank',
+  'eigenvals',
+  'eigenvects',
+  'inverse',
+  'transpose',
+  'norm',
   // The lowercase names codegen's SP_BUILTIN_CALL table maps — mirrors
   // codegen.ts (kept in sync manually; \operatorname{erf}/solve/... get
   // here as call heads too).
