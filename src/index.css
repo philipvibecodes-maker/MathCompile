@@ -575,7 +575,6 @@ body {
 .calc-issues-inline li {
   position: absolute;
   transform: translateY(-50%);
-  max-width: 320px;
   padding: 1px 6px;
   background: var(--panel-bg);
   border: 1px solid var(--border);
@@ -585,10 +584,23 @@ body {
   white-space: nowrap;
 }
 
+/* Hover expands the chip vertically — the full message wraps instead of
+   truncating; it rises above same-line siblings while hovered. */
+.calc-issues-inline li:hover {
+  z-index: 1;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
 .calc-issues-inline .chip-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.calc-issues-inline li:hover .chip-text {
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 .calc-result {

@@ -45,10 +45,16 @@
     right: number;
   }
   let anchors = $state<Anchor[]>([]);
+  let overlayEl = $state<HTMLElement | undefined>(undefined);
+  let overlayW = $state(0);
   $effect(() => {
     issues;
     cell.latex;
     anchors = appStore.fields.get(cell.id)?.lineAnchors() ?? [];
+    // The layer spans .cell-input — each chip's max width is the space
+    // left of it to the cell edge, so a message is only truncated when
+    // the cell itself runs out of room.
+    overlayW = overlayEl?.clientWidth ?? 0;
   });
   // The anchor row a line-bound issue pins to (clamp to the rendered
   // lines; unbound issues pin to line 0).
@@ -63,6 +69,7 @@
     {#if anchors.length > 0}
       <ul
         class="calc-issues calc-issues-inline"
+        bind:this={overlayEl}
         in:fade={{ duration: fadeInMs }}
         out:fade={{ duration: fadeOutMs }}
       >
@@ -75,7 +82,7 @@
             <li
               class="issue-{iss.severity}"
               style="top: {a.top + a.height / 2 + stack * 22}px; left: {a.right +
-                6}px"
+                6}px; max-width: {Math.max(overlayW - a.right - 12, 120)}px"
               title={iss.message}
             >
               {#if iss.severity === 'error'}<span class="parse-error-icon"
