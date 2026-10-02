@@ -9762,38 +9762,11 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                         this.matchBrack(opts, R, cursor[R]) ||
                             this.matchBrack(opts, L, cursor[L]) ||
                             this.matchBrack(opts, 0, cursor.parent.parent);
-                    if (!brack) {
-                        // a pipe typed inside a non-bracket block also closes an
-                        // enclosing open bracket — but never across a bracket boundary:
-                        // inside another bracket the pipe auto-expands locally instead
-                        var ancestor = cursor.parent.parent;
-                        while (ancestor && !brack) {
-                            brack = this.matchBrack(opts, 0, ancestor);
-                            if (ancestor instanceof Bracket)
-                                break;
-                            ancestor = ancestor.parent ? ancestor.parent.parent : undefined;
-                        }
-                    }
                 }
                 else {
                     brack =
                         this.matchBrack(opts, -this.side, cursor[-this.side]) ||
                             this.matchBrack(opts, -this.side, cursor.parent.parent);
-                    if (!brack) {
-                        // No match beside or just above the caret — a close bracket
-                        // typed inside a block (e.g. `)` inside the bound of `(x_{1|}`)
-                        // should close a matching open bracket enclosing the caret at
-                        // any depth, not auto-expand around the block's contents. The
-                        // climb never crosses a bracket boundary: a typed bracket must
-                        // not leapfrog an inner bracket to match an outer one.
-                        var ancestor = cursor.parent.parent;
-                        while (ancestor && !brack) {
-                            brack = this.matchBrack(opts, -this.side, ancestor);
-                            if (ancestor instanceof Bracket)
-                                break;
-                            ancestor = ancestor.parent ? ancestor.parent.parent : undefined;
-                        }
-                    }
                 }
             }
             if (brack) {
@@ -18052,34 +18025,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 test('nested parens 1+(2+(3+4)+5)+6', function () {
                     mq.typedText('1+(2+(3+4)+5)+6');
                     assertLatex('1+\\left(2+\\left(3+4\\right)+5\\right)+6');
-                });
-                test('close-paren typed inside a subscript closes the outer pair (x_1)', function () {
-                    mq.typedText('(x_1)');
-                    assertLatex('\\left(x_{1}\\right)');
-                });
-                test('close-paren typed inside a superscript closes the outer pair (x^1)', function () {
-                    mq.typedText('(x^1)');
-                    assertLatex('\\left(x^{1}\\right)');
-                });
-                test('close-brace typed inside a subscript closes the outer pair {x_1}', function () {
-                    mq.typedText('{x_1}');
-                    assertLatex('\\left\\{x_{1}\\right\\}');
-                });
-                test('close-paren inside a bound reaches past siblings to the open pair (x_1)(y_2)', function () {
-                    mq.typedText('(x_1)(y_2)');
-                    assertLatex('\\left(x_{1}\\right)\\left(y_{2}\\right)');
-                });
-                test('close-paren inside a bound still prefers an open bracket inside the bound', function () {
-                    mq.typedText('(x_(1)');
-                    assertLatex('\\left(x_{\\left(1\\right)}\\right)');
-                });
-                test('close-paren inside a bound with no open bracket wraps the bound (x_1)', function () {
-                    mq.typedText('x_1)');
-                    assertLatex('x_{\\left(1\\right)}');
-                });
-                test('close-paren inside a nested bound closes the outer pair (a_{i_j})', function () {
-                    mq.typedText('(a_{i_j})');
-                    assertLatex('\\left(a_{\\left\\{i_{j}\\right\\}}\\right)');
                 });
             });
             suite('mismatched brackets', function () {

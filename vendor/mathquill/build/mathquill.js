@@ -9753,38 +9753,11 @@ var __assign = (this && this.__assign) || function () {
                         this.matchBrack(opts, R, cursor[R]) ||
                             this.matchBrack(opts, L, cursor[L]) ||
                             this.matchBrack(opts, 0, cursor.parent.parent);
-                    if (!brack) {
-                        // a pipe typed inside a non-bracket block also closes an
-                        // enclosing open bracket \u2014 but never across a bracket boundary:
-                        // inside another bracket the pipe auto-expands locally instead
-                        var ancestor = cursor.parent.parent;
-                        while (ancestor && !brack) {
-                            brack = this.matchBrack(opts, 0, ancestor);
-                            if (ancestor instanceof Bracket)
-                                break;
-                            ancestor = ancestor.parent ? ancestor.parent.parent : undefined;
-                        }
-                    }
                 }
                 else {
                     brack =
                         this.matchBrack(opts, -this.side, cursor[-this.side]) ||
                             this.matchBrack(opts, -this.side, cursor.parent.parent);
-                    if (!brack) {
-                        // No match beside or just above the caret \u2014 a close bracket
-                        // typed inside a block (e.g. `)` inside the bound of `(x_{1|}`)
-                        // should close a matching open bracket enclosing the caret at
-                        // any depth, not auto-expand around the block's contents. The
-                        // climb never crosses a bracket boundary: a typed bracket must
-                        // not leapfrog an inner bracket to match an outer one.
-                        var ancestor = cursor.parent.parent;
-                        while (ancestor && !brack) {
-                            brack = this.matchBrack(opts, -this.side, ancestor);
-                            if (ancestor instanceof Bracket)
-                                break;
-                            ancestor = ancestor.parent ? ancestor.parent.parent : undefined;
-                        }
-                    }
                 }
             }
             if (brack) {
