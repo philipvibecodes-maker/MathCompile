@@ -422,6 +422,17 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
   });
 
+  it('names greek-variant symbols after their glyph, not the CE id', () => {
+    // `\varepsilon` emitted `Symbol("epsilonSymbol")` — the row showed
+    // the word "epsilonSymbol".
+    expect(calc('\\varepsilon').prelude).toContain(
+      'epsilonSymbol = sp.Symbol("\\\\varepsilon")',
+    );
+    expect(calc('\\varsigma').prelude).toContain(
+      'finalSigma = sp.Symbol("\\\\varsigma")',
+    );
+  });
+
   it('flags a symbolic derivative order instead of emitting 0 or crashing', () => {
     // `f^{(n)}` in sympy is `diff(f, x, n)` (differentiates by n too —
     // → 0) or `diff(f, (x, n))` — which hard-aborts this pyodide's

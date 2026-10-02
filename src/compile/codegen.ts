@@ -301,6 +301,19 @@ const isNum = (v: MathJson | undefined): boolean =>
   typeof v === 'number' ||
   (typeof v === 'object' && v !== null && 'num' in v);
 
+// CE leaf names that don't print like the latex the user typed —
+// `\varepsilon` mints `Symbol("epsilonSymbol")`, showing the word
+// "epsilonSymbol". Map to a latex name the printer renders as the
+// intended glyph.
+const CE_DISPLAY_NAMES: Record<string, string> = {
+  epsilonSymbol: '\\varepsilon',
+  finalSigma: '\\varsigma',
+  piSymbol: '\\varpi',
+  thetaSymbol: '\\vartheta',
+  rhoSymbol: '\\varrho',
+  kappaSymbol: '\\varkappa',
+};
+
 // Python precedence levels for parenthesization.
 const PREC_LOW = 0; // expression statements, call args
 const PREC_ADD = 10;
@@ -1650,10 +1663,16 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   // punctuation. Anything needing mangling (a_0', {abc}, ? names) gets an
   // individual `sp.Symbol("raw name")` def where JSON quoting is safe.
   const simple = newSyms.filter(
-    ([raw, ident]) => raw === ident && !scope.assumptions.has(raw),
+    ([raw, ident]) =>
+      raw === ident &&
+      !scope.assumptions.has(raw) &&
+      CE_DISPLAY_NAMES[raw] === undefined,
   );
   const fancy = newSyms.filter(
-    ([raw, ident]) => raw !== ident || scope.assumptions.has(raw),
+    ([raw, ident]) =>
+      raw !== ident ||
+      scope.assumptions.has(raw) ||
+      CE_DISPLAY_NAMES[raw] !== undefined,
   );
   if (simple.length === 1)
     defs.push(`${simple[0][1]} = ${sp}Symbol(${JSON.stringify(simple[0][0])})`);
@@ -1664,7 +1683,7 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   for (const [raw, ident] of fancy) {
     const kw = scope.assumptions.get(raw);
     defs.push(
-      `${ident} = ${sp}Symbol(${JSON.stringify(raw)}${kw?.size ? `, ${[...kw].join(', ')}` : ''})`,
+      `${ident} = ${sp}Symbol(${JSON.stringify(CE_DISPLAY_NAMES[raw] ?? raw)}${kw?.size ? `, ${[...kw].join(', ')}` : ''})`,
     );
   }
   for (const [raw, ident] of newFns)
