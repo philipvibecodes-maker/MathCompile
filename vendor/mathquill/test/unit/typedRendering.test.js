@@ -67,4 +67,33 @@ suite('typed rendering', function () {
       });
     });
   });
+
+  suite('zero-block commands do not crash on insertion', function () {
+    // commands with no editable blocks (\verb, \end) used to crash in
+    // placeCursor — there is no child block for the caret to land in
+    var cases = [
+      ['\\verb|x|', '\\verb\\left|x\\right|'],
+      ['\\end{foo}', '\\end{}\\left\\{foo\\right\\}'],
+      [
+        '\\begin{foo}x\\end{foo}',
+        '\\begin{foo} x\\end{}\\left\\{foo\\right\\}'
+      ],
+      [
+        '\\begin{gathered}a\\\\b\\end{gathered}',
+        '\\begin{gathered}a\\ b\\end{}\\left\\{gathered\\right\\}\\\\ \\end{gathered}'
+      ],
+      [
+        '\\begin{smallmatrix}a\\end{smallmatrix}',
+        '\\begin{smallmatrix}a\\end{}\\left\\{smallmatrix\\right\\}&\\\\&\\end{smallmatrix}'
+      ]
+    ];
+    cases.forEach(function (pair) {
+      var input = pair[0],
+        latex = pair[1];
+      test(input, function () {
+        typed(input);
+        assert.equal(mq.latex(), latex);
+      });
+    });
+  });
 });

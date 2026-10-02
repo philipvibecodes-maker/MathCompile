@@ -192,11 +192,13 @@ class MathCommand extends MathElement {
   placeCursor(cursor: Cursor) {
     //insert the cursor at the right end of the first empty child, searching
     //left-to-right, or if none empty, the right end child
-    cursor.insAtRightEnd(
-      this.foldChildren(this.getEnd(L), function (leftward, child) {
-        return leftward.isEmpty() ? leftward : child;
-      })
-    );
+    var el = this.foldChildren(this.getEnd(L), function (leftward, child) {
+      return leftward.isEmpty() ? leftward : child;
+    });
+    // A command with no blocks (e.g. \verb, \end) has no child to land
+    // the caret in — place it right of the atom instead.
+    if (el) cursor.insAtRightEnd(el);
+    else cursor.insRightOf(this);
   }
 
   // editability methods: called by the cursor for editing, cursor movements,
