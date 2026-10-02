@@ -75,8 +75,18 @@ def _mc_order(val):
         gens = sorted(val.free_symbols, key=lambda s: s.name)
         terms = sorted(val.args, key=lambda t: -_mc_deg(t, gens))
         return sp.Add(*terms, evaluate=False)
-    if val.is_Relational:
-        return val.func(*[_mc_order(a) for a in val.args])
+    if val.args:
+        # A sum nested inside a product/fraction/function keeps sympy's
+        # canonical order (constant first) — rebuild containers around
+        # re-ordered args, evaluate=False so the sort survives.
+        args = [_mc_order(a) for a in val.args]
+        try:
+            return val.func(*args, evaluate=False)
+        except Exception:
+            try:
+                return val.func(*args)
+            except Exception:
+                return val
     return val
 
 def _mc_doit(val):

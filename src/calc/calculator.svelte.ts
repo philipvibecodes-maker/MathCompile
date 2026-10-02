@@ -62,6 +62,9 @@ function ensureWorker(): Worker {
       calcEngine.status = 'error';
       calcEngine.error = m.error ?? 'failed to load the SymPy engine';
       failAll(calcEngine.error);
+      // The engineless worker is dead weight — drop it so the next eval
+      // retries the boot instead of stalling on the 30s watchdog.
+      if (worker === w) worker = undefined;
       return;
     }
     const p = pending.get(m.id);
@@ -92,6 +95,7 @@ function ensureWorker(): Worker {
     calcEngine.status = 'error';
     calcEngine.error = e.message || 'calculator worker failed';
     failAll(calcEngine.error);
+    if (worker === w) worker = undefined;
   };
   worker = w;
   return w;
