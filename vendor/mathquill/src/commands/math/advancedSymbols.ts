@@ -1905,3 +1905,197 @@ LatexCmds.multicolumn = () =>
     new RegExp('^' + RAW_GROUP + RAW_GROUP + RAW_GROUP),
     'multi column'
   );
+
+// \buildrel f \over b and the remaining delim-infix ops — visible
+// leaves so the infix text is preserved.
+LatexCmds.buildrel = bindLiteralCmd('\\buildrel', 'build rel');
+LatexCmds.atopwithdelims = bindLiteralCmd(
+  '\\atopwithdelims',
+  'atop with delims'
+);
+LatexCmds.abovewithdelims = bindLiteralCmd(
+  '\\abovewithdelims',
+  'above with delims'
+);
+
+// \newtheorem{thm}{Theorem}[like] — env definitions verbatim.
+LatexCmds.newtheorem = () =>
+  new RawArgCommand(
+    '\\newtheorem',
+    new RegExp(
+      '^' + RAW_OPT_GROUP + RAW_GROUP + RAW_GROUP + '(?:' + RAW_OPT_GROUP + ')?'
+    ),
+    'new theorem'
+  );
+
+// Counter/length bookkeeping commands — args verbatim.
+LatexCmds.setcounter = () =>
+  new RawArgCommand(
+    '\\setcounter',
+    new RegExp('^' + RAW_GROUP + RAW_GROUP),
+    'set counter'
+  );
+LatexCmds.addtocounter = () =>
+  new RawArgCommand(
+    '\\addtocounter',
+    new RegExp('^' + RAW_GROUP + RAW_GROUP),
+    'add to counter'
+  );
+LatexCmds.setlength = () =>
+  new RawArgCommand(
+    '\\setlength',
+    new RegExp('^' + RAW_GROUP + RAW_GROUP),
+    'set length'
+  );
+LatexCmds.addtolength = () =>
+  new RawArgCommand(
+    '\\addtolength',
+    new RegExp('^' + RAW_GROUP + RAW_GROUP),
+    'add to length'
+  );
+['arabic', 'Roman', 'roman', 'alph', 'Alph', 'fnsymbol', 'value'].forEach(
+  function (name) {
+    (LatexCmds as LatexCmdsAny)[name] = () =>
+      new RawArgCommand(
+        '\\' + name,
+        new RegExp('^' + RAW_GROUP),
+        name
+      );
+  }
+);
+
+// \makebox[w][pos]{x} / \framebox[w][pos]{x} / \raisebox{d}[ht][dp]{x}
+// — a content block preceded by up to two optional bracket args.
+function bindOptBracketCmd(ctrlSeq: string, maxOpt: number, speak: string) {
+  return class extends MathCommand {
+    optText = '';
+    constructor() {
+      super(
+        ctrlSeq,
+        new DOMView(1, (blocks) =>
+          h('span', { class: 'mq-non-leaf' }, [
+            h.block('span', {}, blocks[0])
+          ])
+        )
+      );
+    }
+    parser() {
+      var self = this;
+      return Parser.regex(
+        new RegExp('^(?:\\[[^\\]]*\\]){0,' + maxOpt + '}')
+      )
+        .then(function (opt: string) {
+          self.optText = opt;
+          return latexMathParser.block;
+        })
+        .map(function (b: MathBlock) {
+          self.blocks = [b];
+          b.adopt(self, 0, 0);
+          return self;
+        });
+    }
+    latexRecursive(ctx: LatexContext) {
+      this.checkCursorContextOpen(ctx);
+      ctx.uncleanedLatex += this.ctrlSeq + this.optText + '{';
+      this.blocks![0].latexRecursive(ctx);
+      ctx.uncleanedLatex += '}';
+      this.checkCursorContextClose(ctx);
+    }
+  };
+}
+LatexCmds.makebox = bindOptBracketCmd('\\makebox', 2, 'make box');
+// (\framebox lives in commands.ts, which applies the same
+// bindOptBracketCmd helper; \raisebox needs a raw dim arg first.)
+LatexCmds.raisebox = class extends MathCommand {
+  dim = '';
+  optText = '';
+  constructor() {
+    super(
+      '\\raisebox',
+      new DOMView(1, (blocks) =>
+        h('span', { class: 'mq-non-leaf' }, [
+          h.block('span', {}, blocks[0])
+        ])
+      )
+    );
+  }
+  parser() {
+    var self = this;
+    return Parser.regex(new RegExp('^' + RAW_GROUP))
+      .then(function (dim: string) {
+        self.dim = dim;
+        return Parser.regex(/^(?:\[[^\]]*\]){0,2}/);
+      })
+      .then(function (opt: string) {
+        self.optText = opt;
+        return latexMathParser.block;
+      })
+      .map(function (b: MathBlock) {
+        self.blocks = [b];
+        b.adopt(self, 0, 0);
+        return self;
+      });
+  }
+  latexRecursive(ctx: LatexContext) {
+    this.checkCursorContextOpen(ctx);
+    ctx.uncleanedLatex += '\\raisebox' + this.dim + this.optText + '{';
+    this.blocks![0].latexRecursive(ctx);
+    ctx.uncleanedLatex += '}';
+    this.checkCursorContextClose(ctx);
+  }
+};
+
+// \hspace*{1em} / \vspace*{1em} — starred (unbreakable) spacing; the
+// star is kept in the serialization.
+function bindStarBlockCmd(ctrlSeq: string) {
+  return class extends MathCommand {
+    starred = false;
+    constructor() {
+      super(
+        ctrlSeq,
+        new DOMView(1, (blocks) =>
+          h('span', { class: 'mq-non-leaf mq-invisible' }, [
+            h.block('span', {}, blocks[0])
+          ])
+        )
+      );
+    }
+    parser() {
+      var self = this;
+      return Parser.optWhitespace
+        .then(Parser.string('*').or(Parser.succeed('')))
+        .then(function (star: string) {
+          self.starred = !!star;
+          return latexMathParser.block;
+        })
+        .map(function (b: MathBlock) {
+          self.blocks = [b];
+          b.adopt(self, 0, 0);
+          return self;
+        });
+    }
+    latexRecursive(ctx: LatexContext) {
+      this.checkCursorContextOpen(ctx);
+      ctx.uncleanedLatex +=
+        this.ctrlSeq + (this.starred ? '*' : '') + '{';
+      this.blocks![0].latexRecursive(ctx);
+      ctx.uncleanedLatex += '}';
+      this.checkCursorContextClose(ctx);
+    }
+  };
+}
+LatexCmds.hspace = bindStarBlockCmd('\\hspace');
+LatexCmds.vspace = bindStarBlockCmd('\\vspace');
+
+// \textvisiblespace \backprime \tabularnewline.
+LatexCmds.textvisiblespace = bindVanillaSymbol(
+  '\\textvisiblespace ',
+  '&#x2423;',
+  'visible space'
+);
+LatexCmds.backprime = bindVanillaSymbol(
+  '\\backprime ',
+  '&#x2035;',
+  'back prime'
+);
+LatexCmds.tabularnewline = bindLiteralCmd('\\tabularnewline', 'table new line');

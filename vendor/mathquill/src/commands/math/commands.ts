@@ -1925,6 +1925,9 @@ LatexCmds.underparen = () =>
   new UnderOverBrace('\\underparen', true, '⏝');
 LatexCmds.overparen = () =>
   new UnderOverBrace('\\overparen', false, '⏜');
+// \wideparen is amssymb's name for the same glyph as \overparen.
+LatexCmds.wideparen = () =>
+  new UnderOverBrace('\\wideparen', false, '⏜');
 
 // Word-form accents missing upstream (the bare-word variants of the
 // escaped accents \' \` \v \u and \ddddot).
@@ -2111,13 +2114,8 @@ LatexCmds.fbox = () =>
     { class: 'mq-non-leaf mq-fbox' },
     'Boxed'
   );
-LatexCmds.framebox = () =>
-  new Style(
-    '\\framebox',
-    'span',
-    { class: 'mq-non-leaf mq-fbox' },
-    'Framed'
-  );
+// \framebox keeps optional [width][pos] args like \makebox.
+LatexCmds.framebox = bindOptBracketCmd('\\framebox', 2, 'frame box');
 LatexCmds.nicefrac = LatexCmds.frac;
 
 // Bold-symbol font wrappers.

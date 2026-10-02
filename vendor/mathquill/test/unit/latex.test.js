@@ -1505,5 +1505,21 @@ suite('latex', function () {
     assertParsesLatex('\\hdots', '\\hdots');
     assertParsesLatex('\\hfill', '\\hfill');
     assertParsesLatex('\\noalign{\\hline}', '\\noalign{\\hline}');
+    // opt-bracket boxes, raw-arg bookkeeping, starred spacing
+    assertParsesLatex('\\makebox[1em][l]{x}', '\\makebox[1em][l]{x}');
+    assertParsesLatex('\\framebox[2em]{x}', '\\framebox[2em]{x}');
+    assertParsesLatex('\\raisebox{1pt}{x}', '\\raisebox{1pt}{x}');
+    assertParsesLatex(
+      '\\raisebox{1pt}[0pt][0pt]{x}',
+      '\\raisebox{1pt}[0pt][0pt]{x}'
+    );
+    assertParsesLatex('\\hspace*{1em}', '\\hspace*{1em}');
+    assertParsesLatex('\\vspace*{1em}', '\\vspace*{1em}');
+    assertParsesLatex('\\setcounter{c}{1}', '\\setcounter{c}{1}');
+    assertParsesLatex('\\setlength{l}{1pt}', '\\setlength{l}{1pt}');
+    assertParsesLatex('\\arabic{c}', '\\arabic{c}');
+    assertParsesLatex('\\newtheorem{thm}{Theorem}', '\\newtheorem{thm}{Theorem}');
+    assertParsesLatex('a\\atopwithdelims()b', 'a\\atopwithdelims()b');
+    assertParsesLatex('\\multicolumn{2}{c}{x}', '\\multicolumn{2}{c}{x}');
   });
 });
