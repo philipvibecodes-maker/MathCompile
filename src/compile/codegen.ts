@@ -169,7 +169,8 @@ const SP_BUILTIN_CALL = new Set(
     'asinh acosh atanh acoth asech acsch ' +
     'solve solveset linsolve nonlinsolve simplify factor expand cancel ' +
     'collect apart together trigsimp expand_trig powsimp nsimplify ' +
-    'radsimp ratsimp fraction limit series residue solve_linear '
+    'radsimp ratsimp fraction limit series residue solve_linear ' +
+    'diff integrate summation product '
   ).split(' '),
 );
 
