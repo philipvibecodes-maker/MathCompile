@@ -2,14 +2,24 @@
 // emits this block into every cell's prelude so the emitted program is
 // self-contained — the shown code runs standalone (given sympy) and the
 // audit trail has no hidden post-processing. Statements evaluate through
-// mc_eval(...). Each stage degrades to its input on failure.
+// clean_and_simplify(...). Each stage degrades to its input on failure.
 //
 // The signature is the first line of the code display after the import;
 // the code view folds the body behind a caret by default.
 //
-// `mc_eval` is a reserved identifier — pyIdent mangles a user symbol of
-// the same name to `mc_eval_` so a cell can't shadow it.
-export const CALC_RUNTIME_PY = `def mc_eval(val):
+// `clean_and_simplify` is a reserved identifier — pyIdent mangles a user
+// symbol of the same name to `clean_and_simplify_` so a cell can't
+// shadow it.
+export const CALC_RUNTIME_PY = `def clean_and_simplify(val):  # presentation cleanup — same value, tidier form
+    """Best-effort cleanup applied to every result before display.
+
+    Nothing here decides what to compute — the statement above already
+    did that — and nothing approximates or rewrites the math. Each stage
+    keeps the value and returns its input unchanged if it fails:
+      mc_doit      finish pending operations (integrals, sums, limits)
+      mc_simplify  reduce the expression (sp.simplify)
+      mc_order     write sums in decreasing degree, constants last
+    """
     def mc_deg(term, gens):
         # Bare capital letters are constants of integration — they go last.
         if term.is_Symbol and len(term.name) == 1 and term.name.isupper():

@@ -21,7 +21,7 @@
   let failed = $state('');
   // Per-cell opt-in to the `e = ...` display plumbing lines in .calc-code.
   let showPlumbing = $state(false);
-  // Folded body of the mc_eval helper block in row-0 code.
+  // Folded body of the clean_and_simplify helper block in row-0 code.
   let showHelpers = $state(false);
   const hasPlumbing = $derived(
     appStore.showCode &&
@@ -77,15 +77,18 @@
     return () => clearTimeout(timer);
   });
 
-  // Split shown code around the emitted `def mc_eval` block: head is
-  // everything before the signature line, sig is the `def` line itself,
-  // body is its indented suite, rest is the remainder of the program.
+  // Split shown code around the emitted `def clean_and_simplify`
+  // block: head is everything before the signature line, sig is the
+  // `def` line itself, body is its indented suite, rest is the
+  // remainder of the program.
   // Only row-0 code contains the block.
   function splitHelperBlock(
     code: string,
   ): { head: string; sig: string; body: string; rest: string } | null {
     const lines = code.split('\n');
-    const i = lines.findIndex((l) => l.startsWith('def mc_eval('));
+    const i = lines.findIndex((l) =>
+      l.startsWith('def clean_and_simplify('),
+    );
     if (i < 0) return null;
     let j = i + 1;
     while (j < lines.length && (lines[j] === '' || /^\s/.test(lines[j])))
@@ -135,7 +138,7 @@
                       >{/each}{split.head === '' ? '' : '\n'}<button
                       type="button"
                       class="code-fold"
-                      title="Toggle the mc_eval helper definitions"
+                      title="Toggle the clean_and_simplify helper definitions"
                       aria-expanded={showHelpers}
                       onclick={() => (showHelpers = !showHelpers)}
                       >{showHelpers ? '▾' : '▸'}</button

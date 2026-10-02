@@ -62,7 +62,7 @@ const RESERVED_IDENTS = new Set([
   'mc_doit',
   'mc_simplify',
   'mc_order',
-  'mc_eval',
+  'clean_and_simplify',
 ]);
 
 // Mangle an arbitrary symbol name (e.g. `a_{n+1}`) into a valid python
@@ -2461,7 +2461,8 @@ export interface CalcProgram {
 // Wrap an evaluated expression in the worker's result pipeline so the
 // emitted program itself applies doit -> simplify -> degree-order —
 // auditing the shown code explains the shown result.
-const calcEval = (expr: string): string => `mc_eval(${expr})`;
+const calcEval = (expr: string): string =>
+  `clean_and_simplify(${expr})`;
 
 // Compile a single cell for the calculator target: same pipeline as
 // compileWorksheet (always `sp.`-qualified — the worker execs against

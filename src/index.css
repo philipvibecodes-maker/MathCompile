@@ -576,8 +576,8 @@ body {
   color: #4078f2;
 }
 
-/* Caret folding the mc_eval helper body in row-0 code — sits left of
-   the `def` line, larger than the code text. */
+/* Caret folding the clean_and_simplify helper body in row-0 code — it
+   sits left of the `def` line, larger than the code text. */
 .calc-code .code-fold {
   margin-right: 4px;
   padding: 0;
