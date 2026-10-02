@@ -95,6 +95,16 @@ const CONSTANTS: Record<string, string> = {
   False: 'False',
 };
 
+// \mathbb{R}^{+/-/_+/_-}-style leaf sets CE emits as plain symbol names
+// (CONSTANTS can only hold one-segment S.* names — these are intervals).
+// Value: [lo, hi, openLo].
+const LEAF_SETS: Record<string, [string, string, boolean]> = {
+  PositiveNumbers: ['0', 'oo', true],
+  NegativeNumbers: ['-oo', '0', true],
+  NonNegativeNumbers: ['0', 'oo', false],
+  NonPositiveNumbers: ['-oo', '0', false],
+};
+
 // Known function heads -> the SymPy function name to call.
 const SP_FUNCS: Record<string, string> = {
   Sqrt: 'sqrt',
@@ -333,6 +343,13 @@ class Emitter {
     }
     if (this.scope.bound.has(name) || this.scope.defined.has(name))
       return pyIdent(name);
+    // `v^T A v` — `v` was claimed by the matrix tier (Transpose), so a
+    // later bare `v` is the SAME name, not a new symbol: reuse the
+    // MatrixSymbol ident instead of minting `v_2`.
+    if (this.scope.matrices.has(name))
+      return this.scope.matrices.get(name)!;
+    if (this.scope.functions.has(name))
+      return this.scope.functions.get(name)!;
     return this.alloc(this.scope.symbols, name);
   }
 
@@ -470,6 +487,21 @@ class Emitter {
     if (isStr(node)) {
       const c = CONSTANTS[node];
       if (c) return [this.constName(c), PREC_ATOM];
+      // \mathbb{R}^+ / \mathbb{R}^- / \mathbb{R}_+ / \mathbb{R}_- — CE
+      // emits these as leaf symbol names; bare symbols named
+      // "PositiveNumbers" are meaningless, so emit the interval set.
+      if (LEAF_SETS[node] !== undefined) {
+        const s = this.sp;
+        const [lo, hi, openLo] = LEAF_SETS[node];
+        const b = (e: string) =>
+          e === '-oo' ? `-${s}oo` : e === 'oo' ? `${s}oo` : e;
+        return [
+          openLo
+            ? `${s}Interval.open(${b(lo)}, ${b(hi)})`
+            : `${s}Interval(${b(lo)}, ${b(hi)})`,
+          PREC_ATOM,
+        ];
+      }
       if (node === 'Nothing') {
         this.scope.flag('error', 'missing argument cannot be emitted');
         return ['None', PREC_ATOM];
@@ -530,11 +562,23 @@ class Emitter {
           `${this.emit(args[0], PREC_MUL)} / ${this.emit(args[1], PREC_MUL + 1)}`,
           PREC_MUL,
         ];
-      case 'Power':
+      case 'Power': {
+        // `A^c` — set complement suffix. `**` on a Set raises in SymPy;
+        // `S^2` still works (ProductSet), so only the c-exponent folds.
+        if (
+          isStr(args[1]) &&
+          (args[1] === 'c' || args[1] === 'C') &&
+          this.isSetish(args[0])
+        )
+          return [
+            `${this.sp}Complement(${this.sp}S.UniversalSet, ${this.emit(args[0])})`,
+            PREC_ATOM,
+          ];
         return [
           `${this.emit(args[0], PREC_POW + 1)}**${this.emit(args[1], PREC_POW)}`,
           PREC_POW,
         ];
+      }
       case 'Rational':
         return [`${this.sp}Rational(${numText(args[0])}, ${numText(args[1])})`, PREC_ATOM];
       case 'Complex':
@@ -635,12 +679,17 @@ class Emitter {
         // \{x \in S : cond\} -> ConditionSet over the domain, not a
         // FiniteSet holding a boolean and a nested set.
         if (args.length === 2 && isHead(args[1], 'Condition')) {
-          const cond = this.emit(args[1][1]);
+          const condArg = args[1][1];
+          const cond = this.emit(condArg);
           if (isStr(args[0]))
             return [
               `${this.sp}ConditionSet(${this.emit(args[0])}, ${cond})`,
               PREC_ATOM,
             ];
+          // \{f(x) : p(x)\} — an image set over the condition's domain:
+          // `{x² : x∈ℤ}` = ImageSet(Lambda(x, x²), Integers); when the
+          // predicate isn't a membership, build the image over a
+          // ConditionSet domain.
           if (isHead(args[0], 'Element') && args[0].length === 3)
             return [
               this.isSetish(args[0][2])
@@ -648,6 +697,14 @@ class Emitter {
                 : `${this.sp}Function("ConditionSet")(${this.emit(args[0][1])}, ${cond}, ${this.emit(args[0][2])})`,
               PREC_ATOM,
             ];
+          const free = freeNames(condArg);
+          if (free.length === 1) {
+            const lam = `${this.sp}Lambda(${this.emit(free[0])}, ${this.emit(args[0])})`;
+            const dom = isHead(condArg, 'Element')
+              ? this.emit(condArg[2])
+              : `${this.sp}ConditionSet(${this.emit(free[0])}, ${cond})`;
+            return [`${this.sp}ImageSet(${lam}, ${dom})`, PREC_ATOM];
+          }
         }
         return [
           `${this.sp}FiniteSet(${args.map((a) => this.emit(a)).join(', ')})`,
@@ -856,7 +913,11 @@ class Emitter {
           // where that derivative is evaluated (f'(0) is the derivative
           // at 0, not `diff(f(0), 0)` which has no differentiation var).
           const [, f, n] = callee;
-          const order = typeof n === 'number' && n !== 1 ? `, ${n}` : '';
+          // `f^{(n)}(x)` — symbolic order: `n` is a name, not a numeral.
+          const order =
+            n === undefined || n === 'Nothing' || n === 1
+              ? ''
+              : `, ${isNum(n) ? numText(n) : this.emit(n)}`;
           const argNodes = args.slice(1);
           const fname = isStr(f) ? this.fn(f) : null;
           const applied = (argsList: string) =>
@@ -1254,6 +1315,13 @@ class Emitter {
           `${this.sp}Eq(${this.sp}Mod(${this.emit(args[1])}, ${this.emit(args[0])}), 0)`,
           PREC_ATOM,
         ];
+      case 'Zeta':
+        // \zeta(s) — sp.zeta exists; the Zeta head itself is not a SymPy
+        // name and would NameError through the unknown-head stub.
+        return [
+          `${this.sp}zeta(${args.map((a) => this.emit(a)).join(', ')})`,
+          PREC_ATOM,
+        ];
       case 'List':
         return [`[${args.map((a) => this.emit(a)).join(', ')}]`, PREC_ATOM];
       case 'Tuple':
@@ -1273,15 +1341,34 @@ class Emitter {
         // Euler's totient.
         if (name === 'GoldenRatio' && args.length === 2)
           return [`${this.sp}totient(${this.emit(args[1])})`, PREC_ATOM];
+        // \mathbb{R}^- / \mathbb{R}^+ — Superminus/Superplus are
+        // call-wrapped here, not in the head switch: emit the interval.
+        if (
+          (name === 'Superminus' || name === 'Superplus') &&
+          args.length === 2 &&
+          args[1] === 'RealNumbers'
+        )
+          return [
+            `${this.sp}Interval.open(${(name === 'Superminus' ? `-${this.sp}oo, 0` : `0, ${this.sp}oo`)})`,
+            PREC_ATOM,
+          ];
+        // \bar{x} — the complex-conjugate convention (as \overline{x});
+        // SymPy's mean lives in stats and takes a random variable.
+        if (name === 'Mean' && args.length === 2)
+          return [`${this.sp}conjugate(${this.emit(args[1])})`, PREC_ATOM];
         // `f \circ g` — CE's composition head is literally 'Ring',
         // which the tiers below would resolve to sympy's ring-domain
         // constructor.
         if (name === 'Ring' && args.length === 3) {
           const f = isStr(args[1]) ? this.fn(args[1]) : this.emit(args[1]);
+          // `g ∘ f` where the inner operand is already an application —
+          // `g ∘ f(x)` gives Ring(g, f(x)): emit `g(f(x))`, not the
+          // double-application `g(f(x)(x))`.
+          const gIsExpr = !isStr(args[2]);
           const g = isStr(args[2]) ? this.fn(args[2]) : this.emit(args[2]);
           const t = `${this.sp}Symbol("x")`;
           return [
-            `${this.sp}Lambda(${t}, ${f}(${g}(${t})))`,
+            `${this.sp}Lambda(${t}, ${gIsExpr ? `${f}(${g})` : `${f}(${g}(${t}))`})`,
             PREC_LOW,
           ];
         }

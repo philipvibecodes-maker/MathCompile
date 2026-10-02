@@ -599,6 +599,21 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       ];
     }
 
+    // `f^{(3)}(x)` — a parenthesized superscript on a name is the nth
+    // derivative, not a power: fold Power(f, Delimiter(n)) into the
+    // Derivative node the Apply path already knows how to emit.
+    if (
+      h === 'Power' &&
+      node.length === 3 &&
+      isString(node[1]) &&
+      isArray(node[2]) &&
+      head(node[2]) === 'Delimiter' &&
+      (node[2] as MathJson[]).length === 2
+    ) {
+      const order = normalize((node[2] as MathJson[])[1], false);
+      return ['Derivative', node[1], order];
+    }
+
     // `a'` / `x'` unapplied: a primed variable name, not sp.prime.
     if (h === 'Prime' && node.length >= 2 && isString(node[1])) {
       const ticks = typeof node[2] === 'number' ? node[2] : 1;
@@ -623,7 +638,12 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       head(node[1]) === 'InvisibleOperator' &&
       node[1][1] === '_'
     ) {
-      const [, , v, body] = node[1];
+      // Keep every factor after the bound var — `\max_{x} f(x)` parses
+      // as ('_', x, f, (x)) and dropping the delimiter loses the apply.
+      const v = node[1][2];
+      const rest = node[1].slice(3);
+      const body =
+        rest.length === 1 ? rest[0] : ['InvisibleOperator', ...rest];
       return [
         h === 'Min' ? 'Minimum' : 'Maximum',
         normalize(body, false),
@@ -639,8 +659,11 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       head(node[1]) === 'InvisibleOperator' &&
       node[1][1] === '_'
     ) {
-      const [, , v, body] = node[1];
-      return [h, normalize(body, false), normalize(v, false)];
+      const v2 = node[1][2];
+      const rest2 = node[1].slice(3);
+      const body2 =
+        rest2.length === 1 ? rest2[0] : ['InvisibleOperator', ...rest2];
+      return [h, normalize(body2, false), normalize(v2, false)];
     }
 
     // \underbrace{x}_{a} parses as Subscript(UnderBrace(x), a) — the
@@ -690,6 +713,7 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       Overarc: 'arc',
       OverDot: 'dot',
       OverDDot: 'ddot',
+      OverTilde: 'tilde',
       Overtilde: 'tilde',
     };
     if (ACCENT_SUFFIX[h] !== undefined && node.length >= 2) {
