@@ -211,7 +211,15 @@ export function parseCellLatex(latex: string): MathJson | undefined {
       return ['Error', `'parse-failed'`] as MathJson;
     }
   });
-  return parsed.length === 1 ? parsed[0] : (['Block', ...parsed] as MathJson);
+  // A single statement can itself parse to a Block (`x² \text{ where }
+  // x>0` — CE parks the condition first). Tag those so real `\\` rows
+  // keep written order while where-blocks still flip body-first.
+  const tagged = parsed.map((p) =>
+    isArray(p) && head(p) === 'Block'
+      ? (['WhereBlock', ...p.slice(1)] as MathJson)
+      : p,
+  );
+  return tagged.length === 1 ? tagged[0] : (['Block', ...tagged] as MathJson);
 }
 
 // Heads the normalizer understands and passes through (children still get
@@ -253,7 +261,7 @@ const KNOWN_HEADS = new Set([
   'Complement',
   'Difference',
   // statement-level IR
-  'Assign', 'Def', 'Block', 'Function',
+  'Assign', 'Def', 'Block', 'WhereBlock', 'Function',
   // structural helpers
   'Limits', 'Tuple', 'List', 'Subscript', 'Delimiters', 'Error',
 ]);
@@ -542,8 +550,8 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       return ['Error', "'unexpected-command'"];
     }
 
-    if (h === 'Block') {
-      return ['Block', ...node.slice(1).map((n) => normalize(n, true))];
+    if (h === 'Block' || h === 'WhereBlock') {
+      return [h, ...node.slice(1).map((n) => normalize(n, true))];
     }
 
     // \left. f \right|_{a}^{b}: CE emits the evaluation bar as

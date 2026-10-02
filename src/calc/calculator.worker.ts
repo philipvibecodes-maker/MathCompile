@@ -93,9 +93,10 @@ def _mc_doit(val):
     # equation to lhs - rhs = 0, losing the displayed form.
     if getattr(val, 'is_Relational', False) or getattr(val, 'is_Boolean', False):
         sides = [_mc_doit(a) for a in val.args]
-        # Eq(Symbol, Matrix) collapses to literal False — keep the
-        # equation displayed when a side is matrix-valued.
-        if any(getattr(a, 'is_Matrix', False) for a in sides):
+        # Eq(Symbol, Matrix|Set) collapses to literal False — keep the
+        # equation displayed when a side is matrix- or set-valued.
+        if any(getattr(a, 'is_Matrix', False) or isinstance(a, sp.Set)
+               for a in sides):
             return val.func(*sides, evaluate=False)
         return val.func(*sides)
     return val.doit()
@@ -105,7 +106,8 @@ def _mc_simplify(val):
     # through the solver and rewrites x + 1 = 2 as x = 1.
     if getattr(val, 'is_Relational', False):
         sides = [sp.simplify(a) for a in val.args]
-        if any(getattr(a, 'is_Matrix', False) for a in sides):
+        if any(getattr(a, 'is_Matrix', False) or isinstance(a, sp.Set)
+               for a in sides):
             return val.func(*sides, evaluate=False)
         return val.func(*sides)
     return sp.simplify(val)
@@ -166,6 +168,12 @@ def mc_run(prog_json):
     out = []
     for i, stmt in enumerate(prog['statements']):
         try:
+            # A statement that failed to compile keeps its row as an
+            # in-place error instead of vanishing (rows keep order).
+            err = stmt.get('error')
+            if err is not None:
+                out.append({'ok': False, 'error': err})
+                continue
             row = _mc_row(_mc_eval_stmt(stmt, ns))
             row['ok'] = True
             # Show code = the emitted program for this row (prelude defs

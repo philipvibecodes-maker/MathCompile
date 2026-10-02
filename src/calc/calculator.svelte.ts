@@ -68,6 +68,7 @@ function ensureWorker(): Worker {
       // The engineless worker is dead weight — drop it so the next eval
       // retries the boot instead of stalling on the 30s watchdog.
       if (worker === w) worker = undefined;
+      w.terminate();
       return;
     }
     const p = pending.get(m.id);
@@ -99,6 +100,7 @@ function ensureWorker(): Worker {
     calcEngine.error = e.message || 'calculator worker failed';
     failAll(calcEngine.error);
     if (worker === w) worker = undefined;
+    w.terminate();
   };
   worker = w;
   return w;

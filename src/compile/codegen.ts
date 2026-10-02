@@ -142,7 +142,9 @@ const SP_FUNCS: Record<string, string> = {
 };
 
 // Statement-position heads that only lower to Python.
-const STATEMENT_HEADS = new Set(['Assign', 'Def', 'Block', 'Which', 'Piecewise']);
+const STATEMENT_HEADS = new Set([
+  'Assign', 'Def', 'Block', 'WhereBlock', 'Which', 'Piecewise',
+]);
 const CMP_NESTABLE_HEADS = new Set([
   'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
 ]);
@@ -267,6 +269,9 @@ interface Scope {
   /** Assigned names whose value is a matrix (`A = [[..]]`, `B = A`) —
    * an Eq display for these collapses to literal False. */
   matrixNames: Set<string>;
+  /** Assigned names whose value is a set (`A = \{1,2\}`) — later set
+   * ops take them as operands directly, not FiniteSet(A) singletons. */
+  setNames: Set<string>;
   /** Free symbol name -> emitted python identifier, insertion-ordered.
    * A def line is emitted in the cell where the name is first needed. */
   symbols: Map<string, string>;
@@ -499,8 +504,8 @@ class Emitter {
 
   /** Is this node guaranteed to emit a SymPy Set? Gates Contains/Union/
    * Complement emission — those raise TypeError on plain Symbols. */
-  private isSetish(n: MathJson | undefined): boolean {
-    if (isStr(n)) return SETISH_SYMBOLS.has(n);
+  isSetish(n: MathJson | undefined): boolean {
+    if (isStr(n)) return SETISH_SYMBOLS.has(n) || this.scope.setNames.has(n);
     if (!isArr(n)) return false;
     // \{1,2\} arrives call-wrapped as ['call', 'Set', ...] since Set
     // isn't a KNOWN_HEAD — check the callee name too.
@@ -713,6 +718,27 @@ class Emitter {
         )
           return [
             `${this.sp}Complement(${this.sp}S.UniversalSet, ${this.emit(args[0])})`,
+            PREC_ATOM,
+          ];
+        // `3^{-1}` — Python `**` on int operands yields a float before
+        // sympy sees it (`Rational(3**-1, 2)` -> a binary fraction);
+        // `sp.Pow` keeps the exact reciprocal.
+        const negIntExp = (e: MathJson | undefined): string | null => {
+          if (e === undefined) return null;
+          if (isNum(e)) {
+            const t = numText(e);
+            return /^-\d+$/.test(t) ? t : null;
+          }
+          const inner =
+            isArr(e) && headOf(e) === 'Negate' ? e[1] : undefined;
+          if (inner === undefined || !isNum(inner)) return null;
+          const t = numText(inner);
+          return /^\d+$/.test(t) ? `-${t}` : null;
+        };
+        const negExp = negIntExp(args[1]);
+        if (negExp !== null)
+          return [
+            `${this.sp}Pow(${this.emit(args[0], PREC_ATOM)}, ${negExp})`,
             PREC_ATOM,
           ];
         return [
@@ -1153,12 +1179,18 @@ class Emitter {
         // Anonymous lambda — CE wraps calculus bodies this way. Emitted
         // directly only when it escapes an operator that unwraps it
         // (e.g. `x \mapsto x^2`). A sympy `Lambda` — a raw python lambda
-        // has no latex/repr and displays its own address.
-        const params = args.slice(1).map((p) => this.sym(isStr(p) ? p : 'x'));
+        // has no latex/repr and displays its own address. Params bind
+        // like operator-bound names: `i \mapsto i^2` binds a plain
+        // Symbol — `Lambda(sp.I, …)` can't take the imaginary constant.
+        const rawParams = args.slice(1).map((p) => (isStr(p) ? p : 'x'));
         const saved = this.scope.bound;
-        this.scope.bound = new Set([...saved, ...params]);
+        const savedLambda = this.scope.lambdaBound;
+        this.scope.lambdaBound = new Set([...savedLambda, ...rawParams]);
+        const params = rawParams.map((p) => this.sym(p));
+        this.scope.bound = new Set([...saved, ...rawParams]);
         const body = this.emit(args[0]);
         this.scope.bound = saved;
+        this.scope.lambdaBound = savedLambda;
         const sig =
           params.length === 1 ? params[0] : `(${params.join(', ')})`;
         return [`${this.sp}Lambda(${sig}, ${body})`, PREC_LOW];
@@ -1749,8 +1781,10 @@ interface StatementOut {
 interface CellBody {
   /** Symbol/Function def lines for names first needed by this cell. */
   defs: string[];
-  /** Emitted top-level statements, in order (pre-collapse). */
-  parts: { stmt: MathJson; out: StatementOut }[];
+  /** Emitted top-level statements, in order (pre-collapse). `errs`
+   * carries the emission errors of a statement that produced no lines —
+   * the calculator target turns those into in-place error rows. */
+  parts: { stmt: MathJson; out: StatementOut; errs: Issue[] }[];
   /** Symbol/function names first bound in this cell. */
   newNames: Set<string>;
 }
@@ -1829,9 +1863,11 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   // constants of integration start at the first free capital.
   allNames(ir, scope.constNames);
   for (const name of scope.declared) scope.constNames.add(name);
-  // `\text{where}`-Blocks arrive condition-first: `x² where x>0` parses
-  // as Block(Gt, x²). Rows are independent statements, so emit the body
-  // row before its conditions — the order the user wrote, not CE's.
+  // `\text{where}`-style blocks arrive condition-first: `x² where x>0`
+  // parses as WhereBlock(Gt, x²) — a single written statement CE split
+  // internally (parseCellLatex tags them). Emit the body row before its
+  // conditions — the order the user wrote, not CE's. Real `\\` rows are
+  // Block children and stay in written order.
   const RELATION_HEADS = new Set([
     'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
     'NotLess', 'NotGreater', 'NotLessEqual', 'NotGreaterEqual',
@@ -1840,16 +1876,26 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   ]);
   const isRelation = (n: MathJson): boolean => RELATION_HEADS.has(headOf(n) ?? '');
   const blockNodes = isHead(ir, 'Block') ? ir.slice(1) : [ir];
-  const nodes =
-    blockNodes.length > 1 &&
-    blockNodes.slice(0, -1).every(isRelation) &&
-    !isRelation(blockNodes[blockNodes.length - 1])
-      ? [blockNodes[blockNodes.length - 1], ...blockNodes.slice(0, -1)]
-      : blockNodes;
-  const parts = nodes.map((stmt) => ({
-    stmt,
-    out: emitStatement(stmt, emitter),
-  }));
+  const nodes = blockNodes.flatMap((n) => {
+    if (!isHead(n, 'WhereBlock')) return [n];
+    const kids = n.slice(1);
+    return kids.length > 1 &&
+      kids.slice(0, -1).every(isRelation) &&
+      !isRelation(kids[kids.length - 1])
+      ? [kids[kids.length - 1], ...kids.slice(0, -1)]
+      : kids;
+  });
+  const parts = nodes.map((stmt) => {
+    const issuesAt = scope.issues.length;
+    const out = emitStatement(stmt, emitter);
+    // A statement dropped by an emission error keeps its row as an
+    // in-place error so multi-statement cells keep written order.
+    const errs =
+      out.lines.length === 0
+        ? scope.issues.slice(issuesAt).filter((i) => i.severity === 'error')
+        : [];
+    return { stmt, out, errs };
+  });
 
   // Names first needed in this cell (not already bound in earlier ones).
   const newSyms = [...scope.symbols].filter(([raw]) => !preDefined.has(raw));
@@ -1933,8 +1979,8 @@ function emitExprStatement(node: MathJson, emitter: Emitter): StatementOut {
 }
 
 // `a = 5` shows `a = 5` — a fresh Symbol for the target renders the raw
-// name (`x_{1}` shows subscripted, not `x_1`). A matrix RHS needs
-// evaluate=False: Eq(Symbol, Matrix) collapses to literal False.
+// name (`x_{1}` shows subscripted, not `x_1`). Matrix/set RHSs need
+// evaluate=False: Eq(Symbol, Matrix|FiniteSet) collapses to literal False.
 function assignDisplay(
   sp: string,
   name: string,
@@ -1960,14 +2006,16 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       (isStr(node[2]) &&
         (emitter.scope.matrixNames.has(node[2]) ||
           emitter.scope.matrices.has(node[2])));
+    const setRhs = emitter.isSetish(node[2]);
     if (isStr(node[1])) {
       emitter.scope.defined.add(name);
       if (matrixRhs) emitter.scope.matrixNames.add(name);
+      if (setRhs) emitter.scope.setNames.add(name);
     }
     if (emitter.scope.errorCount > before) return { lines: [] };
     return {
       lines: [`${pyIdent(name)} = ${rhs}`],
-      display: assignDisplay(sp, name, rhs, matrixRhs),
+      display: assignDisplay(sp, name, rhs, matrixRhs || setRhs),
     };
   }
   if (h === 'Def') {
@@ -2041,7 +2089,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       display: assignDisplay(sp, name, rhs),
     };
   }
-  if (h === 'Block')
+  if (h === 'Block' || h === 'WhereBlock')
     return {
       lines: node.slice(1).flatMap((s) => emitStatement(s, emitter).lines),
     };
@@ -2166,7 +2214,8 @@ function collectDeclared(ir: MathJson, declared: Set<string>): void {
     if (!isArr(n)) return;
     const h = headOf(n);
     if ((h === 'Assign' || h === 'Def') && isStr(n[1])) declared.add(n[1]);
-    if (h === 'Block') n.slice(1).forEach(collect);
+    if (h === 'Block' || h === 'WhereBlock')
+      n.slice(1).forEach(collect);
   };
   collect(ir);
 }
@@ -2186,6 +2235,7 @@ function buildScope(
     lambdaBound: new Set(),
     matrices: new Map(),
     matrixNames: new Set(),
+    setNames: new Set(),
     symbols: new Map(),
     functions: new Map(),
     issues,
@@ -2212,6 +2262,9 @@ export interface CalcStatement {
   /** When set, `code` execs first, then this evals for the row's value.
    * Absent = `code` evals directly for the row. */
   display?: string;
+  /** Set when the statement itself failed to emit — reported as an
+   * error row in place so the cell keeps written order. */
+  error?: string;
 }
 
 export interface CalcProgram {
@@ -2235,13 +2288,21 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
   collectDeclared(ir, declared);
   const scope = buildScope(true, declared, issues, [[]], 0);
   const { defs, parts } = cellBody(ir, scope);
-  // Statements dropped by an emission error (lines: []) produce no row —
-  // the compile issue already reports the problem.
+  // Statements dropped by an emission error carry it in place — the
+  // error becomes their row so the cell keeps written order.
   const statements = parts
-    .filter(({ out }) => out.lines.length > 0)
-    .map(({ out }) => ({
+    .filter(({ out, errs }) => out.lines.length > 0 || errs.length > 0)
+    .map(({ out, errs }) => ({
       code: out.lines.join('\n'),
       display: out.display,
+      error: errs.map((i) => i.message).join('; ') || undefined,
     }));
-  return { prelude: ['import sympy as sp', ...defs], statements, issues };
+  // Statement-bound errors are reported by their rows — drop them from
+  // the program issue list so they aren't also appended at the end.
+  const consumed = new Set(parts.flatMap(({ errs }) => errs));
+  return {
+    prelude: ['import sympy as sp', ...defs],
+    statements,
+    issues: issues.filter((i) => !consumed.has(i)),
+  };
 }

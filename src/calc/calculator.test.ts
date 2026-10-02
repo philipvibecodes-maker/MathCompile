@@ -171,8 +171,9 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
 
   it('flags half-empty bounds on sums like integrals', () => {
     const prog = calc('\\sum_{i=0}^{ }i');
-    expect(prog.issues.some((i) => i.severity === 'error')).toBe(true);
-    expect(prog.statements).toEqual([]);
+    expect(prog.statements).toEqual([
+      { code: '', display: undefined, error: expect.any(String) },
+    ]);
   });
 
   it('parses unbracketed/bmatrix environments and ignores marker args', () => {
@@ -392,8 +393,9 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
 
   it('flags a stray differential under \\prod at compile time', () => {
     const prog = calc('\\prod x^{2}\\text{d}x');
-    expect(prog.issues.some((i) => i.severity === 'error')).toBe(true);
-    expect(prog.statements).toHaveLength(0);
+    expect(prog.statements).toEqual([
+      { code: '', display: undefined, error: expect.any(String) },
+    ]);
   });
 
   it('lowers bare `f^{(n)}` to an applied derivative, not Derivative(f, n)', () => {
@@ -465,12 +467,8 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // sympy. An honest error row is the only safe answer.
     for (const l of ['f^{(n)}', 'f^{(n)}(x)', 'f^{(n)}(2)']) {
       const prog = calc(l);
-      expect(prog.statements).toHaveLength(0);
-      expect(
-        prog.issues.some(
-          (i) => i.severity === 'error' && /derivative order/.test(i.message),
-        ),
-      ).toBe(true);
+      expect(prog.statements).toHaveLength(1);
+      expect(prog.statements[0].error).toMatch(/derivative order/);
     }
   });
 
@@ -617,6 +615,73 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(calc('\\int f(x)\\text{d}x').statements[0].code).toBe(
       'sp.integrate(f * x, x) + sp.Symbol("C")',
     );
+  });
+
+  it('keeps plain \\ rows in written order; \\text{where} still flips', () => {
+    // `x>0 \\ x+1` is two written statements — the where-block reorder
+    // must not flip it to [x+1, x>0].
+    expect(calc('x>0\\\\ x+1').statements.map((s) => s.code)).toEqual([
+      'sp.Gt(x, 0)',
+      'x + 1',
+    ]);
+    // `x^2 \text{ where } x>0` is one statement CE splits — body first.
+    expect(
+      calc('x^{2}\\ \\text{where}\\ x>0').statements.map((s) => s.code),
+    ).toEqual(['x**2', 'sp.Gt(x, 0)']);
+  });
+
+  it('binds lambda params as symbols, not constants (i \\mapsto i^2)', () => {
+    // `i \mapsto i^2` emitted Lambda(sp.I, sp.I**2) — Lambda can't take
+    // the imaginary constant as its bound variable.
+    const prog = calc('i \\mapsto i^{2}');
+    expect(prog.statements[0].code).toBe('sp.Lambda(i, i**2)');
+    expect(prog.prelude).toContain('i = sp.Symbol("i")');
+  });
+
+  it('takes an assigned set name as a set operand, not FiniteSet(A)', () => {
+    // `A = {1,2}` then `A \cup {3}` emitted Union(FiniteSet(A), {3}) —
+    // a nested singleton { {1,2}, 3 } instead of {1,2,3}.
+    expect(
+      calc('\\displaylines{A=\\left\\{1,2\\right\\}\\\\ A\\cup\\left\\{3\\right\\}}')
+        .statements[1].code,
+    ).toBe('sp.Union(A, sp.FiniteSet(3))');
+    // Scalar assigns still wrap — `A = 5` then `A ∪ {3}` is {5,3}.
+    expect(
+      calc('\\displaylines{A=5\\\\ A\\cup\\left\\{3\\right\\}}')
+        .statements[1].code,
+    ).toBe('sp.Union(sp.FiniteSet(A), sp.FiniteSet(3))');
+    // The assign row needs evaluate=False — Eq(Symbol, FiniteSet)
+    // collapses to literal False like Eq(Symbol, Matrix) did.
+    expect(
+      calc('A=\\left\\{1,2\\right\\}').statements[0].display,
+    ).toContain('evaluate=False');
+  });
+
+  it('emits negative-integer powers as sp.Pow so Rational stays exact', () => {
+    // `Rational(3**-1, 2)` fed sympy a float 0.333… — a giant binary
+    // fraction instead of 1/6.
+    expect(calc('\\frac{3^{-1}}{2}').statements[0].code).toBe(
+      'sp.Rational(sp.Pow(3, -1), 2)',
+    );
+    expect(calc('2^{-1}').statements[0].code).toBe('sp.Pow(2, -1)');
+  });
+
+  it('keeps a failed statement as an in-place error row', () => {
+    // `\foo(1) \\ x+1` used to append the line-1 error AFTER the line-2
+    // result — the error now keeps its written position.
+    const prog = calc(
+      '\\displaylines{\\foo\\left(1\\right)\\\\ x+1}',
+    );
+    expect(prog.statements).toEqual([
+      { code: '', display: undefined, error: expect.any(String) },
+      { code: 'x + 1', display: undefined, error: undefined },
+    ]);
+    // Statement-bound errors aren't re-appended at the program level.
+    expect(
+      prog.issues.filter(
+        (i) => i.severity === 'error' && /statement skipped/.test(i.message),
+      ),
+    ).toEqual([]);
   });
 });
 
