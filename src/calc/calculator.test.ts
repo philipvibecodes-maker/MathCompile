@@ -398,18 +398,21 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     ]);
   });
 
-  it('lowers bare `f^{(n)}` to an applied derivative, not Derivative(f, n)', () => {
-    // Bare `x^{(2)}` emitted `sp.Derivative(x, 2)` — TypeError ('cannot
-    // represent derivative of UndefinedFunction'); and `x^{(2)}` must
-    // not self-apply the function (diff(x(x), x, 2) hard-aborts wasm).
-    expect(calc('x^{(2)}').statements[0].code).toBe(
-      'sp.diff(x(t), t, 2)',
-    );
-    expect(calc('f^{(3)}').statements[0].code).toBe(
+  it('reads bare `^{(n)}` as a derivative only on a function base', () => {
+    // A paren exponent means the nth derivative only when the base is a
+    // function: `x^{(2)}`/`5^{(2)}` are ordinary powers. `f^{(3)}` after
+    // a def still diffs; `f^{(3)}(x)` diffs because the call itself
+    // makes f a function.
+    expect(calc('x^{(2)}').statements[0].code).toBe('x**2');
+    expect(calc('5^{(2)}').statements[0].code).toBe('5**2');
+    expect(calc('(x+1)^{(2)}').statements[0].code).toBe('(x + 1)**2');
+    expect(calc('f^{(3)}').statements[0].code).toBe('f**3');
+    expect(calc('x^{(n)}').statements[0].code).toBe('x**n');
+    expect(calc('f^{(3)}(x)').statements[0].code).toBe(
       'sp.diff(f(x), x, 3)',
     );
-    expect(calc('t^{(2)}').statements[0].code).toBe(
-      'sp.diff(t(x), x, 2)',
+    expect(calc('g: x \\mapsto x^{2} \\\\ g^{(2)}').statements[1].code).toBe(
+      'sp.diff(g(x), x, 2)',
     );
   });
 
@@ -461,15 +464,19 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
   });
 
-  it('flags a symbolic derivative order instead of emitting 0 or crashing', () => {
-    // `f^{(n)}` in sympy is `diff(f, x, n)` (differentiates by n too —
-    // → 0) or `diff(f, (x, n))` — which hard-aborts this pyodide's
-    // sympy. An honest error row is the only safe answer.
-    for (const l of ['f^{(n)}', 'f^{(n)}(x)', 'f^{(n)}(2)']) {
+  it('flags a symbolic derivative order on a function base', () => {
+    // `f^{(n)}` on a function has no sympy form (`diff(f, x, n)`
+    // differentiates by n too — → 0, and `diff(f, (x, n))` hard-aborts
+    // this pyodide's sympy). An honest error row is the only safe
+    // answer. On a non-function base it is just a power (`x^{(n)}`).
+    for (const l of ['f^{(n)}(x)', 'f^{(n)}(2)']) {
       const prog = calc(l);
       expect(prog.statements).toHaveLength(1);
       expect(prog.statements[0].error).toMatch(/derivative order/);
     }
+    expect(
+      calc('f: x \\mapsto x^{2} \\\\ f^{(n)}').statements[1].error,
+    ).toMatch(/derivative order/);
   });
 
   it('chains comparisons pairwise — sympy relationals take two operands', () => {

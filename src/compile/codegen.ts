@@ -254,6 +254,9 @@ interface Scope {
   /** Names defined by Assign/Def anywhere in the worksheet (pre-scan;
    * distinguishes worksheet functions from the sp.<head> escape hatch). */
   declared: Set<string>;
+  /** Pre-scanned subset of `declared` bound by a function def (`f(x)=…`,
+   * `f: x↦…`) — lets `f^{(n)}` read as a derivative before the def emits. */
+  declaredFns: Set<string>;
   /** Names bound so far in emission order (Assign/Def targets plus every
    * name that has had a `= sp.Symbol`/`sp.Function` line emitted). */
   defined: Set<string>;
@@ -416,6 +419,18 @@ class Emitter {
   private fn(name: string): string {
     if (this.scope.defined.has(name)) return pyIdent(name);
     return this.alloc(this.scope.functions, name);
+  }
+
+  // Whether a name reads as a function for `^{(n)}` derivative notation:
+  // def'd (`f(x)=…`/`f: x↦…`), already used in call position, or fully
+  // undeclared — like `r(x)`, callee use itself makes it a function.
+  // A name bound as a variable (symbol, assign target) is not.
+  private isFunctionish(name: string): boolean {
+    return (
+      this.scope.functions.has(name) ||
+      this.scope.declaredFns.has(name) ||
+      (!this.scope.symbols.has(name) && !this.scope.defined.has(name))
+    );
   }
 
   // A name used as a matrix (\det A) needs sp.MatrixSymbol — det/trace
@@ -1074,6 +1089,22 @@ class Emitter {
             return v;
           };
           const argNodes = args.slice(1);
+          // `x^{(2)}(3)` on a variable isn't a derivative call — the
+          // power is a juxtaposed factor (`x**2 * 3`). The base reads as
+          // a function when it's def'd or already called; an undeclared
+          // name in callee position is a function by use (like `r(x)`).
+          if (isStr(f) && !this.isFunctionish(f)) {
+            const basePow = this.emit(
+              n === undefined || n === 'Nothing' ? f : ['Power', f, n],
+              PREC_MUL,
+            );
+            return [
+              [basePow, ...argNodes.map((a) => this.emit(a, PREC_MUL))].join(
+                ' * ',
+              ),
+              PREC_MUL,
+            ];
+          }
           const fname = isStr(f) ? this.fn(f) : null;
           const applied = (argsList: string) =>
             fname !== null
@@ -1147,10 +1178,26 @@ class Emitter {
         return [`${this.sp}Derivative(${name}, x${n})`, PREC_ATOM];
       }
       case 'Derivative': {
-        // Bare `f^{(n)}` / `x^{(2)}` — a string callee arrives unapplied
-        // and `Derivative(f, n)` raises TypeError ('cannot represent
-        // derivative of UndefinedFunction'). Diff the applied function
-        // like \ddot does: `sp.diff(f(x), x, n)` → dⁿf/dxⁿ.
+        // Bare `f^{(n)}` / `x^{(2)}` — a derivative only when the base is
+        // an established function (def'd or already used in call
+        // position); `x^{(2)}` on a variable is the ordinary power
+        // `x**2`, same as `5^{(2)}` → 25.
+        if (
+          isStr(args[0]) &&
+          !this.scope.functions.has(args[0]) &&
+          !this.scope.declaredFns.has(args[0])
+        ) {
+          const order =
+            args[1] === undefined
+              ? '1'
+              : isNum(args[1])
+                ? numText(args[1])
+                : this.emit(args[1], PREC_UNARY);
+          return [`${this.sym(args[0])}**${order}`, PREC_POW];
+        }
+        // A string callee arrives unapplied and `Derivative(f, n)` raises
+        // TypeError ('cannot represent derivative of UndefinedFunction').
+        // Diff the applied function like \ddot does: `sp.diff(f(x), x, n)`.
         if (isStr(args[0])) {
           const f = this.fn(args[0]);
           // `x^{(2)}` can't differentiate `x(x)` by `x` — the var must
@@ -2172,14 +2219,15 @@ export function compileWorksheet(
   }
 
   const declared = new Set<string>();
+  const declaredFns = new Set<string>();
   for (const r of perCell)
-    if (r.ir !== undefined) collectDeclared(r.ir, declared);
+    if (r.ir !== undefined) collectDeclared(r.ir, declared, declaredFns);
 
   // Each cell emits with fresh defined/symbols/functions state — cells
   // are independent, so a name used in a cell is always defined there.
   const genIssues: Issue[][] = cells.map(() => []);
   const makeScope = (cell: number): Scope =>
-    buildScope(qualified, declared, issues, genIssues, cell);
+    buildScope(qualified, declared, declaredFns, issues, genIssues, cell);
   const cellBodies = perCell.map((r, i) =>
     r.ir === undefined ? [] : cellStatements(r.ir, makeScope(i + 1)),
   );
@@ -2209,11 +2257,39 @@ export function compileWorksheet(
 // Names bound by Assign/Def anywhere in the IR (pre-scan). Distinguishes
 // worksheet-declared calls (`f(x)` when `f` is defined here) from the
 // `sp.<head>` escape hatch.
-function collectDeclared(ir: MathJson, declared: Set<string>): void {
+function collectDeclared(
+  ir: MathJson,
+  declared: Set<string>,
+  declaredFns: Set<string>,
+): void {
   const collect = (n: MathJson) => {
     if (!isArr(n)) return;
     const h = headOf(n);
-    if ((h === 'Assign' || h === 'Def') && isStr(n[1])) declared.add(n[1]);
+    if (h === 'Assign' && isStr(n[1])) declared.add(n[1]);
+    if (h === 'Def' && isStr(n[1])) {
+      declared.add(n[1]);
+      declaredFns.add(n[1]);
+    }
+    // `f: x ↦ body` — the typed/Colon def forms mirror emitStatement's.
+    const typed = isArr(n[2]) && headOf(n[2]) === 'call' ? n[2] : undefined;
+    if (
+      h === 'Function' &&
+      isArr(typed) &&
+      typed[1] === 'Typed' &&
+      isStr(typed[2])
+    ) {
+      declared.add(typed[2]);
+      declaredFns.add(typed[2]);
+    }
+    if (
+      h === 'call' &&
+      n[1] === 'Colon' &&
+      isStr(n[2]) &&
+      isHead(n[3], 'Function')
+    ) {
+      declared.add(n[2]);
+      declaredFns.add(n[2]);
+    }
     if (h === 'Block' || h === 'WhereBlock')
       n.slice(1).forEach(collect);
   };
@@ -2223,6 +2299,7 @@ function collectDeclared(ir: MathJson, declared: Set<string>): void {
 function buildScope(
   qualified: boolean,
   declared: Set<string>,
+  declaredFns: Set<string>,
   issues: Issue[],
   cellIssues: Issue[][],
   cell: number,
@@ -2230,6 +2307,7 @@ function buildScope(
   return {
     qualified,
     declared,
+    declaredFns,
     defined: new Set(),
     bound: new Set(),
     lambdaBound: new Set(),
@@ -2285,8 +2363,9 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
   if (ir === undefined) return { prelude: [], statements: [], issues };
 
   const declared = new Set<string>();
-  collectDeclared(ir, declared);
-  const scope = buildScope(true, declared, issues, [[]], 0);
+  const declaredFns = new Set<string>();
+  collectDeclared(ir, declared, declaredFns);
+  const scope = buildScope(true, declared, declaredFns, issues, [[]], 0);
   const { defs, parts } = cellBody(ir, scope);
   // Statements dropped by an emission error carry it in place — the
   // error becomes their row so the cell keeps written order.
