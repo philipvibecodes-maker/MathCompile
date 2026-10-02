@@ -60,11 +60,13 @@ class TextBlock extends MQNode {
     var string = Parser.string;
     var regex = Parser.regex;
     var optWhitespace = Parser.optWhitespace;
-    // text content tolerates one level of nested braces (\textit{x_{2}},
-    // \textbf{a{b}c}) so pasted text-mode latex doesn't fail the cell.
+    // text content tolerates nested braces up to depth 3 (\textit{x_{2}},
+    // \textbf{a{b{c}d}e}) so pasted text-mode latex doesn't fail the cell.
     return optWhitespace
       .then(string('{'))
-      .then(regex(/^(?:[^{}]|\{[^{}]*\})*/))
+      .then(
+        regex(/^(?:[^{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*/)
+      )
       .skip(string('}'))
       .map(function (text) {
         if (text.length === 0) return new Fragment(0, 0);

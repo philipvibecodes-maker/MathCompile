@@ -1415,11 +1415,21 @@ LatexCmds.overwithdelims = bindLiteralCmd('\\overwithdelims', 'over with delims'
 // \genfrac{l}{r}{thick}{style}{num}{denom}: consume the 6 args raw so
 // the full signature survives; each arg is a brace group or a single
 // delimiter token like ( ) [ ] | .
-var RAW_ARG = '(?:' + RAW_GROUP + '|\\\\[a-zA-Z]+|[^\\s{}])';
+// The bare-token alternative only accepts a single non-brace char or
+// an actual delimiter command — an arbitrary \foo would swallow
+// structural sequences (\right \middle \end \Bigg\rangle \\) that
+// delimit the enclosing \left(… / environment body.
+var RAW_ARG =
+  '(?:' +
+  RAW_GROUP +
+  '|\\\\(?:langle|rangle|lVert|rVert|vert|Vert|lfloor|rfloor|lceil|rceil' +
+  '|ulcorner|urcorner|llcorner|lrcorner|lmoustache|rmoustache|lbrace|rbrace' +
+  '|uparrow|downarrow|updownarrow|Uparrow|Downarrow|Updownarrow|backslash|surd)' +
+  '|[^\\s{}\\\\])';
 LatexCmds.genfrac = () =>
   new RawArgCommand(
     '\\genfrac',
-    new RegExp('^((?:\\s*' + RAW_ARG + '){1,6})'),
+    new RegExp('^((?:\\s*' + RAW_ARG + '){1,8})'),
     'gen frac'
   );
 LatexCmds.brace = bindLiteralCmd('\\brace', 'brace');
@@ -2099,3 +2109,128 @@ LatexCmds.backprime = bindVanillaSymbol(
   'back prime'
 );
 LatexCmds.tabularnewline = bindLiteralCmd('\\tabularnewline', 'table new line');
+
+// \k: ogonek below — completes the text-accent set (\v \u \r above,
+// \d \b \c below).
+LatexCmds.k = () =>
+  new DiacriticBelow('\\k', h.text('&#808;'), ['ogonek(', ')']);
+
+// More definition commands — same raw-args shape as \def.
+LatexCmds.gdef = () =>
+  new RawArgCommand(
+    '\\gdef',
+    new RegExp(
+      '^(?:\\\\[a-zA-Z]+|\\S)(?:#[0-9])*(?:' + RAW_GROUP + ')?'
+    ),
+    'g def'
+  );
+LatexCmds.edef = () =>
+  new RawArgCommand(
+    '\\edef',
+    new RegExp(
+      '^(?:\\\\[a-zA-Z]+|\\S)(?:#[0-9])*(?:' + RAW_GROUP + ')?'
+    ),
+    'e def'
+  );
+LatexCmds.xdef = () =>
+  new RawArgCommand(
+    '\\xdef',
+    new RegExp(
+      '^(?:\\\\[a-zA-Z]+|\\S)(?:#[0-9])*(?:' + RAW_GROUP + ')?'
+    ),
+    'x def'
+  );
+// \let\foo\bar / \let\foo=\bar — two unbraced macro-name args.
+LatexCmds['let'] = () =>
+  new RawArgCommand(
+    '\\let',
+    new RegExp(
+      '^(?:\\\\[a-zA-Z]+|[^\\s])(?:\\s*=\\s*)?(?:\\\\[a-zA-Z]+|[^\\s])?'
+    ),
+    'let'
+  );
+LatexCmds.chardef = () =>
+  new RawArgCommand(
+    '\\chardef',
+    new RegExp('^(?:\\\\[a-zA-Z]+|[^\\s])(?:\\s*=\\s*)?[^\\s{}]*'),
+    'char def'
+  );
+LatexCmds.mathchardef = () =>
+  new RawArgCommand(
+    '\\mathchardef',
+    new RegExp('^(?:\\\\[a-zA-Z]+|[^\\s])(?:\\s*=\\s*)?[^\\s{}]*'),
+    'math char def'
+  );
+
+// Sectioning and other one-brace-group text commands — the argument
+// stays an editable block.
+[
+  'section',
+  'subsection',
+  'subsubsection',
+  'chapter',
+  'paragraph',
+  'subparagraph',
+  'caption',
+  'title',
+  'author',
+  'date',
+  'thanks',
+  'bibliography',
+  'bibliographystyle',
+  'newcounter',
+  'stepcounter',
+  'refstepcounter',
+  'usecounter',
+  'value',
+  'pagestyle',
+  'thispagestyle',
+  'pagenumbering'
+].forEach(bindMathWrap);
+
+// \documentclass[opts]{class} and \usepackage[opts]{pkg}.
+LatexCmds.documentclass = bindOptBracketCmd('\\documentclass', 1, 'document class');
+LatexCmds.usepackage = bindOptBracketCmd('\\usepackage', 1, 'use package');
+// \item has no required group — visible leaf; an optional [label]
+// parses as ordinary bracket content after it.
+LatexCmds.item = bindLiteralCmd('\\item', 'item');
+
+// Document-level commands with no arguments — visible verbatim leaves.
+LatexCmds.long = bindLiteralCmd('\\long', 'long');
+LatexCmds.outer = bindLiteralCmd('\\outer', 'outer');
+LatexCmds['global'] = bindLiteralCmd('\\global', 'global');
+LatexCmds['protected'] = bindLiteralCmd('\\protected', 'protected');
+LatexCmds.maketitle = bindLiteralCmd('\\maketitle', 'make title');
+LatexCmds.tableofcontents = bindLiteralCmd(
+  '\\tableofcontents',
+  'table of contents'
+);
+LatexCmds.appendix = bindLiteralCmd('\\appendix', 'appendix');
+LatexCmds.frontmatter = bindLiteralCmd('\\frontmatter', 'front matter');
+LatexCmds.mainmatter = bindLiteralCmd('\\mainmatter', 'main matter');
+LatexCmds.backmatter = bindLiteralCmd('\\backmatter', 'back matter');
+LatexCmds.centering = bindLiteralCmd('\\centering', 'centering');
+LatexCmds.raggedright = bindLiteralCmd('\\raggedright', 'ragged right');
+LatexCmds.raggedleft = bindLiteralCmd('\\raggedleft', 'ragged left');
+LatexCmds.sloppy = bindLiteralCmd('\\sloppy', 'sloppy');
+LatexCmds.fussy = bindLiteralCmd('\\fussy', 'fussy');
+LatexCmds.noindent = bindLiteralCmd('\\noindent', 'no indent');
+LatexCmds.indent = bindLiteralCmd('\\indent', 'indent');
+LatexCmds.par = bindLiteralCmd('\\par', 'par');
+LatexCmds.newline = bindLiteralCmd('\\newline', 'new line');
+LatexCmds.newpage = bindLiteralCmd('\\newpage', 'new page');
+LatexCmds.clearpage = bindLiteralCmd('\\clearpage', 'clear page');
+LatexCmds.pagebreak = bindLiteralCmd('\\pagebreak', 'page break');
+LatexCmds.nopagebreak = bindLiteralCmd('\\nopagebreak', 'no page break');
+LatexCmds.linebreak = bindLiteralCmd('\\linebreak', 'line break');
+LatexCmds.nolinebreak = bindLiteralCmd('\\nolinebreak', 'no line break');
+LatexCmds.vfill = bindLiteralCmd('\\vfill', 'vertical fill');
+LatexCmds.vfil = bindLiteralCmd('\\vfil', 'vertical fil');
+LatexCmds.today = bindLiteralCmd('\\today', 'today');
+LatexCmds.dotsv = bindLiteralCmd('\\dotsv', 'dots v');
+LatexCmds.dotsb = bindLiteralCmd('\\dotsb', 'dots b');
+LatexCmds.dotsi = bindLiteralCmd('\\dotsi', 'dots i');
+LatexCmds.dotsm = bindLiteralCmd('\\dotsm', 'dots m');
+LatexCmds.dotso = bindLiteralCmd('\\dotso', 'dots o');
+LatexCmds.ldotp = bindLiteralCmd('\\ldotp', 'l dot p');
+LatexCmds.cdotp = bindLiteralCmd('\\cdotp', 'c dot p');

@@ -1532,5 +1532,35 @@ suite('latex', function () {
       '\\begin{foo} x\\end{foo}'
     );
     assertParsesLatex('\\end{foo}', '\\end{foo}');
+    // null delimiters: \left. and \right. close a pair with a
+    // zero-width side (the SVG_SYMBOLS fallback renders nothing)
+    assertParsesLatex('\\left(x\\right.', '\\left(x\\right.');
+    assertParsesLatex('\\left.x\\right|', '\\left.x\\right|');
+    assertParsesLatex(
+      '\\displaylines{\\left(x\\right.\\\\ \\left.y\\right)}',
+      '\\displaylines{\\left(x\\right.\\\\ \\left.y\\right)}'
+    );
+    // definition + text-mode commands keep their arguments verbatim
+    assertParsesLatex('\\let\\x\\y', '\\let\\x\\y');
+    assertParsesLatex('\\gdef\\x{y}', '\\gdef\\x{y}');
+    assertParsesLatex('\\section{a}', '\\section{a}');
+    assertParsesLatex('\\documentclass[12pt]{article}', '\\documentclass[12pt]{article}');
+    assertParsesLatex('\\k{x}', '\\k{x}');
+    assertParsesLatex('\\item', '\\item');
+    assertParsesLatex('\\item[x]', '\\item[x]');
+    assertParsesLatex('\\genfrac(){}{0}{}{a}{b}', '\\genfrac(){}{0}{}{a}{b}');
+    // \genfrac inside delimiters: its raw args must not swallow the
+    // enclosing \right / \Bigg…\rangle close
+    assertParsesLatex(
+      '\\left(\\genfrac(){}{0}{}{a}{b}\\right)',
+      '\\left(\\genfrac(){}{0}{}{a}{b}\\right)'
+    );
+    assertParsesLatex(
+      '\\Bigg\\langle\\genfrac(){}{0}{}{a}{b}\\Bigg\\rangle',
+      '\\Bigg\\langle\\genfrac(){}{0}{}{a}{b}\\Bigg\\rangle'
+    );
+    assertParsesLatex('\\genfrac\\langle\\rangle{0}{}{a}{b}', '\\genfrac\\langle\\rangle{0}{}{a}{b}');
+    // text blocks tolerate nested braces up to depth 3
+    assertParsesLatex('\\textbf{a{b{c}d}e}', '\\textbf{a{b{c}d}e}');
   });
 });

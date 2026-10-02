@@ -5981,11 +5981,11 @@ var __assign = (this && this.__assign) || function () {
             var string = Parser.string;
             var regex = Parser.regex;
             var optWhitespace = Parser.optWhitespace;
-            // text content tolerates one level of nested braces (\textit{x_{2}},
-            // \textbf{a{b}c}) so pasted text-mode latex doesn't fail the cell.
+            // text content tolerates nested braces up to depth 3 (\textit{x_{2}},
+            // \textbf{a{b{c}d}e}) so pasted text-mode latex doesn't fail the cell.
             return optWhitespace
                 .then(string('{'))
-                .then(regex(/^(?:[^{}]|\{[^{}]*\})*/))
+                .then(regex(/^(?:[^{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*/))
                 .skip(string('}'))
                 .map(function (text) {
                 if (text.length === 0)
@@ -7334,9 +7334,18 @@ var __assign = (this && this.__assign) || function () {
     // \genfrac{l}{r}{thick}{style}{num}{denom}: consume the 6 args raw so
     // the full signature survives; each arg is a brace group or a single
     // delimiter token like ( ) [ ] | .
-    var RAW_ARG = '(?:' + RAW_GROUP + '|\\\\[a-zA-Z]+|[^\\s{}])';
+    // The bare-token alternative only accepts a single non-brace char or
+    // an actual delimiter command \u2014 an arbitrary \foo would swallow
+    // structural sequences (\right \middle \end \Bigg\rangle \\) that
+    // delimit the enclosing \left(\u2026 / environment body.
+    var RAW_ARG = '(?:' +
+        RAW_GROUP +
+        '|\\\\(?:langle|rangle|lVert|rVert|vert|Vert|lfloor|rfloor|lceil|rceil' +
+        '|ulcorner|urcorner|llcorner|lrcorner|lmoustache|rmoustache|lbrace|rbrace' +
+        '|uparrow|downarrow|updownarrow|Uparrow|Downarrow|Updownarrow|backslash|surd)' +
+        '|[^\\s{}\\\\])';
     LatexCmds.genfrac = function () {
-        return new RawArgCommand('\\genfrac', new RegExp('^((?:\\s*' + RAW_ARG + '){1,6})'), 'gen frac');
+        return new RawArgCommand('\\genfrac', new RegExp('^((?:\\s*' + RAW_ARG + '){1,8})'), 'gen frac');
     };
     LatexCmds.brace = bindLiteralCmd('\\brace', 'brace');
     LatexCmds.brack = bindLiteralCmd('\\brack', 'brack');
@@ -7836,6 +7845,98 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.textvisiblespace = bindVanillaSymbol('\\textvisiblespace ', '&#x2423;', 'visible space');
     LatexCmds.backprime = bindVanillaSymbol('\\backprime ', '&#x2035;', 'back prime');
     LatexCmds.tabularnewline = bindLiteralCmd('\\tabularnewline', 'table new line');
+    // \k: ogonek below \u2014 completes the text-accent set (\v \u \r above,
+    // \d \b \c below).
+    LatexCmds.k = function () {
+        return new DiacriticBelow('\\k', h.text('&#808;'), ['ogonek(', ')']);
+    };
+    // More definition commands \u2014 same raw-args shape as \def.
+    LatexCmds.gdef = function () {
+        return new RawArgCommand('\\gdef', new RegExp('^(?:\\\\[a-zA-Z]+|\\S)(?:#[0-9])*(?:' + RAW_GROUP + ')?'), 'g def');
+    };
+    LatexCmds.edef = function () {
+        return new RawArgCommand('\\edef', new RegExp('^(?:\\\\[a-zA-Z]+|\\S)(?:#[0-9])*(?:' + RAW_GROUP + ')?'), 'e def');
+    };
+    LatexCmds.xdef = function () {
+        return new RawArgCommand('\\xdef', new RegExp('^(?:\\\\[a-zA-Z]+|\\S)(?:#[0-9])*(?:' + RAW_GROUP + ')?'), 'x def');
+    };
+    // \let\foo\bar / \let\foo=\bar \u2014 two unbraced macro-name args.
+    LatexCmds['let'] = function () {
+        return new RawArgCommand('\\let', new RegExp('^(?:\\\\[a-zA-Z]+|[^\\s])(?:\\s*=\\s*)?(?:\\\\[a-zA-Z]+|[^\\s])?'), 'let');
+    };
+    LatexCmds.chardef = function () {
+        return new RawArgCommand('\\chardef', new RegExp('^(?:\\\\[a-zA-Z]+|[^\\s])(?:\\s*=\\s*)?[^\\s{}]*'), 'char def');
+    };
+    LatexCmds.mathchardef = function () {
+        return new RawArgCommand('\\mathchardef', new RegExp('^(?:\\\\[a-zA-Z]+|[^\\s])(?:\\s*=\\s*)?[^\\s{}]*'), 'math char def');
+    };
+    // Sectioning and other one-brace-group text commands \u2014 the argument
+    // stays an editable block.
+    [
+        'section',
+        'subsection',
+        'subsubsection',
+        'chapter',
+        'paragraph',
+        'subparagraph',
+        'caption',
+        'title',
+        'author',
+        'date',
+        'thanks',
+        'bibliography',
+        'bibliographystyle',
+        'newcounter',
+        'stepcounter',
+        'refstepcounter',
+        'usecounter',
+        'value',
+        'pagestyle',
+        'thispagestyle',
+        'pagenumbering'
+    ].forEach(bindMathWrap);
+    // \documentclass[opts]{class} and \usepackage[opts]{pkg}.
+    LatexCmds.documentclass = bindOptBracketCmd('\\documentclass', 1, 'document class');
+    LatexCmds.usepackage = bindOptBracketCmd('\\usepackage', 1, 'use package');
+    // \item has no required group \u2014 visible leaf; an optional [label]
+    // parses as ordinary bracket content after it.
+    LatexCmds.item = bindLiteralCmd('\\item', 'item');
+    // Document-level commands with no arguments \u2014 visible verbatim leaves.
+    LatexCmds.long = bindLiteralCmd('\\long', 'long');
+    LatexCmds.outer = bindLiteralCmd('\\outer', 'outer');
+    LatexCmds['global'] = bindLiteralCmd('\\global', 'global');
+    LatexCmds['protected'] = bindLiteralCmd('\\protected', 'protected');
+    LatexCmds.maketitle = bindLiteralCmd('\\maketitle', 'make title');
+    LatexCmds.tableofcontents = bindLiteralCmd('\\tableofcontents', 'table of contents');
+    LatexCmds.appendix = bindLiteralCmd('\\appendix', 'appendix');
+    LatexCmds.frontmatter = bindLiteralCmd('\\frontmatter', 'front matter');
+    LatexCmds.mainmatter = bindLiteralCmd('\\mainmatter', 'main matter');
+    LatexCmds.backmatter = bindLiteralCmd('\\backmatter', 'back matter');
+    LatexCmds.centering = bindLiteralCmd('\\centering', 'centering');
+    LatexCmds.raggedright = bindLiteralCmd('\\raggedright', 'ragged right');
+    LatexCmds.raggedleft = bindLiteralCmd('\\raggedleft', 'ragged left');
+    LatexCmds.sloppy = bindLiteralCmd('\\sloppy', 'sloppy');
+    LatexCmds.fussy = bindLiteralCmd('\\fussy', 'fussy');
+    LatexCmds.noindent = bindLiteralCmd('\\noindent', 'no indent');
+    LatexCmds.indent = bindLiteralCmd('\\indent', 'indent');
+    LatexCmds.par = bindLiteralCmd('\\par', 'par');
+    LatexCmds.newline = bindLiteralCmd('\\newline', 'new line');
+    LatexCmds.newpage = bindLiteralCmd('\\newpage', 'new page');
+    LatexCmds.clearpage = bindLiteralCmd('\\clearpage', 'clear page');
+    LatexCmds.pagebreak = bindLiteralCmd('\\pagebreak', 'page break');
+    LatexCmds.nopagebreak = bindLiteralCmd('\\nopagebreak', 'no page break');
+    LatexCmds.linebreak = bindLiteralCmd('\\linebreak', 'line break');
+    LatexCmds.nolinebreak = bindLiteralCmd('\\nolinebreak', 'no line break');
+    LatexCmds.vfill = bindLiteralCmd('\\vfill', 'vertical fill');
+    LatexCmds.vfil = bindLiteralCmd('\\vfil', 'vertical fil');
+    LatexCmds.today = bindLiteralCmd('\\today', 'today');
+    LatexCmds.dotsv = bindLiteralCmd('\\dotsv', 'dots v');
+    LatexCmds.dotsb = bindLiteralCmd('\\dotsb', 'dots b');
+    LatexCmds.dotsi = bindLiteralCmd('\\dotsi', 'dots i');
+    LatexCmds.dotsm = bindLiteralCmd('\\dotsm', 'dots m');
+    LatexCmds.dotso = bindLiteralCmd('\\dotso', 'dots o');
+    LatexCmds.ldotp = bindLiteralCmd('\\ldotp', 'l dot p');
+    LatexCmds.cdotp = bindLiteralCmd('\\cdotp', 'c dot p');
     /*********************************
      * Symbols for Basic Mathematics
      ********************************/
@@ -11235,7 +11336,12 @@ var __assign = (this && this.__assign) || function () {
         };
         Bracket.prototype.getSymbol = function (side) {
             var ch = this.sides[side || R].ch;
-            return SVG_SYMBOLS[ch] || { width: '0', html: '' };
+            return (SVG_SYMBOLS[ch] || {
+                width: '0',
+                html: function () {
+                    return h.text('');
+                }
+            });
         };
         Bracket.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
@@ -11521,7 +11627,7 @@ var __assign = (this && this.__assign) || function () {
             var string = Parser.string;
             var optWhitespace = Parser.optWhitespace;
             return optWhitespace
-                .then(regex(/^(?:[([|]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z]))/))
+                .then(regex(/^(?:[([|.]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z]))/))
                 .then(function (ctrlSeq) {
                 var open = ctrlSeq.replace(/^\\/, '');
                 if (ctrlSeq == '\\langle') {
@@ -11535,7 +11641,7 @@ var __assign = (this && this.__assign) || function () {
                 return latexMathParser.then(function (block) {
                     return string('\\right')
                         .skip(optWhitespace)
-                        .then(regex(/^(?:[\])|]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z]))/))
+                        .then(regex(/^(?:[\])|.]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z]))/))
                         .map(function (end) {
                         var close = end.replace(/^\\/, '');
                         if (end == '\\rangle') {
