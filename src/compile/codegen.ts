@@ -626,15 +626,27 @@ class Emitter {
       case 'Multiply': {
         // `\operatorname{sgn}x` flattens to `Multiply(Sign, x)` — the
         // bare `Sign` factor reads as a name, not the signum function.
-        // Fuse `Sign`+next-factor back into sign(next): `a sgn b` →
-        // `a * sign(b)`. A trailing bare `Sign` stays a symbol.
+        // Fuse the operator leaf back into a call: unary `Sign`+next
+        // (`a sgn b` → `a*sign(b)`); binary GCD/LCM take the previous
+        // AND next factor (`a \gcd b` → `gcd(a,b)`). A trailing bare
+        // leaf stays a symbol.
+        const FUSE_UNARY = new Set(['Sign']);
+        const FUSE_BINARY = new Set(['GCD', 'LCM']);
         const parts: MathJson[] = [];
         for (let i = 0; i < args.length; i++) {
-          if (args[i] === 'Sign' && i + 1 < args.length) {
-            parts.push(['Sign', args[++i]]);
-            continue;
+          const a = args[i];
+          if (isStr(a) && i + 1 < args.length) {
+            if (FUSE_UNARY.has(a)) {
+              parts.push([a, args[++i]]);
+              continue;
+            }
+            if (FUSE_BINARY.has(a)) {
+              const prev = parts.pop();
+              parts.push([a, ...(prev !== undefined ? [prev] : []), args[++i]]);
+              continue;
+            }
           }
-          parts.push(args[i]);
+          parts.push(a);
         }
         return [
           parts.map((a) => this.emit(a, PREC_MUL)).join(' * '),

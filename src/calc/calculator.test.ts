@@ -513,6 +513,14 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(calc('2 \\operatorname{sgn}(x+1)').statements[0].code).toBe(
       '2 * sp.sign(x + 1)',
     );
+    // \gcd/\lcm are binary infix — they take the factor on BOTH sides.
+    expect(calc('a \\gcd b').statements[0].code).toBe('sp.gcd(a, b)');
+    expect(calc('a \\operatorname{lcm} b').statements[0].code).toBe(
+      'sp.lcm(a, b)',
+    );
+    expect(calc('x \\gcd y \\cdot z').statements[0].code).toBe(
+      'sp.gcd(x, y) * z',
+    );
   });
 
   it('restores f(x) calls inside integrals for defined functions', () => {
