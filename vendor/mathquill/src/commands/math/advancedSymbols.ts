@@ -1860,3 +1860,48 @@ LatexCmds.lhd = bindBinaryOperator('\\lhd ', '&#x22B2;', 'lhd');
 LatexCmds.rhd = bindBinaryOperator('\\rhd ', '&#x22B3;', 'rhd');
 LatexCmds.unlhd = bindBinaryOperator('\\unlhd ', '&#x22B4;', 'unlhd');
 LatexCmds.unrhd = bindBinaryOperator('\\unrhd ', '&#x22B5;', 'unrhd');
+
+// \colon — the short relation colon (versus \dblcolon and friends).
+LatexCmds.colon = bindBinaryOperator('\\colon ', '&#x3A;', 'colon');
+
+// \hdots — dots family member; \hdotsfor{n} spans columns inside
+// grids (1-block command so the count round-trips).
+LatexCmds.hdots = bindVanillaSymbol('\\hdots ', '&#8230;', 'hdots');
+LatexCmds.hdotsfor = () =>
+  new MathCommand(
+    '\\hdotsfor',
+    new DOMView(1, (blocks) =>
+      h('span', { class: 'mq-non-leaf mq-invisible' }, [
+        h.block('span', {}, blocks[0])
+      ])
+    )
+  );
+
+// \hfill/\hfil — fill glue; \noalign keeps a braced group verbatim;
+// \centerline/{...} centers its content in plain TeX.
+LatexCmds.hfill = bindLiteralCmd('\\hfill', 'horizontal fill');
+LatexCmds.hfil = bindLiteralCmd('\\hfil', 'horizontal fil');
+LatexCmds.centerline = () =>
+  new MathCommand(
+    '\\centerline',
+    new DOMView(1, (blocks) =>
+      h('span', { class: 'mq-non-leaf' }, [h.block('span', {}, blocks[0])])
+    )
+  );
+LatexCmds.noalign = () =>
+  new MathCommand(
+    '\\noalign',
+    new DOMView(1, (blocks) =>
+      h('span', { class: 'mq-non-leaf mq-invisible' }, [
+        h.block('span', {}, blocks[0])
+      ])
+    )
+  );
+
+// \multicolumn{cols}{spec}{content} — grid-cell command; keep args raw.
+LatexCmds.multicolumn = () =>
+  new RawArgCommand(
+    '\\multicolumn',
+    new RegExp('^' + RAW_GROUP + RAW_GROUP + RAW_GROUP),
+    'multi column'
+  );

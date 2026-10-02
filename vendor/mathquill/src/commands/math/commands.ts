@@ -2674,15 +2674,19 @@ LatexCmds.choose = class extends Binomial {
     LiveFraction.prototype.createLeftOf.call(this, cursor);
   }
   parser() {
-    return super.parser().or(
-      Parser.succeed(
-        new VanillaSymbol(
-          '\\choose ',
-          h.text('\\choose'),
-          'choose'
-        ) as MQNode | Fragment
-      )
-    ) as Parser<MQNode | Fragment>;
+    // DelimsNode's two-block parser (Binomial.parser() itself falls back
+    // to a \binom leaf, which would shadow \choose's own fallback).
+    return DelimsNode.prototype.parser
+      .call(this)
+      .or(
+        Parser.succeed(
+          new VanillaSymbol(
+            '\\choose ',
+            h.text('\\choose'),
+            'choose'
+          ) as MQNode | Fragment
+        )
+      ) as Parser<MQNode | Fragment>;
   }
 };
 

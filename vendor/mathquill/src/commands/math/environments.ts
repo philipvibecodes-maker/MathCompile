@@ -764,8 +764,15 @@ Environments.split = () => new Aligned();
 // ({cc}, {|l|c|r|}, …) which round-trips verbatim.
 class ArrayEnv extends Matrix {
   spec = '';
+  pos = '';
   latexOpen() {
-    return '\\begin{array}{' + this.spec + '}';
+    return (
+      '\\begin{array}' +
+      (this.pos ? '[' + this.pos + ']' : '') +
+      '{' +
+      this.spec +
+      '}'
+    );
   }
   latexClose() {
     return '\\end{array}';
@@ -774,9 +781,14 @@ class ArrayEnv extends Matrix {
     var self = this;
     return Parser.optWhitespace
       .then(
-        Parser.string('{')
-          .then(Parser.regex(/^[^{}]*/))
-          .skip(Parser.string('}'))
+        Parser.regex(/^\[[tcb]\]/)
+          .or(Parser.succeed(''))
+          .then(function (pos: string) {
+            if (pos) self.pos = pos.slice(1, -1);
+            return Parser.string('{')
+              .then(Parser.regex(/^[^{}]*/))
+              .skip(Parser.string('}'));
+          })
       )
       .then(function (spec: string) {
         self.spec = spec;

@@ -7654,6 +7654,38 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.rhd = bindBinaryOperator('\\rhd ', '&#x22B3;', 'rhd');
     LatexCmds.unlhd = bindBinaryOperator('\\unlhd ', '&#x22B4;', 'unlhd');
     LatexCmds.unrhd = bindBinaryOperator('\\unrhd ', '&#x22B5;', 'unrhd');
+    // \colon \u2014 the short relation colon (versus \dblcolon and friends).
+    LatexCmds.colon = bindBinaryOperator('\\colon ', '&#x3A;', 'colon');
+    // \hdots \u2014 dots family member; \hdotsfor{n} spans columns inside
+    // grids (1-block command so the count round-trips).
+    LatexCmds.hdots = bindVanillaSymbol('\\hdots ', '&#8230;', 'hdots');
+    LatexCmds.hdotsfor = function () {
+        return new MathCommand('\\hdotsfor', new DOMView(1, function (blocks) {
+            return h('span', { class: 'mq-non-leaf mq-invisible' }, [
+                h.block('span', {}, blocks[0])
+            ]);
+        }));
+    };
+    // \hfill/\hfil \u2014 fill glue; \noalign keeps a braced group verbatim;
+    // \centerline/{...} centers its content in plain TeX.
+    LatexCmds.hfill = bindLiteralCmd('\\hfill', 'horizontal fill');
+    LatexCmds.hfil = bindLiteralCmd('\\hfil', 'horizontal fil');
+    LatexCmds.centerline = function () {
+        return new MathCommand('\\centerline', new DOMView(1, function (blocks) {
+            return h('span', { class: 'mq-non-leaf' }, [h.block('span', {}, blocks[0])]);
+        }));
+    };
+    LatexCmds.noalign = function () {
+        return new MathCommand('\\noalign', new DOMView(1, function (blocks) {
+            return h('span', { class: 'mq-non-leaf mq-invisible' }, [
+                h.block('span', {}, blocks[0])
+            ]);
+        }));
+    };
+    // \multicolumn{cols}{spec}{content} \u2014 grid-cell command; keep args raw.
+    LatexCmds.multicolumn = function () {
+        return new RawArgCommand('\\multicolumn', new RegExp('^' + RAW_GROUP + RAW_GROUP + RAW_GROUP), 'multi column');
+    };
     /*********************************
      * Symbols for Basic Mathematics
      ********************************/
@@ -11444,7 +11476,11 @@ var __assign = (this && this.__assign) || function () {
             LiveFraction.prototype.createLeftOf.call(this, cursor);
         };
         class_26.prototype.parser = function () {
-            return _super.prototype.parser.call(this).or(Parser.succeed(new VanillaSymbol('\\choose ', h.text('\\choose'), 'choose')));
+            // DelimsNode's two-block parser (Binomial.parser() itself falls back
+            // to a \binom leaf, which would shadow \choose's own fallback).
+            return DelimsNode.prototype.parser
+                .call(this)
+                .or(Parser.succeed(new VanillaSymbol('\\choose ', h.text('\\choose'), 'choose')));
         };
         return class_26;
     }(Binomial));
@@ -12472,10 +12508,15 @@ var __assign = (this && this.__assign) || function () {
         function ArrayEnv() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.spec = '';
+            _this_1.pos = '';
             return _this_1;
         }
         ArrayEnv.prototype.latexOpen = function () {
-            return '\\begin{array}{' + this.spec + '}';
+            return ('\\begin{array}' +
+                (this.pos ? '[' + this.pos + ']' : '') +
+                '{' +
+                this.spec +
+                '}');
         };
         ArrayEnv.prototype.latexClose = function () {
             return '\\end{array}';
@@ -12483,9 +12524,15 @@ var __assign = (this && this.__assign) || function () {
         ArrayEnv.prototype.parser = function () {
             var self = this;
             return Parser.optWhitespace
-                .then(Parser.string('{')
-                .then(Parser.regex(/^[^{}]*/))
-                .skip(Parser.string('}')))
+                .then(Parser.regex(/^\[[tcb]\]/)
+                .or(Parser.succeed(''))
+                .then(function (pos) {
+                if (pos)
+                    self.pos = pos.slice(1, -1);
+                return Parser.string('{')
+                    .then(Parser.regex(/^[^{}]*/))
+                    .skip(Parser.string('}'));
+            }))
                 .then(function (spec) {
                 self.spec = spec;
                 return self.cellsParser();

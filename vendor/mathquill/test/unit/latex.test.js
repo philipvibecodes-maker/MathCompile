@@ -1491,5 +1491,19 @@ suite('latex', function () {
     assertParsesLatex('\\cancelto{0}{x}', '\\cancelto{0}{x}');
     assertParsesLatex('\\intop', '\\intop');
     assertParsesLatex('\\unlhd', '\\unlhd');
+    // {a\choose b} keeps the infix leaf (Binomial's bare-arg fallback
+    // must not shadow \choose's own)
+    assertParsesLatex('{a\\choose b}', 'a\\choose b');
+    assertParsesLatex('\\choose{a}{b}', '\\binom{a}{b}');
+    // \begin{array}[t]{spec} keeps the optional position arg
+    assertParsesLatex(
+      '\\begin{array}[t]{cc}a&b\\end{array}',
+      '\\begin{array}[t]{cc}a&b\\end{array}'
+    );
+    assertParsesLatex('\\multicolumn{2}{c}{x}', '\\multicolumn{2}{c}{x}');
+    assertParsesLatex('\\colon', '\\colon');
+    assertParsesLatex('\\hdots', '\\hdots');
+    assertParsesLatex('\\hfill', '\\hfill');
+    assertParsesLatex('\\noalign{\\hline}', '\\noalign{\\hline}');
   });
 });
