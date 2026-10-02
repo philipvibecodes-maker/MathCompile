@@ -163,6 +163,7 @@ const SP_BUILTIN_CALL = new Set(
     'legendre_symbol jacobi_symbol kronecker_symbol rf ff factorial2 ' +
     'subfactorial stirling multinomial nC nP nT Piecewise piecewise ' +
     'sign ceiling conjugate arg re im ' +
+    'asinh acosh atanh acoth asech acsch ' +
     'solve solveset linsolve nonlinsolve simplify factor expand cancel ' +
     'collect apart together trigsimp expand_trig powsimp nsimplify ' +
     'radsimp ratsimp fraction limit series residue solve_linear '
@@ -220,6 +221,10 @@ const CALL_RENAMES: Record<string, string> = {
   Set: 'FiniteSet',
   Erf: 'erf',
   Erfc: 'erfc',
+  // \operatorname{arsinh} etc. — CE calls these Arsinh/… but sympy's
+  // are a-prefixed; the bare name displays `Arsinh(x)` unevaluated.
+  Arsinh: 'asinh', Arcosh: 'acosh', Artanh: 'atanh',
+  Arcsinh: 'asinh', Arccosh: 'acosh', Arctanh: 'atanh',
 };
 
 // \sin^{-1}(x) etc.: CE wraps the base name as ['InverseFunction', 'Sin'].
