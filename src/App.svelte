@@ -352,15 +352,6 @@
                 SymPy ready
               {/if}
             </span>
-            <!-- Testing aid: keeps the loading presentation up after
-                 the engine is ready so it can be inspected. -->
-            <label
-              class="option-checkbox pin-loading"
-              title="Keep showing the loading state after the SymPy engine is ready"
-            >
-              <input type="checkbox" bind:checked={calcEngine.debugLoading} />
-              pin loading
-            </label>
           {/if}
           <!-- Live readout of the input column's width share — a tuning
                aid for picking the divider's default position. -->
@@ -537,5 +528,16 @@
       <HowToGuide />
     </section>
   </div>
+  {#if appStore.target === 'calculator'}
+    <!-- Testing aid: keeps the loading presentation up after the
+         engine is ready so it can be inspected. -->
+    <label
+      class="pin-loading"
+      title="Keep showing the loading state after the SymPy engine is ready"
+    >
+      <input type="checkbox" bind:checked={calcEngine.debugLoading} />
+      pin loading
+    </label>
+  {/if}
   <CommandPalette {commands} />
 </div>
