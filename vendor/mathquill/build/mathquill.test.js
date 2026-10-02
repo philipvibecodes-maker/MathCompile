@@ -5379,9 +5379,15 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         MathCommand.prototype.placeCursor = function (cursor) {
             //insert the cursor at the right end of the first empty child, searching
             //left-to-right, or if none empty, the right end child
-            cursor.insAtRightEnd(this.foldChildren(this.getEnd(L), function (leftward, child) {
+            var el = this.foldChildren(this.getEnd(L), function (leftward, child) {
                 return leftward.isEmpty() ? leftward : child;
-            }));
+            });
+            // A command with no blocks (e.g. \verb, \end) has no child to land
+            // the caret in — place it right of the atom instead.
+            if (el)
+                cursor.insAtRightEnd(el);
+            else
+                cursor.insRightOf(this);
         };
         // editability methods: called by the cursor for editing, cursor movements,
         // and selection of the MathQuill tree, these all take in a direction and
@@ -7265,10 +7271,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     };
     LatexCmds.r = function () { return new DiacriticAbove('\\r', h.text('˚'), ['ring(', ')']); };
     LatexCmds.d = function () {
-        return new DiacriticBelow('\\d', h.text('&#803;'), ['dot below(', ')']);
+        return new DiacriticBelow('\\d', h.entityText('&#803;'), ['dot below(', ')']);
     };
     LatexCmds.b = function () {
-        return new DiacriticBelow('\\b', h.text('&#818;'), ['bar below(', ')']);
+        return new DiacriticBelow('\\b', h.entityText('&#818;'), ['bar below(', ')']);
     };
     LatexCmds.c = function () {
         return new DiacriticBelow('\\c', h.text('¸'), ['cedilla(', ')']);
@@ -7868,7 +7874,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     // \k: ogonek below — completes the text-accent set (\v \u \r above,
     // \d \b \c below).
     LatexCmds.k = function () {
-        return new DiacriticBelow('\\k', h.text('&#808;'), ['ogonek(', ')']);
+        return new DiacriticBelow('\\k', h.entityText('&#808;'), ['ogonek(', ')']);
     };
     // More definition commands — same raw-args shape as \def.
     LatexCmds.gdef = function () {
@@ -10073,6 +10079,13 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             _this_1.model = '';
             return _this_1;
         }
+        // Parser-only command: typing '\colorbox' in the command input can't
+        // supply a color argument, so typed insertion is a no-op (same
+        // convention as \textcolor).
+        class_18.prototype.createLeftOf = function () { };
+        class_18.prototype.numBlocks = function () {
+            return 1;
+        };
         class_18.prototype.parser = function () {
             var _this_1 = this;
             var self = this;
@@ -10120,6 +10133,13 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             _this_1.model = '';
             return _this_1;
         }
+        // Parser-only command: typing '\fcolorbox' in the command input can't
+        // supply color arguments, so typed insertion is a no-op (same
+        // convention as \textcolor).
+        class_19.prototype.createLeftOf = function () { };
+        class_19.prototype.numBlocks = function () {
+            return 1;
+        };
         class_19.prototype.parser = function () {
             var _this_1 = this;
             var self = this;
@@ -10178,6 +10198,13 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             _this_1.url = '';
             return _this_1;
         }
+        // Parser-only command: typing '\href' in the command input can't
+        // supply a url argument, so typed insertion is a no-op (same
+        // convention as \textcolor).
+        class_20.prototype.createLeftOf = function () { };
+        class_20.prototype.numBlocks = function () {
+            return 1;
+        };
         class_20.prototype.parser = function () {
             var _this_1 = this;
             var self = this;
@@ -10696,7 +10723,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             var domView = new DOMView(2, function (blocks) {
                 return h('span', { class: 'mq-large-operator mq-non-leaf' }, [
                     h('span', { class: 'mq-to' }, [h.block('span', {}, blocks[1])]),
-                    h('big', {}, [h.text(symbol)]),
+                    h('big', {}, [h.entityText(symbol)]),
                     h('span', { class: 'mq-from' }, [h.block('span', {}, blocks[0])])
                 ]);
             });
@@ -10848,7 +10875,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var boundlessIntegral = function (ctrlSeq, glyph, speak) {
         return function () {
             return new BoundlessIntegral(ctrlSeq, h('span', { class: 'mq-int' }, [
-                h('big', {}, [h.text(glyph)])
+                h('big', {}, [h.entityText(glyph)])
             ]), undefined, speak);
         };
     };
@@ -11487,6 +11514,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             _this_1.prefix = prefix;
             return _this_1;
         }
+        // Parser-only command: typing '\bigl' in the command input can't
+        // supply a delimiter token, so typed insertion is a no-op (same
+        // convention as \textcolor / \big).
+        SizedDelimiter.prototype.createLeftOf = function () { };
         SizedDelimiter.prototype.parser = function () {
             var self = this;
             return Parser.optWhitespace
@@ -11637,9 +11668,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         return function () {
             return new MathCommand(ctrlSeq, new DOMView(1, function (blocks) {
                 return h('span', { class: 'mq-non-leaf' }, [
-                    h('span', {}, [h.entityText(open)]),
+                    h('span', { class: 'mq-bra-ket-delim' }, [h.entityText(open)]),
                     h.block('span', {}, blocks[0]),
-                    h('span', {}, [h.entityText(close)])
+                    h('span', { class: 'mq-bra-ket-delim' }, [h.entityText(close)])
                 ]);
             }));
         };
@@ -11649,20 +11680,23 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds.braket = function () {
         return new MathCommand('\\braket', new DOMView(1, function (blocks) {
             return h('span', { class: 'mq-non-leaf' }, [
-                h('span', {}, [h.entityText('&lang;')]),
+                h('span', { class: 'mq-bra-ket-delim' }, [h.entityText('&lang;')]),
                 h.block('span', {}, blocks[0]),
-                h('span', {}, [h.entityText('&rang;')])
+                h('span', { class: 'mq-bra-ket-delim' }, [h.entityText('&rang;')])
             ]);
         }));
     };
     LatexCmds.ketbra = function () {
         return new MathCommand('\\ketbra', new DOMView(2, function (blocks) {
             return h('span', { class: 'mq-non-leaf' }, [
-                h('span', {}, [h.text('|')]),
+                h('span', { class: 'mq-bra-ket-delim' }, [h.text('|')]),
                 h.block('span', {}, blocks[0]),
-                h('span', {}, [h.entityText('&rang;'), h.entityText('&lang;')]),
+                h('span', { class: 'mq-bra-ket-delim' }, [
+                    h.entityText('&rang;'),
+                    h.entityText('&lang;')
+                ]),
                 h.block('span', {}, blocks[1]),
-                h('span', {}, [h.text('|')])
+                h('span', { class: 'mq-bra-ket-delim' }, [h.text('|')])
             ]);
         }));
     };
@@ -11773,7 +11807,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds['∳'] = LatexCmds.ointctrclockwise = boundlessIntegral('\\ointctrclockwise ', '&#8755;', 'counterclockwise contour integral');
     LatexCmds['∲'] = LatexCmds.varointclockwise = boundlessIntegral('\\varointclockwise ', '&#8754;', 'clockwise contour integral');
     LatexCmds.bigsqcap = LatexCmds.bigsqcapdot = function () {
-        return new SummationNotation('\\bigsqcap ', '&#8853;', 'square intersection');
+        return new SummationNotation('\\bigsqcap ', '&#10757;', 'square intersection');
     };
     LatexCmds.varinjlim = function () {
         return new SummationNotation('\\varinjlim ', 'lim&#8594;', 'direct limit');
@@ -13519,6 +13553,17 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         };
         Aligned.prototype.latexClose = function () {
             return '\\end{aligned}';
+        };
+        // Typed `\begin{aligned}` resolves to a 2x2 starter grid, matching
+        // Matrix's createBlocks (CellGrid's domView is lazy, so the default
+        // numBlocks() can't run here).
+        Aligned.prototype.createBlocks = function () {
+            this.blocks = [
+                new MatrixCell(0, this),
+                new MatrixCell(0, this),
+                new MatrixCell(1, this),
+                new MatrixCell(1, this)
+            ];
         };
         return Aligned;
     }(CellGrid));
@@ -20658,6 +20703,202 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 var frag = new Fragment(one, two);
                 frag.disown();
                 frag.disown();
+            });
+        });
+    });
+    // Vendored patch tests: typed-path rendering regressions — every input
+    // is exercised through typedText()/keystroke() the way a user types it,
+    // not just mq.latex() (regressions found by sweeping the PR-27 fixture
+    // inputs through the typed path).
+    suite('typed rendering', function () {
+        var $ = window.test_only_jquery;
+        var mq, el;
+        setup(function () {
+            el = $('<span></span>').appendTo('#mock')[0];
+            mq = MQ.MathField(el);
+        });
+        function typed(input) {
+            mq.latex('');
+            for (var i = 0; i < input.length; i += 1)
+                mq.typedText(input[i]);
+            // accept a trailing open latex-command input, like a user's Enter
+            if (el.querySelector('.mq-latex-command-input'))
+                mq.keystroke('Enter');
+        }
+        function rootEl() {
+            return mq.__controller.root.domFrag().oneElement();
+        }
+        function rootText() {
+            return rootEl().textContent;
+        }
+        suite('entity-string glyphs render as glyphs, not literal text', function () {
+            var cases = [
+                ['\\iiint', '∭'],
+                ['\\idotsint', '⋰'],
+                ['\\ointctrclockwise', '∳'],
+                ['\\varointclockwise', '∲'],
+                ['\\smallint', '∫'],
+                ['\\ointclockwise', '∲'],
+                ['\\intop', '∫'],
+                ['\\ointop', '∮'],
+                ['\\bigsqcap', '⨅'],
+                ['\\varinjlim', 'lim→'],
+                ['\\varprojlim', 'lim←']
+            ];
+            cases.forEach(function (pair) {
+                var input = pair[0], glyph = pair[1];
+                test(input + ' → ' + glyph, function () {
+                    mq.latex(input);
+                    assert.ok(rootText().indexOf(glyph) > -1, 'parsed ' + input);
+                    assert.ok(rootText().indexOf('&#') === -1, 'parsed ' + input);
+                    typed(input);
+                    assert.ok(rootText().indexOf(glyph) > -1, 'typed ' + input);
+                    assert.ok(rootText().indexOf('&#') === -1, 'typed ' + input);
+                });
+            });
+            var belowMarks = [
+                ['\\d{u}', '̣'],
+                ['\\b{o}', '̲'],
+                ['\\k{x}', '̨']
+            ];
+            belowMarks.forEach(function (pair) {
+                var input = pair[0], mark = pair[1];
+                test(input + ' → ' + mark, function () {
+                    mq.latex(input);
+                    assert.ok(rootText().indexOf(mark) > -1, 'parsed ' + input);
+                    typed(input);
+                    assert.ok(rootText().indexOf(mark) > -1, 'typed ' + input);
+                });
+            });
+        });
+        suite('parser-only commands typed in the field do not crash', function () {
+            var cases = [
+                // sized-delimiter prefixes (\big \bigl \middle …) are parser-only,
+                // like \left — a typed one inserts nothing and the following
+                // delimiter keystroke auto-pairs on its own
+                ['\\bigl(x\\bigr)', '\\left(x\\right)'],
+                ['\\Bigl[x\\Bigr]', '\\left[x\\right]'],
+                ['\\left(x\\middle|y\\right)', '\\left(\\left(x\\right|y\\right)'],
+                // raw-arg commands can't collect their argument typed — they
+                // insert nothing (same convention as \textcolor)
+                ['\\colorbox{red}{x}', '\\left\\{red\\right\\}\\left\\{x\\right\\}'],
+                [
+                    '\\fcolorbox{blue}{yellow}{x}',
+                    '\\left\\{blue\\right\\}\\left\\{yellow\\right\\}\\left\\{x\\right\\}'
+                ],
+                ['\\href{u}{x}', '\\left\\{u\\right\\}\\left\\{x\\right\\}'],
+                // zero-block commands have no child for the caret to land in —
+                // placeCursor must not crash
+                ['\\verb|x|', '\\verb\\left|x\\right|'],
+                ['\\end{foo}', '\\end{}\\left\\{foo\\right\\}'],
+                [
+                    '\\begin{foo}x\\end{foo}',
+                    '\\begin{foo} x\\end{}\\left\\{foo\\right\\}'
+                ],
+                [
+                    '\\begin{gathered}a\\\\b\\end{gathered}',
+                    '\\begin{gathered}a\\ b\\end{}\\left\\{gathered\\right\\}\\\\ \\end{gathered}'
+                ],
+                [
+                    '\\begin{smallmatrix}a\\end{smallmatrix}',
+                    '\\begin{smallmatrix}a\\end{}\\left\\{smallmatrix\\right\\}&\\\\&\\end{smallmatrix}'
+                ]
+            ];
+            cases.forEach(function (pair) {
+                var input = pair[0], latex = pair[1];
+                test(input, function () {
+                    typed(input);
+                    assert.equal(mq.latex(), latex);
+                });
+            });
+            test('\\begin{array}{cc}a&b typed mid-cell does not crash', function () {
+                typed('\\begin{array}{cc}a&b\\end{array}');
+                assert.ok(mq.latex().length > 0);
+            });
+        });
+        suite('typed \\begin{env} resolves every registered environment', function () {
+            test('\\begin{aligned} resolves to the aligned grid', function () {
+                typed('\\begin{aligned}');
+                assert.equal(mq.latex(), '\\begin{aligned}&\\\\&\\end{aligned}');
+                assert.equal(rootEl().querySelectorAll('td').length, 4);
+            });
+            test('\\begin{aligned}a&=b keeps cell content without crashing', function () {
+                typed('\\begin{aligned}a&=b');
+                assert.equal(mq.latex(), '\\begin{aligned}a\\&=b&\\\\&\\end{aligned}');
+            });
+            test('\\begin{align} resolves like aligned', function () {
+                typed('\\begin{align}');
+                assert.equal(mq.latex(), '\\begin{aligned}&\\\\&\\end{aligned}');
+            });
+            test('\\begin{alignat} resolves to a grid without crashing', function () {
+                typed('\\begin{alignat}');
+                assert.equal(mq.latex(), '\\begin{alignat}{}&\\\\&\\end{alignat}');
+            });
+        });
+        suite('accent diacritics are not clipped by the field top', function () {
+            var cases = [
+                '\\^{o}',
+                '\\~{n}',
+                '\\`{e}',
+                '\\"{o}',
+                '\\={o}',
+                '\\.{i}',
+                '\\v{s}',
+                '\\u{g}',
+                '\\r{a}',
+                '\\vec{v}',
+                '\\ddot{x}',
+                '\\check{s}',
+                '\\breve{o}',
+                '\\acute{e}',
+                '\\grave{a}',
+                '\\widetilde{xy}',
+                '\\overlinesegment{x}'
+            ];
+            cases.forEach(function (input) {
+                test(input, function () {
+                    typed(input);
+                    var span = rootEl().querySelector('.mq-diacritic-above');
+                    assert.ok(span, input + ' rendered no accent');
+                    var range = document.createRange();
+                    range.selectNodeContents(span);
+                    var inkTop = range.getBoundingClientRect().top;
+                    var rootTop = el
+                        .querySelector('.mq-root-block')
+                        .getBoundingClientRect().top;
+                    // the accent's ink must paint inside the root block's border box
+                    // — overflow:hidden clips there (pre-fix the ink sat ~4px above)
+                    assert.ok(inkTop >= rootTop - 0.5, input +
+                        ' accent ink (' +
+                        inkTop +
+                        ') is clipped above the field top (' +
+                        rootTop +
+                        ')');
+                });
+            });
+        });
+        suite('bra-ket delimiter spacing', function () {
+            test('\\bra{x} delimiters keep the caret off the glyphs', function () {
+                typed('\\bra{x}');
+                var delims = rootEl().querySelectorAll('.mq-bra-ket-delim');
+                assert.equal(delims.length, 2, 'bra delimiters');
+                var close = delims[1];
+                assert.ok(parseFloat(getComputedStyle(close).paddingLeft) > 0, 'closing | has no left padding');
+                // the | glyph sits right of the block's content edge (caret space)
+                var block = close.previousElementSibling;
+                var range = document.createRange();
+                range.selectNodeContents(close);
+                assert.ok(range.getBoundingClientRect().left -
+                    block.getBoundingClientRect().right >
+                    0, 'closing | overlaps the block edge');
+            });
+            test('\\ketbra{x}{y} delimiters keep the caret off the glyphs', function () {
+                typed('\\ketbra{x}{y}');
+                var delims = rootEl().querySelectorAll('.mq-bra-ket-delim');
+                assert.equal(delims.length, 3, 'ketbra delimiters');
+                for (var i = 0; i < delims.length; i += 1) {
+                    assert.ok(parseFloat(getComputedStyle(delims[i]).paddingLeft) > 0, 'delimiter ' + i + ' has no left padding');
+                }
             });
         });
     });

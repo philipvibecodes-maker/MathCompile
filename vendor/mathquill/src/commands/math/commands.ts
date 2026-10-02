@@ -406,6 +406,13 @@ LatexCmds.color = LatexCmds.textcolor;
 LatexCmds.colorbox = class extends MathCommand {
   color = '';
   model = '';
+  // Parser-only command: typing '\colorbox' in the command input can't
+  // supply a color argument, so typed insertion is a no-op (same
+  // convention as \textcolor).
+  createLeftOf() {}
+  numBlocks() {
+    return 1 as const;
+  }
   parser() {
     var self = this;
     return Parser.optWhitespace
@@ -450,6 +457,13 @@ LatexCmds.fcolorbox = class extends MathCommand {
   frameColor = '';
   bgColor = '';
   model = '';
+  // Parser-only command: typing '\fcolorbox' in the command input can't
+  // supply color arguments, so typed insertion is a no-op (same
+  // convention as \textcolor).
+  createLeftOf() {}
+  numBlocks() {
+    return 1 as const;
+  }
   parser() {
     var self = this;
     var colorGroup = Parser.string('{')
@@ -506,6 +520,13 @@ LatexCmds.fcolorbox = class extends MathCommand {
 // \href{url}{math} — link wrapper; the url arg is raw text.
 LatexCmds.href = class extends MathCommand {
   url = '';
+  // Parser-only command: typing '\href' in the command input can't
+  // supply a url argument, so typed insertion is a no-op (same
+  // convention as \textcolor).
+  createLeftOf() {}
+  numBlocks() {
+    return 1 as const;
+  }
   parser() {
     var self = this;
     return Parser.optWhitespace
@@ -1057,7 +1078,7 @@ class SummationNotation extends MathCommand {
     var domView = new DOMView(2, (blocks) =>
       h('span', { class: 'mq-large-operator mq-non-leaf' }, [
         h('span', { class: 'mq-to' }, [h.block('span', {}, blocks[1])]),
-        h('big', {}, [h.text(symbol)]),
+        h('big', {}, [h.entityText(symbol)]),
         h('span', { class: 'mq-from' }, [h.block('span', {}, blocks[0])])
       ])
     );
@@ -1219,7 +1240,7 @@ const boundlessIntegral = (ctrlSeq: string, glyph: string, speak: string) => {
     new BoundlessIntegral(
       ctrlSeq,
       h('span', { class: 'mq-int' }, [
-        h('big', {}, [h.text(glyph)])
+        h('big', {}, [h.entityText(glyph)])
       ]) as HTMLElement,
       undefined,
       speak
@@ -1896,6 +1917,10 @@ class SizedDelimiter extends MQSymbol {
     super();
     this.prefix = prefix;
   }
+  // Parser-only command: typing '\bigl' in the command input can't
+  // supply a delimiter token, so typed insertion is a no-op (same
+  // convention as \textcolor / \big).
+  createLeftOf() {}
   parser() {
     var self = this;
     return Parser.optWhitespace
@@ -2035,9 +2060,9 @@ function bindBraKet(ctrlSeq: string, open: string, close: string) {
       ctrlSeq,
       new DOMView(1, (blocks) =>
         h('span', { class: 'mq-non-leaf' }, [
-          h('span', {}, [h.entityText(open)]),
+          h('span', { class: 'mq-bra-ket-delim' }, [h.entityText(open)]),
           h.block('span', {}, blocks[0]),
-          h('span', {}, [h.entityText(close)])
+          h('span', { class: 'mq-bra-ket-delim' }, [h.entityText(close)])
         ])
       )
     );
@@ -2049,9 +2074,9 @@ LatexCmds.braket = () =>
     '\\braket',
     new DOMView(1, (blocks) =>
       h('span', { class: 'mq-non-leaf' }, [
-        h('span', {}, [h.entityText('&lang;')]),
+        h('span', { class: 'mq-bra-ket-delim' }, [h.entityText('&lang;')]),
         h.block('span', {}, blocks[0]),
-        h('span', {}, [h.entityText('&rang;')])
+        h('span', { class: 'mq-bra-ket-delim' }, [h.entityText('&rang;')])
       ])
     )
   );
@@ -2060,11 +2085,14 @@ LatexCmds.ketbra = () =>
     '\\ketbra',
     new DOMView(2, (blocks) =>
       h('span', { class: 'mq-non-leaf' }, [
-        h('span', {}, [h.text('|')]),
+        h('span', { class: 'mq-bra-ket-delim' }, [h.text('|')]),
         h.block('span', {}, blocks[0]),
-        h('span', {}, [h.entityText('&rang;'), h.entityText('&lang;')]),
+        h('span', { class: 'mq-bra-ket-delim' }, [
+          h.entityText('&rang;'),
+          h.entityText('&lang;')
+        ]),
         h.block('span', {}, blocks[1]),
-        h('span', {}, [h.text('|')])
+        h('span', { class: 'mq-bra-ket-delim' }, [h.text('|')])
       ])
     )
   );
@@ -2213,7 +2241,7 @@ LatexCmds['∲'] = LatexCmds.varointclockwise = boundlessIntegral(
 );
 
 LatexCmds.bigsqcap = LatexCmds.bigsqcapdot = () =>
-  new SummationNotation('\\bigsqcap ', '&#8853;', 'square intersection');
+  new SummationNotation('\\bigsqcap ', '&#10757;', 'square intersection');
 
 LatexCmds.varinjlim = () =>
   new SummationNotation('\\varinjlim ', 'lim&#8594;', 'direct limit');

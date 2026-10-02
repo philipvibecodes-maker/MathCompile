@@ -1131,9 +1131,9 @@ LatexCmds.u = () =>
   new DiacriticAbove('\\u', h.text('˘'), ['breve(', ')']);
 LatexCmds.r = () => new DiacriticAbove('\\r', h.text('˚'), ['ring(', ')']);
 LatexCmds.d = () =>
-  new DiacriticBelow('\\d', h.text('&#803;'), ['dot below(', ')']);
+  new DiacriticBelow('\\d', h.entityText('&#803;'), ['dot below(', ')']);
 LatexCmds.b = () =>
-  new DiacriticBelow('\\b', h.text('&#818;'), ['bar below(', ')']);
+  new DiacriticBelow('\\b', h.entityText('&#818;'), ['bar below(', ')']);
 LatexCmds.c = () =>
   new DiacriticBelow('\\c', h.text('¸'), ['cedilla(', ')']);
 
@@ -2073,7 +2073,7 @@ LatexCmds.tabularnewline = bindLiteralCmd('\\tabularnewline', 'table new line');
 // \k: ogonek below — completes the text-accent set (\v \u \r above,
 // \d \b \c below).
 LatexCmds.k = () =>
-  new DiacriticBelow('\\k', h.text('&#808;'), ['ogonek(', ')']);
+  new DiacriticBelow('\\k', h.entityText('&#808;'), ['ogonek(', ')']);
 
 // More definition commands — same raw-args shape as \def.
 LatexCmds.gdef = () =>

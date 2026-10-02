@@ -555,10 +555,14 @@
   margin-right: 0.1em;
   padding-top: 1px;
 }
+.mq-math-mode .mq-bra-ket-delim {
+  padding: 0 0.1em;
+}
 .mq-math-mode .mq-diacritic-above {
   display: block;
   text-align: center;
   line-height: 0.4em;
+  margin-top: 0.3em;
 }
 .mq-math-mode .mq-diacritic-stem {
   display: block;

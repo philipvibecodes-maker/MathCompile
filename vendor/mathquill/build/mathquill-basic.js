@@ -5370,9 +5370,15 @@ var __assign = (this && this.__assign) || function () {
         MathCommand.prototype.placeCursor = function (cursor) {
             //insert the cursor at the right end of the first empty child, searching
             //left-to-right, or if none empty, the right end child
-            cursor.insAtRightEnd(this.foldChildren(this.getEnd(L), function (leftward, child) {
+            var el = this.foldChildren(this.getEnd(L), function (leftward, child) {
                 return leftward.isEmpty() ? leftward : child;
-            }));
+            });
+            // A command with no blocks (e.g. \verb, \end) has no child to land
+            // the caret in \u2014 place it right of the atom instead.
+            if (el)
+                cursor.insAtRightEnd(el);
+            else
+                cursor.insRightOf(this);
         };
         // editability methods: called by the cursor for editing, cursor movements,
         // and selection of the MathQuill tree, these all take in a direction and
@@ -7762,6 +7768,13 @@ var __assign = (this && this.__assign) || function () {
             _this.model = '';
             return _this;
         }
+        // Parser-only command: typing '\colorbox' in the command input can't
+        // supply a color argument, so typed insertion is a no-op (same
+        // convention as \textcolor).
+        class_8.prototype.createLeftOf = function () { };
+        class_8.prototype.numBlocks = function () {
+            return 1;
+        };
         class_8.prototype.parser = function () {
             var _this = this;
             var self = this;
@@ -7809,6 +7822,13 @@ var __assign = (this && this.__assign) || function () {
             _this.model = '';
             return _this;
         }
+        // Parser-only command: typing '\fcolorbox' in the command input can't
+        // supply color arguments, so typed insertion is a no-op (same
+        // convention as \textcolor).
+        class_9.prototype.createLeftOf = function () { };
+        class_9.prototype.numBlocks = function () {
+            return 1;
+        };
         class_9.prototype.parser = function () {
             var _this = this;
             var self = this;
@@ -7867,6 +7887,13 @@ var __assign = (this && this.__assign) || function () {
             _this.url = '';
             return _this;
         }
+        // Parser-only command: typing '\href' in the command input can't
+        // supply a url argument, so typed insertion is a no-op (same
+        // convention as \textcolor).
+        class_10.prototype.createLeftOf = function () { };
+        class_10.prototype.numBlocks = function () {
+            return 1;
+        };
         class_10.prototype.parser = function () {
             var _this = this;
             var self = this;
@@ -8385,7 +8412,7 @@ var __assign = (this && this.__assign) || function () {
             var domView = new DOMView(2, function (blocks) {
                 return h('span', { class: 'mq-large-operator mq-non-leaf' }, [
                     h('span', { class: 'mq-to' }, [h.block('span', {}, blocks[1])]),
-                    h('big', {}, [h.text(symbol)]),
+                    h('big', {}, [h.entityText(symbol)]),
                     h('span', { class: 'mq-from' }, [h.block('span', {}, blocks[0])])
                 ]);
             });
@@ -8537,7 +8564,7 @@ var __assign = (this && this.__assign) || function () {
     var boundlessIntegral = function (ctrlSeq, glyph, speak) {
         return function () {
             return new BoundlessIntegral(ctrlSeq, h('span', { class: 'mq-int' }, [
-                h('big', {}, [h.text(glyph)])
+                h('big', {}, [h.entityText(glyph)])
             ]), undefined, speak);
         };
     };
@@ -9176,6 +9203,10 @@ var __assign = (this && this.__assign) || function () {
             _this.prefix = prefix;
             return _this;
         }
+        // Parser-only command: typing '\bigl' in the command input can't
+        // supply a delimiter token, so typed insertion is a no-op (same
+        // convention as \textcolor / \big).
+        SizedDelimiter.prototype.createLeftOf = function () { };
         SizedDelimiter.prototype.parser = function () {
             var self = this;
             return Parser.optWhitespace
@@ -9326,9 +9357,9 @@ var __assign = (this && this.__assign) || function () {
         return function () {
             return new MathCommand(ctrlSeq, new DOMView(1, function (blocks) {
                 return h('span', { class: 'mq-non-leaf' }, [
-                    h('span', {}, [h.entityText(open)]),
+                    h('span', { class: 'mq-bra-ket-delim' }, [h.entityText(open)]),
                     h.block('span', {}, blocks[0]),
-                    h('span', {}, [h.entityText(close)])
+                    h('span', { class: 'mq-bra-ket-delim' }, [h.entityText(close)])
                 ]);
             }));
         };
@@ -9338,20 +9369,23 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.braket = function () {
         return new MathCommand('\\braket', new DOMView(1, function (blocks) {
             return h('span', { class: 'mq-non-leaf' }, [
-                h('span', {}, [h.entityText('&lang;')]),
+                h('span', { class: 'mq-bra-ket-delim' }, [h.entityText('&lang;')]),
                 h.block('span', {}, blocks[0]),
-                h('span', {}, [h.entityText('&rang;')])
+                h('span', { class: 'mq-bra-ket-delim' }, [h.entityText('&rang;')])
             ]);
         }));
     };
     LatexCmds.ketbra = function () {
         return new MathCommand('\\ketbra', new DOMView(2, function (blocks) {
             return h('span', { class: 'mq-non-leaf' }, [
-                h('span', {}, [h.text('|')]),
+                h('span', { class: 'mq-bra-ket-delim' }, [h.text('|')]),
                 h.block('span', {}, blocks[0]),
-                h('span', {}, [h.entityText('&rang;'), h.entityText('&lang;')]),
+                h('span', { class: 'mq-bra-ket-delim' }, [
+                    h.entityText('&rang;'),
+                    h.entityText('&lang;')
+                ]),
                 h.block('span', {}, blocks[1]),
-                h('span', {}, [h.text('|')])
+                h('span', { class: 'mq-bra-ket-delim' }, [h.text('|')])
             ]);
         }));
     };
@@ -9462,7 +9496,7 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds['\u2233'] = LatexCmds.ointctrclockwise = boundlessIntegral('\\ointctrclockwise ', '&#8755;', 'counterclockwise contour integral');
     LatexCmds['\u2232'] = LatexCmds.varointclockwise = boundlessIntegral('\\varointclockwise ', '&#8754;', 'clockwise contour integral');
     LatexCmds.bigsqcap = LatexCmds.bigsqcapdot = function () {
-        return new SummationNotation('\\bigsqcap ', '&#8853;', 'square intersection');
+        return new SummationNotation('\\bigsqcap ', '&#10757;', 'square intersection');
     };
     LatexCmds.varinjlim = function () {
         return new SummationNotation('\\varinjlim ', 'lim&#8594;', 'direct limit');

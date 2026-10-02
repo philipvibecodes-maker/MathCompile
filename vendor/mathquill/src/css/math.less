@@ -596,10 +596,20 @@
     padding-top: 1px;
   }
 
+  // \bra{x} / \ket{x} / \braket / \ketbra delimiters — small padding so
+  // the caret doesn't render flush against the | and angle glyphs.
+  .mq-bra-ket-delim {
+    padding: 0 0.1em;
+  }
+
   .mq-diacritic-above {
     display: block;
     text-align: center;
     line-height: 0.4em;
+    // The accent glyph's ink overflows its (short) line box upward by
+    // ~0.2em; without headroom it paints above .mq-root-block and gets
+    // clipped by the field's overflow:hidden.
+    margin-top: 0.3em;
   }
 
   .mq-diacritic-stem {
