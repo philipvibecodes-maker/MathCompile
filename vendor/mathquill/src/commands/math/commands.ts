@@ -1057,7 +1057,7 @@ class SummationNotation extends MathCommand {
     var domView = new DOMView(2, (blocks) =>
       h('span', { class: 'mq-large-operator mq-non-leaf' }, [
         h('span', { class: 'mq-to' }, [h.block('span', {}, blocks[1])]),
-        h('big', {}, [h.text(symbol)]),
+        h('big', {}, [h.entityText(symbol)]),
         h('span', { class: 'mq-from' }, [h.block('span', {}, blocks[0])])
       ])
     );
@@ -1219,7 +1219,7 @@ const boundlessIntegral = (ctrlSeq: string, glyph: string, speak: string) => {
     new BoundlessIntegral(
       ctrlSeq,
       h('span', { class: 'mq-int' }, [
-        h('big', {}, [h.text(glyph)])
+        h('big', {}, [h.entityText(glyph)])
       ]) as HTMLElement,
       undefined,
       speak
@@ -2213,7 +2213,7 @@ LatexCmds['∲'] = LatexCmds.varointclockwise = boundlessIntegral(
 );
 
 LatexCmds.bigsqcap = LatexCmds.bigsqcapdot = () =>
-  new SummationNotation('\\bigsqcap ', '&#8853;', 'square intersection');
+  new SummationNotation('\\bigsqcap ', '&#10757;', 'square intersection');
 
 LatexCmds.varinjlim = () =>
   new SummationNotation('\\varinjlim ', 'lim&#8594;', 'direct limit');
