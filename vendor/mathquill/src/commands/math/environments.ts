@@ -24,12 +24,15 @@ LatexCmds.begin = class extends MathCommand {
     var string = Parser.string;
     var regex = Parser.regex;
     return string('{')
-      .then(regex(/^[a-z]+/i))
+      .then(regex(/^[a-z*]+/i))
       .skip(string('}'))
       .then(function (env) {
+        // Starred variants (align*, gather*, …) parse as their
+        // unstarred counterpart and serialize canonically.
+        var envName = env.replace(/\*/g, '');
         return (
-          Environments[env]
-            ? Environments[env]().parser()
+          Environments[envName]
+            ? Environments[envName]().parser()
             : Parser.fail('unknown environment type: ' + env)
         ).skip(string('\\end{' + env + '}'));
       });
@@ -720,6 +723,24 @@ class Gathered extends DisplayLines {
 }
 Environments.gathered = () => new Gathered();
 Environments.Gathered = () => new Gathered();
+// single-column display environments — serialize canonically as gathered
+Environments.gather = () => new Gathered();
+Environments.equation = () => new Gathered();
+Environments.multline = () => new Gathered();
+Environments.flalign = () => new Gathered();
+
+// \begin{smallmatrix}: matrix cells at a smaller size.
+class SmallMatrix extends Matrix {
+  gridClass = 'mq-matrix mq-smallmatrix mq-non-leaf';
+  latexOpen() {
+    return '\\begin{smallmatrix}';
+  }
+  latexClose() {
+    return '\\end{smallmatrix}';
+  }
+}
+Environments.smallmatrix = () => new SmallMatrix();
+Environments.subarray = () => new SmallMatrix();
 
 // \begin{aligned}: a two-column (or repeating two-column) grid —
 // parsed like matrix; cell alignment alternates right/left via CSS.
@@ -735,6 +756,9 @@ class Aligned extends CellGrid {
 }
 Environments.aligned = () => new Aligned();
 Environments.alignat = () => new Aligned();
+// alignment environments — serialize canonically as aligned
+Environments.align = () => new Aligned();
+Environments.split = () => new Aligned();
 
 // \substack{i=1\\ j=2}: a braced single-column stack used as a bound.
 class Substack extends DisplayLines {

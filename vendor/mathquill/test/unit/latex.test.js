@@ -314,6 +314,57 @@ suite('latex', function () {
     assertParsesLatex('x\\\\y', 'x\\\\y');
   });
 
+  test('named environments canonicalize to gathered/aligned', function () {
+    assertParsesLatex(
+      '\\begin{align}a&=b\\\\c&=d\\end{align}',
+      '\\begin{aligned}a&=b\\\\ c&=d\\end{aligned}'
+    );
+    assertParsesLatex(
+      '\\begin{align*}a&=b\\end{align*}',
+      '\\begin{aligned}a&=b\\end{aligned}'
+    );
+    assertParsesLatex(
+      '\\begin{equation}x=1\\end{equation}',
+      '\\begin{gathered}x=1\\end{gathered}'
+    );
+    assertParsesLatex(
+      '\\begin{smallmatrix}a\\end{smallmatrix}',
+      '\\begin{smallmatrix}a\\end{smallmatrix}'
+    );
+  });
+
+  test('escaped accents, bra-ket, display wrappers, rules', function () {
+    assertParsesLatex("\\'e", "\\'{e}");
+    assertParsesLatex('\\~n', '\\~{n}');
+    assertParsesLatex('\\^o', '\\^{o}');
+    assertParsesLatex('\\.{i}', '\\.{i}');
+    // a trailing escaped accent without a block stays a bare mark
+    assertParsesLatex("f\\'", 'f\\' + "'");
+    assertParsesLatex('\\bra{x}', '\\bra{x}');
+    assertParsesLatex('\\ket{x}', '\\ket{x}');
+    assertParsesLatex('\\braket{x|y}', '\\braket{x|y}');
+    assertParsesLatex('\\ketbra{x}{y}', '\\ketbra{x}{y}');
+    assertParsesLatex('\\[x\\]', '\\[x\\]');
+    assertParsesLatex('\\(x\\)', '\\(x\\)');
+    assertParsesLatex('\\hline', '\\hline');
+    assertParsesLatex('\\cline{1-2}', '\\cline{1-2}');
+    assertParsesLatex('\\iiint', '\\iiint');
+    assertParsesLatex('\\varinjlim', '\\varinjlim_{ }^{ }');
+    assertParsesLatex('\\boldsymbol{x}', '\\boldsymbol{x}');
+    assertParsesLatex('\\pmb{x}', '\\pmb{x}');
+    assertParsesLatex('\\llap{x}', '\\llap{x}');
+    assertParsesLatex('\\smash{x}', '\\smash{x}');
+    assertParsesLatex('\\fbox{x}', '\\fbox{x}');
+    assertParsesLatex('\\framebox{x}', '\\framebox{x}');
+    assertParsesLatex('\\nicefrac{1}{2}', '\\frac{1}{2}');
+    assertParsesLatex('\\underleftarrow{x}', '\\underleftarrow{x}');
+    assertParsesLatex('\\underrightarrow{x}', '\\underrightarrow{x}');
+    assertParsesLatex('\\overleftharpoon{x}', '\\overleftharpoon{x}');
+    // bare brackets are unaffected by the \[ wrapper registration
+    assertParsesLatex('x[y]', 'x[y]');
+    assertParsesLatex('(x)', '(x)');
+  });
+
   test('more relations and symbols parse', function () {
     assertParsesLatex('x\\subsetneq y', 'x\\subsetneq y');
     assertParsesLatex('x\\subsetneqq y', 'x\\subsetneqq y');

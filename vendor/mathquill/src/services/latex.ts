@@ -54,6 +54,15 @@ var latexMathParser = (function () {
       string('\\').then(
         regex(/^[a-z]+/i)
           .or(regex(/^\s+/).result(' '))
+          // escaped single-char accents keep their backslash so \'{e}
+          // is distinct from the bare ' prime symbol, \~{n} from ~nbsp;
+          // \[ \( \] \) display wrappers likewise stay distinct from
+          // bare brackets
+          .or(
+            regex(/^['"~.^=`()[\]]/).map(function (c) {
+              return '\\' + c;
+            })
+          )
           .or(any)
       )
     )

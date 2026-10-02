@@ -4106,6 +4106,13 @@ var __assign = (this && this.__assign) || function () {
         var controlSequence = regex(/^[^\\a-eg-zA-Z]/) // hotfix #164; match MathBlock::write
             .or(string('\\').then(regex(/^[a-z]+/i)
             .or(regex(/^\s+/).result(' '))
+            // escaped single-char accents keep their backslash so \'{e}
+            // is distinct from the bare ' prime symbol, \~{n} from ~nbsp;
+            // \[ \( \] \) display wrappers likewise stay distinct from
+            // bare brackets
+            .or(regex(/^['"~.^=`()[\]]/).map(function (c) {
+            return '\\' + c;
+        }))
             .or(any)))
             .then(function (ctrlSeq) {
             // TODO - is Parser<MQNode> correct?
@@ -9884,14 +9891,29 @@ var __assign = (this && this.__assign) || function () {
     var DiacriticAbove = /** @class */ (function (_super) {
         __extends(DiacriticAbove, _super);
         function DiacriticAbove(ctrlSeq, html, textTemplate) {
+            var _this_1 = this;
             var domView = new DOMView(1, function (blocks) {
                 return h('span', { class: 'mq-non-leaf' }, [
                     h('span', { class: 'mq-diacritic-above' }, [html]),
                     h.block('span', { class: 'mq-diacritic-stem' }, blocks[0])
                 ]);
             });
-            return _super.call(this, ctrlSeq, domView, textTemplate) || this;
+            _this_1 = _super.call(this, ctrlSeq, domView, textTemplate) || this;
+            _this_1.accentHtml = html;
+            return _this_1;
         }
+        // An accent with no block following degrades to a standalone mark \u2014
+        // `f\'` still parses (as f + a bare \u00b4) instead of failing the field.
+        DiacriticAbove.prototype.parser = function () {
+            var self = this;
+            return latexMathParser.block
+                .map(function (b) {
+                self.blocks = [b];
+                b.adopt(self, 0, 0);
+                return self;
+            })
+                .or(Parser.succeed(new VanillaSymbol(self.ctrlSeq + ' ', self.accentHtml.cloneNode(true))));
+        };
         return DiacriticAbove;
     }(MathCommand));
     LatexCmds.vec = function () {
@@ -9909,16 +9931,17 @@ var __assign = (this && this.__assign) || function () {
     var DiacriticBelow = /** @class */ (function (_super) {
         __extends(DiacriticBelow, _super);
         function DiacriticBelow(ctrlSeq, html, textTemplate) {
-            var domView = new DOMView(1, function (blocks) {
+            var _this_1 = _super.call(this, ctrlSeq, html, textTemplate) || this;
+            _this_1.domView = new DOMView(1, function (blocks) {
                 return h('span', { class: 'mq-non-leaf' }, [
                     h.block('span', { class: 'mq-diacritic-stem' }, blocks[0]),
                     h('span', { class: 'mq-diacritic-below' }, [html])
                 ]);
             });
-            return _super.call(this, ctrlSeq, domView, textTemplate) || this;
+            return _this_1;
         }
         return DiacriticBelow;
-    }(MathCommand));
+    }(DiacriticAbove));
     // \underbrace{x+y}_{n} / \overbrace \u2014 a 1-block command with a brace
     // drawn under/over; a following _ or ^ block grows an ordinary sibling
     // SupSub so the bound round-trips verbatim.
@@ -10053,6 +10076,181 @@ var __assign = (this && this.__assign) || function () {
     // reaches it, so this only kicks in outside grids (e.g. pasting `x\\ y`).
     LatexCmds['\\'] = function () {
         return new VanillaSymbol('\\\\', h('br', {}, []), 'line break');
+    };
+    // \cr is the plain-TeX row separator \u2014 inside a grid it is cell content
+    // (the cellsParser only splits on \\), so it round-trips verbatim and
+    // renders as a line break.
+    LatexCmds.cr = function () {
+        return new VanillaSymbol('\\cr ', h('br', {}, []), 'line break');
+    };
+    // Escaped single-char accents (registered under their backslash-escaped
+    // ctrlSeq \u2014 `\'` is an accent while bare ' stays the prime symbol).
+    LatexCmds["\\'"] = function () {
+        return new DiacriticAbove("\\'", h.text('\u00b4'), ['acute(', ')']);
+    };
+    LatexCmds['\\`'] = function () {
+        return new DiacriticAbove('\\`', h.text('`'), ['grave(', ')']);
+    };
+    LatexCmds['\\"'] = function () {
+        return new DiacriticAbove('\\"', h.text('\u00a8'), ['umlaut(', ')']);
+    };
+    LatexCmds['\\~'] = function () {
+        return new DiacriticAbove('\\~', h.text('~'), ['tilde(', ')']);
+    };
+    LatexCmds['\\='] = function () {
+        return new DiacriticAbove('\\=', h.text('\u00af'), ['bar(', ')']);
+    };
+    LatexCmds['\\.'] = function () {
+        return new DiacriticAbove('\\.', h.text('\u02d9'), ['dot(', ')']);
+    };
+    LatexCmds['\\^'] = function () {
+        return new DiacriticAbove('\\^', h.text('^'), ['hat(', ')']);
+    };
+    // Arrow/segment diacritics and group marks.
+    LatexCmds.overleftharpoon = function () {
+        return new DiacriticAbove('\\overleftharpoon', h.text('\u21bc'), ['overleft harpoon(', ')']);
+    };
+    LatexCmds.overrightharpoon = function () {
+        return new DiacriticAbove('\\overrightharpoon', h.text('\u21c0'), ['overright harpoon(', ')']);
+    };
+    LatexCmds.overlinesegment = function () {
+        return new DiacriticAbove('\\overlinesegment', h.text('\u2015'), ['overline segment(', ')']);
+    };
+    LatexCmds.underleftarrow = function () {
+        return new DiacriticBelow('\\underleftarrow', h.text('\u2190'), ['underleftarrow(', ')']);
+    };
+    LatexCmds.underrightarrow = function () {
+        return new DiacriticBelow('\\underrightarrow', h.text('\u2192'), ['underrightarrow(', ')']);
+    };
+    LatexCmds.overgroup = function () { return new UnderOverBrace('\\overgroup', false); };
+    LatexCmds.undergroup = function () { return new UnderOverBrace('\\undergroup', true); };
+    LatexCmds.overleftharp = function () {
+        return new DiacriticAbove('\\overleftharp', h.text('\u21bc'), ['overleft harp(', ')']);
+    };
+    LatexCmds.overrightharp = function () {
+        return new DiacriticAbove('\\overrightharp', h.text('\u21c0'), ['overright harp(', ')']);
+    };
+    // Physics bra-ket notation: \bra{x} \u2192 \u27e8x|, \ket{x} \u2192 |x\u27e9,
+    // \braket{x|y} \u2192 \u27e8x|y\u27e9 (one block, | is content), \ketbra \u2192 |x\u27e9\u27e8y|.
+    function bindBraKet(ctrlSeq, open, close) {
+        return function () {
+            return new MathCommand(ctrlSeq, new DOMView(1, function (blocks) {
+                return h('span', { class: 'mq-non-leaf' }, [
+                    h('span', {}, [h.entityText(open)]),
+                    h.block('span', {}, blocks[0]),
+                    h('span', {}, [h.entityText(close)])
+                ]);
+            }));
+        };
+    }
+    LatexCmds.bra = bindBraKet('\\bra', '&lang;', '|');
+    LatexCmds.ket = bindBraKet('\\ket', '|', '&rang;');
+    LatexCmds.braket = function () {
+        return new MathCommand('\\braket', new DOMView(1, function (blocks) {
+            return h('span', { class: 'mq-non-leaf' }, [
+                h('span', {}, [h.entityText('&lang;')]),
+                h.block('span', {}, blocks[0]),
+                h('span', {}, [h.entityText('&rang;')])
+            ]);
+        }));
+    };
+    LatexCmds.ketbra = function () {
+        return new MathCommand('\\ketbra', new DOMView(2, function (blocks) {
+            return h('span', { class: 'mq-non-leaf' }, [
+                h('span', {}, [h.text('|')]),
+                h.block('span', {}, blocks[0]),
+                h('span', {}, [h.entityText('&rang;'), h.entityText('&lang;')]),
+                h.block('span', {}, blocks[1]),
+                h('span', {}, [h.text('|')])
+            ]);
+        }));
+    };
+    // \[ \] \( \) display-math wrappers parse as bracket glyphs so pasted
+    // display math keeps its delimiters (registered under the escaped
+    // ctrlSeq \u2014 bare ( ) [ ] still go through the symbol fallback).
+    LatexCmds['\\['] = function () {
+        return new VanillaSymbol('\\[', h.text('['), 'open display math');
+    };
+    LatexCmds['\\]'] = function () {
+        return new VanillaSymbol('\\]', h.text(']'), 'close display math');
+    };
+    LatexCmds['\\('] = function () {
+        return new VanillaSymbol('\\(', h.text('('), 'open inline math');
+    };
+    LatexCmds['\\)'] = function () {
+        return new VanillaSymbol('\\)', h.text(')'), 'close inline math');
+    };
+    // Matrix rules \u2014 invisible in the grid, serialize verbatim.
+    LatexCmds.hline = bindStyleModifier('\\hline ', 'h line');
+    LatexCmds.hdashline = bindStyleModifier('\\hdashline ', 'h dash line');
+    LatexCmds.midrule = bindStyleModifier('\\midrule ', 'mid rule');
+    LatexCmds.toprule = bindStyleModifier('\\toprule ', 'top rule');
+    LatexCmds.bottomrule = bindStyleModifier('\\bottomrule ', 'bottom rule');
+    LatexCmds.cline = function () {
+        return new MathCommand('\\cline', new DOMView(1, function (blocks) {
+            return h('span', { class: 'mq-invisible' }, [
+                h.block('span', {}, blocks[0])
+            ]);
+        }));
+    };
+    LatexCmds.cmidrule = function () {
+        return new MathCommand('\\cmidrule', new DOMView(1, function (blocks) {
+            return h('span', { class: 'mq-invisible' }, [
+                h.block('span', {}, blocks[0])
+            ]);
+        }));
+    };
+    // \llap \rlap \clap \smash \u2014 overlap boxes; content renders inline.
+    function bindOverlapCmd(ctrlSeq, cls) {
+        return function () {
+            return new MathCommand(ctrlSeq, new DOMView(1, function (blocks) {
+                return h('span', { class: 'mq-non-leaf ' + cls }, [
+                    h.block('span', {}, blocks[0])
+                ]);
+            }));
+        };
+    }
+    LatexCmds.llap = bindOverlapCmd('\\llap', 'mq-llap');
+    LatexCmds.rlap = bindOverlapCmd('\\rlap', 'mq-rlap');
+    LatexCmds.clap = bindOverlapCmd('\\clap', 'mq-clap');
+    LatexCmds.smash = bindOverlapCmd('\\smash', 'mq-smash');
+    LatexCmds.mathstrut = bindStyleModifier('\\mathstrut ', 'math strut');
+    LatexCmds.strut = bindStyleModifier('\\strut ', 'strut');
+    // \iiint \idotsint \ointctrclockwise \varointclockwise \u2014 boundless
+    // integral signs like \iint.
+    LatexCmds['\u222d'] = LatexCmds.iiint = boundlessIntegral('\\iiint ', '&#8749;', 'triple integral');
+    LatexCmds.idotsint = boundlessIntegral('\\idotsint ', '&#8944;', 'dots integral');
+    LatexCmds['\u2233'] = LatexCmds.ointctrclockwise = boundlessIntegral('\\ointctrclockwise ', '&#8755;', 'counterclockwise contour integral');
+    LatexCmds['\u2232'] = LatexCmds.varointclockwise = boundlessIntegral('\\varointclockwise ', '&#8754;', 'clockwise contour integral');
+    LatexCmds.bigsqcap = LatexCmds.bigsqcapdot = function () {
+        return new SummationNotation('\\bigsqcap ', '&#8853;', 'square intersection');
+    };
+    LatexCmds.varinjlim = function () {
+        return new SummationNotation('\\varinjlim ', 'lim&#8594;', 'direct limit');
+    };
+    LatexCmds.varprojlim = function () {
+        return new SummationNotation('\\varprojlim ', 'lim&#8592;', 'inverse limit');
+    };
+    // \fbox/\framebox \u2014 boxed frames; \nicefrac canonicalizes to \frac.
+    LatexCmds.fbox = function () {
+        return new Style('\\fbox', 'span', { class: 'mq-non-leaf mq-fbox' }, 'Boxed');
+    };
+    LatexCmds.framebox = function () {
+        return new Style('\\framebox', 'span', { class: 'mq-non-leaf mq-fbox' }, 'Framed');
+    };
+    LatexCmds.nicefrac = LatexCmds.frac;
+    // Bold-symbol font wrappers.
+    LatexCmds.boldsymbol = function () {
+        return new Style('\\boldsymbol', 'span', { class: 'mq-non-leaf mq-bf mq-it' }, 'Bold Symbol');
+    };
+    LatexCmds.pmb = function () {
+        return new Style('\\pmb', 'span', { class: 'mq-non-leaf mq-bf' }, 'Poor Mans Bold');
+    };
+    LatexCmds.bm = function () {
+        return new Style('\\bm', 'span', { class: 'mq-non-leaf mq-bf mq-it' }, 'Bold');
+    };
+    LatexCmds.mathbfit = function () {
+        return new Style('\\mathbfit', 'span', { class: 'mq-non-leaf mq-bf mq-it' }, 'Bold Italic');
     };
     var DelimsNode = /** @class */ (function (_super) {
         __extends(DelimsNode, _super);
@@ -10817,11 +11015,14 @@ var __assign = (this && this.__assign) || function () {
             var string = Parser.string;
             var regex = Parser.regex;
             return string('{')
-                .then(regex(/^[a-z]+/i))
+                .then(regex(/^[a-z*]+/i))
                 .skip(string('}'))
                 .then(function (env) {
-                return (Environments[env]
-                    ? Environments[env]().parser()
+                // Starred variants (align*, gather*, \u2026) parse as their
+                // unstarred counterpart and serialize canonically.
+                var envName = env.replace(/\*/g, '');
+                return (Environments[envName]
+                    ? Environments[envName]().parser()
                     : Parser.fail('unknown environment type: ' + env)).skip(string('\\end{' + env + '}'));
             });
         };
@@ -11484,6 +11685,29 @@ var __assign = (this && this.__assign) || function () {
     }(DisplayLines));
     Environments.gathered = function () { return new Gathered(); };
     Environments.Gathered = function () { return new Gathered(); };
+    // single-column display environments \u2014 serialize canonically as gathered
+    Environments.gather = function () { return new Gathered(); };
+    Environments.equation = function () { return new Gathered(); };
+    Environments.multline = function () { return new Gathered(); };
+    Environments.flalign = function () { return new Gathered(); };
+    // \begin{smallmatrix}: matrix cells at a smaller size.
+    var SmallMatrix = /** @class */ (function (_super) {
+        __extends(SmallMatrix, _super);
+        function SmallMatrix() {
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.gridClass = 'mq-matrix mq-smallmatrix mq-non-leaf';
+            return _this_1;
+        }
+        SmallMatrix.prototype.latexOpen = function () {
+            return '\\begin{smallmatrix}';
+        };
+        SmallMatrix.prototype.latexClose = function () {
+            return '\\end{smallmatrix}';
+        };
+        return SmallMatrix;
+    }(Matrix));
+    Environments.smallmatrix = function () { return new SmallMatrix(); };
+    Environments.subarray = function () { return new SmallMatrix(); };
     // \begin{aligned}: a two-column (or repeating two-column) grid \u2014
     // parsed like matrix; cell alignment alternates right/left via CSS.
     var Aligned = /** @class */ (function (_super) {
@@ -11504,6 +11728,9 @@ var __assign = (this && this.__assign) || function () {
     }(CellGrid));
     Environments.aligned = function () { return new Aligned(); };
     Environments.alignat = function () { return new Aligned(); };
+    // alignment environments \u2014 serialize canonically as aligned
+    Environments.align = function () { return new Aligned(); };
+    Environments.split = function () { return new Aligned(); };
     // \substack{i=1\\ j=2}: a braced single-column stack used as a bound.
     var Substack = /** @class */ (function (_super) {
         __extends(Substack, _super);

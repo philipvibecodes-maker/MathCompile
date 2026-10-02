@@ -1434,6 +1434,7 @@ LatexCmds.cbrt = class extends NthRoot {
 };
 
 class DiacriticAbove extends MathCommand {
+  accentHtml: ChildNode;
   constructor(ctrlSeq: string, html: ChildNode, textTemplate?: string[]) {
     var domView = new DOMView(1, (blocks) =>
       h('span', { class: 'mq-non-leaf' }, [
@@ -1442,6 +1443,26 @@ class DiacriticAbove extends MathCommand {
       ])
     );
     super(ctrlSeq, domView, textTemplate);
+    this.accentHtml = html;
+  }
+  // An accent with no block following degrades to a standalone mark —
+  // `f\'` still parses (as f + a bare ´) instead of failing the field.
+  parser() {
+    var self = this;
+    return latexMathParser.block
+      .map(function (b: MathBlock) {
+        self.blocks = [b];
+        b.adopt(self, 0, 0);
+        return self;
+      })
+      .or(
+        Parser.succeed(
+          new VanillaSymbol(
+            self.ctrlSeq + ' ',
+            self.accentHtml.cloneNode(true) as ChildNode
+          ) as MQNode
+        )
+      );
   }
 }
 LatexCmds.vec = () =>
@@ -1453,15 +1474,15 @@ LatexCmds.ddot = () =>
 LatexCmds.dddot = () =>
   new DiacriticAbove('\\dddot', h.text('...'), ['dddot(', ')']);
 
-class DiacriticBelow extends MathCommand {
+class DiacriticBelow extends DiacriticAbove {
   constructor(ctrlSeq: string, html: ChildNode, textTemplate?: string[]) {
-    var domView = new DOMView(1, (blocks) =>
+    super(ctrlSeq, html, textTemplate);
+    this.domView = new DOMView(1, (blocks) =>
       h('span', { class: 'mq-non-leaf' }, [
         h.block('span', { class: 'mq-diacritic-stem' }, blocks[0]),
         h('span', { class: 'mq-diacritic-below' }, [html])
       ])
     );
-    super(ctrlSeq, domView, textTemplate);
   }
 }
 
@@ -1608,6 +1629,222 @@ LatexCmds['\\'] = function () {
     'line break'
   );
 };
+
+// \cr is the plain-TeX row separator — inside a grid it is cell content
+// (the cellsParser only splits on \\), so it round-trips verbatim and
+// renders as a line break.
+LatexCmds.cr = function () {
+  return new VanillaSymbol(
+    '\\cr ',
+    h('br', {}, []) as unknown as HTMLElement,
+    'line break'
+  );
+};
+
+// Escaped single-char accents (registered under their backslash-escaped
+// ctrlSeq — `\'` is an accent while bare ' stays the prime symbol).
+LatexCmds["\\'"] = () =>
+  new DiacriticAbove("\\'", h.text('´'), ['acute(', ')']);
+LatexCmds['\\`'] = () =>
+  new DiacriticAbove('\\`', h.text('`'), ['grave(', ')']);
+LatexCmds['\\"'] = () =>
+  new DiacriticAbove('\\"', h.text('¨'), ['umlaut(', ')']);
+LatexCmds['\\~'] = () =>
+  new DiacriticAbove('\\~', h.text('~'), ['tilde(', ')']);
+LatexCmds['\\='] = () =>
+  new DiacriticAbove('\\=', h.text('¯'), ['bar(', ')']);
+LatexCmds['\\.'] = () =>
+  new DiacriticAbove('\\.', h.text('˙'), ['dot(', ')']);
+LatexCmds['\\^'] = () =>
+  new DiacriticAbove('\\^', h.text('^'), ['hat(', ')']);
+
+// Arrow/segment diacritics and group marks.
+LatexCmds.overleftharpoon = () =>
+  new DiacriticAbove('\\overleftharpoon', h.text('↼'), ['overleft harpoon(', ')']);
+LatexCmds.overrightharpoon = () =>
+  new DiacriticAbove('\\overrightharpoon', h.text('⇀'), ['overright harpoon(', ')']);
+LatexCmds.overlinesegment = () =>
+  new DiacriticAbove('\\overlinesegment', h.text('―'), ['overline segment(', ')']);
+LatexCmds.underleftarrow = () =>
+  new DiacriticBelow('\\underleftarrow', h.text('←'), ['underleftarrow(', ')']);
+LatexCmds.underrightarrow = () =>
+  new DiacriticBelow('\\underrightarrow', h.text('→'), ['underrightarrow(', ')']);
+LatexCmds.overgroup = () => new UnderOverBrace('\\overgroup', false);
+LatexCmds.undergroup = () => new UnderOverBrace('\\undergroup', true);
+LatexCmds.overleftharp = () =>
+  new DiacriticAbove('\\overleftharp', h.text('↼'), ['overleft harp(', ')']);
+LatexCmds.overrightharp = () =>
+  new DiacriticAbove('\\overrightharp', h.text('⇀'), ['overright harp(', ')']);
+
+// Physics bra-ket notation: \bra{x} → ⟨x|, \ket{x} → |x⟩,
+// \braket{x|y} → ⟨x|y⟩ (one block, | is content), \ketbra → |x⟩⟨y|.
+function bindBraKet(ctrlSeq: string, open: string, close: string) {
+  return () =>
+    new MathCommand(
+      ctrlSeq,
+      new DOMView(1, (blocks) =>
+        h('span', { class: 'mq-non-leaf' }, [
+          h('span', {}, [h.entityText(open)]),
+          h.block('span', {}, blocks[0]),
+          h('span', {}, [h.entityText(close)])
+        ])
+      )
+    );
+}
+LatexCmds.bra = bindBraKet('\\bra', '&lang;', '|');
+LatexCmds.ket = bindBraKet('\\ket', '|', '&rang;');
+LatexCmds.braket = () =>
+  new MathCommand(
+    '\\braket',
+    new DOMView(1, (blocks) =>
+      h('span', { class: 'mq-non-leaf' }, [
+        h('span', {}, [h.entityText('&lang;')]),
+        h.block('span', {}, blocks[0]),
+        h('span', {}, [h.entityText('&rang;')])
+      ])
+    )
+  );
+LatexCmds.ketbra = () =>
+  new MathCommand(
+    '\\ketbra',
+    new DOMView(2, (blocks) =>
+      h('span', { class: 'mq-non-leaf' }, [
+        h('span', {}, [h.text('|')]),
+        h.block('span', {}, blocks[0]),
+        h('span', {}, [h.entityText('&rang;'), h.entityText('&lang;')]),
+        h.block('span', {}, blocks[1]),
+        h('span', {}, [h.text('|')])
+      ])
+    )
+  );
+
+// \[ \] \( \) display-math wrappers parse as bracket glyphs so pasted
+// display math keeps its delimiters (registered under the escaped
+// ctrlSeq — bare ( ) [ ] still go through the symbol fallback).
+LatexCmds['\\['] = function () {
+  return new VanillaSymbol('\\[', h.text('['), 'open display math');
+};
+LatexCmds['\\]'] = function () {
+  return new VanillaSymbol('\\]', h.text(']'), 'close display math');
+};
+LatexCmds['\\('] = function () {
+  return new VanillaSymbol('\\(', h.text('('), 'open inline math');
+};
+LatexCmds['\\)'] = function () {
+  return new VanillaSymbol('\\)', h.text(')'), 'close inline math');
+};
+
+// Matrix rules — invisible in the grid, serialize verbatim.
+LatexCmds.hline = bindStyleModifier('\\hline ', 'h line');
+LatexCmds.hdashline = bindStyleModifier('\\hdashline ', 'h dash line');
+LatexCmds.midrule = bindStyleModifier('\\midrule ', 'mid rule');
+LatexCmds.toprule = bindStyleModifier('\\toprule ', 'top rule');
+LatexCmds.bottomrule = bindStyleModifier('\\bottomrule ', 'bottom rule');
+LatexCmds.cline = () =>
+  new MathCommand(
+    '\\cline',
+    new DOMView(1, (blocks) =>
+      h('span', { class: 'mq-invisible' }, [
+        h.block('span', {}, blocks[0])
+      ])
+    )
+  );
+LatexCmds.cmidrule = () =>
+  new MathCommand(
+    '\\cmidrule',
+    new DOMView(1, (blocks) =>
+      h('span', { class: 'mq-invisible' }, [
+        h.block('span', {}, blocks[0])
+      ])
+    )
+  );
+
+// \llap \rlap \clap \smash — overlap boxes; content renders inline.
+function bindOverlapCmd(ctrlSeq: string, cls: string) {
+  return () =>
+    new MathCommand(
+      ctrlSeq,
+      new DOMView(1, (blocks) =>
+        h('span', { class: 'mq-non-leaf ' + cls }, [
+          h.block('span', {}, blocks[0])
+        ])
+      )
+    );
+}
+LatexCmds.llap = bindOverlapCmd('\\llap', 'mq-llap');
+LatexCmds.rlap = bindOverlapCmd('\\rlap', 'mq-rlap');
+LatexCmds.clap = bindOverlapCmd('\\clap', 'mq-clap');
+LatexCmds.smash = bindOverlapCmd('\\smash', 'mq-smash');
+LatexCmds.mathstrut = bindStyleModifier('\\mathstrut ', 'math strut');
+LatexCmds.strut = bindStyleModifier('\\strut ', 'strut');
+
+// \iiint \idotsint \ointctrclockwise \varointclockwise — boundless
+// integral signs like \iint.
+LatexCmds['∭'] = LatexCmds.iiint = boundlessIntegral(
+  '\\iiint ',
+  '&#8749;',
+  'triple integral'
+);
+LatexCmds.idotsint = boundlessIntegral(
+  '\\idotsint ',
+  '&#8944;',
+  'dots integral'
+);
+LatexCmds['∳'] = LatexCmds.ointctrclockwise = boundlessIntegral(
+  '\\ointctrclockwise ',
+  '&#8755;',
+  'counterclockwise contour integral'
+);
+LatexCmds['∲'] = LatexCmds.varointclockwise = boundlessIntegral(
+  '\\varointclockwise ',
+  '&#8754;',
+  'clockwise contour integral'
+);
+
+LatexCmds.bigsqcap = LatexCmds.bigsqcapdot = () =>
+  new SummationNotation('\\bigsqcap ', '&#8853;', 'square intersection');
+
+LatexCmds.varinjlim = () =>
+  new SummationNotation('\\varinjlim ', 'lim&#8594;', 'direct limit');
+LatexCmds.varprojlim = () =>
+  new SummationNotation('\\varprojlim ', 'lim&#8592;', 'inverse limit');
+
+// \fbox/\framebox — boxed frames; \nicefrac canonicalizes to \frac.
+LatexCmds.fbox = () =>
+  new Style(
+    '\\fbox',
+    'span',
+    { class: 'mq-non-leaf mq-fbox' },
+    'Boxed'
+  );
+LatexCmds.framebox = () =>
+  new Style(
+    '\\framebox',
+    'span',
+    { class: 'mq-non-leaf mq-fbox' },
+    'Framed'
+  );
+LatexCmds.nicefrac = LatexCmds.frac;
+
+// Bold-symbol font wrappers.
+LatexCmds.boldsymbol = () =>
+  new Style(
+    '\\boldsymbol',
+    'span',
+    { class: 'mq-non-leaf mq-bf mq-it' },
+    'Bold Symbol'
+  );
+LatexCmds.pmb = () =>
+  new Style('\\pmb', 'span', { class: 'mq-non-leaf mq-bf' }, 'Poor Mans Bold');
+LatexCmds.bm = () =>
+  new Style('\\bm', 'span', { class: 'mq-non-leaf mq-bf mq-it' }, 'Bold');
+LatexCmds.mathbfit = () =>
+  new Style(
+    '\\mathbfit',
+    'span',
+    { class: 'mq-non-leaf mq-bf mq-it' },
+    'Bold Italic'
+  );
 
 class DelimsNode extends MathCommand {
   delimFrags: Ends<DOMFragment>;
