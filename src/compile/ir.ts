@@ -734,6 +734,35 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
           return normalize([fn, ...callArgs], atStatement);
         return ['Apply', normalize(fn, false), ...mid, ...callArgs];
       }
+      // `\iint f dx dy` / `\iiint` — a single sign binds only the FIRST
+      // differential; the rest land as `d v` pairs in the juxtaposition.
+      // Repark every pair inside the integral so codegen sees one
+      // iterated integral instead of `∫f dx * d * y`.
+      if (isArray(items[0]) && head(items[0]) === 'Integrate') {
+        const inner = normalize(items[0], false) as MathJson[];
+        const integ =
+          isArray(inner) && head(inner) === 'Integrate' ? inner : null;
+        const rest = items.slice(1);
+        const pairs: MathJson[] = [];
+        if (
+          integ &&
+          rest.length >= 2 &&
+          rest.every(
+            (n, i) =>
+              (i % 2 === 0 && isDiffMark(n)) ||
+              (i % 2 === 1 && isString(n)),
+          )
+        ) {
+          for (const n of rest) pairs.push(n);
+          const integBody = integ.length > 1 ? integ[1] : 'Nothing';
+          const lims = integ.length > 2 ? integ[2] : 'Nothing';
+          return [
+            'Integrate',
+            ['Multiply', integBody, ...pairs],
+            lims,
+          ];
+        }
+      }
       const args = items.map((n) => normalize(n, false));
       const folded = foldDQuotient(args);
       if (folded) {
@@ -850,6 +879,19 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
             return body;
           }
         }
+      }
+      // `\iiint`/`{\iiiint}` — one sign binds every following `d v`:
+      // Integrate(body, 'x','y','z'). Repark all pairs on the body so
+      // codegen emits one iterated integral with a single +C.
+      if (
+        h === 'Integrate' &&
+        node.length > 3 &&
+        node.slice(2).every((n) => isString(n))
+      ) {
+        const intBody = normalize(node[1], false);
+        const pairs: MathJson[] = [];
+        for (const v of node.slice(2)) pairs.push('d', v);
+        return ['Integrate', ['Multiply', intBody, ...pairs], 'Nothing'];
       }
       const body = normalize(node[1], false);
       const lim = node[2];

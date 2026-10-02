@@ -961,11 +961,13 @@ class Emitter {
         const lo = limits?.[1];
         const hi = limits?.[2];
         let extraVars: string[] = [];
-        if (missing(v) && isHead(body, 'Multiply') && body.length >= 3) {
+        if (isHead(body, 'Multiply') && body.length >= 3) {
           // `\int x^2 \text{d}x` — CE leaves a \text{d} differential as
           // a `d * x` factor pair in the body instead of marking the var.
-          // `\iint`/`\iiint` are single signs, so several pairs park on
-          // one Integrate node — peel them all (leftmost = innermost).
+          // `\iint`/`\iiint` park several pairs on one Integrate node —
+          // peel them all (leftmost = innermost). A pair naming the
+          // already-bound variable (`(x,0,1)` limits) is consumed, not
+          // counted as an extra variable.
           const tail = body.slice(1);
           while (
             tail.length >= 2 &&
@@ -976,13 +978,17 @@ class Emitter {
               tail[tail.length - 2] === "'d'" ||
               tail[tail.length - 2] === "'d_upright'")
           ) {
-            extraVars.unshift(tail.pop() as string);
+            const name = tail.pop() as string;
             tail.pop();
+            if (name === v) continue;
+            extraVars.unshift(name);
           }
-          if (extraVars.length > 0) {
+          const peeled = tail.length !== body.length - 1;
+          if (peeled)
+            body = tail.length === 1 ? tail[0] : ['Multiply', ...tail];
+          if (peeled && missing(v) && extraVars.length > 0) {
             v = extraVars[0];
             extraVars = extraVars.slice(1);
-            body = tail.length === 1 ? tail[0] : ['Multiply', ...tail];
           }
         }
         if (missing(v)) {
@@ -1456,7 +1462,23 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   // constants of integration start at the first free capital.
   allNames(ir, scope.constNames);
   for (const name of scope.declared) scope.constNames.add(name);
-  const nodes = isHead(ir, 'Block') ? ir.slice(1) : [ir];
+  // `\text{where}`-Blocks arrive condition-first: `x² where x>0` parses
+  // as Block(Gt, x²). Rows are independent statements, so emit the body
+  // row before its conditions — the order the user wrote, not CE's.
+  const RELATION_HEADS = new Set([
+    'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
+    'NotLess', 'NotGreater', 'NotLessEqual', 'NotGreaterEqual',
+    'Element', 'NotElement', 'Subset', 'SubsetEqual', 'Superset',
+    'SupersetEqual', 'IdenticallyEqual', 'Congruent',
+  ]);
+  const isRelation = (n: MathJson): boolean => RELATION_HEADS.has(headOf(n) ?? '');
+  const blockNodes = isHead(ir, 'Block') ? ir.slice(1) : [ir];
+  const nodes =
+    blockNodes.length > 1 &&
+    blockNodes.slice(0, -1).every(isRelation) &&
+    !isRelation(blockNodes[blockNodes.length - 1])
+      ? [blockNodes[blockNodes.length - 1], ...blockNodes.slice(0, -1)]
+      : blockNodes;
   const parts = nodes.map((stmt) => ({
     stmt,
     out: emitStatement(stmt, emitter),
