@@ -18,6 +18,9 @@
 
   let rows = $state<CalcRow[]>([]);
   let pending = $state(false);
+  // True while the shown rows came from the nerdamer interim engine —
+  // they're estimates, so the UI marks them until SymPy rows land.
+  let interim = $state(false);
   let failed = $state('');
   // Per-cell opt-in to the `e = ...` display plumbing lines in .calc-code.
   let showPlumbing = $state(false);
@@ -30,9 +33,9 @@
 
   const statusLabel = $derived(
     calcEngine.status === 'loading'
-      ? 'Loading SymPy…'
+      ? 'Loading SymPy engine…'
       : calcEngine.status === 'error'
-        ? 'SymPy failed to load'
+        ? 'SymPy engine failed to load'
         : '…',
   );
 
@@ -43,6 +46,7 @@
     if (latexToStatementStrings(latex).length === 0) {
       rows = [];
       pending = false;
+      interim = false;
       failed = '';
       return;
     }
@@ -57,7 +61,10 @@
       // rows that already landed.
       if (calcEngine.status !== 'ready') {
         interimEvaluate(latex).then((r) => {
-          if (mine === seq && pending && r.length > 0) rows = r;
+          if (mine === seq && pending && r.length > 0) {
+            rows = r;
+            interim = true;
+          }
         });
       }
       evaluate(cell).then(
@@ -65,11 +72,13 @@
           if (mine !== seq) return;
           rows = r;
           pending = false;
+          interim = false;
           failed = '';
         },
         (e) => {
           if (mine !== seq) return;
           pending = false;
+          interim = false;
           failed = e instanceof Error ? e.message : String(e);
         },
       );
@@ -112,7 +121,7 @@
   {#if failed !== ''}
     <span class="calc-error" title={failed}>{failed}</span>
   {:else if rows.length > 0}
-    <div class="calc-rows" class:pending>
+    <div class="calc-rows" class:pending={pending}>
       {#each rows as row, i (i)}
         <div class="calc-row">
           {#if row.ok}
@@ -172,6 +181,13 @@
           {/if}
         </div>
       {/each}
+      {#if interim}
+        <span
+          class="calc-interim"
+          title="Estimate from the interim engine (nerdamer) — replaced by the SymPy result once the engine finishes loading."
+          >estimate · SymPy still loading</span
+        >
+      {/if}
     </div>
   {:else if pending}
     <!-- Empty cells and complete-but-empty results render nothing — a

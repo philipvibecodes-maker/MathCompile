@@ -23,7 +23,10 @@ export type EngineStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 // Engine status is shared UI state (the CalcOutput components read it for
 // their loading labels), so it lives in a rune like the app store.
-export const calcEngine = $state<{ status: EngineStatus; error: string }>({
+export const calcEngine = $state<{
+  status: EngineStatus;
+  error: string;
+}>({
   status: 'idle',
   error: '',
 });
@@ -155,13 +158,23 @@ export function evaluate(cell: {
     // A hung SymPy call (pathological simplify/integrate) would block
     // every cell's results forever — the worker is single-threaded.
     // Past the deadline, kill it; the next eval reboots (~4s).
-    const timer = setTimeout(() => {
-      if (!pending.has(id)) return;
-      w.terminate();
-      worker = undefined;
-      calcEngine.status = 'idle';
-      failAll('calculation timed out — the SymPy engine is restarting');
-    }, 30000);
+    const armWatchdog = () =>
+      setTimeout(() => {
+        if (!pending.has(id)) return;
+        // A still-booting worker hasn't started this eval — killing it
+        // mid-download would just restart the boot on the next eval, so
+        // on a slow connection the engine never finishes loading.
+        // Re-check instead; the deadline effectively counts from ready.
+        if (calcEngine.status === 'loading') {
+          timer = armWatchdog();
+          return;
+        }
+        w.terminate();
+        worker = undefined;
+        calcEngine.status = 'idle';
+        failAll('calculation timed out — the SymPy engine is restarting');
+      }, 30000);
+    let timer = armWatchdog();
     w.postMessage({
       id,
       program: { prelude: prog.prelude, statements: prog.statements },

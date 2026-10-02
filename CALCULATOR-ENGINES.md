@@ -15,7 +15,10 @@ cell's results: **SymPy on Pyodide** (authoritative, ~4s cold boot) and
   piece that makes the interim engine do real calculus).
 - `src/components/CalcOutput.svelte` — per-cell output; fires
   `interimEvaluate` while `calcEngine.status !== 'ready'`, `evaluate`
-  always; interim rows render dimmed via `.pending` until real rows land.
+  always; interim rows render dimmed via `.pending` and tagged
+  `.calc-interim` until real rows land.
+- `App.svelte` — shows a `.engine-status` banner in the output column
+  header while `calcEngine.status` is `loading`/`error`.
 - `src/compile/codegen.ts` — `compileCellForCalc()`: the shared
   LaTeX → IR → SymPy pipeline, split into an evaluable program.
 - `public/pyodide-sw.js` — cache-first service worker for the CDN assets.
