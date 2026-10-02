@@ -128,4 +128,30 @@ suite('typed rendering', function () {
       assert.ok(mq.latex().length > 0);
     });
   });
+
+  suite('typed \\begin{env} resolves every registered environment', function () {
+    test('\\begin{aligned} resolves to the aligned grid', function () {
+      typed('\\begin{aligned}');
+      assert.equal(mq.latex(), '\\begin{aligned}&\\\\&\\end{aligned}');
+      assert.equal(rootEl().querySelectorAll('td').length, 4);
+    });
+
+    test('\\begin{aligned}a&=b keeps cell content without crashing', function () {
+      typed('\\begin{aligned}a&=b');
+      assert.equal(
+        mq.latex(),
+        '\\begin{aligned}a\\&=b&\\\\&\\end{aligned}'
+      );
+    });
+
+    test('\\begin{align} resolves like aligned', function () {
+      typed('\\begin{align}');
+      assert.equal(mq.latex(), '\\begin{aligned}&\\\\&\\end{aligned}');
+    });
+
+    test('\\begin{alignat} resolves to a grid without crashing', function () {
+      typed('\\begin{alignat}');
+      assert.equal(mq.latex(), '\\begin{alignat}{}&\\\\&\\end{alignat}');
+    });
+  });
 });

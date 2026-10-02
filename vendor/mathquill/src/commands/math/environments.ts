@@ -833,6 +833,17 @@ class Aligned extends CellGrid {
   latexClose() {
     return '\\end{aligned}';
   }
+  // Typed `\begin{aligned}` resolves to a 2x2 starter grid, matching
+  // Matrix's createBlocks (CellGrid's domView is lazy, so the default
+  // numBlocks() can't run here).
+  createBlocks() {
+    this.blocks = [
+      new MatrixCell(0, this),
+      new MatrixCell(0, this),
+      new MatrixCell(1, this),
+      new MatrixCell(1, this)
+    ];
+  }
 }
 Environments.aligned = () => new Aligned();
 Environments.alignat = () => new Aligned();
