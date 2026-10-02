@@ -16,6 +16,10 @@ export interface CalcRowOk {
 export interface CalcRowErr {
   ok: false;
   error: string;
+  /** 'error' (default) for a failed statement; 'note' for compiler
+   * advisories that didn't stop anything — the row's issue panel styles
+   * them like the python target's overlay does. */
+  severity?: 'error' | 'note';
 }
 export type CalcRow = CalcRowOk | CalcRowErr;
 
@@ -127,25 +131,31 @@ export function evaluate(cell: {
       },
     ]);
   }
-  const errors = prog.issues.filter((i) => i.severity === 'error');
+  // Issues not bound to a statement (errors plus advisory notes, like
+  // the python overlay's list) become trailing rows of the output.
+  const issueRows = prog.issues.map(
+    (i) =>
+      ({
+        ok: false as const,
+        error: i.message,
+        severity: i.severity,
+      }) as CalcRow,
+  );
   if (prog.statements.length === 0)
     return Promise.resolve([
       // Uncompileable cells show their issues; a cell with none at all
       // (empty, or only notes) shows nothing.
-      ...errors.map((i) => ({ ok: false as const, error: i.message })),
+      ...issueRows,
     ]);
   // A multi-statement cell keeps its good rows when a sibling statement
-  // is broken — the errors append after the valid results.
-  const errRows = errors.map(
-    (i) => ({ ok: false as const, error: i.message }) as CalcRow,
-  );
+  // is broken — the issues append after the valid results.
   const w = ensureWorker();
   const id = nextId++;
   return new Promise<CalcRow[]>((resolve, reject) => {
     pending.set(id, {
       resolve: (r) => {
         clearTimeout(timer);
-        resolve([...r, ...errRows]);
+        resolve([...r, ...issueRows]);
       },
       reject: (e) => {
         clearTimeout(timer);

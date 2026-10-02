@@ -68,6 +68,34 @@ test('calculator evaluates each statement row of a multi-line cell', async ({
   await expect(rows.nth(1)).toContainText('5');
 });
 
+// The calculator's issue panel mirrors the python target's overlay, but
+// scoped to the failing row: on a multi-line cell it must sit inside
+// that row and never paint over the other result rows.
+test('a failing statement reports the error in its own row only', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await setTarget(page, 'calculator');
+
+  const mf = cell(page, 0);
+  await mf.click();
+  await mf.pressSequentially('2+2', { delay: 40 });
+  await page.keyboard.press('Enter');
+  await mf.pressSequentially('\\sum', { delay: 40 });
+  // Enter accepts the open latex command (the sum template lands with
+  // the caret in the lower bound); the upper bound stays empty.
+  await page.keyboard.press('Enter');
+  await mf.pressSequentially('i=0', { delay: 40 });
+
+  const rows = page.locator('.calc-row');
+  await expect(rows).toHaveCount(2, { timeout: 90_000 });
+  await expect(rows.nth(0).locator('.calc-math')).toContainText('4');
+  const issues = rows.nth(1).locator('.calc-issues');
+  await expect(issues).toBeVisible();
+  await expect(issues).toContainText('missing argument');
+  await expect(rows.nth(0).locator('.calc-issues')).toHaveCount(0);
+});
+
 test('indefinite integral shows the constant of integration last', async ({
   page,
 }) => {

@@ -299,6 +299,22 @@ body {
   flex: 0 0 auto;
 }
 
+/* Muted counterpart for note-severity issues (calculator rows). */
+.note-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--muted);
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: default;
+  flex: 0 0 auto;
+}
+
 /* Generated code in the per-cell output column (target = python). */
 .cell-python {
   flex: 1;
@@ -374,7 +390,8 @@ body {
   }
 }
 
-.cell-issues li {
+.cell-issues li,
+.calc-issues li {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -512,6 +529,21 @@ body {
   gap: 2px;
 }
 
+/* A failing row's issue panel: the same floating-panel chrome as
+   .cell-issues, but kept in flow inside its own .calc-row so a
+   multi-line cell's other result rows are never painted over. */
+.calc-issues {
+  margin: 0;
+  padding: 5px 8px;
+  list-style: none;
+  font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
+  font-size: 11.5px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px var(--shadow);
+}
+
 .calc-result {
   display: flex;
   align-items: baseline;
@@ -525,7 +557,6 @@ body {
 
 .calc-text,
 .calc-approx,
-.calc-error,
 .calc-status {
   font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
   font-size: 13px;
@@ -538,11 +569,6 @@ body {
 
 .calc-status {
   color: var(--faint);
-}
-
-.calc-error {
-  color: var(--danger);
-  overflow-wrap: anywhere;
 }
 
 /* "Show code" block: the SymPy python() source under each result. */
