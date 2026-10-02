@@ -154,4 +154,50 @@ suite('typed rendering', function () {
       assert.equal(mq.latex(), '\\begin{alignat}{}&\\\\&\\end{alignat}');
     });
   });
+
+  suite('accent diacritics are not clipped by the field top', function () {
+    var cases = [
+      '\\^{o}',
+      '\\~{n}',
+      '\\`{e}',
+      '\\"{o}',
+      '\\={o}',
+      '\\.{i}',
+      '\\v{s}',
+      '\\u{g}',
+      '\\r{a}',
+      '\\vec{v}',
+      '\\ddot{x}',
+      '\\check{s}',
+      '\\breve{o}',
+      '\\acute{e}',
+      '\\grave{a}',
+      '\\widetilde{xy}',
+      '\\overlinesegment{x}'
+    ];
+    cases.forEach(function (input) {
+      test(input, function () {
+        typed(input);
+        var span = rootEl().querySelector('.mq-diacritic-above');
+        assert.ok(span, input + ' rendered no accent');
+        var range = document.createRange();
+        range.selectNodeContents(span);
+        var inkTop = range.getBoundingClientRect().top;
+        var rootTop = el
+          .querySelector('.mq-root-block')
+          .getBoundingClientRect().top;
+        // the accent's ink must paint inside the root block's border box
+        // — overflow:hidden clips there (pre-fix the ink sat ~4px above)
+        assert.ok(
+          inkTop >= rootTop - 0.5,
+          input +
+            ' accent ink (' +
+            inkTop +
+            ') is clipped above the field top (' +
+            rootTop +
+            ')'
+        );
+      });
+    });
+  });
 });

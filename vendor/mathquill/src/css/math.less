@@ -600,6 +600,10 @@
     display: block;
     text-align: center;
     line-height: 0.4em;
+    // The accent glyph's ink overflows its (short) line box upward by
+    // ~0.2em; without headroom it paints above .mq-root-block and gets
+    // clipped by the field's overflow:hidden.
+    margin-top: 0.3em;
   }
 
   .mq-diacritic-stem {
