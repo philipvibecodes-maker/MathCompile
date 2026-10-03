@@ -1256,21 +1256,49 @@ const FIXTURES: {
     ],
   },
   {
-    // `B = [0,1]` binds a python list — it's finite and iterable, so
-    // `∀x∈B` folds over it; Contains/set ops splat it as `FiniteSet(*B)`
-    // (`FiniteSet(B)` on a list raises TypeError).
-    latex: '\\displaylines{B=[0,1]\\\\ \\forall x\\in B,\\ x>0}',
+    // `I = [a,b]` / `I = (a,b)` binds an Interval, not a list — CE
+    // only mints Interval in membership context, so a 2-element List
+    // (or Delimiter(Sequence)) bind is rewritten at parse, brackets
+    // deciding openness. Infinite domain → Implies, not iteration.
+    latex: '\\displaylines{I=[0,1]\\\\ \\forall x\\in I,\\ x>0}',
     expectedPython: [
       'x = sp.Symbol("x")',
-      'B = [0, 1]',
+      'I = sp.Interval(0, 1)',
+      'sp.Implies(sp.Contains(x, I), sp.Gt(x, 0))',
+    ],
+  },
+  {
+    latex: '\\displaylines{I=(1,2)\\\\ x\\in I}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'I = sp.Interval(1, 2, left_open=True, right_open=True)',
+      'sp.Contains(x, I)',
+    ],
+  },
+  {
+    latex: '\\displaylines{I=[1,2)\\\\ x\\in I}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'I = sp.Interval(1, 2, right_open=True)',
+      'sp.Contains(x, I)',
+    ],
+  },
+  {
+    // A 3+-element bracket list stays a python list — finite and
+    // iterable for quantifiers; Contains/set ops splat it as
+    // `FiniteSet(*B)` (`FiniteSet(B)` on a list raises TypeError).
+    latex: '\\displaylines{B=[1,2,3]\\\\ \\forall x\\in B,\\ x>0}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'B = [1, 2, 3]',
       'sp.And(*[(sp.Gt(x, 0)).subs(x, _e) for _e in B])',
     ],
   },
   {
-    latex: '\\displaylines{B=[0,1]\\\\ x\\in B}',
+    latex: '\\displaylines{B=[1,2,3]\\\\ x\\in B}',
     expectedPython: [
       'x = sp.Symbol("x")',
-      'B = [0, 1]',
+      'B = [1, 2, 3]',
       'sp.Contains(x, sp.FiniteSet(*B))',
     ],
   },

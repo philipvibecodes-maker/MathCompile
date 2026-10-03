@@ -213,6 +213,47 @@ const forToComprehension = (n: MathJson): MathJson => {
     : ([head(n), ...kids] as MathJson);
 };
 
+// `name = (a,b)` / `name = [a,b]` binds an interval, not a list — CE
+// only mints an Interval node in membership context (`x ∈ (1,2)`), so
+// a 2-element List binding is rewritten here, `(`/`)` endpoints
+// marking open. Longer lists (`B=[1,2,3]`) stay List — a real sequence.
+const intervalBind = (s: string, j: MathJson): MathJson => {
+  if (
+    !isArray(j) ||
+    (head(j) !== 'Assign' && head(j) !== 'Equal') ||
+    // A structured lhs (`(x,y) = (1,2)`) is tuple unpacking, not a bind.
+    !isString(j[1])
+  )
+    return j;
+  const rhs = j[2];
+  if (!isArray(rhs)) return j;
+  let e1: MathJson | undefined;
+  let e2: MathJson | undefined;
+  let lb = '';
+  let rb = '';
+  const seq = isArray(rhs[1]) && head(rhs[1]) === 'Sequence' ? rhs[1] : null;
+  if (head(rhs) === 'Delimiter' && seq && seq.length === 3 && isString(rhs[2])) {
+    // `Delimiter(Sequence(a,b), '(,)')` — the IR itself records the
+    // brackets for paren-delimited pairs.
+    [e1, e2] = [seq[1], seq[2]];
+    const d = rhs[2].replace(/['\s]/g, '');
+    [lb, rb] = [d[0] ?? '', d[d.length - 1] ?? ''];
+  } else if (head(rhs) === 'List' && rhs.length === 3) {
+    // `[a,b]` arrives as a bare List — the brackets live in the latex.
+    const eq = s.indexOf('=');
+    if (eq < 0) return j;
+    const tail = s.slice(eq + 1);
+    const l = tail.search(/[(\[]/);
+    const r = tail.search(/[)\]]\s*$/);
+    if (l < 0 || r < 0) return j;
+    [e1, e2, lb, rb] = [rhs[1], rhs[2], tail[l], tail[r]];
+  } else return j;
+  if (!'(['.includes(lb) || !')]'.includes(rb)) return j;
+  const lo = lb === '(' ? (['Open', e1] as MathJson) : e1;
+  const hi = rb === ')' ? (['Open', e2] as MathJson) : e2;
+  return [head(j), j[1], ['Interval', lo, hi]] as MathJson;
+};
+
 // Parse a cell's LaTeX into raw MathJSON. Multiple statements become a
 // `["Block", ...]` node so downstream code sees one tree per cell. Parse
 // failures degrade to an Error node — the pipeline reports, never throws.
@@ -231,7 +272,7 @@ export function parseCellLatex(latex: string): MathJson | undefined {
     } catch {
       return ['Error', `'parse-failed'`] as MathJson;
     }
-    return TEXT_FOR.test(s) ? forToComprehension(j) : j;
+    return intervalBind(s, TEXT_FOR.test(s) ? forToComprehension(j) : j);
   });
   // A single statement can itself parse to a Block (`x² \text{ where }
   // x>0` — CE parks the condition first). Tag those so real `\\` rows
