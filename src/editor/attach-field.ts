@@ -22,6 +22,10 @@ export interface FieldHandle {
   focus: (edge?: 'start' | 'end') => void;
   getValue: () => string;
   setValue: (latex: string) => void;
+  // Type a keystroke sequence at the caret exactly as a user would
+  // ('\\int\n' runs the \int command input and accepts it with Enter,
+  // leaving the caret in the lower bound — the same as typing it).
+  type: (text: string) => void;
   // Smart mode = MQ autoCommands + autoSubscriptNumerals.
   setSmartMode: (v: boolean) => void;
   // Per-line anchors of the rendered \\displaylines, in field-relative
@@ -105,6 +109,15 @@ export function attachField(
       // push the effective value back so the store/output column can't
       // keep displaying latex the field doesn't contain.
       if (el.value !== latex) cb.onChange(el.value);
+    },
+    // '\n' segments are Enter *keystrokes*, not typedText('\n'): keystroke
+    // dispatch is what accepts an open \… command input (typedText('\n')
+    // would go to the enter handler and insert a line break instead).
+    type: (text) => {
+      for (const [i, seg] of text.split('\n').entries()) {
+        if (i > 0) el.mq?.keystroke('Enter');
+        if (seg) el.mq?.typedText(seg);
+      }
     },
     setSmartMode: (v) =>
       el.config({
