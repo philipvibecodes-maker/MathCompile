@@ -463,8 +463,19 @@
       <ol class="expr-list">
         {#each appStore.cells as cell, i (cell.id)}
           <li class="expr-row">
-            <span class="expr-index">{i + 1}</span>
-            <div class="cell-input">
+            <span
+              class="expr-index"
+              onpointerdown={() => appStore.focusCell(cell.id)}
+              >{i + 1}</span
+            >
+            <div
+              class="cell-input"
+              onpointerdown={(e) => {
+                if (!(e.target as HTMLElement).closest('math-field')) {
+                  appStore.focusCell(cell.id);
+                }
+              }}
+            >
               <MathField {cell} />
               {#if appStore.target === 'calculator'}
                 <CalcIssues {cell} />
