@@ -18,6 +18,13 @@ export interface FieldHandle {
   focus: (edge?: 'start' | 'end') => void;
   getValue: () => string;
   setValue: (latex: string) => void;
+  // Type a keystroke sequence at the caret exactly as a user would;
+  // '\n' segments are Enter *keystrokes* (keystroke dispatch is what
+  // accepts an open \… command input — typedText('\n') would insert a
+  // line break instead).
+  type: (text: string) => void;
+  // Single MQ keystroke ('Backspace', 'Enter', 'Tab', …).
+  keystroke: (key: string) => void;
   // Smart mode = MQ autoCommands + autoSubscriptNumerals.
   setSmartMode: (v: boolean) => void;
   // Per-line anchors of the rendered \\displaylines, in field-relative
@@ -87,6 +94,15 @@ export function attachField(
       // push the effective value back so the store/output column can't
       // keep displaying latex the field doesn't contain.
       if (el.value !== latex) cb.onChange(el.value);
+    },
+    type: (text) => {
+      for (const [i, seg] of text.split('\n').entries()) {
+        if (i > 0) el.mq?.keystroke('Enter');
+        if (seg) el.mq?.typedText(seg);
+      }
+    },
+    keystroke: (key) => {
+      el.mq?.keystroke(key);
     },
     setSmartMode: (v) =>
       el.config({

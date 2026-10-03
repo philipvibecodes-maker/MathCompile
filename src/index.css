@@ -223,6 +223,59 @@ body {
   box-shadow: 0 0 0 1px var(--accent);
 }
 
+/* \… command autocomplete dropdown: anchored under the open
+   LatexCommandInput (viewport-fixed). */
+.cmd-suggest {
+  position: fixed;
+  z-index: 60;
+  min-width: 300px;
+  max-width: 420px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 4px;
+  font-size: 13px;
+}
+.cmd-sug-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.cmd-sug-item.selected {
+  background: var(--selected-bg, rgba(80, 120, 255, 0.12));
+}
+.cmd-sug-glyph {
+  flex: 0 0 64px;
+  display: inline-block;
+  font-size: 14px;
+}
+.cmd-sug-glyph .mq-editable-field,
+.cmd-sug-glyph .mq-math-mode {
+  cursor: pointer;
+}
+.cmd-sug-cmd {
+  flex: 0 0 auto;
+  color: var(--accent-text, var(--accent));
+  font-size: 12.5px;
+}
+.cmd-sug-title {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmd-sug-footer {
+  padding: 4px 8px 3px;
+  font-size: 11px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+}
+
 /* Calculator-style LaTeX output beside each cell (target = latex). */
 /* Draggable divider between the input column and the output column.
    Occupies the 6px gap the .cell-output margin used to give; its width

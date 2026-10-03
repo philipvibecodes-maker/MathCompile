@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { attachField } from '../editor/attach-field';
   import type { FieldHandle } from '../editor/attach-field';
+  import CommandSuggest from './CommandSuggest.svelte';
   import type { MathFieldElement } from '../editor/math-field';
   import { appStore } from '../state/store.svelte';
   import type { Cell } from '../state/store.svelte';
@@ -12,13 +13,13 @@
   // registered in the store — never prop-encoded commands.
   let { cell }: { cell: Cell } = $props();
 
-  let mf: MathFieldElement;
+  let mf: MathFieldElement | undefined = $state();
   // $state so the value/smartMode effects re-run once attach lands.
   let handle = $state<FieldHandle | undefined>(undefined);
 
   onMount(() => {
     const id = cell.id;
-    const h = attachField(mf, {
+    const h = attachField(mf!, {
       onChange: (latex) => appStore.setLatex(id, latex),
       onNewCell: () => appStore.addCell(id),
       onMoveOut: (dir) => appStore.moveOut(id, dir),
@@ -47,3 +48,7 @@
 </script>
 
 <math-field bind:this={mf}></math-field>
+{#if mf}
+  <CommandSuggest field={mf} {handle} />
+{/if}
+
