@@ -882,7 +882,7 @@ class Emitter {
     // Error nodes carry a normalizer diagnostic — flag so the enclosing
     // statement is dropped instead of emitting `sp.Error(...)` noise.
     if (isHead(node, 'Error')) {
-      this.scope.flag('error', 'unparseable input — statement skipped');
+      this.scope.flag('error', UNPARSEABLE_MSG);
       return 'None';
     }
     const [text, prec] = this.inner(node);
@@ -2420,8 +2420,16 @@ interface CellBody {
   defs: string[];
   /** Emitted top-level statements, in order (pre-collapse). `errs`
    * carries the emission errors of a statement that produced no lines —
-   * the calculator target turns those into in-place error rows. */
-  parts: { stmt: MathJson; out: StatementOut; errs: Issue[] }[];
+   * the calculator target turns those into in-place error rows. `emitted`
+   * is every issue raised during that statement (line-binding data).
+   * `line` is the statement's 0-based input-line index. */
+  parts: {
+    stmt: MathJson;
+    out: StatementOut;
+    errs: Issue[];
+    emitted: Issue[];
+    line: number;
+  }[];
   /** Symbol/function names first bound in this cell. */
   newNames: Set<string>;
 }
@@ -2513,25 +2521,34 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   ]);
   const isRelation = (n: MathJson): boolean => RELATION_HEADS.has(headOf(n) ?? '');
   const blockNodes = isHead(ir, 'Block') ? ir.slice(1) : [ir];
-  const nodes = blockNodes.flatMap((n) => {
-    if (!isHead(n, 'WhereBlock')) return [n];
+  // Each node carries the index of the displayline it came from — a
+  // WhereBlock expands one input line into several statements, so the
+  // nodes index alone is not the line number.
+  const nodes = blockNodes.flatMap((n, line) => {
+    const tag = (stmt: MathJson) => ({ stmt, line });
+    if (!isHead(n, 'WhereBlock')) return [tag(n)];
     const kids = n.slice(1);
-    return kids.length > 1 &&
+    return (
+      kids.length > 1 &&
       kids.slice(0, -1).every(isRelation) &&
       !isRelation(kids[kids.length - 1])
-      ? [kids[kids.length - 1], ...kids.slice(0, -1)]
-      : kids;
+        ? [kids[kids.length - 1], ...kids.slice(0, -1)]
+        : kids
+    ).map(tag);
   });
-  const parts = nodes.map((stmt) => {
+  const parts = nodes.map(({ stmt, line }) => {
     const issuesAt = scope.issues.length;
     const out = emitStatement(stmt, emitter);
+    // Every issue raised while emitting this statement — notes included,
+    // so unbound issues can anchor at the line that produced them.
+    const emitted = scope.issues.slice(issuesAt);
     // A statement dropped by an emission error keeps its row as an
     // in-place error so multi-statement cells keep written order.
     const errs =
       out.lines.length === 0
-        ? scope.issues.slice(issuesAt).filter((i) => i.severity === 'error')
+        ? emitted.filter((i) => i.severity === 'error')
         : [];
-    return { stmt, out, errs };
+    return { stmt, out, errs, emitted, line };
   });
 
   // Names first needed in this cell (not already bound in earlier ones).
@@ -3015,6 +3032,12 @@ function buildScope(
   };
 }
 
+// `emit` flags a dropped Error node with this generic message; the
+// normalizer already issued the real diagnostic, so the placeholder is
+// marker-only — the python overlay renders it as a ! icon (never text)
+// and the calculator drops it from statement errors entirely.
+const UNPARSEABLE_MSG = 'unparseable input — statement skipped';
+
 export interface CalcStatement {
   /** Python source for the statement: exec'd (Assign/Def) or eval'd
    * (expression) by the calculator worker. */
@@ -3025,6 +3048,9 @@ export interface CalcStatement {
   /** Set when the statement itself failed to emit — reported as an
    * error row in place so the cell keeps written order. */
   error?: string;
+  /** 0-based input line (displayline index) the statement came from —
+   * where a line-anchored issue indicator would pin. */
+  line?: number;
 }
 
 export interface CalcProgram {
@@ -3034,6 +3060,12 @@ export interface CalcProgram {
   statements: CalcStatement[];
   /** Normalization + codegen issues for the cell. */
   issues: Issue[];
+  /** 0-based line of the first statement that failed to emit — where
+   * unbound issues (which carry no line of their own) anchor. */
+  errorLine?: number;
+  /** Input-line index of each `statements` entry — the row ordering
+   * key for interleaving issue rows in the output. */
+  statementLines: number[];
 }
 
 // Wrap an evaluated expression in the worker's result pipeline so the
@@ -3048,7 +3080,8 @@ const calcEval = (expr: string): string =>
 // expressions so each top-level statement yields its own result row.
 export function compileCellForCalc(cell: CellInput): CalcProgram {
   const { ir, issues } = normalizeIR(cell.json);
-  if (ir === undefined) return { prelude: [], statements: [], issues };
+  if (ir === undefined)
+    return { prelude: [], statements: [], issues, statementLines: [] };
 
   const declared = new Set<string>();
   const declaredFns = new Set<string>();
@@ -3066,10 +3099,33 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
   );
   const { defs, parts } = cellBody(ir, scope);
   // Statements dropped by an emission error carry it in place — the
-  // error becomes their row so the cell keeps written order.
+  // error becomes their row so the cell keeps written order. The
+  // "statement skipped" placeholder doesn't count as an error here:
+  // the normalizer's diagnostic already reports the problem, so a
+  // statement left with no code and no real error yields no row.
+  let errorLine: number | undefined;
+  const statementLines: number[] = [];
   const statements = parts
-    .filter(({ out, errs }) => out.lines.length > 0 || errs.length > 0)
-    .map(({ out, errs }) => ({
+    .map(({ out, errs, line }) => {
+      if (errs.length > 0 && errorLine === undefined) errorLine = line;
+      return {
+        out,
+        line,
+        error:
+          errs
+            .map((e) => e.message)
+            .filter((m) => m !== UNPARSEABLE_MSG)
+            .join('; ') || undefined,
+      };
+    })
+    .filter(({ out, error, line }) => {
+      if (out.lines.length === 0 && error === undefined) return false;
+      // The surviving statements' part indices, in order — parallel to
+      // `statements`, for placing issue rows between result rows.
+      statementLines.push(line);
+      return true;
+    })
+    .map(({ out, error, line }) => ({
       // The worker evals each statement as written, so the result
       // pipeline (doit -> simplify -> decreasing-degree order) is
       // emitted INTO the program — Show code then displays exactly
@@ -3080,8 +3136,17 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
           ? calcEval(out.lines[0])
           : out.lines.join('\n'),
       display: out.display === undefined ? undefined : calcEval(out.display),
-      error: errs.map((i) => i.message).join('; ') || undefined,
+      error,
+      // Line anchors only matter where an error points back at input.
+      ...(error !== undefined ? { line } : {}),
     }));
+  // Every issue's input line, from the statement that raised it — lets
+  // unbound issues (notes like "no differential") anchor to their own
+  // line instead of falling back to the cell top or the first error.
+  const issueLine = new Map<Issue, number>();
+  parts.forEach(({ emitted, line }) =>
+    emitted.forEach((iss) => issueLine.set(iss, line)),
+  );
   // Statement-bound errors are reported by their rows — drop them from
   // the program issue list so they aren't also appended at the end.
   const consumed = new Set(parts.flatMap(({ errs }) => errs));
@@ -3091,6 +3156,16 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
     // once in the first row's code block, like the import line.
     prelude: ['import sympy as sp', CALC_RUNTIME_PY, ...defs],
     statements,
-    issues: issues.filter((i) => !consumed.has(i)),
+    issues: issues
+      .filter((i) => !consumed.has(i))
+      // Normalize already stamps most issues with their line — only fill
+      // in the ones it didn't reach (emit-time notes like differentials).
+      .map((i) =>
+        i.line === undefined && issueLine.has(i)
+          ? { ...i, line: issueLine.get(i) }
+          : i,
+      ),
+    errorLine,
+    statementLines,
   };
 }

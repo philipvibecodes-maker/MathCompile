@@ -1,11 +1,13 @@
 <script lang="ts">
   import {
     calcEngine,
+    cellIssues,
     evaluate,
     interimEvaluate,
     type CalcRow,
+    type CalcRowErr,
   } from '../calc/calculator.svelte.ts';
-  import { latexToStatementStrings } from '../compile/ir';
+  import { latexToStatementStrings, type Issue } from '../compile/ir';
   import { mountStaticMath } from '../editor/static-math';
   import { highlightPython } from '../calc/python-highlight';
   import { appStore, type Cell } from '../state/store.svelte';
@@ -18,6 +20,9 @@
 
   let rows = $state<CalcRow[]>([]);
   let pending = $state(false);
+  // True while the shown rows came from the nerdamer interim engine —
+  // they're estimates, so the UI marks them until SymPy rows land.
+  let interim = $state(false);
   let failed = $state('');
   // Per-cell opt-in to the `e = ...` display plumbing lines in .calc-code.
   let showPlumbing = $state(false);
@@ -28,11 +33,32 @@
       rows.some((r) => r.ok && r.displayCode && r.displayCode !== r.code),
   );
 
+  // Issue reporting is split like the python overlay's marker/panel:
+  // the failing row keeps just its ! / i severity marker here, while
+  // the messages go to cellIssues — the input column's CalcIssues
+  // mounts the panel under the field once typing has paused.
+  $effect(() => {
+    const issues: Issue[] =
+      failed !== ''
+        ? [{ severity: 'error', message: failed }]
+        : rows
+            .filter((r): r is CalcRowErr => !r.ok)
+            .map((r) => ({
+              severity: r.severity ?? 'error',
+              message: r.error,
+              line: r.line,
+            }));
+    cellIssues[cell.id] = issues;
+    return () => {
+      delete cellIssues[cell.id];
+    };
+  });
+
   const statusLabel = $derived(
     calcEngine.status === 'loading'
-      ? 'Loading SymPy…'
+      ? 'Loading SymPy engine…'
       : calcEngine.status === 'error'
-        ? 'SymPy failed to load'
+        ? 'SymPy engine failed to load'
         : '…',
   );
 
@@ -43,6 +69,7 @@
     if (latexToStatementStrings(latex).length === 0) {
       rows = [];
       pending = false;
+      interim = false;
       failed = '';
       return;
     }
@@ -57,7 +84,10 @@
       // rows that already landed.
       if (calcEngine.status !== 'ready') {
         interimEvaluate(latex).then((r) => {
-          if (mine === seq && pending && r.length > 0) rows = r;
+          if (mine === seq && pending && r.length > 0) {
+            rows = r;
+            interim = true;
+          }
         });
       }
       evaluate(cell).then(
@@ -65,11 +95,13 @@
           if (mine !== seq) return;
           rows = r;
           pending = false;
+          interim = false;
           failed = '';
         },
         (e) => {
           if (mine !== seq) return;
           pending = false;
+          interim = false;
           failed = e instanceof Error ? e.message : String(e);
         },
       );
@@ -110,9 +142,9 @@
 
 <div class="cell-output calc-output">
   {#if failed !== ''}
-    <span class="calc-error" title={failed}>{failed}</span>
+    <span class="parse-error-icon" title={failed}>!</span>
   {:else if rows.length > 0}
-    <div class="calc-rows" class:pending>
+    <div class="calc-rows" class:pending={pending}>
       {#each rows as row, i (i)}
         <div class="calc-row">
           {#if row.ok}
@@ -167,11 +199,20 @@
                   ></pre>
               {/if}
             {/if}
+          {:else if (row.severity ?? 'error') === 'error'}
+            <span class="parse-error-icon" title={row.error}>!</span>
           {:else}
-            <code class="calc-error" title={row.error}>{row.error}</code>
+            <span class="note-icon" title={row.error}>i</span>
           {/if}
         </div>
       {/each}
+      {#if interim}
+        <span
+          class="calc-interim"
+          title="Estimate from the interim engine (nerdamer) — replaced by the SymPy result once the engine finishes loading."
+          >estimate · SymPy still loading</span
+        >
+      {/if}
     </div>
   {:else if pending}
     <!-- Empty cells and complete-but-empty results render nothing — a

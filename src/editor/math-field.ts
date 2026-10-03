@@ -186,6 +186,11 @@ export interface FieldHandle {
   setValue: (latex: string) => void;
   // Smart mode = MQ autoCommands + autoSubscriptNumerals.
   setSmartMode: (v: boolean) => void;
+  // Per-line anchors of the rendered \\displaylines, in field-relative
+  // px — the index is the \\-row index (statement order). `top`/`height`
+  // frame the line; `right` is the line's content end, where an inline
+  // issue tail would start. Used to pin indicators beside a line.
+  lineAnchors: () => { top: number; height: number; right: number }[];
   dispose: () => void;
 }
 
@@ -252,6 +257,31 @@ export function attachField(
         autoCommands: v ? SMART_AUTO_COMMANDS : '',
         autoSubscriptNumerals: v,
       }),
+    lineAnchors: () => {
+      const fieldRect = el.getBoundingClientRect();
+      const toAnchor = (r: DOMRect) => ({
+        top: r.top - fieldRect.top,
+        height: r.height,
+        right: r.right - fieldRect.left,
+      });
+      const rows = el.querySelectorAll<HTMLElement>(
+        '.mq-displaylines > table > tr',
+      );
+      if (rows.length > 0)
+        return [...rows].map((tr) =>
+          // The last td holds the line's math — its right edge is where
+          // an inline tail would start.
+          toAnchor(
+            (tr.querySelector('td:last-child') ?? tr).getBoundingClientRect(),
+          ),
+        );
+      // Single-line field: the root block is the line; anchor at its
+      // last rendered child's right edge so a tail hugs the expression.
+      const last =
+        el.querySelector<HTMLElement>('.mq-root-block')
+          ?.lastElementChild ?? el;
+      return [toAnchor(last.getBoundingClientRect())];
+    },
     dispose() {
       el.removeEventListener('input', handleInput);
       el.removeEventListener('focusin', handleFocusIn);

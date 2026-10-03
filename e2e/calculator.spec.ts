@@ -68,6 +68,36 @@ test('calculator evaluates each statement row of a multi-line cell', async ({
   await expect(rows.nth(1)).toContainText('5');
 });
 
+// The calculator reports issues like the python target's overlay, but
+// in the input column: the message panel mounts under the math-field —
+// in flow, so it never covers the field's other input lines — while
+// the failing statement's output row keeps just its ! marker.
+test('a failing statement reports the error in the input column', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await setTarget(page, 'calculator');
+
+  const mf = cell(page, 0);
+  await mf.click();
+  await mf.pressSequentially('2+2', { delay: 40 });
+  await page.keyboard.press('Enter');
+  await mf.pressSequentially('\\sum', { delay: 40 });
+  // Enter accepts the open latex command (the sum template lands with
+  // the caret in the lower bound); the upper bound stays empty.
+  await page.keyboard.press('Enter');
+  await mf.pressSequentially('i=0', { delay: 40 });
+
+  const rows = page.locator('.calc-row');
+  await expect(rows).toHaveCount(2, { timeout: 90_000 });
+  await expect(rows.nth(0).locator('.calc-math')).toContainText('4');
+  await expect(rows.nth(1).locator('.parse-error-icon')).toBeVisible();
+  const issues = page.locator('.cell-input .calc-issues');
+  await expect(issues).toBeVisible();
+  await expect(issues).toContainText('missing argument');
+  await expect(page.locator('.cell-output .calc-issues')).toHaveCount(0);
+});
+
 test('indefinite integral shows the constant of integration last', async ({
   page,
 }) => {
@@ -158,6 +188,38 @@ test('calculator shows an instant nerdamer result while SymPy boots', async ({
   await expect(rows.first()).not.toHaveClass(/pending/, {
     timeout: 90_000,
   });
+  await expect(page.locator('.calc-row').first()).toContainText('4');
+});
+
+test('flags interim results and the engine-loading banner while SymPy boots', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await setTarget(page, 'calculator');
+
+  const mf = cell(page, 0);
+  await mf.click();
+  await mf.pressSequentially('2+2', { delay: 40 });
+
+  // While Pyodide boots, the output column header's engine chip says
+  // it's still loading and names the interim engine, and each interim
+  // row is tagged as an estimate.
+  const chip = page.locator('.engine-chip');
+  await expect(chip).toContainText('SymPy engine loading');
+  await expect(chip).toContainText('nerdamer');
+  await expect(page.locator('.calc-interim').first()).toBeVisible({
+    timeout: 10_000,
+  });
+
+  // The chip's info icon explains on hover why an interim engine runs.
+  await chip.locator('.info-icon').hover();
+  await expect(chip.locator('.info-tip')).toBeVisible();
+  await expect(chip.locator('.info-tip')).toContainText('nerdamer');
+
+  // The chip flips to ready and the tag clears once the real SymPy
+  // result lands.
+  await expect(chip).toContainText('SymPy ready', { timeout: 90_000 });
+  await expect(page.locator('.calc-interim')).toHaveCount(0);
   await expect(page.locator('.calc-row').first()).toContainText('4');
 });
 

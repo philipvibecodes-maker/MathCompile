@@ -1,5 +1,9 @@
 import { compileCellForCalc } from '../compile/codegen';
-import { latexToStatementStrings, type MathJson } from '../compile/ir';
+import {
+  latexToStatementStrings,
+  type Issue,
+  type MathJson,
+} from '../compile/ir';
 import { toNerdamerInput } from './nerdamer-latex';
 import { arcTrigNames } from './result-latex';
 
@@ -16,6 +20,13 @@ export interface CalcRowOk {
 export interface CalcRowErr {
   ok: false;
   error: string;
+  /** 'error' (default) for a failed statement; 'note' for compiler
+   * advisories that didn't stop anything — the row's issue panel styles
+   * them like the python target's overlay does. */
+  severity?: 'error' | 'note';
+  /** 0-based input line the error came from — where a line-anchored
+   * indicator would pin. Undefined = not line-bound. */
+  line?: number;
 }
 export type CalcRow = CalcRowOk | CalcRowErr;
 
@@ -23,10 +34,19 @@ export type EngineStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 // Engine status is shared UI state (the CalcOutput components read it for
 // their loading labels), so it lives in a rune like the app store.
-export const calcEngine = $state<{ status: EngineStatus; error: string }>({
+export const calcEngine = $state<{
+  status: EngineStatus;
+  error: string;
+}>({
   status: 'idle',
   error: '',
 });
+
+// Issues per cell, published by CalcOutput as evaluation lands — the
+// input column's CalcIssues renders the messages under the field.
+export const cellIssues = $state<
+  Record<number, (Issue & { line?: number })[]>
+>({});
 
 interface WorkerReply {
   type?: 'ready' | 'init-error';
@@ -127,25 +147,47 @@ export function evaluate(cell: {
       },
     ]);
   }
-  const errors = prog.issues.filter((i) => i.severity === 'error');
+  // Issues not bound to a statement (errors plus advisory notes, like
+  // the python overlay's list) become error rows interleaved by line.
+  const issueRows = prog.issues.map(
+    (i) =>
+      ({
+        ok: false as const,
+        error: i.message,
+        severity: i.severity,
+        // Issues anchor at the line that raised them; anything still
+        // unbound falls back to the first failed statement's line.
+        line: i.line ?? prog.errorLine,
+      }) as CalcRowErr,
+  );
   if (prog.statements.length === 0)
     return Promise.resolve([
       // Uncompileable cells show their issues; a cell with none at all
       // (empty, or only notes) shows nothing.
-      ...errors.map((i) => ({ ok: false as const, error: i.message })),
+      ...issueRows,
     ]);
   // A multi-statement cell keeps its good rows when a sibling statement
-  // is broken — the errors append after the valid results.
-  const errRows = errors.map(
-    (i) => ({ ok: false as const, error: i.message }) as CalcRow,
-  );
+  // is broken — and issue rows interleave at their own input line, not
+  // at the bottom of the output.
   const w = ensureWorker();
   const id = nextId++;
   return new Promise<CalcRow[]>((resolve, reject) => {
     pending.set(id, {
       resolve: (r) => {
         clearTimeout(timer);
-        resolve([...r, ...errRows]);
+        const merged = [
+          ...r.map((row, i) => ({ row, line: prog.statementLines[i] })),
+          ...issueRows.map((row) => ({ row, line: row.line })),
+        ]
+          .sort(
+            (a, b) =>
+              (a.line ?? Number.MAX_SAFE_INTEGER) -
+              (b.line ?? Number.MAX_SAFE_INTEGER),
+          )
+          .map(({ row, line }) =>
+            row.ok || line === undefined ? row : { ...row, line },
+          );
+        resolve(merged);
       },
       reject: (e) => {
         clearTimeout(timer);
@@ -155,13 +197,23 @@ export function evaluate(cell: {
     // A hung SymPy call (pathological simplify/integrate) would block
     // every cell's results forever — the worker is single-threaded.
     // Past the deadline, kill it; the next eval reboots (~4s).
-    const timer = setTimeout(() => {
-      if (!pending.has(id)) return;
-      w.terminate();
-      worker = undefined;
-      calcEngine.status = 'idle';
-      failAll('calculation timed out — the SymPy engine is restarting');
-    }, 30000);
+    const armWatchdog = () =>
+      setTimeout(() => {
+        if (!pending.has(id)) return;
+        // A still-booting worker hasn't started this eval — killing it
+        // mid-download would just restart the boot on the next eval, so
+        // on a slow connection the engine never finishes loading.
+        // Re-check instead; the deadline effectively counts from ready.
+        if (calcEngine.status === 'loading') {
+          timer = armWatchdog();
+          return;
+        }
+        w.terminate();
+        worker = undefined;
+        calcEngine.status = 'idle';
+        failAll('calculation timed out — the SymPy engine is restarting');
+      }, 30000);
+    let timer = armWatchdog();
     w.postMessage({
       id,
       program: { prelude: prog.prelude, statements: prog.statements },

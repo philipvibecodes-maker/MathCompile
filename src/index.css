@@ -168,6 +168,19 @@ body {
   user-select: none;
 }
 
+/* The math-field plus (calculator target) its issue list below it —
+   messages sit in the input column next to what was typed, in flow so
+   they never cover the field's other lines. */
+.cell-input {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* Offset parent for the line-anchored issue chips. */
+  position: relative;
+}
+
 .expr-row math-field {
   flex: 1;
   min-width: 0;
@@ -299,6 +312,22 @@ body {
   flex: 0 0 auto;
 }
 
+/* Muted counterpart for note-severity issues (calculator rows). */
+.note-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--muted);
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: default;
+  flex: 0 0 auto;
+}
+
 /* Generated code in the per-cell output column (target = python). */
 .cell-python {
   flex: 1;
@@ -374,7 +403,8 @@ body {
   }
 }
 
-.cell-issues li {
+.cell-issues li,
+.calc-issues li {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -512,6 +542,82 @@ body {
   gap: 2px;
 }
 
+/* A failing row's issue panel: the same floating-panel chrome as
+   .cell-issues, but kept in flow inside its own .calc-row so a
+   multi-line cell's other result rows are never painted over. */
+.calc-issues {
+  margin: 0;
+  padding: 5px 8px;
+  list-style: none;
+  font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
+  font-size: 11.5px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px var(--shadow);
+}
+
+/* Inline-tail variant: the ul is a transparent layer over the field;
+   each li is a chip pinned to its own line's measured position, so the
+   layer blocks no input (pointer-events pass through except the chips,
+   which keep hover text) and only the failing line is annotated. */
+.calc-issues-inline {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.calc-issues-inline li {
+  position: absolute;
+  transform: translateY(-50%);
+  padding: 1px 6px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px var(--shadow);
+  pointer-events: auto;
+  white-space: nowrap;
+}
+
+/* Hover expands the chip vertically — the full message wraps instead of
+   truncating; it rises above same-line siblings while hovered. */
+.calc-issues-inline li:hover {
+  z-index: 1;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+/* Issues sharing a line stack inside one chip, one row each. */
+.calc-issues-inline .chip-msgs {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.calc-issues-inline .chip-msg {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.calc-issues-inline .chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calc-issues-inline li:hover .chip-text {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
 .calc-result {
   display: flex;
   align-items: baseline;
@@ -525,7 +631,6 @@ body {
 
 .calc-text,
 .calc-approx,
-.calc-error,
 .calc-status {
   font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
   font-size: 13px;
@@ -540,11 +645,65 @@ body {
   color: var(--faint);
 }
 
-.calc-error {
-  color: var(--danger);
-  overflow-wrap: anywhere;
+/* Tag under dimmed interim rows: the shown answer is a nerdamer
+   estimate, not the SymPy result that replaces it. */
+.calc-interim {
+  font-size: 11px;
+  color: var(--faint);
 }
 
+/* Persistent engine-state chip inline in the output header — it swaps
+   its label (loading -> ready/failed) rather than unmounting, so the
+   header row never changes size. */
+.engine-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--faint);
+  cursor: default;
+  /* Basis 0 keeps the chip on the selector's line (flex-wrap packs by
+     basis); it grows to fill leftover space up to its content width,
+     and the text ellipsizes below that. */
+  flex: 1 1 0;
+  max-width: max-content;
+  min-width: 0;
+}
+
+.engine-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.engine-chip.engine-error {
+  color: var(--danger);
+}
+
+/* The chip's nowrap would otherwise stretch the tip's text past the
+   badge; pin it to the icon's right edge too. */
+.engine-chip .info-tip {
+  right: 0;
+  white-space: normal;
+}
+
+
+.engine-spinner {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: engine-spin 0.8s linear infinite;
+}
+
+@keyframes engine-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 /* "Show code" block: the SymPy python() source under each result. */
 .calc-code {
   margin: 2px 0 4px;
