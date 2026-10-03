@@ -1216,18 +1216,21 @@ const FIXTURES: {
     expectedPython: ['x = sp.Symbol("x")', 'sp.Gt(x, 0)'],
   },
   {
-    // `∀x∈S, p` → Implies(Contains(x, S), p); `∃x∈S, p` → And.
+    // `∀x∈S, p` is "False isn't in the predicate's image" (vacuous
+    // truth included); `∃x∈S, p` is "True is in the image". The
+    // imageset check carries evaluate=False — the eager containment
+    // solve raises TypeError on Boolean elements.
     latex: '\\forall x \\in \\mathbb{R}, x > x + 1',
     expectedPython: [
       'x = sp.Symbol("x", real=True)',
-      'sp.Implies(sp.Contains(x, sp.S.Reals), sp.Gt(x, x + 1))',
+      'sp.Not(sp.Contains(sp.false, sp.ImageSet(sp.Lambda(x, sp.Gt(x, x + 1)), sp.S.Reals), evaluate=False))',
     ],
   },
   {
     latex: '\\exists x \\in \\mathbb{R}, x^{2}=2',
     expectedPython: [
       'x = sp.Symbol("x", real=True)',
-      'sp.And(sp.Contains(x, sp.S.Reals), sp.Eq(x**2, 2))',
+      'sp.Contains(sp.true, sp.ImageSet(sp.Lambda(x, sp.Eq(x**2, 2)), sp.S.Reals), evaluate=False)',
     ],
   },
   {
@@ -1259,12 +1262,13 @@ const FIXTURES: {
     // `I = [a,b]` / `I = (a,b)` binds an Interval, not a list — CE
     // only mints Interval in membership context, so a 2-element List
     // (or Delimiter(Sequence)) bind is rewritten at parse, brackets
-    // deciding openness. Infinite domain → Implies, not iteration.
+    // deciding openness. Infinite domain → imageset check, not
+    // iteration.
     latex: '\\displaylines{I=[0,1]\\\\ \\forall x\\in I,\\ x>0}',
     expectedPython: [
       'x = sp.Symbol("x")',
       'I = sp.Interval(0, 1)',
-      'sp.Implies(sp.Contains(x, I), sp.Gt(x, 0))',
+      'sp.Not(sp.Contains(sp.false, sp.ImageSet(sp.Lambda(x, sp.Gt(x, 0)), I), evaluate=False))',
     ],
   },
   {

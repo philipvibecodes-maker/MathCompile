@@ -2350,17 +2350,36 @@ class Emitter {
             return [`${this.sp}True`, PREC_ATOM];
           }
           if (isStr(dom)) return [this.emit(pred), PREC_ATOM];
-          // Finite-set domains fold to the evaluated Boolean —
-          // `∀x∈{1,2}, p` is `And(p[x↦1], p[x↦2])`, `∃` is the Or —
-          // since a symbolic Implies(x∈{1,2} ⇒ p) never evaluates.
+          // `x∈S` domains: enumerable-finite sets iterate to the
+          // evaluated Boolean; everything else is the imageset check.
           if (isArr(dom) && dom[0] === 'Element') {
             const [v, set] = [dom[1], dom[2]];
-            if (isStr(v) && this.isFiniteSet(set)) {
-              // Iterate the elements so the answer evaluates at exec —
-              // `∀x∈A, p` → `And(*(p.subs(x, e) for e in A))`, `∃` → Or.
-              const p = this.emit(pred);
+            if (isStr(v)) {
+              // `∀x∈ℝ` still records `x ∈ ℝ` at first reference —
+              // real=True (or MatrixSymbol dims) lands on the decl.
+              this.assumeFrom(v, set);
+              if (this.isFiniteSet(set)) {
+                // Iterate the elements so the answer evaluates at exec —
+                // `∀x∈A, p` → `And(*(p.subs(x, e) for e in A))`, `∃` → Or.
+                const p = this.emit(pred);
+                return [
+                  `${this.sp}${name === 'ForAll' ? 'And' : 'Or'}(*[(${p}).subs(${this.sym(v)}, _e) for _e in ${this.emit(set)}])`,
+                  PREC_ATOM,
+                ];
+              }
+              // `∀x∈S, p` is "False isn't in the predicate's image"
+              // ({True} on all-true, {} vacuous — both excluded by
+              // Contains), `∃x∈S, p` is "True is in the image".
+              // evaluate=False: the eager containment solve can raise
+              // TypeError on Boolean elements.
+              // `ImageSet` (constructor) not `imageset` — the function
+              // eagerly takes a limit over Interval domains and raises
+              // AttributeError on a Boolean lambda body.
+              const img = `${this.sp}ImageSet(${this.sp}Lambda(${this.sym(v)}, ${this.emit(pred)}), ${this.setArg(set)})`;
               return [
-                `${this.sp}${name === 'ForAll' ? 'And' : 'Or'}(*[(${p}).subs(${this.sym(v)}, _e) for _e in ${this.emit(set)}])`,
+                name === 'ForAll'
+                  ? `${this.sp}Not(${this.sp}Contains(${this.sp}false, ${img}, evaluate=False))`
+                  : `${this.sp}Contains(${this.sp}true, ${img}, evaluate=False)`,
                 PREC_ATOM,
               ];
             }

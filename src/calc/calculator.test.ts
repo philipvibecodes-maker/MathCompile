@@ -328,13 +328,18 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
       F('sp.imageset(sp.Lambda(x, x + 1), sp.FiniteSet(2))'),
     );
     // `\forall` is a different input — a predicate, not a set-builder:
-    // `∀x∈S, p` → Implies(Contains(x, S), p), `∃x∈S, p` → And.
+    // `∀x∈S, p` is "False not in the predicate's image" (vacuous truth
+    // included); `∃x∈S, p` is "True in the image".
     expect(
       calc('\\forall x \\in \\mathbb{R}, x > x + 1').statements[0].code,
-    ).toBe(F('sp.Implies(sp.Contains(x, sp.S.Reals), sp.Gt(x, x + 1))'));
+    ).toBe(
+      F('sp.Not(sp.Contains(sp.false, sp.ImageSet(sp.Lambda(x, sp.Gt(x, x + 1)), sp.S.Reals), evaluate=False))'),
+    );
     expect(
       calc('\\exists x \\in \\mathbb{R}, x^{2}=2').statements[0].code,
-    ).toBe(F('sp.And(sp.Contains(x, sp.S.Reals), sp.Eq(x**2, 2))'));
+    ).toBe(
+      F('sp.Contains(sp.true, sp.ImageSet(sp.Lambda(x, sp.Eq(x**2, 2)), sp.S.Reals), evaluate=False)'),
+    );
     // Finite-set domains iterate so the answer evaluates at exec —
     // names bound to a Set literal (A = {1,2,4}) iterate the same way.
     expect(calc('\\forall x \\in \\{1,2\\}, x>0').statements[0].code).toBe(
