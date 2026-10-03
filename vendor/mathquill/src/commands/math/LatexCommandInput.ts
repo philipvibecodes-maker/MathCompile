@@ -47,7 +47,7 @@ CharCmds['\\'] = class LatexCommandInput extends MathCommand {
       } else {
         var input = this.parent as LatexCommandInput;
         if (this.isEmpty() && ch !== '\\') {
-          // An empty input ended by a non-letter is a single \<char>
+          // MATHCOMPILE: An empty input ended by a non-letter is a single \<char>
           // escape, not a '\ ' space followed by the bare char: \; \:
           // \! \, \| \_ \# resolve to their atoms, \{ / \} take the
           // usual bracket paths (auto-pair / close), anything else just

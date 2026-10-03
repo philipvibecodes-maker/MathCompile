@@ -53,8 +53,10 @@ src/
     python-highlight.ts   tiny tokenizer for the Show code block
   editor/
     mathquill.ts      imports the vendored build + CSS; exports mq3 + types
-    math-field.ts     <math-field> custom element + attachField() ->
-                      FieldHandle; the ONLY module that touches MQ
+    math-field.ts     <math-field> custom element: MQ handlers -> DOM
+                      events (input, move-out, new-cell, delete-out)
+    attach-field.ts   attachField() -> FieldHandle + FieldCallbacks —
+                      the app-facing editing contract
     keymap.ts         capture-phase global keys (Ctrl+K, Alt+S)
   components/
     MathField.svelte    <math-field> bind:this -> attachField; registers
@@ -84,7 +86,8 @@ The architecture's load-bearing choices, distilled:
 
 - **One adapter owns the editor.** All MathQuill contact lives in
   `src/editor/`; everything else sees only the `FieldHandle` contract,
-  so an upstream bump fails in one file, not across event handlers.
+  so an upstream bump fails inside `src/editor/`, not across event
+  handlers.
 - **One focus owner.** The store's field registry + `focusCell()` decide
   what is focused; nothing else calls `.focus()` and no component may
   steal focus back — deferred focus calls re-check `paletteOpen` first.

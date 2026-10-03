@@ -2,7 +2,7 @@
  * LaTeX environments: \begin{matrix} family and
  * \displaylines{...}, plus insertion-time \derivative.
  *
- * Vendored patch on top of desmosinc/mathquill — the matrix
+ * MATHCOMPILE patch file on top of desmosinc/mathquill — the matrix
  * implementation is a port of Learnosity/mathquill's `matrix`
  * branch (upstream PR mathquill/mathquill#762, ~2017 jQuery
  * base) to the jQuery-free TypeScript internals used here.

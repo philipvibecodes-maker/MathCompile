@@ -160,30 +160,7 @@ LatexCmds.mathsf = () =>
   );
 LatexCmds.mathtt = () =>
   new Style('\\mathtt', 'span', { class: 'mq-monospace mq-font' }, 'Math Text');
-LatexCmds.mathcal = () =>
-  new Style(
-    '\\mathcal',
-    'span',
-    { class: 'mq-caligraphic mq-font' },
-    'Calligraphic Font'
-  );
-LatexCmds.mathscr = () =>
-  new Style(
-    '\\mathscr',
-    'span',
-    { class: 'mq-caligraphic mq-font' },
-    'Script Font'
-  );
-LatexCmds.mathfrak = () =>
-  new Style(
-    '\\mathfrak',
-    'span',
-    { class: 'mq-fraktur mq-font' },
-    'Fraktur Font'
-  );
-// \bold in math mode is boldmath — serialized canonically as \mathbf
-LatexCmds.bold = () =>
-  new Style('\\mathbf', 'b', { class: 'mq-font' }, 'Bold Font');
+// MATHCOMPILE: \mathcal \mathscr \mathfrak \bold moved to extraCommands.ts
 //text-decoration
 LatexCmds.underline = () =>
   new Style(
@@ -255,75 +232,9 @@ LatexCmds.dot = () => {
   );
 };
 
-// \boxed{...} — content with a drawn frame.
-LatexCmds.boxed = () =>
-  new Style(
-    '\\boxed',
-    'span',
-    { class: 'mq-non-leaf mq-boxed' },
-    'Boxed'
-  );
+// MATHCOMPILE: \boxed moved to extraCommands.ts
 
-// \underbrace{x}_{label} / \overbrace{x}^{label} — the label lands as an
-// ordinary sibling SupSub (same pattern as boundless integral bounds),
-// so only the grouping command itself is needed here.
-LatexCmds.underbrace = () =>
-  new Style(
-    '\\underbrace',
-    'span',
-    { class: 'mq-non-leaf mq-underbrace' },
-    'Underbrace'
-  );
-LatexCmds.overbrace = () =>
-  new Style(
-    '\\overbrace',
-    'span',
-    { class: 'mq-non-leaf mq-overbrace' },
-    'Overbrace'
-  );
-
-// \underset{a}{b} renders b with a below it; \overset{a}{b} with a above.
-class UnderOverSet extends MathCommand {
-  constructor(top: boolean) {
-    super();
-    this.ctrlSeq = top ? '\\overset' : '\\underset';
-    this.ariaLabel = top ? 'overset' : 'underset';
-    this.domView = new DOMView(2, (blocks) =>
-      top
-        ? h('span', { class: 'mq-overunderset mq-non-leaf' }, [
-            h('span', { class: 'mq-overunderset-label' }, [
-              h.block('span', {}, blocks[0])
-            ]),
-            h.block('span', { class: 'mq-overunderset-main' }, blocks[1])
-          ])
-        : h('span', { class: 'mq-overunderset mq-non-leaf' }, [
-            h.block('span', { class: 'mq-overunderset-main' }, blocks[1]),
-            h('span', { class: 'mq-overunderset-label' }, [
-              h.block('span', {}, blocks[0])
-            ])
-          ])
-    );
-  }
-  parser() {
-    var self = this;
-    var block = latexMathParser.block;
-    var blocks = (this.blocks = [new MathBlock(), new MathBlock()]);
-    for (var i = 0; i < blocks.length; i += 1) {
-      blocks[i].adopt(self, self.getEnd(R), 0);
-    }
-    return Parser.optWhitespace
-      .then(block)
-      .then(function (b0) {
-        b0.children().adopt(blocks[0], blocks[0].getEnd(R), 0);
-        return Parser.optWhitespace.then(block).then(function (b1) {
-          b1.children().adopt(blocks[1], blocks[1].getEnd(R), 0);
-          return Parser.succeed(self);
-        });
-      });
-  }
-}
-LatexCmds.underset = () => new UnderOverSet(false);
-LatexCmds.overset = () => new UnderOverSet(true);
+// MATHCOMPILE: \underbrace \overbrace moved to extraCommands.ts
 
 // `\textcolor{color}{math}` will apply a color to the given math content, where
 // `color` is any valid CSS Color Value (see [SitePoint docs][] (recommended),
@@ -334,6 +245,7 @@ LatexCmds.overset = () => new UnderOverSet(true);
 // [W3C spec]: http://dev.w3.org/csswg/css3-color/#colorunits
 LatexCmds.textcolor = class extends MathCommand {
   color: string | undefined;
+  // MATHCOMPILE: \textcolor[model]{color}{...} — optional color-model arg (parse + serialize)
   model = '';
 
   // Parser-only command: typing '\textcolor' in the command input
@@ -396,210 +308,9 @@ LatexCmds.textcolor = class extends MathCommand {
   }
 };
 
-// \color{color}math is the declaration form of \textcolor — it
-// canonicalizes to \textcolor{color}{math} (the next block is colored).
-LatexCmds.color = LatexCmds.textcolor;
+// MATHCOMPILE: \color \colorbox \fcolorbox \href moved to extraCommands.ts
 
-
-// \colorbox{color}{math} — a filled box around content; the color arg is
-// raw text like \textcolor's, emitted back verbatim.
-LatexCmds.colorbox = class extends MathCommand {
-  color = '';
-  model = '';
-  // Parser-only command: typing '\colorbox' in the command input can't
-  // supply a color argument, so typed insertion is a no-op (same
-  // convention as \textcolor).
-  createLeftOf() {}
-  numBlocks() {
-    return 1 as const;
-  }
-  parser() {
-    var self = this;
-    return Parser.optWhitespace
-      .then(Parser.regex(/^\[[a-zA-Z]+\]/).or(Parser.succeed('')))
-      .then(function (model: string) {
-        if (model) self.model = model.slice(1, -1);
-        return Parser.string('{')
-          .then(Parser.regex(/^[#\w\s.,()%-]*/))
-          .skip(Parser.string('}'));
-      })
-      .then((color: string) => {
-        self.color = color;
-        self.domView = new DOMView(1, (blocks) =>
-          h.block(
-            'span',
-            { class: 'mq-colorbox', style: 'background-color:' + color },
-            blocks[0]
-          )
-        );
-        return super.parser();
-      });
-  }
-  latexRecursive(ctx: LatexContext) {
-    this.checkCursorContextOpen(ctx);
-    ctx.uncleanedLatex +=
-      '\\colorbox' +
-      (this.model ? '[' + this.model + ']' : '') +
-      '{' +
-      this.color +
-      '}{';
-    this.blocks![0].latexRecursive(ctx);
-    ctx.uncleanedLatex += '}';
-    this.checkCursorContextClose(ctx);
-  }
-  isStyleBlock() {
-    return true;
-  }
-};
-
-// \fcolorbox{frame}{bg}{math} — framed + filled box; two raw color args.
-LatexCmds.fcolorbox = class extends MathCommand {
-  frameColor = '';
-  bgColor = '';
-  model = '';
-  // Parser-only command: typing '\fcolorbox' in the command input can't
-  // supply color arguments, so typed insertion is a no-op (same
-  // convention as \textcolor).
-  createLeftOf() {}
-  numBlocks() {
-    return 1 as const;
-  }
-  parser() {
-    var self = this;
-    var colorGroup = Parser.string('{')
-      .then(Parser.regex(/^[#\w\s.,()%-]*/))
-      .skip(Parser.string('}'));
-    return Parser.optWhitespace
-      .then(Parser.regex(/^\[[a-zA-Z]+\]/).or(Parser.succeed('')))
-      .then(function (model: string) {
-        if (model) self.model = model.slice(1, -1);
-        return colorGroup;
-      })
-      .then((frame: string) => {
-        self.frameColor = frame;
-        return colorGroup;
-      })
-      .then((bg: string) => {
-        self.bgColor = bg;
-        self.domView = new DOMView(1, (blocks) =>
-          h.block(
-            'span',
-            {
-              class: 'mq-fcolorbox',
-              style:
-                'border:1px solid ' +
-                self.frameColor +
-                ';background-color:' +
-                bg
-            },
-            blocks[0]
-          )
-        );
-        return super.parser();
-      });
-  }
-  latexRecursive(ctx: LatexContext) {
-    this.checkCursorContextOpen(ctx);
-    ctx.uncleanedLatex +=
-      '\\fcolorbox' +
-      (this.model ? '[' + this.model + ']' : '') +
-      '{' +
-      this.frameColor +
-      '}{' +
-      this.bgColor +
-      '}{';
-    this.blocks![0].latexRecursive(ctx);
-    ctx.uncleanedLatex += '}';
-    this.checkCursorContextClose(ctx);
-  }
-  isStyleBlock() {
-    return true;
-  }
-};
-
-// \href{url}{math} — link wrapper; the url arg is raw text.
-LatexCmds.href = class extends MathCommand {
-  url = '';
-  // Parser-only command: typing '\href' in the command input can't
-  // supply a url argument, so typed insertion is a no-op (same
-  // convention as \textcolor).
-  createLeftOf() {}
-  numBlocks() {
-    return 1 as const;
-  }
-  parser() {
-    var self = this;
-    return Parser.optWhitespace
-      .then(Parser.string('{'))
-      .then(Parser.regex(/^[^{}]*/))
-      .skip(Parser.string('}'))
-      .then((url: string) => {
-        self.url = url;
-        self.domView = new DOMView(1, (blocks) =>
-          h.block('span', { class: 'mq-href' }, blocks[0])
-        );
-        return super.parser();
-      });
-  }
-  latexRecursive(ctx: LatexContext) {
-    this.checkCursorContextOpen(ctx);
-    ctx.uncleanedLatex += '\\href{' + this.url + '}{';
-    this.blocks![0].latexRecursive(ctx);
-    ctx.uncleanedLatex += '}';
-    this.checkCursorContextClose(ctx);
-  }
-};
-
-// \overset{label}{base} stacks a small label above; \underset below;
-// \stackrel is the plain-TeX name for \overset
-LatexCmds.overset = class extends MathCommand {
-  ctrlSeq = '\\overset';
-  domView = new DOMView(2, (blocks) =>
-    h('span', { class: 'mq-non-leaf mq-overunderset' }, [
-      h.block('span', { class: 'mq-overscript' }, blocks[0]),
-      h.block('span', {}, blocks[1])
-    ])
-  );
-};
-LatexCmds.stackrel = LatexCmds.overset;
-LatexCmds.underset = class extends MathCommand {
-  ctrlSeq = '\\underset';
-  domView = new DOMView(2, (blocks) =>
-    h('span', { class: 'mq-non-leaf mq-overunderset' }, [
-      h.block('span', {}, blocks[1]),
-      h.block('span', { class: 'mq-overscript' }, blocks[0])
-    ])
-  );
-};
-
-// \pmod{m} / \pod{m} — parenthesized (mod m) / (m); \bmod is the
-// binary mod operator
-LatexCmds.pmod = () =>
-  new MathCommand(
-    '\\pmod',
-    new DOMView(1, (blocks) =>
-      h('span', { class: 'mq-non-leaf' }, [
-        h('span', {}, [h.text('(mod\u00a0')]),
-        h.block('span', {}, blocks[0]),
-        h('span', {}, [h.text(')')])
-      ])
-    ),
-    ['mod(', ')']
-  );
-LatexCmds.pod = () =>
-  new MathCommand(
-    '\\pod',
-    new DOMView(1, (blocks) =>
-      h('span', { class: 'mq-non-leaf' }, [
-        h('span', {}, [h.text('(')]),
-        h.block('span', {}, blocks[0]),
-        h('span', {}, [h.text(')')])
-      ])
-    ),
-    ['(', ')']
-  );
-LatexCmds.bmod = bindBinaryOperator('\\bmod ', 'mod', 'binary mod');
-LatexCmds.mod = bindBinaryOperator('\\mod ', 'mod', 'mod');
+// MATHCOMPILE: \overset \stackrel \underset \pmod \pod \bmod \mod moved to extraCommands.ts
 
 // Very similar to the \textcolor command, but will add the given CSS class.
 // Usage: \class{classname}{math}
@@ -608,7 +319,7 @@ LatexCmds.mod = bindBinaryOperator('\\mod ', 'mod', 'mod');
 var Class = (LatexCmds['class'] = class extends MathCommand {
   cls: string | undefined;
 
-  // Parser-only command, see \textcolor.
+  // MATHCOMPILE: Parser-only command, see \textcolor.
   createLeftOf() {}
   numBlocks() {
     return 1 as const;
@@ -1078,6 +789,7 @@ class SummationNotation extends MathCommand {
     var domView = new DOMView(2, (blocks) =>
       h('span', { class: 'mq-large-operator mq-non-leaf' }, [
         h('span', { class: 'mq-to' }, [h.block('span', {}, blocks[1])]),
+        // MATHCOMPILE: entityText so \sum-style glyphs render (upstream h.text printed entities literally)
         h('big', {}, [h.entityText(symbol)]),
         h('span', { class: 'mq-from' }, [h.block('span', {}, blocks[0])])
       ])
@@ -1092,6 +804,7 @@ class SummationNotation extends MathCommand {
       new Equality().createLeftOf(cursor);
     }
   }
+  // MATHCOMPILE: \limits/\nolimits kept on the node so it round-trips
   limitsCtrlSeq: string | undefined;
   latexRecursive(ctx: LatexContext) {
     this.checkCursorContextOpen(ctx);
@@ -1142,7 +855,7 @@ class SummationNotation extends MathCommand {
       blocks[i].adopt(self, self.getEnd(R), 0);
     }
 
-    // `\sum\limits_{i}^{n}` — an optional \limits/\nolimits between the
+    // MATHCOMPILE: `\sum\limits_{i}^{n}` — an optional \limits/\nolimits between the
     // operator and its bounds is kept on the node so serialization
     // round-trips it instead of dropping it or leaving { } bounds.
     var optLimits = Parser.regex(/^\\(?:no)?limits(?![a-zA-Z])\s*/)
@@ -1222,47 +935,7 @@ LatexCmds['∫'] =
       }
     };
 
-// Boundless integral signs for indefinite integrals: `\iint` and
-// `\antid` render a bare ∫ — neither carries blocks, so the integrand
-// types linearly (`\antid x dx`, `\iint f dx dy`) and `_`/`^` may still
-// grow an ordinary sibling SupSub for bounds. `\antid` is a MathCompile
-// insertion alias: the app maps it to `\int` at compile time; `\iint`
-// parses to Integrate in the compute engine on its own.
-//
-// BoundlessIntegral is its own class so left-scanning code (a typed `/`
-// wrapping the preceding run into a numerator) can stop at the sign —
-// for a SummationNotation like `\sum` the scan already breaks there, and
-// a boundless ∫ should behave the same way.
-class BoundlessIntegral extends MQSymbol {}
-
-const boundlessIntegral = (ctrlSeq: string, glyph: string, speak: string) => {
-  return () =>
-    new BoundlessIntegral(
-      ctrlSeq,
-      h('span', { class: 'mq-int' }, [
-        h('big', {}, [h.entityText(glyph)])
-      ]) as HTMLElement,
-      undefined,
-      speak
-    );
-};
-
-LatexCmds['∬'] = LatexCmds.iint = boundlessIntegral(
-  '\\iint ',
-  U_DOUBLE_INTEGRAL,
-  'double integral'
-);
-LatexCmds.antid = boundlessIntegral('\\antid ', U_INTEGRAL, 'antiderivative');
-LatexCmds['∯'] = LatexCmds.oiint = boundlessIntegral(
-  '\\oiint ',
-  '∯',
-  'surface integral'
-);
-LatexCmds['∰'] = LatexCmds.oiiint = boundlessIntegral(
-  '\\oiiint ',
-  '∰',
-  'volume integral'
-);
+// MATHCOMPILE: boundless \iint \antid \oiint \oiiint moved to extraCommands.ts
 
 var Fraction =
   (LatexCmds.frac =
@@ -1393,25 +1066,13 @@ var Fraction =
       }
     });
 
-// \cfrac[lcr] takes an optional alignment arg before the two
-// fraction blocks — consume it so [l] can't parse as a { [ } { l ]
-// "fraction". Serialized canonically as \frac like \dfrac/\tfrac.
-LatexCmds.cfrac = class extends Fraction {
-  parser() {
-    var self = this;
-    return Parser.regex(/^\[(?:[lcr])\]/)
-      .or(Parser.succeed(''))
-      .then(function () {
-        return Fraction.prototype.parser.call(self);
-      });
-  }
-};
+// MATHCOMPILE: \cfrac moved to extraCommands.ts
 
 var LiveFraction =
   (LatexCmds.over =
   CharCmds['/'] =
     class extends Fraction {
-      // Pasted `a\over b` (infix) can't bind `a` — the two-block parse
+      // MATHCOMPILE: Pasted `a\over b` (infix) can't bind `a` — the two-block parse
       // fails. Fall back to a visible `\over` leaf so the input keeps
       // its text instead of blanking the field. The typed `\over`→
       // fraction path is unaffected (it goes through createLeftOf).
@@ -1446,6 +1107,7 @@ var LiveFraction =
                   leftward._groupingClass === 'mq-ellipsis-end') ||
                 leftward instanceof (LatexCmds.text || noop) ||
                 leftward instanceof SummationNotation ||
+                // MATHCOMPILE: stop the numerator scan at a boundless integral like at \sum
                 leftward instanceof BoundlessIntegral ||
                 leftward.ctrlSeq === '\\ ' ||
                 /^[,;:]$/.test(leftward.ctrlSeq as string)
@@ -1455,6 +1117,7 @@ var LiveFraction =
           }
           if (
             (leftward instanceof SummationNotation ||
+              // MATHCOMPILE: same scan-back for a boundless integral's SupSub
               leftward instanceof BoundlessIntegral) &&
             leftward[R] instanceof SupSub
           ) {
@@ -1639,9 +1302,7 @@ LatexCmds.hat = class Hat extends MathCommand {
   textTemplate = ['hat(', ')'];
 };
 
-// \widehat is the wide variant of \hat; render it with the same atom
-// (serializes back as \hat).
-LatexCmds.widehat = LatexCmds.hat;
+// MATHCOMPILE: \widehat moved to extraCommands.ts
 
 class NthRoot extends SquareRoot {
   domView = new DOMView(2, (blocks) =>
@@ -1701,6 +1362,7 @@ LatexCmds.cbrt = class extends NthRoot {
 };
 
 class DiacriticAbove extends MathCommand {
+  // MATHCOMPILE: kept for the degraded-accent parser below
   accentHtml: ChildNode;
   constructor(ctrlSeq: string, html: ChildNode, textTemplate?: string[]) {
     var domView = new DOMView(1, (blocks) =>
@@ -1712,7 +1374,7 @@ class DiacriticAbove extends MathCommand {
     super(ctrlSeq, domView, textTemplate);
     this.accentHtml = html;
   }
-  // An accent with no block following degrades to a standalone mark —
+  // MATHCOMPILE: An accent with no block following degrades to a standalone mark —
   // `f\'` still parses (as f + a bare ´) instead of failing the field.
   parser() {
     var self = this;
@@ -1736,590 +1398,7 @@ LatexCmds.vec = () =>
   new DiacriticAbove('\\vec', h.entityText('&rarr;'), ['vec(', ')']);
 LatexCmds.tilde = () =>
   new DiacriticAbove('\\tilde', h.text('~'), ['tilde(', ')']);
-LatexCmds.ddot = () =>
-  new DiacriticAbove('\\ddot', h.text('¨'), ['ddot(', ')']);
-LatexCmds.dddot = () =>
-  new DiacriticAbove('\\dddot', h.text('...'), ['dddot(', ')']);
-
-class DiacriticBelow extends DiacriticAbove {
-  constructor(ctrlSeq: string, html: ChildNode, textTemplate?: string[]) {
-    super(ctrlSeq, html, textTemplate);
-    this.domView = new DOMView(1, (blocks) =>
-      h('span', { class: 'mq-non-leaf' }, [
-        h.block('span', { class: 'mq-diacritic-stem' }, blocks[0]),
-        h('span', { class: 'mq-diacritic-below' }, [html])
-      ])
-    );
-  }
-}
-
-
-// \xrightarrow{label} / \xleftarrow / \xmapsto and friends — a small
-// label over an extensible-looking arrow; the arrow is a fixed glyph.
-// \xrightarrow[under]{over} puts a second label below the arrow
-// (amsmath), parsed like \sqrt[n]{x}'s optional block.
-class XArrowWithUnder extends MathCommand {
-  constructor(ctrlSeq: string, arrow: string) {
-    super(
-      ctrlSeq,
-      new DOMView(2, (blocks) =>
-        h('span', { class: 'mq-non-leaf mq-overunderset' }, [
-          h.block('span', { class: 'mq-overscript' }, blocks[1]),
-          h('span', { class: 'mq-xarrow' }, [h.text(arrow)]),
-          h.block('span', { class: 'mq-underscript' }, blocks[0])
-        ])
-      )
-    );
-  }
-  latexRecursive(ctx: LatexContext) {
-    this.checkCursorContextOpen(ctx);
-    ctx.uncleanedLatex += this.ctrlSeq + '[';
-    this.getEnd(L).latexRecursive(ctx);
-    ctx.uncleanedLatex += ']{';
-    this.getEnd(R).latexRecursive(ctx);
-    ctx.uncleanedLatex += '}';
-    this.checkCursorContextClose(ctx);
-  }
-}
-function bindArrowLabelCmd(ctrlSeq: string, arrow: string) {
-  return () =>
-    new (class extends MathCommand {
-      constructor() {
-        super(
-          ctrlSeq,
-          new DOMView(1, (blocks) =>
-            h('span', { class: 'mq-non-leaf mq-overunderset' }, [
-              h.block('span', { class: 'mq-overscript' }, blocks[0]),
-              h('span', { class: 'mq-xarrow' }, [h.text(arrow)])
-            ])
-          )
-        );
-      }
-      parser() {
-        var self = this;
-        return latexMathParser.optBlock
-          .then(function (optBlock) {
-            return latexMathParser.block.map(function (block) {
-              var xa = new XArrowWithUnder(ctrlSeq, arrow);
-              xa.blocks = [optBlock, block];
-              optBlock.adopt(xa, 0, 0);
-              block.adopt(xa, optBlock, 0);
-              return xa;
-            });
-          })
-          .or(super.parser())
-          .or(
-            Parser.succeed(
-              new VanillaSymbol(
-                ctrlSeq + ' ',
-                h.text(arrow),
-                ctrlSeq.slice(1)
-              ) as MQNode | Fragment
-            )
-          );
-      }
-    })();
-}
-LatexCmds.xrightarrow = bindArrowLabelCmd('\\xrightarrow', '⟶');
-LatexCmds.xleftarrow = bindArrowLabelCmd('\\xleftarrow', '⟵');
-LatexCmds.xmapsto = bindArrowLabelCmd('\\xmapsto', '⟼');
-LatexCmds.xRightarrow = bindArrowLabelCmd('\\xRightarrow', '⟹');
-LatexCmds.xLeftarrow = bindArrowLabelCmd('\\xLeftarrow', '⟸');
-LatexCmds.xLeftrightarrow = bindArrowLabelCmd('\\xLeftrightarrow', '⟺');
-LatexCmds.xleftrightarrow = bindArrowLabelCmd('\\xleftrightarrow', '⟷');
-LatexCmds.xhookleftarrow = bindArrowLabelCmd('\\xhookleftarrow', '↩');
-LatexCmds.xhookrightarrow = bindArrowLabelCmd('\\xhookrightarrow', '↪');
-LatexCmds.xrightharpoondown = bindArrowLabelCmd('\\xrightharpoondown', '⇀');
-LatexCmds.xrightharpoonup = bindArrowLabelCmd('\\xrightharpoonup', '⇁');
-LatexCmds.xleftharpoondown = bindArrowLabelCmd('\\xleftharpoondown', '↽');
-LatexCmds.xleftharpoonup = bindArrowLabelCmd('\\xleftharpoonup', '↼');
-LatexCmds.xrightleftharpoons = bindArrowLabelCmd('\\xrightleftharpoons', '⇌');
-LatexCmds.xleftrightharpoons = bindArrowLabelCmd('\\xleftrightharpoons', '⇋');
-LatexCmds.xhookleftarrow = bindArrowLabelCmd('\\xhookleftarrow', '↩');
-LatexCmds.xhookrightarrow = bindArrowLabelCmd('\\xhookrightarrow', '↪');
-LatexCmds.xLongrightarrow = bindArrowLabelCmd('\\xLongrightarrow', '⟶');
-LatexCmds.xLongleftarrow = bindArrowLabelCmd('\\xLongleftarrow', '⟵');
-LatexCmds.xtwoheadrightarrow = bindArrowLabelCmd('\\xtwoheadrightarrow', '↠');
-LatexCmds.xtwoheadleftarrow = bindArrowLabelCmd('\\xtwoheadleftarrow', '↞');
-LatexCmds.xtofrom = bindArrowLabelCmd('\\xtofrom', '⇄');
-
-// \cancel \bcancel \xcancel — struck-through content.
-function bindCancelCmd(ctrlSeq: string, cls: string) {
-  return () =>
-    new MathCommand(
-      ctrlSeq,
-      new DOMView(1, (blocks) =>
-        h('span', { class: 'mq-non-leaf mq-cancel ' + cls }, [
-          h.block('span', {}, blocks[0])
-        ])
-      )
-    );
-}
-// \cancelto{result}{expr} — content struck through with an arrow
-// pointing at the result term.
-LatexCmds.cancelto = () =>
-  new MathCommand(
-    '\\cancelto',
-    new DOMView(2, (blocks) =>
-      h('span', { class: 'mq-non-leaf mq-cancel mq-cancelto' }, [
-        h.block('span', { class: 'mq-cancelto-arrow' }, blocks[0]),
-        h.block('span', {}, blocks[1])
-      ])
-    )
-  );
-LatexCmds.cancel = bindCancelCmd('\\cancel', 'mq-cancel-forward');
-LatexCmds.bcancel = bindCancelCmd('\\bcancel', 'mq-cancel-back');
-LatexCmds.xcancel = bindCancelCmd('\\xcancel', 'mq-cancel-both');
-
-// \big \Big \bigg \Bigg sized delimiters (with optional l/r/m suffix)
-// and \middle — a sized-delimiter prefix consumes the following
-// delimiter token and renders that glyph, keeping the prefix in the
-// ctrlSeq so `\bigl(` serializes verbatim.
-var DELIM_GLYPHS: { [token: string]: string } = {
-  '(': '(',
-  ')': ')',
-  '[': '[',
-  ']': ']',
-  '{': '{',
-  '}': '}',
-  '|': '|',
-  '<': '⟨',
-  '>': '⟩',
-  '/': '/',
-  '.': '',
-  '\\{': '{',
-  '\\}': '}',
-  '\\|': '‖',
-  '\\langle': '⟨',
-  '\\rangle': '⟩',
-  '\\lVert': '‖',
-  '\\rVert': '‖',
-  '\\lceil': '⌈',
-  '\\rceil': '⌉',
-  '\\lfloor': '⌊',
-  '\\rfloor': '⌋',
-  '\\backslash': '\\',
-  '\\ulcorner': '⌜',
-  '\\urcorner': '⌝',
-  '\\llcorner': '⌞',
-  '\\lrcorner': '⌟',
-  '\\uparrow': '↑',
-  '\\downarrow': '↓',
-  '\\updownarrow': '↕',
-  '\\Uparrow': '⇑',
-  '\\Downarrow': '⇓',
-  '\\Updownarrow': '⇕'
-};
-
-class SizedDelimiter extends MQSymbol {
-  prefix: string;
-  constructor(prefix: string) {
-    super();
-    this.prefix = prefix;
-  }
-  // Parser-only command: typing '\bigl' in the command input can't
-  // supply a delimiter token, so typed insertion is a no-op (same
-  // convention as \textcolor / \big).
-  createLeftOf() {}
-  parser() {
-    var self = this;
-    return Parser.optWhitespace
-      .then(Parser.regex(/^(?:\\[a-zA-Z]+|\\[^a-zA-Z\s]|[.()[\]{}/|<>])/))
-      .map(function (delim) {
-        // A \langle-style delimiter needs a trailing space in the
-        // emitted ctrlSeq — otherwise `\Bigg\langle x` would serialize
-        // as `\Bigg\langlex` and glue into an unknown command.
-        self.ctrlSeq =
-          self.prefix + delim + (/^\\[a-zA-Z]+$/.test(delim) ? ' ' : '');
-        var glyph = DELIM_GLYPHS[delim];
-        if (glyph === undefined) glyph = delim.replace(/^\\/, '');
-        self.domView = new DOMView(0, () =>
-          h('span', { class: 'mq-sized-delim' }, [h.text(glyph)])
-        );
-        return self;
-      });
-  }
-}
-(function () {
-  ['big', 'Big', 'bigg', 'Bigg'].forEach(function (size) {
-    ['l', 'r', 'm', ''].forEach(function (side) {
-      LatexCmds[size + side] = function () {
-        return new SizedDelimiter('\\' + size + side);
-      };
-    });
-  });
-  LatexCmds.middle = function () {
-    return new SizedDelimiter('\\middle');
-  };
-})();
-
-// A bare \\ at any level is a hard line break — the matrix/displaylines
-// cell-grid parsers consume \\ as a row delimiter before node parsing
-// reaches it, so this only kicks in outside grids (e.g. pasting `x\\ y`).
-LatexCmds['\\'] = function () {
-  return new VanillaSymbol(
-    '\\\\',
-    h('br', {}, []) as unknown as HTMLElement,
-    'line break'
-  );
-};
-
-// \cr is the plain-TeX row separator — inside a grid it is cell content
-// (the cellsParser only splits on \\), so it round-trips verbatim and
-// renders as a line break.
-LatexCmds.cr = function () {
-  return new VanillaSymbol(
-    '\\cr ',
-    h('br', {}, []) as unknown as HTMLElement,
-    'line break'
-  );
-};
-
-// Escaped single-char accents (registered under their backslash-escaped
-// ctrlSeq). `\'` intentionally falls back to the bare ' prime — TeX's
-// acute accent is available as \acute.
-LatexCmds['\\`'] = () =>
-  new DiacriticAbove('\\`', h.text('`'), ['grave(', ')']);
-LatexCmds['\\"'] = () =>
-  new DiacriticAbove('\\"', h.text('¨'), ['umlaut(', ')']);
-LatexCmds['\\~'] = () =>
-  new DiacriticAbove('\\~', h.text('~'), ['tilde(', ')']);
-LatexCmds['\\='] = () =>
-  new DiacriticAbove('\\=', h.text('¯'), ['bar(', ')']);
-LatexCmds['\\.'] = () =>
-  new DiacriticAbove('\\.', h.text('˙'), ['dot(', ')']);
-LatexCmds['\\^'] = () =>
-  new DiacriticAbove('\\^', h.text('^'), ['hat(', ')']);
-
-// Arrow/segment diacritics and group marks.
-LatexCmds.overleftharpoon = () =>
-  new DiacriticAbove('\\overleftharpoon', h.text('↼'), ['overleft harpoon(', ')']);
-LatexCmds.overrightharpoon = () =>
-  new DiacriticAbove('\\overrightharpoon', h.text('⇀'), ['overright harpoon(', ')']);
-LatexCmds.overlinesegment = () =>
-  new DiacriticAbove('\\overlinesegment', h.text('―'), ['overline segment(', ')']);
-LatexCmds.underleftarrow = () =>
-  new DiacriticBelow('\\underleftarrow', h.text('←'), ['underleftarrow(', ')']);
-LatexCmds.underrightarrow = () =>
-  new DiacriticBelow('\\underrightarrow', h.text('→'), ['underrightarrow(', ')']);
-// One-block under/over marks that draw an arc glyph above or below
-// their argument (\overgroup, \overbracket, \wideparen, …).
-// \underbrace/\overbrace are NOT registered here — the Style-based
-// versions near the top own those names.
-class UnderOverBrace extends MathCommand {
-  constructor(ctrlSeq: string, below: boolean, glyph?: string) {
-    super();
-    this.ctrlSeq = ctrlSeq;
-    var mark = h('span', { class: 'mq-underbrace-arc' }, [
-      h.text(glyph || (below ? '⏟' : '⏞'))
-    ]);
-    this.domView = new DOMView(1, (blocks) =>
-      h('span', { class: 'mq-non-leaf mq-underoverbrace' }, below
-        ? [h.block('span', {}, blocks[0]), mark]
-        : [mark, h.block('span', {}, blocks[0])]
-      )
-    );
-  }
-}
-LatexCmds.overgroup = () => new UnderOverBrace('\\overgroup', false);
-LatexCmds.undergroup = () => new UnderOverBrace('\\undergroup', true);
-LatexCmds.overbracket = () =>
-  new UnderOverBrace('\\overbracket', false, '⎴');
-LatexCmds.underbracket = () =>
-  new UnderOverBrace('\\underbracket', true, '⎵');
-LatexCmds.underparen = () =>
-  new UnderOverBrace('\\underparen', true, '⏝');
-LatexCmds.overparen = () =>
-  new UnderOverBrace('\\overparen', false, '⏜');
-// \wideparen is amssymb's name for the same glyph as \overparen.
-LatexCmds.wideparen = () =>
-  new UnderOverBrace('\\wideparen', false, '⏜');
-
-// Word-form accents missing upstream (the bare-word variants of the
-// escaped accents \' \` \v \u and \ddddot).
-LatexCmds.check = () =>
-  new DiacriticAbove('\\check', h.text('ˇ'), ['check(', ')']);
-LatexCmds.breve = () =>
-  new DiacriticAbove('\\breve', h.text('˘'), ['breve(', ')']);
-LatexCmds.acute = () =>
-  new DiacriticAbove('\\acute', h.text('´'), ['acute(', ')']);
-LatexCmds.grave = () =>
-  new DiacriticAbove('\\grave', h.text('`'), ['grave(', ')']);
-LatexCmds.ddddot = () =>
-  new DiacriticAbove('\\ddddot', h.text('....'), ['ddddot(', ')']);
-LatexCmds.overleftharp = () =>
-  new DiacriticAbove('\\overleftharp', h.text('↼'), ['overleft harp(', ')']);
-LatexCmds.overrightharp = () =>
-  new DiacriticAbove('\\overrightharp', h.text('⇀'), ['overright harp(', ')']);
-
-// Physics bra-ket notation: \bra{x} → ⟨x|, \ket{x} → |x⟩,
-// \braket{x|y} → ⟨x|y⟩ (one block, | is content), \ketbra → |x⟩⟨y|.
-function bindBraKet(ctrlSeq: string, open: string, close: string) {
-  return () =>
-    new MathCommand(
-      ctrlSeq,
-      new DOMView(1, (blocks) =>
-        h('span', { class: 'mq-non-leaf' }, [
-          h('span', { class: 'mq-bra-ket-delim' }, [h.entityText(open)]),
-          h.block('span', {}, blocks[0]),
-          h('span', { class: 'mq-bra-ket-delim' }, [h.entityText(close)])
-        ])
-      )
-    );
-}
-LatexCmds.bra = bindBraKet('\\bra', '&lang;', '|');
-LatexCmds.ket = bindBraKet('\\ket', '|', '&rang;');
-LatexCmds.braket = () =>
-  new MathCommand(
-    '\\braket',
-    new DOMView(1, (blocks) =>
-      h('span', { class: 'mq-non-leaf' }, [
-        h('span', { class: 'mq-bra-ket-delim' }, [h.entityText('&lang;')]),
-        h.block('span', {}, blocks[0]),
-        h('span', { class: 'mq-bra-ket-delim' }, [h.entityText('&rang;')])
-      ])
-    )
-  );
-LatexCmds.ketbra = () =>
-  new MathCommand(
-    '\\ketbra',
-    new DOMView(2, (blocks) =>
-      h('span', { class: 'mq-non-leaf' }, [
-        h('span', { class: 'mq-bra-ket-delim' }, [h.text('|')]),
-        h.block('span', {}, blocks[0]),
-        h('span', { class: 'mq-bra-ket-delim' }, [
-          h.entityText('&rang;'),
-          h.entityText('&lang;')
-        ]),
-        h.block('span', {}, blocks[1]),
-        h('span', { class: 'mq-bra-ket-delim' }, [h.text('|')])
-      ])
-    )
-  );
-
-// \[ \] \( \) display-math wrappers parse as bracket glyphs so pasted
-// display math keeps its delimiters (registered under the escaped
-// ctrlSeq — bare ( ) [ ] still go through the symbol fallback).
-LatexCmds['\\['] = function () {
-  return new VanillaSymbol('\\[', h.text('['), 'open display math');
-};
-LatexCmds['\\]'] = function () {
-  return new VanillaSymbol('\\]', h.text(']'), 'close display math');
-};
-LatexCmds['\\('] = function () {
-  return new VanillaSymbol('\\(', h.text('('), 'open inline math');
-};
-LatexCmds['\\)'] = function () {
-  return new VanillaSymbol('\\)', h.text(')'), 'close inline math');
-};
-
-// style switches (\displaystyle … \nolimits) — invisible atoms that
-// serialize their command verbatim. \limits/\nolimits sit between an
-// operator and its bounds; the bound then attaches to this zero-width
-// atom, so `\sum\limits_{i}` renders like `\sum_{i}` and round-trips.
-// NOTE: defined here (not advancedSymbols.ts) so the mathquill-basic
-// bundle — which concatenates commands.ts but not advancedSymbols.ts —
-// can use it too.
-function bindStyleModifier(ctrlSeq: string, mathspeak: string) {
-  return () =>
-    new VanillaSymbol(
-      ctrlSeq,
-      h('span', { class: 'mq-style-modifier' }),
-      mathspeak
-    );
-}
-
-// Matrix rules — invisible in the grid, serialize verbatim.
-LatexCmds.hline = bindStyleModifier('\\hline ', 'h line');
-LatexCmds.hdashline = bindStyleModifier('\\hdashline ', 'h dash line');
-LatexCmds.midrule = bindStyleModifier('\\midrule ', 'mid rule');
-LatexCmds.toprule = bindStyleModifier('\\toprule ', 'top rule');
-LatexCmds.bottomrule = bindStyleModifier('\\bottomrule ', 'bottom rule');
-LatexCmds.cline = () =>
-  new MathCommand(
-    '\\cline',
-    new DOMView(1, (blocks) =>
-      h('span', { class: 'mq-invisible' }, [
-        h.block('span', {}, blocks[0])
-      ])
-    )
-  );
-LatexCmds.cmidrule = () =>
-  new MathCommand(
-    '\\cmidrule',
-    new DOMView(1, (blocks) =>
-      h('span', { class: 'mq-invisible' }, [
-        h.block('span', {}, blocks[0])
-      ])
-    )
-  );
-
-// \llap \rlap \clap \smash — overlap boxes; content renders inline.
-function bindOverlapCmd(ctrlSeq: string, cls: string, optRegex?: string) {
-  return () =>
-    new (class extends MathCommand {
-      optText = '';
-      constructor() {
-        super(
-          ctrlSeq,
-          new DOMView(1, (blocks) =>
-            h('span', { class: 'mq-non-leaf ' + cls }, [
-              h.block('span', {}, blocks[0])
-            ])
-          )
-        );
-      }
-      // An overlap command with no following block degrades to a bare
-      // \name leaf instead of failing the parse.
-      parser() {
-        var self = this;
-        return (
-          optRegex
-            ? Parser.regex(new RegExp('^' + optRegex))
-                .or(Parser.succeed(''))
-                .then(function (opt: string) {
-                  self.optText = opt;
-                  return latexMathParser.block;
-                })
-            : latexMathParser.block
-        )
-          .map(function (b: MathBlock) {
-            self.blocks = [b];
-            b.adopt(self, 0, 0);
-            return self;
-          })
-          .or(
-            Parser.succeed(
-              new VanillaSymbol(
-                ctrlSeq + ' ',
-                h.text(ctrlSeq),
-                ctrlSeq.replace(/\\/g, '')
-              ) as MQNode | Fragment
-            )
-          );
-      }
-      latexRecursive(ctx: LatexContext) {
-        this.checkCursorContextOpen(ctx);
-        ctx.uncleanedLatex += this.ctrlSeq + this.optText + '{';
-        this.blocks![0].latexRecursive(ctx);
-        ctx.uncleanedLatex += '}';
-        this.checkCursorContextClose(ctx);
-      }
-    })();
-}
-LatexCmds.llap = bindOverlapCmd('\\llap', 'mq-llap');
-LatexCmds.rlap = bindOverlapCmd('\\rlap', 'mq-rlap');
-LatexCmds.clap = bindOverlapCmd('\\clap', 'mq-clap');
-LatexCmds.smash = bindOverlapCmd('\\smash', 'mq-smash', '\\[(?:[tb])\\]');
-LatexCmds.mathllap = bindOverlapCmd('\\mathllap', 'mq-llap');
-LatexCmds.mathrlap = bindOverlapCmd('\\mathrlap', 'mq-rlap');
-LatexCmds.mathclap = bindOverlapCmd('\\mathclap', 'mq-clap');
-LatexCmds.mathstrut = bindStyleModifier('\\mathstrut ', 'math strut');
-LatexCmds.strut = bindStyleModifier('\\strut ', 'strut');
-
-// \iiint \idotsint \ointctrclockwise \varointclockwise — boundless
-// integral signs like \iint.
-LatexCmds['∭'] = LatexCmds.iiint = boundlessIntegral(
-  '\\iiint ',
-  '&#8749;',
-  'triple integral'
-);
-LatexCmds.idotsint = boundlessIntegral(
-  '\\idotsint ',
-  '&#8944;',
-  'dots integral'
-);
-LatexCmds['∳'] = LatexCmds.ointctrclockwise = boundlessIntegral(
-  '\\ointctrclockwise ',
-  '&#8755;',
-  'counterclockwise contour integral'
-);
-LatexCmds['∲'] = LatexCmds.varointclockwise = boundlessIntegral(
-  '\\varointclockwise ',
-  '&#8754;',
-  'clockwise contour integral'
-);
-
-LatexCmds.bigsqcap = LatexCmds.bigsqcapdot = () =>
-  new SummationNotation('\\bigsqcap ', '&#10757;', 'square intersection');
-
-LatexCmds.varinjlim = () =>
-  new SummationNotation('\\varinjlim ', 'lim&#8594;', 'direct limit');
-LatexCmds.varprojlim = () =>
-  new SummationNotation('\\varprojlim ', 'lim&#8592;', 'inverse limit');
-
-// \fbox/\framebox — boxed frames; \nicefrac canonicalizes to \frac.
-LatexCmds.fbox = () =>
-  new Style(
-    '\\fbox',
-    'span',
-    { class: 'mq-non-leaf mq-fbox' },
-    'Boxed'
-  );
-// \makebox[w][pos]{x} / \framebox[w][pos]{x} / \raisebox{d}[ht][dp]{x}
-// — a content block preceded by up to two optional bracket args.
-// (defined here, not advancedSymbols.ts, so the mathquill-basic bundle —
-// which concatenates commands.ts but not advancedSymbols.ts — can use it)
-function bindOptBracketCmd(ctrlSeq: string, maxOpt: number, speak: string) {
-  return class extends MathCommand {
-    optText = '';
-    constructor() {
-      super(
-        ctrlSeq,
-        new DOMView(1, (blocks) =>
-          h('span', { class: 'mq-non-leaf' }, [
-            h.block('span', {}, blocks[0])
-          ])
-        )
-      );
-    }
-    parser() {
-      var self = this;
-      return Parser.regex(
-        new RegExp('^(?:\\[[^\\]]*\\]){0,' + maxOpt + '}')
-      )
-        .then(function (opt: string) {
-          self.optText = opt;
-          return latexMathParser.block;
-        })
-        .map(function (b: MathBlock) {
-          self.blocks = [b];
-          b.adopt(self, 0, 0);
-          return self;
-        });
-    }
-    latexRecursive(ctx: LatexContext) {
-      this.checkCursorContextOpen(ctx);
-      ctx.uncleanedLatex += this.ctrlSeq + this.optText + '{';
-      this.blocks![0].latexRecursive(ctx);
-      ctx.uncleanedLatex += '}';
-      this.checkCursorContextClose(ctx);
-    }
-  };
-}
-
-// \framebox keeps optional [width][pos] args like \makebox.
-LatexCmds.framebox = bindOptBracketCmd('\\framebox', 2, 'frame box');
-LatexCmds.nicefrac = LatexCmds.frac;
-
-// Bold-symbol font wrappers.
-LatexCmds.boldsymbol = () =>
-  new Style(
-    '\\boldsymbol',
-    'span',
-    { class: 'mq-non-leaf mq-bf mq-it' },
-    'Bold Symbol'
-  );
-LatexCmds.pmb = () =>
-  new Style('\\pmb', 'span', { class: 'mq-non-leaf mq-bf' }, 'Poor Mans Bold');
-LatexCmds.bm = () =>
-  new Style('\\bm', 'span', { class: 'mq-non-leaf mq-bf mq-it' }, 'Bold');
-LatexCmds.mathbfit = () =>
-  new Style(
-    '\\mathbfit',
-    'span',
-    { class: 'mq-non-leaf mq-bf mq-it' },
-    'Bold Italic'
+// MATHCOMPILE: added accents/arrows/cancels/delimiters/layout commands moved to extraCommands.ts
   );
 
 class DelimsNode extends MathCommand {
@@ -2414,8 +1493,9 @@ class Bracket extends DelimsNode {
   }
   getSymbol(side: BracketSide) {
     var ch = this.sides[side || R].ch as keyof typeof SVG_SYMBOLS;
-    // a delimiter with no glyph (the invisible `\left.`/`\right.` null
-    // delimiter) renders as a zero-width span
+    // MATHCOMPILE: a delimiter with no glyph (the invisible `\left.`/`\right.`
+    // null delimiter) renders as a zero-width span; html is a thunk,
+    // matching the SVG_SYMBOLS table type
     return SVG_SYMBOLS[ch] || { width: '0', html: () => h.text('') };
   }
   latexRecursive(ctx: LatexContext) {
@@ -2687,6 +1767,7 @@ var OPP_BRACKS = {
   '\\{': '\\}',
   '\\}': '\\{',
   '&lang;': '&rang;',
+  // MATHCOMPILE: one-sided bracket pairs for standalone \langle/\lVert parsing
   '&rang;': '&lang;',
   '\\langle ': '\\rangle ',
   '\\rangle ': '\\langle ',
@@ -2699,6 +1780,7 @@ var BRACKET_NAMES = {
   '&lang;': 'angle-bracket',
   '&rang;': 'angle-bracket',
   '|': 'pipe',
+  // MATHCOMPILE: \left. / \right. empty delimiter
   '.': 'null-delimiter'
 };
 
@@ -2719,70 +1801,11 @@ function bindCharBracketPair(
 bindCharBracketPair('(', '', 'parenthesis');
 bindCharBracketPair('[', '', 'bracket');
 bindCharBracketPair('{', '\\{', 'brace');
-// Typed \langle auto-pairs like every Bracket; a standalone \langle x
-// parses as a plain ⟨ symbol because a one-sided Bracket fails its own
-// parser and blanks the field. Same for \rangle, \lVert, \rVert below.
-class StandaloneBracket extends Bracket {
-  parseSymbol: VanillaSymbol;
-  constructor(
-    side: BracketSide,
-    open: string,
-    close: string,
-    ctrlSeq: string,
-    end: string,
-    mathspeak: string
-  ) {
-    super(side, open, close, ctrlSeq, end);
-    this.parseSymbol = new VanillaSymbol(
-      ctrlSeq,
-      h.entityText(side === L ? open : close),
-      mathspeak
-    );
-  }
-  parser() {
-    return Parser.succeed(this.parseSymbol) as Parser<MQNode | Fragment>;
-  }
-}
-LatexCmds.langle = () =>
-  new StandaloneBracket(
-    L,
-    '&lang;',
-    '&rang;',
-    '\\langle ',
-    '\\rangle ',
-    'left angle bracket'
-  );
-LatexCmds.rangle = () =>
-  new StandaloneBracket(
-    R,
-    '&lang;',
-    '&rang;',
-    '\\rangle ',
-    '\\langle ',
-    'right angle bracket'
-  );
+// MATHCOMPILE: standalone \langle/\rangle parsing moved to extraCommands.ts
 CharCmds['|'] = () => new Bracket(L, '|', '|', '|', '|');
-LatexCmds.lVert = () =>
-  new StandaloneBracket(
-    L,
-    '&#8741;',
-    '&#8741;',
-    '\\lVert ',
-    '\\rVert ',
-    'left norm'
-  );
-LatexCmds.rVert = () =>
-  new StandaloneBracket(
-    R,
-    '&#8741;',
-    '&#8741;',
-    '\\rVert ',
-    '\\lVert ',
-    'right norm'
-  );
-
+// MATHCOMPILE: standalone \lVert/\rVert parsing moved to extraCommands.ts
 LatexCmds.left = class extends MathCommand {
-  // Parser-only command: the delimiter lives in the argument after
+  // MATHCOMPILE: Parser-only command: the delimiter lives in the argument after
   // \left, so a typed '\left' inserts nothing and the following
   // delimiter keystroke auto-pairs the bracket itself.
   createLeftOf() {}
@@ -2811,6 +1834,7 @@ LatexCmds.left = class extends MathCommand {
           open = '&#8741;';
           ctrlSeq = ctrlSeq + ' ';
         }
+        // MATHCOMPILE: \| as a \left/\right delimiter
         if (ctrlSeq == '\\|') {
           open = '&#8741;';
         }
@@ -2832,6 +1856,7 @@ LatexCmds.left = class extends MathCommand {
                 close = '&#8741;';
                 end = end + ' ';
               }
+              // MATHCOMPILE: \| as a \left/\right delimiter
               if (end == '\\|') {
                 close = '&#8741;';
               }
@@ -2846,7 +1871,7 @@ LatexCmds.left = class extends MathCommand {
 };
 
 LatexCmds.right = class extends MathCommand {
-  // Parser-only command, see \left.
+  // MATHCOMPILE: Parser-only command, see \left.
   createLeftOf() {}
   numBlocks() {
     return 1 as const;
@@ -2857,68 +1882,7 @@ LatexCmds.right = class extends MathCommand {
   }
 };
 
-// \big| \Big| \bigg| \Bigg| — fixed-size delimiters. Parser-only (like
-// \left): they render the delimiter glyph at a fixed scale and keep the
-// full \big<delim> ctrlSeq so the latex round-trips.
-const BIG_DELIM_SCALES: Record<string, string> = {
-  big: '1.2',
-  Big: '1.6',
-  bigg: '2.1',
-  Bigg: '2.6'
-};
-const BIG_DELIM_CHARS: Record<string, string> = {
-  '(': '(',
-  ')': ')',
-  '[': '[',
-  ']': ']',
-  '|': '|',
-  '.': '',
-  '\\{': '{',
-  '\\}': '}',
-  '\\|': '‖',
-  '\\langle': '⟨',
-  '\\rangle': '⟩',
-  '\\lVert': '‖',
-  '\\rVert': '‖'
-};
-const BIG_DELIM_RE =
-  /^(?:\\langle(?![a-zA-Z])|\\rangle(?![a-zA-Z])|\\lVert(?![a-zA-Z])|\\rVert(?![a-zA-Z])|\\\{|\\\}|\\[|.]|[()\[\]|.])/;
-class BigDelim extends MathCommand {
-  sizeSeq = '\\big';
-  constructor(sizeSeq: string) {
-    super();
-    this.sizeSeq = '\\' + sizeSeq;
-  }
-  createLeftOf() {}
-  numBlocks() {
-    return 1 as const;
-  }
-  parser() {
-    var self = this;
-    return Parser.optWhitespace
-      .then(Parser.regex(BIG_DELIM_RE))
-      .then(function (delimTok) {
-        var ch = BIG_DELIM_CHARS[delimTok];
-        if (ch === undefined) return Parser.fail('not a \\big delimiter');
-        var ctrlSeq =
-          self.sizeSeq + (delimTok.length > 1 ? delimTok + ' ' : delimTok);
-        var scale = BIG_DELIM_SCALES[self.sizeSeq.slice(1)];
-        var inner =
-          ch === ''
-            ? h('span', { style: 'width:0' })
-            : h('span', { style: 'font-size:' + scale + 'em' }, [
-                h.text(ch)
-              ]);
-        return Parser.succeed(
-          new MQSymbol(ctrlSeq, h('span', {}, [inner]), undefined, 'delimiter')
-        );
-      });
-  }
-}
-LatexCmds.big = () => new BigDelim('big');
-LatexCmds.Big = () => new BigDelim('Big');
-LatexCmds.bigg = () => new BigDelim('bigg');
-LatexCmds.Bigg = () => new BigDelim('Bigg');
+// MATHCOMPILE: \big \Big \bigg \Bigg moved to extraCommands.ts
 
 var leftBinomialSymbol = SVG_SYMBOLS['('];
 var rightBinomialSymbol = SVG_SYMBOLS[')'];
@@ -2978,17 +1942,14 @@ class Binomial extends DelimsNode {
 }
 
 LatexCmds.binom = LatexCmds.binomial = Binomial;
-// \tfrac serializes canonically as \frac (same as \dfrac/\cfrac);
-// \dbinom/\tbinom likewise as \binom
-LatexCmds.tfrac = LatexCmds.frac;
-LatexCmds.dbinom = LatexCmds.tbinom = LatexCmds.binom;
+// MATHCOMPILE: \tfrac \dbinom \tbinom moved to extraCommands.ts
 
 LatexCmds.choose = class extends Binomial {
   createLeftOf(cursor: Cursor) {
     LiveFraction.prototype.createLeftOf.call(this, cursor);
   }
   parser() {
-    // DelimsNode's strict two-block parser (Binomial.parser() falls back
+    // MATHCOMPILE: DelimsNode's strict two-block parser (Binomial.parser() falls back
     // to a \binom leaf via MathCommand, which would shadow \choose's own
     // fallback).
     return DelimsNode.prototype.strictParser

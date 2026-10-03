@@ -49,6 +49,8 @@ var latexMathParser = (function () {
     return new VanillaSymbol(c);
   });
 
+  // MATHCOMPILE: control sequences carry an isCommand flag so the latex
+  // importer can keep non-command \<char> escapes intact.
   var controlSequence = regex(/^[^\\a-eg-zA-Z]/) // hotfix #164; match MathBlock::write
     .map(function (ch: string) {
       return { cs: ch, isCommand: false };

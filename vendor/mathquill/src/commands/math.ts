@@ -128,7 +128,7 @@ class MathCommand extends MathElement {
     });
   }
 
-  // the bare block-counting parse, without the verbatim-leaf fallback
+  // MATHCOMPILE: the bare block-counting parse, without the verbatim-leaf fallback
   strictParser(): Parser<MQNode | Fragment> {
     var block = latexMathParser.block;
 
@@ -147,7 +147,7 @@ class MathCommand extends MathElement {
     var self = this;
 
     return this.strictParser().or(
-      // a command missing its braces degrades to a verbatim leaf
+      // MATHCOMPILE: a command missing its braces degrades to a verbatim leaf
       // instead of blanking the surrounding content — but only when
       // non-space input follows: a lone trailing \frac still fails
       Parser.regex(/^(?=\S)/).then(() =>
@@ -195,7 +195,7 @@ class MathCommand extends MathElement {
     var el = this.foldChildren(this.getEnd(L), function (leftward, child) {
       return leftward.isEmpty() ? leftward : child;
     });
-    // A command with no blocks (e.g. \verb, \end) has no child to land
+    // MATHCOMPILE: A command with no blocks (e.g. \verb, \end) has no child to land
     // the caret in — place it right of the atom instead.
     if (el) cursor.insAtRightEnd(el);
     else cursor.insRightOf(this);

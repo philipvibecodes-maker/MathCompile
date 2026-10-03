@@ -208,7 +208,6 @@ var __assign = (this && this.__assign) || function () {
     var U_NARY_PRODUCT = '\u220F';
     var U_NARY_COPRODUCT = '\u2210';
     var U_INTEGRAL = '\u222B';
-    var U_DOUBLE_INTEGRAL = '\u222C';
     /**
      * Like `el.getBoundingClientRect()` but avoids throwing for
      * disconnected and hidden elements in IE <= 11.
@@ -2559,7 +2558,7 @@ var __assign = (this && this.__assign) || function () {
                     this.__controller.typedText(text.charAt(i));
                 return this;
             };
-            // Vendored patch: Enter semantics \u2014 matrix row inside a matrix,
+            // MATHCOMPILE: Enter semantics \u2014 matrix row inside a matrix,
             // \displaylines row split otherwise (src/commands/math/environments.ts).
             EditableField.prototype.insertLineBreak = function () {
                 var ctrlr = this.__controller;
@@ -4104,6 +4103,8 @@ var __assign = (this && this.__assign) || function () {
         var symbol = regex(/^[^${}\\_^]/).map(function (c) {
             return new VanillaSymbol(c);
         });
+        // MATHCOMPILE: control sequences carry an isCommand flag so the latex
+        // importer can keep non-command \<char> escapes intact.
         var controlSequence = regex(/^[^\\a-eg-zA-Z]/) // hotfix #164; match MathBlock::write
             .map(function (ch) {
             return { cs: ch, isCommand: false };
@@ -5322,7 +5323,7 @@ var __assign = (this && this.__assign) || function () {
                 return isEmpty && child.isEmpty();
             });
         };
-        // the bare block-counting parse, without the verbatim-leaf fallback
+        // MATHCOMPILE: the bare block-counting parse, without the verbatim-leaf fallback
         MathCommand.prototype.strictParser = function () {
             var _this = this;
             var block = latexMathParser.block;
@@ -5337,7 +5338,7 @@ var __assign = (this && this.__assign) || function () {
         MathCommand.prototype.parser = function () {
             var self = this;
             return this.strictParser().or(
-            // a command missing its braces degrades to a verbatim leaf
+            // MATHCOMPILE: a command missing its braces degrades to a verbatim leaf
             // instead of blanking the surrounding content \u2014 but only when
             // non-space input follows: a lone trailing \frac still fails
             Parser.regex(/^(?=\S)/).then(function () {
@@ -5373,7 +5374,7 @@ var __assign = (this && this.__assign) || function () {
             var el = this.foldChildren(this.getEnd(L), function (leftward, child) {
                 return leftward.isEmpty() ? leftward : child;
             });
-            // A command with no blocks (e.g. \verb, \end) has no child to land
+            // MATHCOMPILE: A command with no blocks (e.g. \verb, \end) has no child to land
             // the caret in \u2014 place it right of the atom instead.
             if (el)
                 cursor.insAtRightEnd(el);
@@ -6291,7 +6292,7 @@ var __assign = (this && this.__assign) || function () {
         _maxLength: 0
     };
     baseOptionProcessors.autoCommands = function (cmds) {
-        // '' disables autoCommands entirely (the stock processor had no way to
+        // MATHCOMPILE: '' disables autoCommands entirely (the stock processor had no way to
         // turn the list back off once set \u2014 needed for the smartMode toggle).
         if (cmds === '') {
             return { _maxLength: 0 };
@@ -6499,7 +6500,7 @@ var __assign = (this && this.__assign) || function () {
             // check for operator names: at each position from left to right, check
             // substrings from longest to shortest
             outer: for (var i = 0, first = l[R] || this.parent.getEnd(L); first && i < str.length; i += 1, first = first[R]) {
-                // A letter run inside \operatorname{...}/\mathrm{...} (its first
+                // MATHCOMPILE: A letter run inside \operatorname{...}/\mathrm{...} (its first
                 // letter's ctrlSeq carries the `\name{` prefix and its last carries
                 // `}`) is already an explicit operator name \u2014 keep it whole and
                 // upright. Scanning it for built-in names split e.g.
@@ -6631,7 +6632,7 @@ var __assign = (this && this.__assign) || function () {
         }
         // compat with some of the nonstandard LaTeX exported by MathQuill
         // before #247. None of these are real LaTeX commands so, seems safe.
-        // 'sign' (not built into LaTeX) exports as \operatorname{sign}, which
+        // MATHCOMPILE: 'sign' (not built into LaTeX) exports as \operatorname{sign}, which
         // MathCompile's compile pipeline lowers to SymPy's sign().
         var moreNonstandardOps = 'gcf hcf lcm proj span sign'.split(' ');
         for (var i = 0; i < moreNonstandardOps.length; i += 1) {
@@ -6741,7 +6742,7 @@ var __assign = (this && this.__assign) || function () {
             return 1;
         };
         class_2.prototype.parser = function () {
-            // \operatorname* is the limits-form operator \u2014 consume the star so
+            // MATHCOMPILE: \operatorname* is the limits-form operator \u2014 consume the star so
             // it doesn't surface as a stray literal '*' (previously
             // \operatorname*{argmin} -> *\arg\min)
             return Parser.optWhitespace
@@ -6796,7 +6797,7 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds[' '] = LatexCmds.space = function () {
         return new DigitGroupingChar('\\ ', h('span', {}, [h.text(U_NO_BREAK_SPACE)]), ' ');
     };
-    // \<char> escapes \u2014 spacing (\, \: \; \!), braces (\{ \}) and the norm
+    // MATHCOMPILE: \<char> escapes \u2014 spacing (\, \: \; \!), braces (\{ \}) and the norm
     // shorthand (\|). These are keyed with a backslash prefix so they only
     // resolve through the '\'-prefixed parse branch (see latex.ts): bare
     // ',', ';', '{', ... keep their literal meaning and '}' still closes
@@ -6854,7 +6855,7 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds['&'] = function () {
         return new NonSymbolaSymbol('\\&', h.entityText('&amp;'), 'and');
     };
-    // escaped delimiters/specials \u2014 the parser passes the backslash
+    // MATHCOMPILE: escaped delimiters/specials \u2014 the parser passes the backslash
     // through in ctrlSeq ('\_'), so the bare characters are untouched
     LatexCmds['\\_'] = function () {
         return new NonSymbolaSymbol('\\_', h.text('_'), 'underscore');
@@ -7570,19 +7571,7 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.mathtt = function () {
         return new Style('\\mathtt', 'span', { class: 'mq-monospace mq-font' }, 'Math Text');
     };
-    LatexCmds.mathcal = function () {
-        return new Style('\\mathcal', 'span', { class: 'mq-caligraphic mq-font' }, 'Calligraphic Font');
-    };
-    LatexCmds.mathscr = function () {
-        return new Style('\\mathscr', 'span', { class: 'mq-caligraphic mq-font' }, 'Script Font');
-    };
-    LatexCmds.mathfrak = function () {
-        return new Style('\\mathfrak', 'span', { class: 'mq-fraktur mq-font' }, 'Fraktur Font');
-    };
-    // \bold in math mode is boldmath \u2014 serialized canonically as \mathbf
-    LatexCmds.bold = function () {
-        return new Style('\\mathbf', 'b', { class: 'mq-font' }, 'Bold Font');
-    };
+    // MATHCOMPILE: \mathcal \mathscr \mathfrak \bold moved to extraCommands.ts
     //text-decoration
     LatexCmds.underline = function () {
         return new Style('\\underline', 'span', { class: 'mq-non-leaf mq-underline' }, 'Underline');
@@ -7627,64 +7616,8 @@ var __assign = (this && this.__assign) || function () {
             ]);
         }));
     };
-    // \boxed{...} \u2014 content with a drawn frame.
-    LatexCmds.boxed = function () {
-        return new Style('\\boxed', 'span', { class: 'mq-non-leaf mq-boxed' }, 'Boxed');
-    };
-    // \underbrace{x}_{label} / \overbrace{x}^{label} \u2014 the label lands as an
-    // ordinary sibling SupSub (same pattern as boundless integral bounds),
-    // so only the grouping command itself is needed here.
-    LatexCmds.underbrace = function () {
-        return new Style('\\underbrace', 'span', { class: 'mq-non-leaf mq-underbrace' }, 'Underbrace');
-    };
-    LatexCmds.overbrace = function () {
-        return new Style('\\overbrace', 'span', { class: 'mq-non-leaf mq-overbrace' }, 'Overbrace');
-    };
-    // \underset{a}{b} renders b with a below it; \overset{a}{b} with a above.
-    var UnderOverSet = /** @class */ (function (_super) {
-        __extends(UnderOverSet, _super);
-        function UnderOverSet(top) {
-            var _this = _super.call(this) || this;
-            _this.ctrlSeq = top ? '\\overset' : '\\underset';
-            _this.ariaLabel = top ? 'overset' : 'underset';
-            _this.domView = new DOMView(2, function (blocks) {
-                return top
-                    ? h('span', { class: 'mq-overunderset mq-non-leaf' }, [
-                        h('span', { class: 'mq-overunderset-label' }, [
-                            h.block('span', {}, blocks[0])
-                        ]),
-                        h.block('span', { class: 'mq-overunderset-main' }, blocks[1])
-                    ])
-                    : h('span', { class: 'mq-overunderset mq-non-leaf' }, [
-                        h.block('span', { class: 'mq-overunderset-main' }, blocks[1]),
-                        h('span', { class: 'mq-overunderset-label' }, [
-                            h.block('span', {}, blocks[0])
-                        ])
-                    ]);
-            });
-            return _this;
-        }
-        UnderOverSet.prototype.parser = function () {
-            var self = this;
-            var block = latexMathParser.block;
-            var blocks = (this.blocks = [new MathBlock(), new MathBlock()]);
-            for (var i = 0; i < blocks.length; i += 1) {
-                blocks[i].adopt(self, self.getEnd(R), 0);
-            }
-            return Parser.optWhitespace
-                .then(block)
-                .then(function (b0) {
-                b0.children().adopt(blocks[0], blocks[0].getEnd(R), 0);
-                return Parser.optWhitespace.then(block).then(function (b1) {
-                    b1.children().adopt(blocks[1], blocks[1].getEnd(R), 0);
-                    return Parser.succeed(self);
-                });
-            });
-        };
-        return UnderOverSet;
-    }(MathCommand));
-    LatexCmds.underset = function () { return new UnderOverSet(false); };
-    LatexCmds.overset = function () { return new UnderOverSet(true); };
+    // MATHCOMPILE: \boxed moved to extraCommands.ts
+    // MATHCOMPILE: \underbrace \overbrace moved to extraCommands.ts
     // `\textcolor{color}{math}` will apply a color to the given math content, where
     // `color` is any valid CSS Color Value (see [SitePoint docs][] (recommended),
     // [Mozilla docs][], or [W3C spec][]).
@@ -7696,6 +7629,7 @@ var __assign = (this && this.__assign) || function () {
         __extends(class_7, _super);
         function class_7() {
             var _this = _super !== null && _super.apply(this, arguments) || this;
+            // MATHCOMPILE: \textcolor[model]{color}{...} \u2014 optional color-model arg (parse + serialize)
             _this.model = '';
             return _this;
         }
@@ -7755,239 +7689,23 @@ var __assign = (this && this.__assign) || function () {
         };
         return class_7;
     }(MathCommand));
-    // \color{color}math is the declaration form of \textcolor \u2014 it
-    // canonicalizes to \textcolor{color}{math} (the next block is colored).
-    LatexCmds.color = LatexCmds.textcolor;
-    // \colorbox{color}{math} \u2014 a filled box around content; the color arg is
-    // raw text like \textcolor's, emitted back verbatim.
-    LatexCmds.colorbox = /** @class */ (function (_super) {
-        __extends(class_8, _super);
-        function class_8() {
-            var _this = _super !== null && _super.apply(this, arguments) || this;
-            _this.color = '';
-            _this.model = '';
-            return _this;
-        }
-        // Parser-only command: typing '\colorbox' in the command input can't
-        // supply a color argument, so typed insertion is a no-op (same
-        // convention as \textcolor).
-        class_8.prototype.createLeftOf = function () { };
-        class_8.prototype.numBlocks = function () {
-            return 1;
-        };
-        class_8.prototype.parser = function () {
-            var _this = this;
-            var self = this;
-            return Parser.optWhitespace
-                .then(Parser.regex(/^\[[a-zA-Z]+\]/).or(Parser.succeed('')))
-                .then(function (model) {
-                if (model)
-                    self.model = model.slice(1, -1);
-                return Parser.string('{')
-                    .then(Parser.regex(/^[#\w\s.,()%-]*/))
-                    .skip(Parser.string('}'));
-            })
-                .then(function (color) {
-                self.color = color;
-                self.domView = new DOMView(1, function (blocks) {
-                    return h.block('span', { class: 'mq-colorbox', style: 'background-color:' + color }, blocks[0]);
-                });
-                return _super.prototype.parser.call(_this);
-            });
-        };
-        class_8.prototype.latexRecursive = function (ctx) {
-            this.checkCursorContextOpen(ctx);
-            ctx.uncleanedLatex +=
-                '\\colorbox' +
-                    (this.model ? '[' + this.model + ']' : '') +
-                    '{' +
-                    this.color +
-                    '}{';
-            this.blocks[0].latexRecursive(ctx);
-            ctx.uncleanedLatex += '}';
-            this.checkCursorContextClose(ctx);
-        };
-        class_8.prototype.isStyleBlock = function () {
-            return true;
-        };
-        return class_8;
-    }(MathCommand));
-    // \fcolorbox{frame}{bg}{math} \u2014 framed + filled box; two raw color args.
-    LatexCmds.fcolorbox = /** @class */ (function (_super) {
-        __extends(class_9, _super);
-        function class_9() {
-            var _this = _super !== null && _super.apply(this, arguments) || this;
-            _this.frameColor = '';
-            _this.bgColor = '';
-            _this.model = '';
-            return _this;
-        }
-        // Parser-only command: typing '\fcolorbox' in the command input can't
-        // supply color arguments, so typed insertion is a no-op (same
-        // convention as \textcolor).
-        class_9.prototype.createLeftOf = function () { };
-        class_9.prototype.numBlocks = function () {
-            return 1;
-        };
-        class_9.prototype.parser = function () {
-            var _this = this;
-            var self = this;
-            var colorGroup = Parser.string('{')
-                .then(Parser.regex(/^[#\w\s.,()%-]*/))
-                .skip(Parser.string('}'));
-            return Parser.optWhitespace
-                .then(Parser.regex(/^\[[a-zA-Z]+\]/).or(Parser.succeed('')))
-                .then(function (model) {
-                if (model)
-                    self.model = model.slice(1, -1);
-                return colorGroup;
-            })
-                .then(function (frame) {
-                self.frameColor = frame;
-                return colorGroup;
-            })
-                .then(function (bg) {
-                self.bgColor = bg;
-                self.domView = new DOMView(1, function (blocks) {
-                    return h.block('span', {
-                        class: 'mq-fcolorbox',
-                        style: 'border:1px solid ' +
-                            self.frameColor +
-                            ';background-color:' +
-                            bg
-                    }, blocks[0]);
-                });
-                return _super.prototype.parser.call(_this);
-            });
-        };
-        class_9.prototype.latexRecursive = function (ctx) {
-            this.checkCursorContextOpen(ctx);
-            ctx.uncleanedLatex +=
-                '\\fcolorbox' +
-                    (this.model ? '[' + this.model + ']' : '') +
-                    '{' +
-                    this.frameColor +
-                    '}{' +
-                    this.bgColor +
-                    '}{';
-            this.blocks[0].latexRecursive(ctx);
-            ctx.uncleanedLatex += '}';
-            this.checkCursorContextClose(ctx);
-        };
-        class_9.prototype.isStyleBlock = function () {
-            return true;
-        };
-        return class_9;
-    }(MathCommand));
-    // \href{url}{math} \u2014 link wrapper; the url arg is raw text.
-    LatexCmds.href = /** @class */ (function (_super) {
-        __extends(class_10, _super);
-        function class_10() {
-            var _this = _super !== null && _super.apply(this, arguments) || this;
-            _this.url = '';
-            return _this;
-        }
-        // Parser-only command: typing '\href' in the command input can't
-        // supply a url argument, so typed insertion is a no-op (same
-        // convention as \textcolor).
-        class_10.prototype.createLeftOf = function () { };
-        class_10.prototype.numBlocks = function () {
-            return 1;
-        };
-        class_10.prototype.parser = function () {
-            var _this = this;
-            var self = this;
-            return Parser.optWhitespace
-                .then(Parser.string('{'))
-                .then(Parser.regex(/^[^{}]*/))
-                .skip(Parser.string('}'))
-                .then(function (url) {
-                self.url = url;
-                self.domView = new DOMView(1, function (blocks) {
-                    return h.block('span', { class: 'mq-href' }, blocks[0]);
-                });
-                return _super.prototype.parser.call(_this);
-            });
-        };
-        class_10.prototype.latexRecursive = function (ctx) {
-            this.checkCursorContextOpen(ctx);
-            ctx.uncleanedLatex += '\\href{' + this.url + '}{';
-            this.blocks[0].latexRecursive(ctx);
-            ctx.uncleanedLatex += '}';
-            this.checkCursorContextClose(ctx);
-        };
-        return class_10;
-    }(MathCommand));
-    // \overset{label}{base} stacks a small label above; \underset below;
-    // \stackrel is the plain-TeX name for \overset
-    LatexCmds.overset = /** @class */ (function (_super) {
-        __extends(class_11, _super);
-        function class_11() {
-            var _this = _super !== null && _super.apply(this, arguments) || this;
-            _this.ctrlSeq = '\\overset';
-            _this.domView = new DOMView(2, function (blocks) {
-                return h('span', { class: 'mq-non-leaf mq-overunderset' }, [
-                    h.block('span', { class: 'mq-overscript' }, blocks[0]),
-                    h.block('span', {}, blocks[1])
-                ]);
-            });
-            return _this;
-        }
-        return class_11;
-    }(MathCommand));
-    LatexCmds.stackrel = LatexCmds.overset;
-    LatexCmds.underset = /** @class */ (function (_super) {
-        __extends(class_12, _super);
-        function class_12() {
-            var _this = _super !== null && _super.apply(this, arguments) || this;
-            _this.ctrlSeq = '\\underset';
-            _this.domView = new DOMView(2, function (blocks) {
-                return h('span', { class: 'mq-non-leaf mq-overunderset' }, [
-                    h.block('span', {}, blocks[1]),
-                    h.block('span', { class: 'mq-overscript' }, blocks[0])
-                ]);
-            });
-            return _this;
-        }
-        return class_12;
-    }(MathCommand));
-    // \pmod{m} / \pod{m} \u2014 parenthesized (mod m) / (m); \bmod is the
-    // binary mod operator
-    LatexCmds.pmod = function () {
-        return new MathCommand('\\pmod', new DOMView(1, function (blocks) {
-            return h('span', { class: 'mq-non-leaf' }, [
-                h('span', {}, [h.text('(mod\u00a0')]),
-                h.block('span', {}, blocks[0]),
-                h('span', {}, [h.text(')')])
-            ]);
-        }), ['mod(', ')']);
-    };
-    LatexCmds.pod = function () {
-        return new MathCommand('\\pod', new DOMView(1, function (blocks) {
-            return h('span', { class: 'mq-non-leaf' }, [
-                h('span', {}, [h.text('(')]),
-                h.block('span', {}, blocks[0]),
-                h('span', {}, [h.text(')')])
-            ]);
-        }), ['(', ')']);
-    };
-    LatexCmds.bmod = bindBinaryOperator('\\bmod ', 'mod', 'binary mod');
-    LatexCmds.mod = bindBinaryOperator('\\mod ', 'mod', 'mod');
+    // MATHCOMPILE: \color \colorbox \fcolorbox \href moved to extraCommands.ts
+    // MATHCOMPILE: \overset \stackrel \underset \pmod \pod \bmod \mod moved to extraCommands.ts
     // Very similar to the \textcolor command, but will add the given CSS class.
     // Usage: \class{classname}{math}
     // Note regex that whitelists valid CSS classname characters:
     // https://github.com/mathquill/mathquill/pull/191#discussion_r4327442
     var Class = (LatexCmds['class'] = /** @class */ (function (_super) {
-        __extends(class_13, _super);
-        function class_13() {
+        __extends(class_8, _super);
+        function class_8() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        // Parser-only command, see \textcolor.
-        class_13.prototype.createLeftOf = function () { };
-        class_13.prototype.numBlocks = function () {
+        // MATHCOMPILE: Parser-only command, see \textcolor.
+        class_8.prototype.createLeftOf = function () { };
+        class_8.prototype.numBlocks = function () {
             return 1;
         };
-        class_13.prototype.parser = function () {
+        class_8.prototype.parser = function () {
             var _this = this;
             var string = Parser.string, regex = Parser.regex;
             return Parser.optWhitespace
@@ -8007,7 +7725,7 @@ var __assign = (this && this.__assign) || function () {
                 return _super.prototype.parser.call(_this);
             });
         };
-        class_13.prototype.latexRecursive = function (ctx) {
+        class_8.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
             var blocks0 = this.blocks[0];
             ctx.uncleanedLatex += '\\class{' + this.cls + '}{';
@@ -8015,10 +7733,10 @@ var __assign = (this && this.__assign) || function () {
             ctx.uncleanedLatex += '}';
             this.checkCursorContextClose(ctx);
         };
-        class_13.prototype.isStyleBlock = function () {
+        class_8.prototype.isStyleBlock = function () {
             return true;
         };
-        return class_13;
+        return class_8;
     }(MathCommand)));
     // This test is used to determine whether an item may be treated as a whole number
     // for shortening the verbalized (mathspeak) forms of some fractions and superscripts.
@@ -8412,6 +8130,7 @@ var __assign = (this && this.__assign) || function () {
             var domView = new DOMView(2, function (blocks) {
                 return h('span', { class: 'mq-large-operator mq-non-leaf' }, [
                     h('span', { class: 'mq-to' }, [h.block('span', {}, blocks[1])]),
+                    // MATHCOMPILE: entityText so \sum-style glyphs render (upstream h.text printed entities literally)
                     h('big', {}, [h.entityText(symbol)]),
                     h('span', { class: 'mq-from' }, [h.block('span', {}, blocks[0])])
                 ]);
@@ -8468,7 +8187,7 @@ var __assign = (this && this.__assign) || function () {
             for (var i = 0; i < blocks.length; i += 1) {
                 blocks[i].adopt(self, self.getEnd(R), 0);
             }
-            // `\sum\limits_{i}^{n}` \u2014 an optional \limits/\nolimits between the
+            // MATHCOMPILE: `\sum\limits_{i}^{n}` \u2014 an optional \limits/\nolimits between the
             // operator and its bounds is kept on the node so serialization
             // round-trips it instead of dropping it or leaving { } bounds.
             var optLimits = Parser.regex(/^\\(?:no)?limits(?![a-zA-Z])\s*/)
@@ -8517,8 +8236,8 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds['\u222b'] =
         LatexCmds['int'] =
             LatexCmds.integral = /** @class */ (function (_super) {
-                __extends(class_14, _super);
-                function class_14() {
+                __extends(class_9, _super);
+                function class_9() {
                     var _this = _super.call(this, '\\int ', '', 'integral') || this;
                     _this.ariaLabel = 'integral';
                     _this.domView = new DOMView(2, function (blocks) {
@@ -8537,41 +8256,13 @@ var __assign = (this && this.__assign) || function () {
                     });
                     return _this;
                 }
-                class_14.prototype.createLeftOf = function (cursor) {
+                class_9.prototype.createLeftOf = function (cursor) {
                     // FIXME: refactor rather than overriding
                     MathCommand.prototype.createLeftOf.call(this, cursor);
                 };
-                return class_14;
+                return class_9;
             }(SummationNotation));
-    // Boundless integral signs for indefinite integrals: `\iint` and
-    // `\antid` render a bare \u222b \u2014 neither carries blocks, so the integrand
-    // types linearly (`\antid x dx`, `\iint f dx dy`) and `_`/`^` may still
-    // grow an ordinary sibling SupSub for bounds. `\antid` is a MathCompile
-    // insertion alias: the app maps it to `\int` at compile time; `\iint`
-    // parses to Integrate in the compute engine on its own.
-    //
-    // BoundlessIntegral is its own class so left-scanning code (a typed `/`
-    // wrapping the preceding run into a numerator) can stop at the sign \u2014
-    // for a SummationNotation like `\sum` the scan already breaks there, and
-    // a boundless \u222b should behave the same way.
-    var BoundlessIntegral = /** @class */ (function (_super) {
-        __extends(BoundlessIntegral, _super);
-        function BoundlessIntegral() {
-            return _super !== null && _super.apply(this, arguments) || this;
-        }
-        return BoundlessIntegral;
-    }(MQSymbol));
-    var boundlessIntegral = function (ctrlSeq, glyph, speak) {
-        return function () {
-            return new BoundlessIntegral(ctrlSeq, h('span', { class: 'mq-int' }, [
-                h('big', {}, [h.entityText(glyph)])
-            ]), undefined, speak);
-        };
-    };
-    LatexCmds['\u222c'] = LatexCmds.iint = boundlessIntegral('\\iint ', U_DOUBLE_INTEGRAL, 'double integral');
-    LatexCmds.antid = boundlessIntegral('\\antid ', U_INTEGRAL, 'antiderivative');
-    LatexCmds['\u222f'] = LatexCmds.oiint = boundlessIntegral('\\oiint ', '\u222f', 'surface integral');
-    LatexCmds['\u2230'] = LatexCmds.oiiint = boundlessIntegral('\\oiiint ', '\u2230', 'volume integral');
+    // MATHCOMPILE: boundless \iint \antid \oiint \oiiint moved to extraCommands.ts
     var Fraction = (LatexCmds.frac =
         LatexCmds.dfrac =
             LatexCmds.fraction = /** @class */ (function (_super) {
@@ -8703,40 +8394,23 @@ var __assign = (this && this.__assign) || function () {
                 };
                 return FracNode;
             }(MathCommand)));
-    // \cfrac[lcr] takes an optional alignment arg before the two
-    // fraction blocks \u2014 consume it so [l] can't parse as a { [ } { l ]
-    // "fraction". Serialized canonically as \frac like \dfrac/\tfrac.
-    LatexCmds.cfrac = /** @class */ (function (_super) {
-        __extends(cfrac, _super);
-        function cfrac() {
-            return _super !== null && _super.apply(this, arguments) || this;
-        }
-        cfrac.prototype.parser = function () {
-            var self = this;
-            return Parser.regex(/^\[(?:[lcr])\]/)
-                .or(Parser.succeed(''))
-                .then(function () {
-                return Fraction.prototype.parser.call(self);
-            });
-        };
-        return cfrac;
-    }(Fraction));
+    // MATHCOMPILE: \cfrac moved to extraCommands.ts
     var LiveFraction = (LatexCmds.over =
         CharCmds['/'] = /** @class */ (function (_super) {
-            __extends(class_15, _super);
-            function class_15() {
+            __extends(class_10, _super);
+            function class_10() {
                 return _super !== null && _super.apply(this, arguments) || this;
             }
-            // Pasted `a\over b` (infix) can't bind `a` \u2014 the two-block parse
+            // MATHCOMPILE: Pasted `a\over b` (infix) can't bind `a` \u2014 the two-block parse
             // fails. Fall back to a visible `\over` leaf so the input keeps
             // its text instead of blanking the field. The typed `\over`\u2192
             // fraction path is unaffected (it goes through createLeftOf).
             // MathCommand's strict parser is invoked directly: parser()
             // falls back to a bare \frac leaf that would shadow \over's.
-            class_15.prototype.parser = function () {
+            class_10.prototype.parser = function () {
                 return MathCommand.prototype.strictParser.call(this).or(Parser.succeed(new VanillaSymbol('\\over ', h.text('\\over'), 'over')));
             };
-            class_15.prototype.createLeftOf = function (cursor) {
+            class_10.prototype.createLeftOf = function (cursor) {
                 if (!this.replacedFragment) {
                     var leftward = cursor[L];
                     var dontScan = cursor.options.typingSlashCreatesNewFraction &&
@@ -8749,6 +8423,7 @@ var __assign = (this && this.__assign) || function () {
                                     leftward._groupingClass === 'mq-ellipsis-end') ||
                                 leftward instanceof (LatexCmds.text || noop) ||
                                 leftward instanceof SummationNotation ||
+                                // MATHCOMPILE: stop the numerator scan at a boundless integral like at \sum
                                 leftward instanceof BoundlessIntegral ||
                                 leftward.ctrlSeq === '\\ ' ||
                                 /^[,;:]$/.test(leftward.ctrlSeq)) //lookbehind for operator
@@ -8756,6 +8431,7 @@ var __assign = (this && this.__assign) || function () {
                             leftward = leftward[L];
                     }
                     if ((leftward instanceof SummationNotation ||
+                        // MATHCOMPILE: same scan-back for a boundless integral's SupSub
                         leftward instanceof BoundlessIntegral) &&
                         leftward[R] instanceof SupSub) {
                         // The previous step scanned too far. `\sum_1^5` looks like [SummationNotation,SupSub],
@@ -8778,7 +8454,7 @@ var __assign = (this && this.__assign) || function () {
                 }
                 _super.prototype.createLeftOf.call(this, cursor);
             };
-            return class_15;
+            return class_10;
         }(Fraction)));
     var AnsBuilder = function () {
         return new MQSymbol('\\operatorname{ans}', h('span', { class: 'mq-ans' }, [h.text('ans')]), 'ans');
@@ -8936,9 +8612,7 @@ var __assign = (this && this.__assign) || function () {
         }
         return Hat;
     }(MathCommand));
-    // \widehat is the wide variant of \hat; render it with the same atom
-    // (serializes back as \hat).
-    LatexCmds.widehat = LatexCmds.hat;
+    // MATHCOMPILE: \widehat moved to extraCommands.ts
     var NthRoot = /** @class */ (function (_super) {
         __extends(NthRoot, _super);
         function NthRoot() {
@@ -8990,16 +8664,16 @@ var __assign = (this && this.__assign) || function () {
     }(SquareRoot));
     LatexCmds.nthroot = NthRoot;
     LatexCmds.cbrt = /** @class */ (function (_super) {
-        __extends(class_16, _super);
-        function class_16() {
+        __extends(class_11, _super);
+        function class_11() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_16.prototype.createLeftOf = function (cursor) {
+        class_11.prototype.createLeftOf = function (cursor) {
             _super.prototype.createLeftOf.call(this, cursor);
             new Digit('3').createLeftOf(cursor);
             cursor.controller.moveRight();
         };
-        return class_16;
+        return class_11;
     }(NthRoot));
     var DiacriticAbove = /** @class */ (function (_super) {
         __extends(DiacriticAbove, _super);
@@ -9015,7 +8689,7 @@ var __assign = (this && this.__assign) || function () {
             _this.accentHtml = html;
             return _this;
         }
-        // An accent with no block following degrades to a standalone mark \u2014
+        // MATHCOMPILE: An accent with no block following degrades to a standalone mark \u2014
         // `f\'` still parses (as f + a bare \u00b4) instead of failing the field.
         DiacriticAbove.prototype.parser = function () {
             var self = this;
@@ -9035,534 +8709,7 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.tilde = function () {
         return new DiacriticAbove('\\tilde', h.text('~'), ['tilde(', ')']);
     };
-    LatexCmds.ddot = function () {
-        return new DiacriticAbove('\\ddot', h.text('\u00a8'), ['ddot(', ')']);
-    };
-    LatexCmds.dddot = function () {
-        return new DiacriticAbove('\\dddot', h.text('...'), ['dddot(', ')']);
-    };
-    var DiacriticBelow = /** @class */ (function (_super) {
-        __extends(DiacriticBelow, _super);
-        function DiacriticBelow(ctrlSeq, html, textTemplate) {
-            var _this = _super.call(this, ctrlSeq, html, textTemplate) || this;
-            _this.domView = new DOMView(1, function (blocks) {
-                return h('span', { class: 'mq-non-leaf' }, [
-                    h.block('span', { class: 'mq-diacritic-stem' }, blocks[0]),
-                    h('span', { class: 'mq-diacritic-below' }, [html])
-                ]);
-            });
-            return _this;
-        }
-        return DiacriticBelow;
-    }(DiacriticAbove));
-    // \xrightarrow{label} / \xleftarrow / \xmapsto and friends \u2014 a small
-    // label over an extensible-looking arrow; the arrow is a fixed glyph.
-    // \xrightarrow[under]{over} puts a second label below the arrow
-    // (amsmath), parsed like \sqrt[n]{x}'s optional block.
-    var XArrowWithUnder = /** @class */ (function (_super) {
-        __extends(XArrowWithUnder, _super);
-        function XArrowWithUnder(ctrlSeq, arrow) {
-            return _super.call(this, ctrlSeq, new DOMView(2, function (blocks) {
-                return h('span', { class: 'mq-non-leaf mq-overunderset' }, [
-                    h.block('span', { class: 'mq-overscript' }, blocks[1]),
-                    h('span', { class: 'mq-xarrow' }, [h.text(arrow)]),
-                    h.block('span', { class: 'mq-underscript' }, blocks[0])
-                ]);
-            })) || this;
-        }
-        XArrowWithUnder.prototype.latexRecursive = function (ctx) {
-            this.checkCursorContextOpen(ctx);
-            ctx.uncleanedLatex += this.ctrlSeq + '[';
-            this.getEnd(L).latexRecursive(ctx);
-            ctx.uncleanedLatex += ']{';
-            this.getEnd(R).latexRecursive(ctx);
-            ctx.uncleanedLatex += '}';
-            this.checkCursorContextClose(ctx);
-        };
-        return XArrowWithUnder;
-    }(MathCommand));
-    function bindArrowLabelCmd(ctrlSeq, arrow) {
-        return function () {
-            return new (/** @class */ (function (_super) {
-                __extends(class_17, _super);
-                function class_17() {
-                    return _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
-                        return h('span', { class: 'mq-non-leaf mq-overunderset' }, [
-                            h.block('span', { class: 'mq-overscript' }, blocks[0]),
-                            h('span', { class: 'mq-xarrow' }, [h.text(arrow)])
-                        ]);
-                    })) || this;
-                }
-                class_17.prototype.parser = function () {
-                    var self = this;
-                    return latexMathParser.optBlock
-                        .then(function (optBlock) {
-                        return latexMathParser.block.map(function (block) {
-                            var xa = new XArrowWithUnder(ctrlSeq, arrow);
-                            xa.blocks = [optBlock, block];
-                            optBlock.adopt(xa, 0, 0);
-                            block.adopt(xa, optBlock, 0);
-                            return xa;
-                        });
-                    })
-                        .or(_super.prototype.parser.call(this))
-                        .or(Parser.succeed(new VanillaSymbol(ctrlSeq + ' ', h.text(arrow), ctrlSeq.slice(1))));
-                };
-                return class_17;
-            }(MathCommand)))();
-        };
-    }
-    LatexCmds.xrightarrow = bindArrowLabelCmd('\\xrightarrow', '\u27f6');
-    LatexCmds.xleftarrow = bindArrowLabelCmd('\\xleftarrow', '\u27f5');
-    LatexCmds.xmapsto = bindArrowLabelCmd('\\xmapsto', '\u27fc');
-    LatexCmds.xRightarrow = bindArrowLabelCmd('\\xRightarrow', '\u27f9');
-    LatexCmds.xLeftarrow = bindArrowLabelCmd('\\xLeftarrow', '\u27f8');
-    LatexCmds.xLeftrightarrow = bindArrowLabelCmd('\\xLeftrightarrow', '\u27fa');
-    LatexCmds.xleftrightarrow = bindArrowLabelCmd('\\xleftrightarrow', '\u27f7');
-    LatexCmds.xhookleftarrow = bindArrowLabelCmd('\\xhookleftarrow', '\u21a9');
-    LatexCmds.xhookrightarrow = bindArrowLabelCmd('\\xhookrightarrow', '\u21aa');
-    LatexCmds.xrightharpoondown = bindArrowLabelCmd('\\xrightharpoondown', '\u21c0');
-    LatexCmds.xrightharpoonup = bindArrowLabelCmd('\\xrightharpoonup', '\u21c1');
-    LatexCmds.xleftharpoondown = bindArrowLabelCmd('\\xleftharpoondown', '\u21bd');
-    LatexCmds.xleftharpoonup = bindArrowLabelCmd('\\xleftharpoonup', '\u21bc');
-    LatexCmds.xrightleftharpoons = bindArrowLabelCmd('\\xrightleftharpoons', '\u21cc');
-    LatexCmds.xleftrightharpoons = bindArrowLabelCmd('\\xleftrightharpoons', '\u21cb');
-    LatexCmds.xhookleftarrow = bindArrowLabelCmd('\\xhookleftarrow', '\u21a9');
-    LatexCmds.xhookrightarrow = bindArrowLabelCmd('\\xhookrightarrow', '\u21aa');
-    LatexCmds.xLongrightarrow = bindArrowLabelCmd('\\xLongrightarrow', '\u27f6');
-    LatexCmds.xLongleftarrow = bindArrowLabelCmd('\\xLongleftarrow', '\u27f5');
-    LatexCmds.xtwoheadrightarrow = bindArrowLabelCmd('\\xtwoheadrightarrow', '\u21a0');
-    LatexCmds.xtwoheadleftarrow = bindArrowLabelCmd('\\xtwoheadleftarrow', '\u219e');
-    LatexCmds.xtofrom = bindArrowLabelCmd('\\xtofrom', '\u21c4');
-    // \cancel \bcancel \xcancel \u2014 struck-through content.
-    function bindCancelCmd(ctrlSeq, cls) {
-        return function () {
-            return new MathCommand(ctrlSeq, new DOMView(1, function (blocks) {
-                return h('span', { class: 'mq-non-leaf mq-cancel ' + cls }, [
-                    h.block('span', {}, blocks[0])
-                ]);
-            }));
-        };
-    }
-    // \cancelto{result}{expr} \u2014 content struck through with an arrow
-    // pointing at the result term.
-    LatexCmds.cancelto = function () {
-        return new MathCommand('\\cancelto', new DOMView(2, function (blocks) {
-            return h('span', { class: 'mq-non-leaf mq-cancel mq-cancelto' }, [
-                h.block('span', { class: 'mq-cancelto-arrow' }, blocks[0]),
-                h.block('span', {}, blocks[1])
-            ]);
-        }));
-    };
-    LatexCmds.cancel = bindCancelCmd('\\cancel', 'mq-cancel-forward');
-    LatexCmds.bcancel = bindCancelCmd('\\bcancel', 'mq-cancel-back');
-    LatexCmds.xcancel = bindCancelCmd('\\xcancel', 'mq-cancel-both');
-    // \big \Big \bigg \Bigg sized delimiters (with optional l/r/m suffix)
-    // and \middle \u2014 a sized-delimiter prefix consumes the following
-    // delimiter token and renders that glyph, keeping the prefix in the
-    // ctrlSeq so `\bigl(` serializes verbatim.
-    var DELIM_GLYPHS = {
-        '(': '(',
-        ')': ')',
-        '[': '[',
-        ']': ']',
-        '{': '{',
-        '}': '}',
-        '|': '|',
-        '<': '\u27e8',
-        '>': '\u27e9',
-        '/': '/',
-        '.': '',
-        '\\{': '{',
-        '\\}': '}',
-        '\\|': '\u2016',
-        '\\langle': '\u27e8',
-        '\\rangle': '\u27e9',
-        '\\lVert': '\u2016',
-        '\\rVert': '\u2016',
-        '\\lceil': '\u2308',
-        '\\rceil': '\u2309',
-        '\\lfloor': '\u230a',
-        '\\rfloor': '\u230b',
-        '\\backslash': '\\',
-        '\\ulcorner': '\u231c',
-        '\\urcorner': '\u231d',
-        '\\llcorner': '\u231e',
-        '\\lrcorner': '\u231f',
-        '\\uparrow': '\u2191',
-        '\\downarrow': '\u2193',
-        '\\updownarrow': '\u2195',
-        '\\Uparrow': '\u21d1',
-        '\\Downarrow': '\u21d3',
-        '\\Updownarrow': '\u21d5'
-    };
-    var SizedDelimiter = /** @class */ (function (_super) {
-        __extends(SizedDelimiter, _super);
-        function SizedDelimiter(prefix) {
-            var _this = _super.call(this) || this;
-            _this.prefix = prefix;
-            return _this;
-        }
-        // Parser-only command: typing '\bigl' in the command input can't
-        // supply a delimiter token, so typed insertion is a no-op (same
-        // convention as \textcolor / \big).
-        SizedDelimiter.prototype.createLeftOf = function () { };
-        SizedDelimiter.prototype.parser = function () {
-            var self = this;
-            return Parser.optWhitespace
-                .then(Parser.regex(/^(?:\\[a-zA-Z]+|\\[^a-zA-Z\s]|[.()[\]{}/|<>])/))
-                .map(function (delim) {
-                // A \langle-style delimiter needs a trailing space in the
-                // emitted ctrlSeq \u2014 otherwise `\Bigg\langle x` would serialize
-                // as `\Bigg\langlex` and glue into an unknown command.
-                self.ctrlSeq =
-                    self.prefix + delim + (/^\\[a-zA-Z]+$/.test(delim) ? ' ' : '');
-                var glyph = DELIM_GLYPHS[delim];
-                if (glyph === undefined)
-                    glyph = delim.replace(/^\\/, '');
-                self.domView = new DOMView(0, function () {
-                    return h('span', { class: 'mq-sized-delim' }, [h.text(glyph)]);
-                });
-                return self;
-            });
-        };
-        return SizedDelimiter;
-    }(MQSymbol));
-    (function () {
-        ['big', 'Big', 'bigg', 'Bigg'].forEach(function (size) {
-            ['l', 'r', 'm', ''].forEach(function (side) {
-                LatexCmds[size + side] = function () {
-                    return new SizedDelimiter('\\' + size + side);
-                };
-            });
-        });
-        LatexCmds.middle = function () {
-            return new SizedDelimiter('\\middle');
-        };
-    })();
-    // A bare \\ at any level is a hard line break \u2014 the matrix/displaylines
-    // cell-grid parsers consume \\ as a row delimiter before node parsing
-    // reaches it, so this only kicks in outside grids (e.g. pasting `x\\ y`).
-    LatexCmds['\\'] = function () {
-        return new VanillaSymbol('\\\\', h('br', {}, []), 'line break');
-    };
-    // \cr is the plain-TeX row separator \u2014 inside a grid it is cell content
-    // (the cellsParser only splits on \\), so it round-trips verbatim and
-    // renders as a line break.
-    LatexCmds.cr = function () {
-        return new VanillaSymbol('\\cr ', h('br', {}, []), 'line break');
-    };
-    // Escaped single-char accents (registered under their backslash-escaped
-    // ctrlSeq). `\'` intentionally falls back to the bare ' prime \u2014 TeX's
-    // acute accent is available as \acute.
-    LatexCmds['\\`'] = function () {
-        return new DiacriticAbove('\\`', h.text('`'), ['grave(', ')']);
-    };
-    LatexCmds['\\"'] = function () {
-        return new DiacriticAbove('\\"', h.text('\u00a8'), ['umlaut(', ')']);
-    };
-    LatexCmds['\\~'] = function () {
-        return new DiacriticAbove('\\~', h.text('~'), ['tilde(', ')']);
-    };
-    LatexCmds['\\='] = function () {
-        return new DiacriticAbove('\\=', h.text('\u00af'), ['bar(', ')']);
-    };
-    LatexCmds['\\.'] = function () {
-        return new DiacriticAbove('\\.', h.text('\u02d9'), ['dot(', ')']);
-    };
-    LatexCmds['\\^'] = function () {
-        return new DiacriticAbove('\\^', h.text('^'), ['hat(', ')']);
-    };
-    // Arrow/segment diacritics and group marks.
-    LatexCmds.overleftharpoon = function () {
-        return new DiacriticAbove('\\overleftharpoon', h.text('\u21bc'), ['overleft harpoon(', ')']);
-    };
-    LatexCmds.overrightharpoon = function () {
-        return new DiacriticAbove('\\overrightharpoon', h.text('\u21c0'), ['overright harpoon(', ')']);
-    };
-    LatexCmds.overlinesegment = function () {
-        return new DiacriticAbove('\\overlinesegment', h.text('\u2015'), ['overline segment(', ')']);
-    };
-    LatexCmds.underleftarrow = function () {
-        return new DiacriticBelow('\\underleftarrow', h.text('\u2190'), ['underleftarrow(', ')']);
-    };
-    LatexCmds.underrightarrow = function () {
-        return new DiacriticBelow('\\underrightarrow', h.text('\u2192'), ['underrightarrow(', ')']);
-    };
-    // One-block under/over marks that draw an arc glyph above or below
-    // their argument (\overgroup, \overbracket, \wideparen, \u2026).
-    // \underbrace/\overbrace are NOT registered here \u2014 the Style-based
-    // versions near the top own those names.
-    var UnderOverBrace = /** @class */ (function (_super) {
-        __extends(UnderOverBrace, _super);
-        function UnderOverBrace(ctrlSeq, below, glyph) {
-            var _this = _super.call(this) || this;
-            _this.ctrlSeq = ctrlSeq;
-            var mark = h('span', { class: 'mq-underbrace-arc' }, [
-                h.text(glyph || (below ? '\u23df' : '\u23de'))
-            ]);
-            _this.domView = new DOMView(1, function (blocks) {
-                return h('span', { class: 'mq-non-leaf mq-underoverbrace' }, below
-                    ? [h.block('span', {}, blocks[0]), mark]
-                    : [mark, h.block('span', {}, blocks[0])]);
-            });
-            return _this;
-        }
-        return UnderOverBrace;
-    }(MathCommand));
-    LatexCmds.overgroup = function () { return new UnderOverBrace('\\overgroup', false); };
-    LatexCmds.undergroup = function () { return new UnderOverBrace('\\undergroup', true); };
-    LatexCmds.overbracket = function () {
-        return new UnderOverBrace('\\overbracket', false, '\u23b4');
-    };
-    LatexCmds.underbracket = function () {
-        return new UnderOverBrace('\\underbracket', true, '\u23b5');
-    };
-    LatexCmds.underparen = function () {
-        return new UnderOverBrace('\\underparen', true, '\u23dd');
-    };
-    LatexCmds.overparen = function () {
-        return new UnderOverBrace('\\overparen', false, '\u23dc');
-    };
-    // \wideparen is amssymb's name for the same glyph as \overparen.
-    LatexCmds.wideparen = function () {
-        return new UnderOverBrace('\\wideparen', false, '\u23dc');
-    };
-    // Word-form accents missing upstream (the bare-word variants of the
-    // escaped accents \' \` \v \u and \ddddot).
-    LatexCmds.check = function () {
-        return new DiacriticAbove('\\check', h.text('\u02c7'), ['check(', ')']);
-    };
-    LatexCmds.breve = function () {
-        return new DiacriticAbove('\\breve', h.text('\u02d8'), ['breve(', ')']);
-    };
-    LatexCmds.acute = function () {
-        return new DiacriticAbove('\\acute', h.text('\u00b4'), ['acute(', ')']);
-    };
-    LatexCmds.grave = function () {
-        return new DiacriticAbove('\\grave', h.text('`'), ['grave(', ')']);
-    };
-    LatexCmds.ddddot = function () {
-        return new DiacriticAbove('\\ddddot', h.text('....'), ['ddddot(', ')']);
-    };
-    LatexCmds.overleftharp = function () {
-        return new DiacriticAbove('\\overleftharp', h.text('\u21bc'), ['overleft harp(', ')']);
-    };
-    LatexCmds.overrightharp = function () {
-        return new DiacriticAbove('\\overrightharp', h.text('\u21c0'), ['overright harp(', ')']);
-    };
-    // Physics bra-ket notation: \bra{x} \u2192 \u27e8x|, \ket{x} \u2192 |x\u27e9,
-    // \braket{x|y} \u2192 \u27e8x|y\u27e9 (one block, | is content), \ketbra \u2192 |x\u27e9\u27e8y|.
-    function bindBraKet(ctrlSeq, open, close) {
-        return function () {
-            return new MathCommand(ctrlSeq, new DOMView(1, function (blocks) {
-                return h('span', { class: 'mq-non-leaf' }, [
-                    h('span', { class: 'mq-bra-ket-delim' }, [h.entityText(open)]),
-                    h.block('span', {}, blocks[0]),
-                    h('span', { class: 'mq-bra-ket-delim' }, [h.entityText(close)])
-                ]);
-            }));
-        };
-    }
-    LatexCmds.bra = bindBraKet('\\bra', '&lang;', '|');
-    LatexCmds.ket = bindBraKet('\\ket', '|', '&rang;');
-    LatexCmds.braket = function () {
-        return new MathCommand('\\braket', new DOMView(1, function (blocks) {
-            return h('span', { class: 'mq-non-leaf' }, [
-                h('span', { class: 'mq-bra-ket-delim' }, [h.entityText('&lang;')]),
-                h.block('span', {}, blocks[0]),
-                h('span', { class: 'mq-bra-ket-delim' }, [h.entityText('&rang;')])
-            ]);
-        }));
-    };
-    LatexCmds.ketbra = function () {
-        return new MathCommand('\\ketbra', new DOMView(2, function (blocks) {
-            return h('span', { class: 'mq-non-leaf' }, [
-                h('span', { class: 'mq-bra-ket-delim' }, [h.text('|')]),
-                h.block('span', {}, blocks[0]),
-                h('span', { class: 'mq-bra-ket-delim' }, [
-                    h.entityText('&rang;'),
-                    h.entityText('&lang;')
-                ]),
-                h.block('span', {}, blocks[1]),
-                h('span', { class: 'mq-bra-ket-delim' }, [h.text('|')])
-            ]);
-        }));
-    };
-    // \[ \] \( \) display-math wrappers parse as bracket glyphs so pasted
-    // display math keeps its delimiters (registered under the escaped
-    // ctrlSeq \u2014 bare ( ) [ ] still go through the symbol fallback).
-    LatexCmds['\\['] = function () {
-        return new VanillaSymbol('\\[', h.text('['), 'open display math');
-    };
-    LatexCmds['\\]'] = function () {
-        return new VanillaSymbol('\\]', h.text(']'), 'close display math');
-    };
-    LatexCmds['\\('] = function () {
-        return new VanillaSymbol('\\(', h.text('('), 'open inline math');
-    };
-    LatexCmds['\\)'] = function () {
-        return new VanillaSymbol('\\)', h.text(')'), 'close inline math');
-    };
-    // style switches (\displaystyle \u2026 \nolimits) \u2014 invisible atoms that
-    // serialize their command verbatim. \limits/\nolimits sit between an
-    // operator and its bounds; the bound then attaches to this zero-width
-    // atom, so `\sum\limits_{i}` renders like `\sum_{i}` and round-trips.
-    // NOTE: defined here (not advancedSymbols.ts) so the mathquill-basic
-    // bundle \u2014 which concatenates commands.ts but not advancedSymbols.ts \u2014
-    // can use it too.
-    function bindStyleModifier(ctrlSeq, mathspeak) {
-        return function () {
-            return new VanillaSymbol(ctrlSeq, h('span', { class: 'mq-style-modifier' }), mathspeak);
-        };
-    }
-    // Matrix rules \u2014 invisible in the grid, serialize verbatim.
-    LatexCmds.hline = bindStyleModifier('\\hline ', 'h line');
-    LatexCmds.hdashline = bindStyleModifier('\\hdashline ', 'h dash line');
-    LatexCmds.midrule = bindStyleModifier('\\midrule ', 'mid rule');
-    LatexCmds.toprule = bindStyleModifier('\\toprule ', 'top rule');
-    LatexCmds.bottomrule = bindStyleModifier('\\bottomrule ', 'bottom rule');
-    LatexCmds.cline = function () {
-        return new MathCommand('\\cline', new DOMView(1, function (blocks) {
-            return h('span', { class: 'mq-invisible' }, [
-                h.block('span', {}, blocks[0])
-            ]);
-        }));
-    };
-    LatexCmds.cmidrule = function () {
-        return new MathCommand('\\cmidrule', new DOMView(1, function (blocks) {
-            return h('span', { class: 'mq-invisible' }, [
-                h.block('span', {}, blocks[0])
-            ]);
-        }));
-    };
-    // \llap \rlap \clap \smash \u2014 overlap boxes; content renders inline.
-    function bindOverlapCmd(ctrlSeq, cls, optRegex) {
-        return function () {
-            return new (/** @class */ (function (_super) {
-                __extends(class_18, _super);
-                function class_18() {
-                    var _this = _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
-                        return h('span', { class: 'mq-non-leaf ' + cls }, [
-                            h.block('span', {}, blocks[0])
-                        ]);
-                    })) || this;
-                    _this.optText = '';
-                    return _this;
-                }
-                // An overlap command with no following block degrades to a bare
-                // \name leaf instead of failing the parse.
-                class_18.prototype.parser = function () {
-                    var self = this;
-                    return (optRegex
-                        ? Parser.regex(new RegExp('^' + optRegex))
-                            .or(Parser.succeed(''))
-                            .then(function (opt) {
-                            self.optText = opt;
-                            return latexMathParser.block;
-                        })
-                        : latexMathParser.block)
-                        .map(function (b) {
-                        self.blocks = [b];
-                        b.adopt(self, 0, 0);
-                        return self;
-                    })
-                        .or(Parser.succeed(new VanillaSymbol(ctrlSeq + ' ', h.text(ctrlSeq), ctrlSeq.replace(/\\/g, ''))));
-                };
-                class_18.prototype.latexRecursive = function (ctx) {
-                    this.checkCursorContextOpen(ctx);
-                    ctx.uncleanedLatex += this.ctrlSeq + this.optText + '{';
-                    this.blocks[0].latexRecursive(ctx);
-                    ctx.uncleanedLatex += '}';
-                    this.checkCursorContextClose(ctx);
-                };
-                return class_18;
-            }(MathCommand)))();
-        };
-    }
-    LatexCmds.llap = bindOverlapCmd('\\llap', 'mq-llap');
-    LatexCmds.rlap = bindOverlapCmd('\\rlap', 'mq-rlap');
-    LatexCmds.clap = bindOverlapCmd('\\clap', 'mq-clap');
-    LatexCmds.smash = bindOverlapCmd('\\smash', 'mq-smash', '\\[(?:[tb])\\]');
-    LatexCmds.mathllap = bindOverlapCmd('\\mathllap', 'mq-llap');
-    LatexCmds.mathrlap = bindOverlapCmd('\\mathrlap', 'mq-rlap');
-    LatexCmds.mathclap = bindOverlapCmd('\\mathclap', 'mq-clap');
-    LatexCmds.mathstrut = bindStyleModifier('\\mathstrut ', 'math strut');
-    LatexCmds.strut = bindStyleModifier('\\strut ', 'strut');
-    // \iiint \idotsint \ointctrclockwise \varointclockwise \u2014 boundless
-    // integral signs like \iint.
-    LatexCmds['\u222d'] = LatexCmds.iiint = boundlessIntegral('\\iiint ', '&#8749;', 'triple integral');
-    LatexCmds.idotsint = boundlessIntegral('\\idotsint ', '&#8944;', 'dots integral');
-    LatexCmds['\u2233'] = LatexCmds.ointctrclockwise = boundlessIntegral('\\ointctrclockwise ', '&#8755;', 'counterclockwise contour integral');
-    LatexCmds['\u2232'] = LatexCmds.varointclockwise = boundlessIntegral('\\varointclockwise ', '&#8754;', 'clockwise contour integral');
-    LatexCmds.bigsqcap = LatexCmds.bigsqcapdot = function () {
-        return new SummationNotation('\\bigsqcap ', '&#10757;', 'square intersection');
-    };
-    LatexCmds.varinjlim = function () {
-        return new SummationNotation('\\varinjlim ', 'lim&#8594;', 'direct limit');
-    };
-    LatexCmds.varprojlim = function () {
-        return new SummationNotation('\\varprojlim ', 'lim&#8592;', 'inverse limit');
-    };
-    // \fbox/\framebox \u2014 boxed frames; \nicefrac canonicalizes to \frac.
-    LatexCmds.fbox = function () {
-        return new Style('\\fbox', 'span', { class: 'mq-non-leaf mq-fbox' }, 'Boxed');
-    };
-    // \makebox[w][pos]{x} / \framebox[w][pos]{x} / \raisebox{d}[ht][dp]{x}
-    // \u2014 a content block preceded by up to two optional bracket args.
-    // (defined here, not advancedSymbols.ts, so the mathquill-basic bundle \u2014
-    // which concatenates commands.ts but not advancedSymbols.ts \u2014 can use it)
-    function bindOptBracketCmd(ctrlSeq, maxOpt, speak) {
-        return /** @class */ (function (_super) {
-            __extends(class_19, _super);
-            function class_19() {
-                var _this = _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
-                    return h('span', { class: 'mq-non-leaf' }, [
-                        h.block('span', {}, blocks[0])
-                    ]);
-                })) || this;
-                _this.optText = '';
-                return _this;
-            }
-            class_19.prototype.parser = function () {
-                var self = this;
-                return Parser.regex(new RegExp('^(?:\\[[^\\]]*\\]){0,' + maxOpt + '}'))
-                    .then(function (opt) {
-                    self.optText = opt;
-                    return latexMathParser.block;
-                })
-                    .map(function (b) {
-                    self.blocks = [b];
-                    b.adopt(self, 0, 0);
-                    return self;
-                });
-            };
-            class_19.prototype.latexRecursive = function (ctx) {
-                this.checkCursorContextOpen(ctx);
-                ctx.uncleanedLatex += this.ctrlSeq + this.optText + '{';
-                this.blocks[0].latexRecursive(ctx);
-                ctx.uncleanedLatex += '}';
-                this.checkCursorContextClose(ctx);
-            };
-            return class_19;
-        }(MathCommand));
-    }
-    // \framebox keeps optional [width][pos] args like \makebox.
-    LatexCmds.framebox = bindOptBracketCmd('\\framebox', 2, 'frame box');
-    LatexCmds.nicefrac = LatexCmds.frac;
-    // Bold-symbol font wrappers.
-    LatexCmds.boldsymbol = function () {
-        return new Style('\\boldsymbol', 'span', { class: 'mq-non-leaf mq-bf mq-it' }, 'Bold Symbol');
-    };
-    LatexCmds.pmb = function () {
-        return new Style('\\pmb', 'span', { class: 'mq-non-leaf mq-bf' }, 'Poor Mans Bold');
-    };
-    LatexCmds.bm = function () {
-        return new Style('\\bm', 'span', { class: 'mq-non-leaf mq-bf mq-it' }, 'Bold');
-    };
-    LatexCmds.mathbfit = function () {
-        return new Style('\\mathbfit', 'span', { class: 'mq-non-leaf mq-bf mq-it' }, 'Bold Italic');
-    };
+    ;
     var DelimsNode = /** @class */ (function (_super) {
         __extends(DelimsNode, _super);
         function DelimsNode() {
@@ -9632,8 +8779,9 @@ var __assign = (this && this.__assign) || function () {
         };
         Bracket.prototype.getSymbol = function (side) {
             var ch = this.sides[side || R].ch;
-            // a delimiter with no glyph (the invisible `\left.`/`\right.` null
-            // delimiter) renders as a zero-width span
+            // MATHCOMPILE: a delimiter with no glyph (the invisible `\left.`/`\right.`
+            // null delimiter) renders as a zero-width span; html is a thunk,
+            // matching the SVG_SYMBOLS table type
             return SVG_SYMBOLS[ch] || { width: '0', html: function () { return h.text(''); } };
         };
         Bracket.prototype.latexRecursive = function (ctx) {
@@ -9874,6 +9022,7 @@ var __assign = (this && this.__assign) || function () {
         '\\{': '\\}',
         '\\}': '\\{',
         '&lang;': '&rang;',
+        // MATHCOMPILE: one-sided bracket pairs for standalone \langle/\lVert parsing
         '&rang;': '&lang;',
         '\\langle ': '\\rangle ',
         '\\rangle ': '\\langle ',
@@ -9885,6 +9034,7 @@ var __assign = (this && this.__assign) || function () {
         '&lang;': 'angle-bracket',
         '&rang;': 'angle-bracket',
         '|': 'pipe',
+        // MATHCOMPILE: \left. / \right. empty delimiter
         '.': 'null-delimiter'
     };
     function bindCharBracketPair(open, ctrlSeq, name) {
@@ -9898,47 +9048,22 @@ var __assign = (this && this.__assign) || function () {
     bindCharBracketPair('(', '', 'parenthesis');
     bindCharBracketPair('[', '', 'bracket');
     bindCharBracketPair('{', '\\{', 'brace');
-    // Typed \langle auto-pairs like every Bracket; a standalone \langle x
-    // parses as a plain \u27e8 symbol because a one-sided Bracket fails its own
-    // parser and blanks the field. Same for \rangle, \lVert, \rVert below.
-    var StandaloneBracket = /** @class */ (function (_super) {
-        __extends(StandaloneBracket, _super);
-        function StandaloneBracket(side, open, close, ctrlSeq, end, mathspeak) {
-            var _this = _super.call(this, side, open, close, ctrlSeq, end) || this;
-            _this.parseSymbol = new VanillaSymbol(ctrlSeq, h.entityText(side === L ? open : close), mathspeak);
-            return _this;
-        }
-        StandaloneBracket.prototype.parser = function () {
-            return Parser.succeed(this.parseSymbol);
-        };
-        return StandaloneBracket;
-    }(Bracket));
-    LatexCmds.langle = function () {
-        return new StandaloneBracket(L, '&lang;', '&rang;', '\\langle ', '\\rangle ', 'left angle bracket');
-    };
-    LatexCmds.rangle = function () {
-        return new StandaloneBracket(R, '&lang;', '&rang;', '\\rangle ', '\\langle ', 'right angle bracket');
-    };
+    // MATHCOMPILE: standalone \langle/\rangle parsing moved to extraCommands.ts
     CharCmds['|'] = function () { return new Bracket(L, '|', '|', '|', '|'); };
-    LatexCmds.lVert = function () {
-        return new StandaloneBracket(L, '&#8741;', '&#8741;', '\\lVert ', '\\rVert ', 'left norm');
-    };
-    LatexCmds.rVert = function () {
-        return new StandaloneBracket(R, '&#8741;', '&#8741;', '\\rVert ', '\\lVert ', 'right norm');
-    };
+    // MATHCOMPILE: standalone \lVert/\rVert parsing moved to extraCommands.ts
     LatexCmds.left = /** @class */ (function (_super) {
-        __extends(class_20, _super);
-        function class_20() {
+        __extends(class_12, _super);
+        function class_12() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        // Parser-only command: the delimiter lives in the argument after
+        // MATHCOMPILE: Parser-only command: the delimiter lives in the argument after
         // \left, so a typed '\left' inserts nothing and the following
         // delimiter keystroke auto-pairs the bracket itself.
-        class_20.prototype.createLeftOf = function () { };
-        class_20.prototype.numBlocks = function () {
+        class_12.prototype.createLeftOf = function () { };
+        class_12.prototype.numBlocks = function () {
             return 1;
         };
-        class_20.prototype.parser = function () {
+        class_12.prototype.parser = function () {
             var regex = Parser.regex;
             var string = Parser.string;
             var optWhitespace = Parser.optWhitespace;
@@ -9954,6 +9079,7 @@ var __assign = (this && this.__assign) || function () {
                     open = '&#8741;';
                     ctrlSeq = ctrlSeq + ' ';
                 }
+                // MATHCOMPILE: \| as a \left/\right delimiter
                 if (ctrlSeq == '\\|') {
                     open = '&#8741;';
                 }
@@ -9971,6 +9097,7 @@ var __assign = (this && this.__assign) || function () {
                             close = '&#8741;';
                             end = end + ' ';
                         }
+                        // MATHCOMPILE: \| as a \left/\right delimiter
                         if (end == '\\|') {
                             close = '&#8741;';
                         }
@@ -9982,84 +9109,24 @@ var __assign = (this && this.__assign) || function () {
                 });
             });
         };
-        return class_20;
+        return class_12;
     }(MathCommand));
     LatexCmds.right = /** @class */ (function (_super) {
-        __extends(class_21, _super);
-        function class_21() {
+        __extends(class_13, _super);
+        function class_13() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        // Parser-only command, see \left.
-        class_21.prototype.createLeftOf = function () { };
-        class_21.prototype.numBlocks = function () {
+        // MATHCOMPILE: Parser-only command, see \left.
+        class_13.prototype.createLeftOf = function () { };
+        class_13.prototype.numBlocks = function () {
             return 1;
         };
-        class_21.prototype.parser = function () {
+        class_13.prototype.parser = function () {
             return Parser.fail('unmatched \\right');
         };
-        return class_21;
+        return class_13;
     }(MathCommand));
-    // \big| \Big| \bigg| \Bigg| \u2014 fixed-size delimiters. Parser-only (like
-    // \left): they render the delimiter glyph at a fixed scale and keep the
-    // full \big<delim> ctrlSeq so the latex round-trips.
-    var BIG_DELIM_SCALES = {
-        big: '1.2',
-        Big: '1.6',
-        bigg: '2.1',
-        Bigg: '2.6'
-    };
-    var BIG_DELIM_CHARS = {
-        '(': '(',
-        ')': ')',
-        '[': '[',
-        ']': ']',
-        '|': '|',
-        '.': '',
-        '\\{': '{',
-        '\\}': '}',
-        '\\|': '\u2016',
-        '\\langle': '\u27e8',
-        '\\rangle': '\u27e9',
-        '\\lVert': '\u2016',
-        '\\rVert': '\u2016'
-    };
-    var BIG_DELIM_RE = /^(?:\\langle(?![a-zA-Z])|\\rangle(?![a-zA-Z])|\\lVert(?![a-zA-Z])|\\rVert(?![a-zA-Z])|\\\{|\\\}|\\[|.]|[()\[\]|.])/;
-    var BigDelim = /** @class */ (function (_super) {
-        __extends(BigDelim, _super);
-        function BigDelim(sizeSeq) {
-            var _this = _super.call(this) || this;
-            _this.sizeSeq = '\\big';
-            _this.sizeSeq = '\\' + sizeSeq;
-            return _this;
-        }
-        BigDelim.prototype.createLeftOf = function () { };
-        BigDelim.prototype.numBlocks = function () {
-            return 1;
-        };
-        BigDelim.prototype.parser = function () {
-            var self = this;
-            return Parser.optWhitespace
-                .then(Parser.regex(BIG_DELIM_RE))
-                .then(function (delimTok) {
-                var ch = BIG_DELIM_CHARS[delimTok];
-                if (ch === undefined)
-                    return Parser.fail('not a \\big delimiter');
-                var ctrlSeq = self.sizeSeq + (delimTok.length > 1 ? delimTok + ' ' : delimTok);
-                var scale = BIG_DELIM_SCALES[self.sizeSeq.slice(1)];
-                var inner = ch === ''
-                    ? h('span', { style: 'width:0' })
-                    : h('span', { style: 'font-size:' + scale + 'em' }, [
-                        h.text(ch)
-                    ]);
-                return Parser.succeed(new MQSymbol(ctrlSeq, h('span', {}, [inner]), undefined, 'delimiter'));
-            });
-        };
-        return BigDelim;
-    }(MathCommand));
-    LatexCmds.big = function () { return new BigDelim('big'); };
-    LatexCmds.Big = function () { return new BigDelim('Big'); };
-    LatexCmds.bigg = function () { return new BigDelim('bigg'); };
-    LatexCmds.Bigg = function () { return new BigDelim('Bigg'); };
+    // MATHCOMPILE: \big \Big \bigg \Bigg moved to extraCommands.ts
     var leftBinomialSymbol = SVG_SYMBOLS['('];
     var rightBinomialSymbol = SVG_SYMBOLS[')'];
     var Binomial = /** @class */ (function (_super) {
@@ -10108,27 +9175,24 @@ var __assign = (this && this.__assign) || function () {
         return Binomial;
     }(DelimsNode));
     LatexCmds.binom = LatexCmds.binomial = Binomial;
-    // \tfrac serializes canonically as \frac (same as \dfrac/\cfrac);
-    // \dbinom/\tbinom likewise as \binom
-    LatexCmds.tfrac = LatexCmds.frac;
-    LatexCmds.dbinom = LatexCmds.tbinom = LatexCmds.binom;
+    // MATHCOMPILE: \tfrac \dbinom \tbinom moved to extraCommands.ts
     LatexCmds.choose = /** @class */ (function (_super) {
-        __extends(class_22, _super);
-        function class_22() {
+        __extends(class_14, _super);
+        function class_14() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_22.prototype.createLeftOf = function (cursor) {
+        class_14.prototype.createLeftOf = function (cursor) {
             LiveFraction.prototype.createLeftOf.call(this, cursor);
         };
-        class_22.prototype.parser = function () {
-            // DelimsNode's strict two-block parser (Binomial.parser() falls back
+        class_14.prototype.parser = function () {
+            // MATHCOMPILE: DelimsNode's strict two-block parser (Binomial.parser() falls back
             // to a \binom leaf via MathCommand, which would shadow \choose's own
             // fallback).
             return DelimsNode.prototype.strictParser
                 .call(this)
                 .or(Parser.succeed(new VanillaSymbol('\\choose ', h.text('\\choose'), 'choose')));
         };
-        return class_22;
+        return class_14;
     }(Binomial));
     var MathFieldNode = /** @class */ (function (_super) {
         __extends(MathFieldNode, _super);
@@ -10268,6 +9332,973 @@ var __assign = (this && this.__assign) || function () {
         return EmbedNode;
     }(MQSymbol));
     LatexCmds.embed = EmbedNode;
+    // ============================================================================
+    //  extraCommands.ts \u2014 MathCompile's added LaTeX commands
+    // ============================================================================
+    //
+    // Everything in this file is a *pure addition* on top of upstream MathQuill:
+    // whole new LatexCmds/CharCmds and their helper classes, concatenated after
+    // every upstream source in SOURCES_FULL so it can reference any upstream
+    // symbol (MathCommand, Style, Fraction, Bracket, Parser, ...). It sits before
+    // environments.ts because environments registers boundless integrals via the
+    // boundlessIntegral() helper defined here \u2014 keep this order.
+    //
+    // Modifications *inside* upstream code can't live here \u2014 those stay inline in
+    // their files and are tagged `// MATHCOMPILE:` (grep that marker, plus this
+    // file and environments.ts, for the complete local patch surface).
+    //
+    // NOTE: this file is in SOURCES_BASIC too \u2014 anything in it must only use
+    // symbols from BASE_SOURCES + math.ts + basicSymbols.ts + commands.ts (the
+    // "defined here, not advancedSymbols.ts" comments flag that constraint).
+    //======================================================================
+    //  Fonts (\mathcal \mathfrak \boldsymbol \mathbfit \u2026)
+    //======================================================================
+    LatexCmds.mathcal = function () {
+        return new Style('\\mathcal', 'span', { class: 'mq-caligraphic mq-font' }, 'Calligraphic Font');
+    };
+    LatexCmds.mathscr = function () {
+        return new Style('\\mathscr', 'span', { class: 'mq-caligraphic mq-font' }, 'Script Font');
+    };
+    LatexCmds.mathfrak = function () {
+        return new Style('\\mathfrak', 'span', { class: 'mq-fraktur mq-font' }, 'Fraktur Font');
+    };
+    // \bold in math mode is boldmath \u2014 serialized canonically as \mathbf
+    LatexCmds.bold = function () {
+        return new Style('\\mathbf', 'b', { class: 'mq-font' }, 'Bold Font');
+    };
+    // Bold-symbol font wrappers.
+    LatexCmds.boldsymbol = function () {
+        return new Style('\\boldsymbol', 'span', { class: 'mq-non-leaf mq-bf mq-it' }, 'Bold Symbol');
+    };
+    LatexCmds.pmb = function () {
+        return new Style('\\pmb', 'span', { class: 'mq-non-leaf mq-bf' }, 'Poor Mans Bold');
+    };
+    LatexCmds.bm = function () {
+        return new Style('\\bm', 'span', { class: 'mq-non-leaf mq-bf mq-it' }, 'Bold');
+    };
+    LatexCmds.mathbfit = function () {
+        return new Style('\\mathbfit', 'span', { class: 'mq-non-leaf mq-bf mq-it' }, 'Bold Italic');
+    };
+    //======================================================================
+    //  Boxes, colors, links (\boxed \fbox \framebox \color \colorbox \fcolorbox \href)
+    //======================================================================
+    // \boxed{...} \u2014 content with a drawn frame.
+    LatexCmds.boxed = function () {
+        return new Style('\\boxed', 'span', { class: 'mq-non-leaf mq-boxed' }, 'Boxed');
+    };
+    // \color{color}math is the declaration form of \textcolor \u2014 it
+    // canonicalizes to \textcolor{color}{math} (the next block is colored).
+    LatexCmds.color = LatexCmds.textcolor;
+    // \colorbox{color}{math} \u2014 a filled box around content; the color arg is
+    // raw text like \textcolor's, emitted back verbatim.
+    LatexCmds.colorbox = /** @class */ (function (_super) {
+        __extends(class_15, _super);
+        function class_15() {
+            var _this = _super !== null && _super.apply(this, arguments) || this;
+            _this.color = '';
+            _this.model = '';
+            return _this;
+        }
+        // Parser-only command: typing '\colorbox' in the command input can't
+        // supply a color argument, so typed insertion is a no-op (same
+        // convention as \textcolor).
+        class_15.prototype.createLeftOf = function () { };
+        class_15.prototype.numBlocks = function () {
+            return 1;
+        };
+        class_15.prototype.parser = function () {
+            var _this = this;
+            var self = this;
+            return Parser.optWhitespace
+                .then(Parser.regex(/^\[[a-zA-Z]+\]/).or(Parser.succeed('')))
+                .then(function (model) {
+                if (model)
+                    self.model = model.slice(1, -1);
+                return Parser.string('{')
+                    .then(Parser.regex(/^[#\w\s.,()%-]*/))
+                    .skip(Parser.string('}'));
+            })
+                .then(function (color) {
+                self.color = color;
+                self.domView = new DOMView(1, function (blocks) {
+                    return h.block('span', { class: 'mq-colorbox', style: 'background-color:' + color }, blocks[0]);
+                });
+                return _super.prototype.parser.call(_this);
+            });
+        };
+        class_15.prototype.latexRecursive = function (ctx) {
+            this.checkCursorContextOpen(ctx);
+            ctx.uncleanedLatex +=
+                '\\colorbox' +
+                    (this.model ? '[' + this.model + ']' : '') +
+                    '{' +
+                    this.color +
+                    '}{';
+            this.blocks[0].latexRecursive(ctx);
+            ctx.uncleanedLatex += '}';
+            this.checkCursorContextClose(ctx);
+        };
+        class_15.prototype.isStyleBlock = function () {
+            return true;
+        };
+        return class_15;
+    }(MathCommand));
+    // \fcolorbox{frame}{bg}{math} \u2014 framed + filled box; two raw color args.
+    LatexCmds.fcolorbox = /** @class */ (function (_super) {
+        __extends(class_16, _super);
+        function class_16() {
+            var _this = _super !== null && _super.apply(this, arguments) || this;
+            _this.frameColor = '';
+            _this.bgColor = '';
+            _this.model = '';
+            return _this;
+        }
+        // Parser-only command: typing '\fcolorbox' in the command input can't
+        // supply color arguments, so typed insertion is a no-op (same
+        // convention as \textcolor).
+        class_16.prototype.createLeftOf = function () { };
+        class_16.prototype.numBlocks = function () {
+            return 1;
+        };
+        class_16.prototype.parser = function () {
+            var _this = this;
+            var self = this;
+            var colorGroup = Parser.string('{')
+                .then(Parser.regex(/^[#\w\s.,()%-]*/))
+                .skip(Parser.string('}'));
+            return Parser.optWhitespace
+                .then(Parser.regex(/^\[[a-zA-Z]+\]/).or(Parser.succeed('')))
+                .then(function (model) {
+                if (model)
+                    self.model = model.slice(1, -1);
+                return colorGroup;
+            })
+                .then(function (frame) {
+                self.frameColor = frame;
+                return colorGroup;
+            })
+                .then(function (bg) {
+                self.bgColor = bg;
+                self.domView = new DOMView(1, function (blocks) {
+                    return h.block('span', {
+                        class: 'mq-fcolorbox',
+                        style: 'border:1px solid ' +
+                            self.frameColor +
+                            ';background-color:' +
+                            bg
+                    }, blocks[0]);
+                });
+                return _super.prototype.parser.call(_this);
+            });
+        };
+        class_16.prototype.latexRecursive = function (ctx) {
+            this.checkCursorContextOpen(ctx);
+            ctx.uncleanedLatex +=
+                '\\fcolorbox' +
+                    (this.model ? '[' + this.model + ']' : '') +
+                    '{' +
+                    this.frameColor +
+                    '}{' +
+                    this.bgColor +
+                    '}{';
+            this.blocks[0].latexRecursive(ctx);
+            ctx.uncleanedLatex += '}';
+            this.checkCursorContextClose(ctx);
+        };
+        class_16.prototype.isStyleBlock = function () {
+            return true;
+        };
+        return class_16;
+    }(MathCommand));
+    // \href{url}{math} \u2014 link wrapper; the url arg is raw text.
+    LatexCmds.href = /** @class */ (function (_super) {
+        __extends(class_17, _super);
+        function class_17() {
+            var _this = _super !== null && _super.apply(this, arguments) || this;
+            _this.url = '';
+            return _this;
+        }
+        // Parser-only command: typing '\href' in the command input can't
+        // supply a url argument, so typed insertion is a no-op (same
+        // convention as \textcolor).
+        class_17.prototype.createLeftOf = function () { };
+        class_17.prototype.numBlocks = function () {
+            return 1;
+        };
+        class_17.prototype.parser = function () {
+            var _this = this;
+            var self = this;
+            return Parser.optWhitespace
+                .then(Parser.string('{'))
+                .then(Parser.regex(/^[^{}]*/))
+                .skip(Parser.string('}'))
+                .then(function (url) {
+                self.url = url;
+                self.domView = new DOMView(1, function (blocks) {
+                    return h.block('span', { class: 'mq-href' }, blocks[0]);
+                });
+                return _super.prototype.parser.call(_this);
+            });
+        };
+        class_17.prototype.latexRecursive = function (ctx) {
+            this.checkCursorContextOpen(ctx);
+            ctx.uncleanedLatex += '\\href{' + this.url + '}{';
+            this.blocks[0].latexRecursive(ctx);
+            ctx.uncleanedLatex += '}';
+            this.checkCursorContextClose(ctx);
+        };
+        return class_17;
+    }(MathCommand));
+    // \fbox/\framebox \u2014 boxed frames; \nicefrac canonicalizes to \frac.
+    LatexCmds.fbox = function () {
+        return new Style('\\fbox', 'span', { class: 'mq-non-leaf mq-fbox' }, 'Boxed');
+    };
+    // \makebox[w][pos]{x} / \framebox[w][pos]{x} / \raisebox{d}[ht][dp]{x}
+    // \u2014 a content block preceded by up to two optional bracket args.
+    // (defined here, not advancedSymbols.ts: extraCommands.ts is in
+    // SOURCES_BASIC too, so the mathquill-basic bundle can use it)
+    function bindOptBracketCmd(ctrlSeq, maxOpt, speak) {
+        return /** @class */ (function (_super) {
+            __extends(class_18, _super);
+            function class_18() {
+                var _this = _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
+                    return h('span', { class: 'mq-non-leaf' }, [
+                        h.block('span', {}, blocks[0])
+                    ]);
+                })) || this;
+                _this.optText = '';
+                return _this;
+            }
+            class_18.prototype.parser = function () {
+                var self = this;
+                return Parser.regex(new RegExp('^(?:\\[[^\\]]*\\]){0,' + maxOpt + '}'))
+                    .then(function (opt) {
+                    self.optText = opt;
+                    return latexMathParser.block;
+                })
+                    .map(function (b) {
+                    self.blocks = [b];
+                    b.adopt(self, 0, 0);
+                    return self;
+                });
+            };
+            class_18.prototype.latexRecursive = function (ctx) {
+                this.checkCursorContextOpen(ctx);
+                ctx.uncleanedLatex += this.ctrlSeq + this.optText + '{';
+                this.blocks[0].latexRecursive(ctx);
+                ctx.uncleanedLatex += '}';
+                this.checkCursorContextClose(ctx);
+            };
+            return class_18;
+        }(MathCommand));
+    }
+    // \framebox keeps optional [width][pos] args like \makebox.
+    LatexCmds.framebox = bindOptBracketCmd('\\framebox', 2, 'frame box');
+    //======================================================================
+    //  Under/over scripts and braces (\underbrace \overset \underset \stackrel)
+    //======================================================================
+    // \underbrace{x}_{label} / \overbrace{x}^{label} \u2014 the label lands as an
+    // ordinary sibling SupSub (same pattern as boundless integral bounds),
+    // so only the grouping command itself is needed here.
+    LatexCmds.underbrace = function () {
+        return new Style('\\underbrace', 'span', { class: 'mq-non-leaf mq-underbrace' }, 'Underbrace');
+    };
+    LatexCmds.overbrace = function () {
+        return new Style('\\overbrace', 'span', { class: 'mq-non-leaf mq-overbrace' }, 'Overbrace');
+    };
+    // \overset{label}{base} stacks a small label above; \underset below;
+    // \stackrel is the plain-TeX name for \overset
+    LatexCmds.overset = /** @class */ (function (_super) {
+        __extends(class_19, _super);
+        function class_19() {
+            var _this = _super !== null && _super.apply(this, arguments) || this;
+            _this.ctrlSeq = '\\overset';
+            _this.domView = new DOMView(2, function (blocks) {
+                return h('span', { class: 'mq-non-leaf mq-overunderset' }, [
+                    h.block('span', { class: 'mq-overscript' }, blocks[0]),
+                    h.block('span', {}, blocks[1])
+                ]);
+            });
+            return _this;
+        }
+        return class_19;
+    }(MathCommand));
+    LatexCmds.stackrel = LatexCmds.overset;
+    LatexCmds.underset = /** @class */ (function (_super) {
+        __extends(class_20, _super);
+        function class_20() {
+            var _this = _super !== null && _super.apply(this, arguments) || this;
+            _this.ctrlSeq = '\\underset';
+            _this.domView = new DOMView(2, function (blocks) {
+                return h('span', { class: 'mq-non-leaf mq-overunderset' }, [
+                    h.block('span', {}, blocks[1]),
+                    h.block('span', { class: 'mq-overscript' }, blocks[0])
+                ]);
+            });
+            return _this;
+        }
+        return class_20;
+    }(MathCommand));
+    //======================================================================
+    //  Modular arithmetic (\pmod \pod \bmod \mod)
+    //======================================================================
+    // \pmod{m} / \pod{m} \u2014 parenthesized (mod m) / (m); \bmod is the
+    // binary mod operator
+    LatexCmds.pmod = function () {
+        return new MathCommand('\\pmod', new DOMView(1, function (blocks) {
+            return h('span', { class: 'mq-non-leaf' }, [
+                h('span', {}, [h.text('(mod\u00a0')]),
+                h.block('span', {}, blocks[0]),
+                h('span', {}, [h.text(')')])
+            ]);
+        }), ['mod(', ')']);
+    };
+    LatexCmds.pod = function () {
+        return new MathCommand('\\pod', new DOMView(1, function (blocks) {
+            return h('span', { class: 'mq-non-leaf' }, [
+                h('span', {}, [h.text('(')]),
+                h.block('span', {}, blocks[0]),
+                h('span', {}, [h.text(')')])
+            ]);
+        }), ['(', ')']);
+    };
+    LatexCmds.bmod = bindBinaryOperator('\\bmod ', 'mod', 'binary mod');
+    LatexCmds.mod = bindBinaryOperator('\\mod ', 'mod', 'mod');
+    //======================================================================
+    //  Integrals \u2014 boundless signs (\iint \antid \oiint \oiiint \iiint \u2026)
+    //======================================================================
+    var U_DOUBLE_INTEGRAL = '\u222C';
+    // Boundless integral signs for indefinite integrals: `\iint` and
+    // `\antid` render a bare \u222b \u2014 neither carries blocks, so the integrand
+    // types linearly (`\antid x dx`, `\iint f dx dy`) and `_`/`^` may still
+    // grow an ordinary sibling SupSub for bounds. `\antid` is a MathCompile
+    // insertion alias: the app maps it to `\int` at compile time; `\iint`
+    // parses to Integrate in the compute engine on its own.
+    //
+    // BoundlessIntegral is its own class so left-scanning code (a typed `/`
+    // wrapping the preceding run into a numerator) can stop at the sign \u2014
+    // for a SummationNotation like `\sum` the scan already breaks there, and
+    // a boundless \u222b should behave the same way.
+    var BoundlessIntegral = /** @class */ (function (_super) {
+        __extends(BoundlessIntegral, _super);
+        function BoundlessIntegral() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        return BoundlessIntegral;
+    }(MQSymbol));
+    var boundlessIntegral = function (ctrlSeq, glyph, speak) {
+        return function () {
+            return new BoundlessIntegral(ctrlSeq, h('span', { class: 'mq-int' }, [
+                h('big', {}, [h.entityText(glyph)])
+            ]), undefined, speak);
+        };
+    };
+    LatexCmds['\u222c'] = LatexCmds.iint = boundlessIntegral('\\iint ', U_DOUBLE_INTEGRAL, 'double integral');
+    LatexCmds.antid = boundlessIntegral('\\antid ', U_INTEGRAL, 'antiderivative');
+    LatexCmds['\u222f'] = LatexCmds.oiint = boundlessIntegral('\\oiint ', '\u222f', 'surface integral');
+    LatexCmds['\u2230'] = LatexCmds.oiiint = boundlessIntegral('\\oiiint ', '\u2230', 'volume integral');
+    // \iiint \idotsint \ointctrclockwise \varointclockwise \u2014 boundless
+    // integral signs like \iint.
+    LatexCmds['\u222d'] = LatexCmds.iiint = boundlessIntegral('\\iiint ', '&#8749;', 'triple integral');
+    LatexCmds.idotsint = boundlessIntegral('\\idotsint ', '&#8944;', 'dots integral');
+    LatexCmds['\u2233'] = LatexCmds.ointctrclockwise = boundlessIntegral('\\ointctrclockwise ', '&#8755;', 'counterclockwise contour integral');
+    LatexCmds['\u2232'] = LatexCmds.varointclockwise = boundlessIntegral('\\varointclockwise ', '&#8754;', 'clockwise contour integral');
+    //======================================================================
+    //  Fractions (\cfrac \tfrac \nicefrac \dbinom \tbinom)
+    //======================================================================
+    // \cfrac[lcr] takes an optional alignment arg before the two
+    // fraction blocks \u2014 consume it so [l] can't parse as a { [ } { l ]
+    // "fraction". Serialized canonically as \frac like \dfrac/\tfrac.
+    LatexCmds.cfrac = /** @class */ (function (_super) {
+        __extends(cfrac, _super);
+        function cfrac() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        cfrac.prototype.parser = function () {
+            var self = this;
+            return Parser.regex(/^\[(?:[lcr])\]/)
+                .or(Parser.succeed(''))
+                .then(function () {
+                return Fraction.prototype.parser.call(self);
+            });
+        };
+        return cfrac;
+    }(Fraction));
+    // \tfrac serializes canonically as \frac (same as \dfrac/\cfrac);
+    // \dbinom/\tbinom likewise as \binom
+    LatexCmds.tfrac = LatexCmds.frac;
+    LatexCmds.dbinom = LatexCmds.tbinom = LatexCmds.binom;
+    LatexCmds.nicefrac = LatexCmds.frac;
+    //======================================================================
+    //  Accents and diacritics (\ddot \widehat \` \~ \check \breve \u2026)
+    //======================================================================
+    LatexCmds.ddot = function () {
+        return new DiacriticAbove('\\ddot', h.text('\u00a8'), ['ddot(', ')']);
+    };
+    LatexCmds.dddot = function () {
+        return new DiacriticAbove('\\dddot', h.text('...'), ['dddot(', ')']);
+    };
+    // \widehat is the wide variant of \hat; render it with the same atom
+    // (serializes back as \hat).
+    LatexCmds.widehat = LatexCmds.hat;
+    var DiacriticBelow = /** @class */ (function (_super) {
+        __extends(DiacriticBelow, _super);
+        function DiacriticBelow(ctrlSeq, html, textTemplate) {
+            var _this = _super.call(this, ctrlSeq, html, textTemplate) || this;
+            _this.domView = new DOMView(1, function (blocks) {
+                return h('span', { class: 'mq-non-leaf' }, [
+                    h.block('span', { class: 'mq-diacritic-stem' }, blocks[0]),
+                    h('span', { class: 'mq-diacritic-below' }, [html])
+                ]);
+            });
+            return _this;
+        }
+        return DiacriticBelow;
+    }(DiacriticAbove));
+    // Escaped single-char accents (registered under their backslash-escaped
+    // ctrlSeq). `\'` intentionally falls back to the bare ' prime \u2014 TeX's
+    // acute accent is available as \acute.
+    LatexCmds['\\`'] = function () {
+        return new DiacriticAbove('\\`', h.text('`'), ['grave(', ')']);
+    };
+    LatexCmds['\\"'] = function () {
+        return new DiacriticAbove('\\"', h.text('\u00a8'), ['umlaut(', ')']);
+    };
+    LatexCmds['\\~'] = function () {
+        return new DiacriticAbove('\\~', h.text('~'), ['tilde(', ')']);
+    };
+    LatexCmds['\\='] = function () {
+        return new DiacriticAbove('\\=', h.text('\u00af'), ['bar(', ')']);
+    };
+    LatexCmds['\\.'] = function () {
+        return new DiacriticAbove('\\.', h.text('\u02d9'), ['dot(', ')']);
+    };
+    LatexCmds['\\^'] = function () {
+        return new DiacriticAbove('\\^', h.text('^'), ['hat(', ')']);
+    };
+    // Arrow/segment diacritics and group marks.
+    LatexCmds.overleftharpoon = function () {
+        return new DiacriticAbove('\\overleftharpoon', h.text('\u21bc'), ['overleft harpoon(', ')']);
+    };
+    LatexCmds.overrightharpoon = function () {
+        return new DiacriticAbove('\\overrightharpoon', h.text('\u21c0'), ['overright harpoon(', ')']);
+    };
+    LatexCmds.overlinesegment = function () {
+        return new DiacriticAbove('\\overlinesegment', h.text('\u2015'), ['overline segment(', ')']);
+    };
+    LatexCmds.underleftarrow = function () {
+        return new DiacriticBelow('\\underleftarrow', h.text('\u2190'), ['underleftarrow(', ')']);
+    };
+    LatexCmds.underrightarrow = function () {
+        return new DiacriticBelow('\\underrightarrow', h.text('\u2192'), ['underrightarrow(', ')']);
+    };
+    // One-block under/over marks that draw an arc glyph above or below
+    // their argument (\overgroup, \overbracket, \wideparen, \u2026).
+    // \underbrace/\overbrace are NOT registered here \u2014 the Style-based
+    // versions near the top own those names.
+    var UnderOverBrace = /** @class */ (function (_super) {
+        __extends(UnderOverBrace, _super);
+        function UnderOverBrace(ctrlSeq, below, glyph) {
+            var _this = _super.call(this) || this;
+            _this.ctrlSeq = ctrlSeq;
+            var mark = h('span', { class: 'mq-underbrace-arc' }, [
+                h.text(glyph || (below ? '\u23df' : '\u23de'))
+            ]);
+            _this.domView = new DOMView(1, function (blocks) {
+                return h('span', { class: 'mq-non-leaf mq-underoverbrace' }, below
+                    ? [h.block('span', {}, blocks[0]), mark]
+                    : [mark, h.block('span', {}, blocks[0])]);
+            });
+            return _this;
+        }
+        return UnderOverBrace;
+    }(MathCommand));
+    LatexCmds.overgroup = function () { return new UnderOverBrace('\\overgroup', false); };
+    LatexCmds.undergroup = function () { return new UnderOverBrace('\\undergroup', true); };
+    LatexCmds.overbracket = function () {
+        return new UnderOverBrace('\\overbracket', false, '\u23b4');
+    };
+    LatexCmds.underbracket = function () {
+        return new UnderOverBrace('\\underbracket', true, '\u23b5');
+    };
+    LatexCmds.underparen = function () {
+        return new UnderOverBrace('\\underparen', true, '\u23dd');
+    };
+    LatexCmds.overparen = function () {
+        return new UnderOverBrace('\\overparen', false, '\u23dc');
+    };
+    // \wideparen is amssymb's name for the same glyph as \overparen.
+    LatexCmds.wideparen = function () {
+        return new UnderOverBrace('\\wideparen', false, '\u23dc');
+    };
+    // Word-form accents missing upstream (the bare-word variants of the
+    // escaped accents \' \` \v \u and \ddddot).
+    LatexCmds.check = function () {
+        return new DiacriticAbove('\\check', h.text('\u02c7'), ['check(', ')']);
+    };
+    LatexCmds.breve = function () {
+        return new DiacriticAbove('\\breve', h.text('\u02d8'), ['breve(', ')']);
+    };
+    LatexCmds.acute = function () {
+        return new DiacriticAbove('\\acute', h.text('\u00b4'), ['acute(', ')']);
+    };
+    LatexCmds.grave = function () {
+        return new DiacriticAbove('\\grave', h.text('`'), ['grave(', ')']);
+    };
+    LatexCmds.ddddot = function () {
+        return new DiacriticAbove('\\ddddot', h.text('....'), ['ddddot(', ')']);
+    };
+    LatexCmds.overleftharp = function () {
+        return new DiacriticAbove('\\overleftharp', h.text('\u21bc'), ['overleft harp(', ')']);
+    };
+    LatexCmds.overrightharp = function () {
+        return new DiacriticAbove('\\overrightharp', h.text('\u21c0'), ['overright harp(', ')']);
+    };
+    // Physics bra-ket notation: \bra{x} \u2192 \u27e8x|, \ket{x} \u2192 |x\u27e9,
+    // \braket{x|y} \u2192 \u27e8x|y\u27e9 (one block, | is content), \ketbra \u2192 |x\u27e9\u27e8y|.
+    //======================================================================
+    //  Extensible arrows (\xrightarrow \xmapsto \xRightarrow \u2026)
+    //======================================================================
+    // \xrightarrow{label} / \xleftarrow / \xmapsto and friends \u2014 a small
+    // label over an extensible-looking arrow; the arrow is a fixed glyph.
+    // \xrightarrow[under]{over} puts a second label below the arrow
+    // (amsmath), parsed like \sqrt[n]{x}'s optional block.
+    var XArrowWithUnder = /** @class */ (function (_super) {
+        __extends(XArrowWithUnder, _super);
+        function XArrowWithUnder(ctrlSeq, arrow) {
+            return _super.call(this, ctrlSeq, new DOMView(2, function (blocks) {
+                return h('span', { class: 'mq-non-leaf mq-overunderset' }, [
+                    h.block('span', { class: 'mq-overscript' }, blocks[1]),
+                    h('span', { class: 'mq-xarrow' }, [h.text(arrow)]),
+                    h.block('span', { class: 'mq-underscript' }, blocks[0])
+                ]);
+            })) || this;
+        }
+        XArrowWithUnder.prototype.latexRecursive = function (ctx) {
+            this.checkCursorContextOpen(ctx);
+            ctx.uncleanedLatex += this.ctrlSeq + '[';
+            this.getEnd(L).latexRecursive(ctx);
+            ctx.uncleanedLatex += ']{';
+            this.getEnd(R).latexRecursive(ctx);
+            ctx.uncleanedLatex += '}';
+            this.checkCursorContextClose(ctx);
+        };
+        return XArrowWithUnder;
+    }(MathCommand));
+    function bindArrowLabelCmd(ctrlSeq, arrow) {
+        return function () {
+            return new (/** @class */ (function (_super) {
+                __extends(class_21, _super);
+                function class_21() {
+                    return _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
+                        return h('span', { class: 'mq-non-leaf mq-overunderset' }, [
+                            h.block('span', { class: 'mq-overscript' }, blocks[0]),
+                            h('span', { class: 'mq-xarrow' }, [h.text(arrow)])
+                        ]);
+                    })) || this;
+                }
+                class_21.prototype.parser = function () {
+                    var self = this;
+                    return latexMathParser.optBlock
+                        .then(function (optBlock) {
+                        return latexMathParser.block.map(function (block) {
+                            var xa = new XArrowWithUnder(ctrlSeq, arrow);
+                            xa.blocks = [optBlock, block];
+                            optBlock.adopt(xa, 0, 0);
+                            block.adopt(xa, optBlock, 0);
+                            return xa;
+                        });
+                    })
+                        .or(_super.prototype.parser.call(this))
+                        .or(Parser.succeed(new VanillaSymbol(ctrlSeq + ' ', h.text(arrow), ctrlSeq.slice(1))));
+                };
+                return class_21;
+            }(MathCommand)))();
+        };
+    }
+    LatexCmds.xrightarrow = bindArrowLabelCmd('\\xrightarrow', '\u27f6');
+    LatexCmds.xleftarrow = bindArrowLabelCmd('\\xleftarrow', '\u27f5');
+    LatexCmds.xmapsto = bindArrowLabelCmd('\\xmapsto', '\u27fc');
+    LatexCmds.xRightarrow = bindArrowLabelCmd('\\xRightarrow', '\u27f9');
+    LatexCmds.xLeftarrow = bindArrowLabelCmd('\\xLeftarrow', '\u27f8');
+    LatexCmds.xLeftrightarrow = bindArrowLabelCmd('\\xLeftrightarrow', '\u27fa');
+    LatexCmds.xleftrightarrow = bindArrowLabelCmd('\\xleftrightarrow', '\u27f7');
+    LatexCmds.xhookleftarrow = bindArrowLabelCmd('\\xhookleftarrow', '\u21a9');
+    LatexCmds.xhookrightarrow = bindArrowLabelCmd('\\xhookrightarrow', '\u21aa');
+    LatexCmds.xrightharpoondown = bindArrowLabelCmd('\\xrightharpoondown', '\u21c0');
+    LatexCmds.xrightharpoonup = bindArrowLabelCmd('\\xrightharpoonup', '\u21c1');
+    LatexCmds.xleftharpoondown = bindArrowLabelCmd('\\xleftharpoondown', '\u21bd');
+    LatexCmds.xleftharpoonup = bindArrowLabelCmd('\\xleftharpoonup', '\u21bc');
+    LatexCmds.xrightleftharpoons = bindArrowLabelCmd('\\xrightleftharpoons', '\u21cc');
+    LatexCmds.xleftrightharpoons = bindArrowLabelCmd('\\xleftrightharpoons', '\u21cb');
+    LatexCmds.xLongrightarrow = bindArrowLabelCmd('\\xLongrightarrow', '\u27f6');
+    LatexCmds.xLongleftarrow = bindArrowLabelCmd('\\xLongleftarrow', '\u27f5');
+    LatexCmds.xtwoheadrightarrow = bindArrowLabelCmd('\\xtwoheadrightarrow', '\u21a0');
+    LatexCmds.xtwoheadleftarrow = bindArrowLabelCmd('\\xtwoheadleftarrow', '\u219e');
+    LatexCmds.xtofrom = bindArrowLabelCmd('\\xtofrom', '\u21c4');
+    // \cancel \bcancel \xcancel \u2014 struck-through content.
+    //======================================================================
+    //  Cancels (\cancel \bcancel \xcancel \cancelto)
+    //======================================================================
+    function bindCancelCmd(ctrlSeq, cls) {
+        return function () {
+            return new MathCommand(ctrlSeq, new DOMView(1, function (blocks) {
+                return h('span', { class: 'mq-non-leaf mq-cancel ' + cls }, [
+                    h.block('span', {}, blocks[0])
+                ]);
+            }));
+        };
+    }
+    // \cancelto{result}{expr} \u2014 content struck through with an arrow
+    // pointing at the result term.
+    LatexCmds.cancelto = function () {
+        return new MathCommand('\\cancelto', new DOMView(2, function (blocks) {
+            return h('span', { class: 'mq-non-leaf mq-cancel mq-cancelto' }, [
+                h.block('span', { class: 'mq-cancelto-arrow' }, blocks[0]),
+                h.block('span', {}, blocks[1])
+            ]);
+        }));
+    };
+    LatexCmds.cancel = bindCancelCmd('\\cancel', 'mq-cancel-forward');
+    LatexCmds.bcancel = bindCancelCmd('\\bcancel', 'mq-cancel-back');
+    LatexCmds.xcancel = bindCancelCmd('\\xcancel', 'mq-cancel-both');
+    //======================================================================
+    //  Delimiters (\langle \lVert \bra \big \bigl \middle \[)
+    //======================================================================
+    // Typed \langle auto-pairs like every Bracket; a standalone \langle x
+    // parses as a plain \u27e8 symbol because a one-sided Bracket fails its own
+    // parser and blanks the field. Same for \rangle, \lVert, \rVert below.
+    var StandaloneBracket = /** @class */ (function (_super) {
+        __extends(StandaloneBracket, _super);
+        function StandaloneBracket(side, open, close, ctrlSeq, end, mathspeak) {
+            var _this = _super.call(this, side, open, close, ctrlSeq, end) || this;
+            _this.parseSymbol = new VanillaSymbol(ctrlSeq, h.entityText(side === L ? open : close), mathspeak);
+            return _this;
+        }
+        StandaloneBracket.prototype.parser = function () {
+            return Parser.succeed(this.parseSymbol);
+        };
+        return StandaloneBracket;
+    }(Bracket));
+    LatexCmds.langle = function () {
+        return new StandaloneBracket(L, '&lang;', '&rang;', '\\langle ', '\\rangle ', 'left angle bracket');
+    };
+    LatexCmds.rangle = function () {
+        return new StandaloneBracket(R, '&lang;', '&rang;', '\\rangle ', '\\langle ', 'right angle bracket');
+    };
+    LatexCmds.lVert = function () {
+        return new StandaloneBracket(L, '&#8741;', '&#8741;', '\\lVert ', '\\rVert ', 'left norm');
+    };
+    LatexCmds.rVert = function () {
+        return new StandaloneBracket(R, '&#8741;', '&#8741;', '\\rVert ', '\\lVert ', 'right norm');
+    };
+    function bindBraKet(ctrlSeq, open, close) {
+        return function () {
+            return new MathCommand(ctrlSeq, new DOMView(1, function (blocks) {
+                return h('span', { class: 'mq-non-leaf' }, [
+                    h('span', { class: 'mq-bra-ket-delim' }, [h.entityText(open)]),
+                    h.block('span', {}, blocks[0]),
+                    h('span', { class: 'mq-bra-ket-delim' }, [h.entityText(close)])
+                ]);
+            }));
+        };
+    }
+    LatexCmds.bra = bindBraKet('\\bra', '&lang;', '|');
+    LatexCmds.ket = bindBraKet('\\ket', '|', '&rang;');
+    LatexCmds.braket = function () {
+        return new MathCommand('\\braket', new DOMView(1, function (blocks) {
+            return h('span', { class: 'mq-non-leaf' }, [
+                h('span', { class: 'mq-bra-ket-delim' }, [h.entityText('&lang;')]),
+                h.block('span', {}, blocks[0]),
+                h('span', { class: 'mq-bra-ket-delim' }, [h.entityText('&rang;')])
+            ]);
+        }));
+    };
+    LatexCmds.ketbra = function () {
+        return new MathCommand('\\ketbra', new DOMView(2, function (blocks) {
+            return h('span', { class: 'mq-non-leaf' }, [
+                h('span', { class: 'mq-bra-ket-delim' }, [h.text('|')]),
+                h.block('span', {}, blocks[0]),
+                h('span', { class: 'mq-bra-ket-delim' }, [
+                    h.entityText('&rang;'),
+                    h.entityText('&lang;')
+                ]),
+                h.block('span', {}, blocks[1]),
+                h('span', { class: 'mq-bra-ket-delim' }, [h.text('|')])
+            ]);
+        }));
+    };
+    // \big \Big \bigg \Bigg sized delimiters (with optional l/r/m suffix)
+    // and \middle \u2014 a sized-delimiter prefix consumes the following
+    // delimiter token and renders that glyph, keeping the prefix in the
+    // ctrlSeq so `\bigl(` serializes verbatim.
+    var DELIM_GLYPHS = {
+        '(': '(',
+        ')': ')',
+        '[': '[',
+        ']': ']',
+        '{': '{',
+        '}': '}',
+        '|': '|',
+        '<': '\u27e8',
+        '>': '\u27e9',
+        '/': '/',
+        '.': '',
+        '\\{': '{',
+        '\\}': '}',
+        '\\|': '\u2016',
+        '\\langle': '\u27e8',
+        '\\rangle': '\u27e9',
+        '\\lVert': '\u2016',
+        '\\rVert': '\u2016',
+        '\\lceil': '\u2308',
+        '\\rceil': '\u2309',
+        '\\lfloor': '\u230a',
+        '\\rfloor': '\u230b',
+        '\\backslash': '\\',
+        '\\ulcorner': '\u231c',
+        '\\urcorner': '\u231d',
+        '\\llcorner': '\u231e',
+        '\\lrcorner': '\u231f',
+        '\\uparrow': '\u2191',
+        '\\downarrow': '\u2193',
+        '\\updownarrow': '\u2195',
+        '\\Uparrow': '\u21d1',
+        '\\Downarrow': '\u21d3',
+        '\\Updownarrow': '\u21d5'
+    };
+    var SizedDelimiter = /** @class */ (function (_super) {
+        __extends(SizedDelimiter, _super);
+        function SizedDelimiter(prefix) {
+            var _this = _super.call(this) || this;
+            _this.prefix = prefix;
+            return _this;
+        }
+        // Parser-only command: typing '\bigl' in the command input can't
+        // supply a delimiter token, so typed insertion is a no-op (same
+        // convention as \textcolor / \big).
+        SizedDelimiter.prototype.createLeftOf = function () { };
+        SizedDelimiter.prototype.parser = function () {
+            var self = this;
+            return Parser.optWhitespace
+                .then(Parser.regex(/^(?:\\[a-zA-Z]+|\\[^a-zA-Z\s]|[.()[\]{}/|<>])/))
+                .map(function (delim) {
+                // A \langle-style delimiter needs a trailing space in the
+                // emitted ctrlSeq \u2014 otherwise `\Bigg\langle x` would serialize
+                // as `\Bigg\langlex` and glue into an unknown command.
+                self.ctrlSeq =
+                    self.prefix + delim + (/^\\[a-zA-Z]+$/.test(delim) ? ' ' : '');
+                var glyph = DELIM_GLYPHS[delim];
+                if (glyph === undefined)
+                    glyph = delim.replace(/^\\/, '');
+                self.domView = new DOMView(0, function () {
+                    return h('span', { class: 'mq-sized-delim' }, [h.text(glyph)]);
+                });
+                return self;
+            });
+        };
+        return SizedDelimiter;
+    }(MQSymbol));
+    (function () {
+        ['big', 'Big', 'bigg', 'Bigg'].forEach(function (size) {
+            ['l', 'r', 'm', ''].forEach(function (side) {
+                LatexCmds[size + side] = function () {
+                    return new SizedDelimiter('\\' + size + side);
+                };
+            });
+        });
+        LatexCmds.middle = function () {
+            return new SizedDelimiter('\\middle');
+        };
+    })();
+    // \big| \Big| \bigg| \Bigg| \u2014 fixed-size delimiters. Parser-only (like
+    // \left): they render the delimiter glyph at a fixed scale and keep the
+    // full \big<delim> ctrlSeq so the latex round-trips.
+    var BIG_DELIM_SCALES = {
+        big: '1.2',
+        Big: '1.6',
+        bigg: '2.1',
+        Bigg: '2.6'
+    };
+    var BIG_DELIM_CHARS = {
+        '(': '(',
+        ')': ')',
+        '[': '[',
+        ']': ']',
+        '|': '|',
+        '.': '',
+        '\\{': '{',
+        '\\}': '}',
+        '\\|': '\u2016',
+        '\\langle': '\u27e8',
+        '\\rangle': '\u27e9',
+        '\\lVert': '\u2016',
+        '\\rVert': '\u2016'
+    };
+    var BIG_DELIM_RE = /^(?:\\langle(?![a-zA-Z])|\\rangle(?![a-zA-Z])|\\lVert(?![a-zA-Z])|\\rVert(?![a-zA-Z])|\\\{|\\\}|\\[|.]|[()\[\]|.])/;
+    var BigDelim = /** @class */ (function (_super) {
+        __extends(BigDelim, _super);
+        function BigDelim(sizeSeq) {
+            var _this = _super.call(this) || this;
+            _this.sizeSeq = '\\big';
+            _this.sizeSeq = '\\' + sizeSeq;
+            return _this;
+        }
+        BigDelim.prototype.createLeftOf = function () { };
+        BigDelim.prototype.numBlocks = function () {
+            return 1;
+        };
+        BigDelim.prototype.parser = function () {
+            var self = this;
+            return Parser.optWhitespace
+                .then(Parser.regex(BIG_DELIM_RE))
+                .then(function (delimTok) {
+                var ch = BIG_DELIM_CHARS[delimTok];
+                if (ch === undefined)
+                    return Parser.fail('not a \\big delimiter');
+                var ctrlSeq = self.sizeSeq + (delimTok.length > 1 ? delimTok + ' ' : delimTok);
+                var scale = BIG_DELIM_SCALES[self.sizeSeq.slice(1)];
+                var inner = ch === ''
+                    ? h('span', { style: 'width:0' })
+                    : h('span', { style: 'font-size:' + scale + 'em' }, [
+                        h.text(ch)
+                    ]);
+                return Parser.succeed(new MQSymbol(ctrlSeq, h('span', {}, [inner]), undefined, 'delimiter'));
+            });
+        };
+        return BigDelim;
+    }(MathCommand));
+    LatexCmds.big = function () { return new BigDelim('big'); };
+    LatexCmds.Big = function () { return new BigDelim('Big'); };
+    LatexCmds.bigg = function () { return new BigDelim('bigg'); };
+    LatexCmds.Bigg = function () { return new BigDelim('Bigg'); };
+    // \[ \] \( \) display-math wrappers parse as bracket glyphs so pasted
+    // display math keeps its delimiters (registered under the escaped
+    // ctrlSeq \u2014 bare ( ) [ ] still go through the symbol fallback).
+    LatexCmds['\\['] = function () {
+        return new VanillaSymbol('\\[', h.text('['), 'open display math');
+    };
+    LatexCmds['\\]'] = function () {
+        return new VanillaSymbol('\\]', h.text(']'), 'close display math');
+    };
+    LatexCmds['\\('] = function () {
+        return new VanillaSymbol('\\(', h.text('('), 'open inline math');
+    };
+    LatexCmds['\\)'] = function () {
+        return new VanillaSymbol('\\)', h.text(')'), 'close inline math');
+    };
+    //======================================================================
+    //  Line breaks and layout atoms (\\ \cr \hline \smash \strut)
+    //======================================================================
+    // A bare \\ at any level is a hard line break \u2014 the matrix/displaylines
+    // cell-grid parsers consume \\ as a row delimiter before node parsing
+    // reaches it, so this only kicks in outside grids (e.g. pasting `x\\ y`).
+    LatexCmds['\\'] = function () {
+        return new VanillaSymbol('\\\\', h('br', {}, []), 'line break');
+    };
+    // \cr is the plain-TeX row separator \u2014 inside a grid it is cell content
+    // (the cellsParser only splits on \\), so it round-trips verbatim and
+    // renders as a line break.
+    LatexCmds.cr = function () {
+        return new VanillaSymbol('\\cr ', h('br', {}, []), 'line break');
+    };
+    // style switches (\displaystyle \u2026 \nolimits) \u2014 invisible atoms that
+    // serialize their command verbatim. \limits/\nolimits sit between an
+    // operator and its bounds; the bound then attaches to this zero-width
+    // atom, so `\sum\limits_{i}` renders like `\sum_{i}` and round-trips.
+    // NOTE: defined here (not advancedSymbols.ts): extraCommands.ts is in
+    // SOURCES_BASIC too, so the mathquill-basic bundle can use it.
+    // can use it too.
+    function bindStyleModifier(ctrlSeq, mathspeak) {
+        return function () {
+            return new VanillaSymbol(ctrlSeq, h('span', { class: 'mq-style-modifier' }), mathspeak);
+        };
+    }
+    // Matrix rules \u2014 invisible in the grid, serialize verbatim.
+    LatexCmds.hline = bindStyleModifier('\\hline ', 'h line');
+    LatexCmds.hdashline = bindStyleModifier('\\hdashline ', 'h dash line');
+    LatexCmds.midrule = bindStyleModifier('\\midrule ', 'mid rule');
+    LatexCmds.toprule = bindStyleModifier('\\toprule ', 'top rule');
+    LatexCmds.bottomrule = bindStyleModifier('\\bottomrule ', 'bottom rule');
+    LatexCmds.cline = function () {
+        return new MathCommand('\\cline', new DOMView(1, function (blocks) {
+            return h('span', { class: 'mq-invisible' }, [
+                h.block('span', {}, blocks[0])
+            ]);
+        }));
+    };
+    LatexCmds.cmidrule = function () {
+        return new MathCommand('\\cmidrule', new DOMView(1, function (blocks) {
+            return h('span', { class: 'mq-invisible' }, [
+                h.block('span', {}, blocks[0])
+            ]);
+        }));
+    };
+    // \llap \rlap \clap \smash \u2014 overlap boxes; content renders inline.
+    function bindOverlapCmd(ctrlSeq, cls, optRegex) {
+        return function () {
+            return new (/** @class */ (function (_super) {
+                __extends(class_22, _super);
+                function class_22() {
+                    var _this = _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
+                        return h('span', { class: 'mq-non-leaf ' + cls }, [
+                            h.block('span', {}, blocks[0])
+                        ]);
+                    })) || this;
+                    _this.optText = '';
+                    return _this;
+                }
+                // An overlap command with no following block degrades to a bare
+                // \name leaf instead of failing the parse.
+                class_22.prototype.parser = function () {
+                    var self = this;
+                    return (optRegex
+                        ? Parser.regex(new RegExp('^' + optRegex))
+                            .or(Parser.succeed(''))
+                            .then(function (opt) {
+                            self.optText = opt;
+                            return latexMathParser.block;
+                        })
+                        : latexMathParser.block)
+                        .map(function (b) {
+                        self.blocks = [b];
+                        b.adopt(self, 0, 0);
+                        return self;
+                    })
+                        .or(Parser.succeed(new VanillaSymbol(ctrlSeq + ' ', h.text(ctrlSeq), ctrlSeq.replace(/\\/g, ''))));
+                };
+                class_22.prototype.latexRecursive = function (ctx) {
+                    this.checkCursorContextOpen(ctx);
+                    ctx.uncleanedLatex += this.ctrlSeq + this.optText + '{';
+                    this.blocks[0].latexRecursive(ctx);
+                    ctx.uncleanedLatex += '}';
+                    this.checkCursorContextClose(ctx);
+                };
+                return class_22;
+            }(MathCommand)))();
+        };
+    }
+    LatexCmds.llap = bindOverlapCmd('\\llap', 'mq-llap');
+    LatexCmds.rlap = bindOverlapCmd('\\rlap', 'mq-rlap');
+    LatexCmds.clap = bindOverlapCmd('\\clap', 'mq-clap');
+    LatexCmds.smash = bindOverlapCmd('\\smash', 'mq-smash', '\\[(?:[tb])\\]');
+    LatexCmds.mathllap = bindOverlapCmd('\\mathllap', 'mq-llap');
+    LatexCmds.mathrlap = bindOverlapCmd('\\mathrlap', 'mq-rlap');
+    LatexCmds.mathclap = bindOverlapCmd('\\mathclap', 'mq-clap');
+    LatexCmds.mathstrut = bindStyleModifier('\\mathstrut ', 'math strut');
+    LatexCmds.strut = bindStyleModifier('\\strut ', 'strut');
+    //======================================================================
+    //  Misc large operators (\bigsqcap \varinjlim \varprojlim)
+    //======================================================================
+    LatexCmds.bigsqcap = LatexCmds.bigsqcapdot = function () {
+        return new SummationNotation('\\bigsqcap ', '&#10757;', 'square intersection');
+    };
+    LatexCmds.varinjlim = function () {
+        return new SummationNotation('\\varinjlim ', 'lim&#8594;', 'direct limit');
+    };
+    LatexCmds.varprojlim = function () {
+        return new SummationNotation('\\varprojlim ', 'lim&#8592;', 'inverse limit');
+    };
     // For backwards compatibility, set up the global MathQuill object as an instance of API interface v1
     if (window.jQuery) {
         MQ1 = getInterface(1);
