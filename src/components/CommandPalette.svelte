@@ -17,7 +17,7 @@
   let matches = $derived.by(() => {
     const scored: { c: Command; s: number }[] = [];
     for (const c of commands) {
-      const s = fuzzyScore(query, `${c.title} ${c.keywords ?? ''}`);
+      const s = fuzzyScore(query, c.search ?? `${c.title} ${c.keywords ?? ''}`);
       if (s != null) scored.push({ c, s });
     }
     scored.sort((a, b) => b.s - a.s);
