@@ -1231,6 +1231,22 @@ const FIXTURES: {
     ],
   },
   {
+    // Finite-set domains fold to the evaluated Boolean —
+    // `∀x∈{1,2}, p` is `And(p[x↦1], p[x↦2])` (exec → True), `∃` the Or.
+    latex: '\\forall x \\in \\{1,2\\}, x>0',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.And((sp.Gt(x, 0)).subs(x, 1), (sp.Gt(x, 0)).subs(x, 2))',
+    ],
+  },
+  {
+    latex: '\\exists x \\in \\{1,2\\}, x^{2}=4',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.Or((sp.Eq(x**2, 4)).subs(x, 1), (sp.Eq(x**2, 4)).subs(x, 2))',
+    ],
+  },
+  {
     // `expr \text{ for } x \in S` — set-builder notation, rewritten to
     // the Comprehension head at parse (its ForAll IR is identical to
     // `\forall`'s); a relational bound becomes a real domain.

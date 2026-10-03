@@ -2321,6 +2321,22 @@ class Emitter {
             return [`${this.sp}True`, PREC_ATOM];
           }
           if (isStr(dom)) return [this.emit(pred), PREC_ATOM];
+          // Finite-set domains fold to the evaluated Boolean —
+          // `∀x∈{1,2}, p` is `And(p[x↦1], p[x↦2])`, `∃` is the Or —
+          // since a symbolic Implies(x∈{1,2} ⇒ p) never evaluates.
+          if (isArr(dom) && dom[0] === 'Element') {
+            const [v, set] = [dom[1], dom[2]];
+            if (isStr(v) && isArr(set) && set[0] === 'Set' && set.length > 1) {
+              const p = this.emit(pred);
+              const fold = set
+                .slice(1)
+                .map((e) => `(${p}).subs(${this.sym(v)}, ${this.emit(e)})`);
+              return [
+                `${this.sp}${name === 'ForAll' ? 'And' : 'Or'}(${fold.join(', ')})`,
+                PREC_ATOM,
+              ];
+            }
+          }
           const comb = name === 'ForAll' ? 'Implies' : 'And';
           return [
             `${this.sp}${comb}(${this.emit(dom)}, ${this.emit(pred)})`,
