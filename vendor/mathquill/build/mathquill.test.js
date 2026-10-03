@@ -13189,8 +13189,12 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             this.blocks.splice(this.cells.indexOf(cell) + 1, 0, newCell);
             rightFrag.disown();
             rightFrag.adopt(newCell, 0, 0);
-            // DOM: append a new <tr> after this cell's row.
+            // DOM: append a new <tr> after this cell's row and move the
+            // split-off content's elements into its <td> (adopt() only relinks
+            // the tree; the spans would stay behind in the old row).
             var td = this.renderCell(newCell);
+            if (rightFrag.ends[L])
+                rightFrag.domFrag().appendTo(td);
             var tr = cell.domFrag().oneElement().closest('tr');
             tr === null || tr === void 0 ? void 0 : tr.after(h('tr', {}, [td]));
             this.relink();

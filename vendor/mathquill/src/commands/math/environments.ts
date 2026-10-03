@@ -426,8 +426,11 @@ class CellGrid extends MathCommand {
     rightFrag.disown();
     rightFrag.adopt(newCell, 0, 0);
 
-    // DOM: append a new <tr> after this cell's row.
+    // DOM: append a new <tr> after this cell's row and move the
+    // split-off content's elements into its <td> (adopt() only relinks
+    // the tree; the spans would stay behind in the old row).
     const td = this.renderCell(newCell);
+    if (rightFrag.ends[L]) rightFrag.domFrag().appendTo(td);
     const tr = cell.domFrag().oneElement().closest('tr');
     tr?.after(h('tr', {}, [td]));
 
