@@ -704,10 +704,14 @@ body {
     transform: rotate(360deg);
   }
 }
-/* "Show code" block: the SymPy python() source under each result. */
+/* "Show code" block: the SymPy python() source under each result.
+   Left padding doubles as a gutter for the helper fold caret, so the
+   caret sits outside the text column and `def`/`import` lines stay
+   aligned. */
 .calc-code {
+  position: relative;
   margin: 2px 0 4px;
-  padding: 5px 8px;
+  padding: 5px 8px 5px 26px;
   font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
   font-size: 12px;
   line-height: 1.45;
@@ -719,26 +723,53 @@ body {
   border-radius: 4px;
 }
 
-.calc-code .tok-kw {
+.calc-code .tok-kw,
+.cell-python .tok-kw {
   color: #a626a4;
 }
-.calc-code .tok-str {
+.calc-code .tok-str,
+.cell-python .tok-str {
   color: #50a14f;
 }
-.calc-code .tok-comment {
+.calc-code .tok-comment,
+.cell-python .tok-comment {
   color: var(--faint);
 }
-.calc-code .tok-num {
+.calc-code .tok-num,
+.cell-python .tok-num {
   color: #986801;
 }
-.calc-code .tok-call {
+.calc-code .tok-call,
+.cell-python .tok-call {
   color: #4078f2;
 }
 
-/* Caret folding the clean_and_simplify helper body in row-0 code — it
-   sits left of the `def` line, larger than the code text. */
+/* Per-row copy of the shown code — pinned to the block's top-right
+   corner so it never reflows the source. */
+.calc-code .code-copy {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  z-index: 2;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  font-family: inherit;
+  color: var(--accent-text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Caret folding the clean_and_simplify helper body in row-0 code —
+   its negative left margin parks it in the gutter so the `def` line
+   aligns with the rest of the source; user-select: none keeps text
+   selections from picking up the caret itself. */
 .calc-code .code-fold {
+  width: 14px;
   margin-right: 4px;
+  margin-left: -18px;
   padding: 0;
   border: 0;
   background: none;
@@ -748,6 +779,13 @@ body {
   vertical-align: -1px;
   color: var(--faint);
   cursor: pointer;
+  user-select: none;
+}
+
+/* The helper's signature line stays visible when folded — dimmed so it
+   reads as plumbing, not part of the calculation. */
+.calc-code .code-helper {
+  opacity: 0.55;
 }
 
 .calc-code .code-fold:hover,
@@ -793,16 +831,20 @@ body {
   white-space: normal;
 }
 
-:root[data-theme='dark'] .calc-code .tok-kw {
+:root[data-theme='dark'] .calc-code .tok-kw,
+:root[data-theme='dark'] .cell-python .tok-kw {
   color: #c678dd;
 }
-:root[data-theme='dark'] .calc-code .tok-str {
+:root[data-theme='dark'] .calc-code .tok-str,
+:root[data-theme='dark'] .cell-python .tok-str {
   color: #98c379;
 }
-:root[data-theme='dark'] .calc-code .tok-num {
+:root[data-theme='dark'] .calc-code .tok-num,
+:root[data-theme='dark'] .cell-python .tok-num {
   color: #d19a66;
 }
-:root[data-theme='dark'] .calc-code .tok-call {
+:root[data-theme='dark'] .calc-code .tok-call,
+:root[data-theme='dark'] .cell-python .tok-call {
   color: #61afef;
 }
 

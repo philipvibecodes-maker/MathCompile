@@ -9,26 +9,20 @@
   import CommandPalette from './components/CommandPalette.svelte';
   import HowToGuide from './components/HowToGuide.svelte';
   import { appStore, THEME_STORAGE_KEY } from './state/store.svelte';
-  import { loadPrefs, savePrefs } from './state/persistence';
+  import { savePrefs } from './state/persistence';
   import { copyableLatex, displayLatex } from './compile/latex';
   import { calcEngine, prewarm } from './calc/calculator.svelte.ts';
   import { buildCommands } from './commands';
   import { installGlobalKeymap } from './editor/keymap';
   import { compileWorksheet } from './compile/codegen';
+  import { highlightPython } from './calc/python-highlight';
 
   const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent);
   let commands = $derived(buildCommands(appStore));
 
-  // Animation knobs (persisted prefs): fadeMs drives code-line
-  // mount/unmount fades (also exported as --fade-ms for CSS mount
-  // animations). debounceMs delays the issue overlay until the user
-  // stops typing (cursor moves don't reset it); fadeInMs/fadeOutMs are
-  // the overlay's transition times.
-  const animPrefs = loadPrefs();
-  let fadeMs = $state(animPrefs.fadeMs ?? 150);
-  let debounceMs = $state(animPrefs.debounceMs ?? 600);
-  let fadeInMs = $state(animPrefs.fadeInMs ?? 150);
-  let fadeOutMs = $state(animPrefs.fadeOutMs ?? 150);
+  // Animation knobs live on the store (persisted prefs) so the settings
+  // menu applies to every output target; fadeMs is also exported as
+  // --fade-ms for CSS mount animations.
   let settingsOpen = $state(false);
 
   // Output column width (% of the row's flex width) — shared by every
@@ -91,7 +85,7 @@
         const id = c.id;
         issueTimers[id] = setTimeout(
           () => (issuesVisible[id] = true),
-          debounceMs,
+          appStore.debounceMs,
         );
       } else if (!hasIssues) {
         issuesVisible[c.id] = false;
@@ -187,15 +181,15 @@
       guideOpen: appStore.guideOpen,
       showCode: appStore.showCode,
       importAll: appStore.importAll,
-      fadeMs,
-      debounceMs,
-      fadeInMs,
-      fadeOutMs,
+      fadeMs: appStore.fadeMs,
+      debounceMs: appStore.debounceMs,
+      fadeInMs: appStore.fadeInMs,
+      fadeOutMs: appStore.fadeOutMs,
     }),
   );
 </script>
 
-<div class="app" style:--fade-ms="{fadeMs}ms">
+<div class="app" style:--fade-ms="{appStore.fadeMs}ms">
   <header class="app-header">
     <span class="logo">Math<em>Compile</em></span>
     <span class="tagline">Write math, get latex + code.</span>
@@ -392,6 +386,8 @@
               onclick={copyScript}
               >{copiedScript ? 'Copied' : 'Copy script'}</button
             >
+          {/if}
+          {#if appStore.target === 'python' || appStore.target === 'calculator'}
             <button
               class="settings-btn"
               title="Settings"
@@ -416,9 +412,9 @@
                       min="0"
                       max="800"
                       step="50"
-                      bind:value={fadeMs}
+                      bind:value={appStore.fadeMs}
                     />
-                    <span class="fade-ms">{fadeMs}ms</span>
+                    <span class="fade-ms">{appStore.fadeMs}ms</span>
                   </label>
                   <label class="fade-slider" title="Debounce before issues appear after typing stops">
                     debounce
@@ -427,9 +423,9 @@
                       min="0"
                       max="2000"
                       step="100"
-                      bind:value={debounceMs}
+                      bind:value={appStore.debounceMs}
                     />
-                    <span class="fade-ms">{debounceMs}ms</span>
+                    <span class="fade-ms">{appStore.debounceMs}ms</span>
                   </label>
                   <label class="fade-slider" title="Issue overlay fade in">
                     in
@@ -438,9 +434,9 @@
                       min="0"
                       max="800"
                       step="50"
-                      bind:value={fadeInMs}
+                      bind:value={appStore.fadeInMs}
                     />
-                    <span class="fade-ms">{fadeInMs}ms</span>
+                    <span class="fade-ms">{appStore.fadeInMs}ms</span>
                   </label>
                   <label class="fade-slider" title="Issue overlay fade out">
                     out
@@ -449,9 +445,9 @@
                       min="0"
                       max="800"
                       step="50"
-                      bind:value={fadeOutMs}
+                      bind:value={appStore.fadeOutMs}
                     />
-                    <span class="fade-ms">{fadeOutMs}ms</span>
+                    <span class="fade-ms">{appStore.fadeOutMs}ms</span>
                   </label>
                 </div>
               </div>
@@ -494,9 +490,16 @@
               <div class="cell-output cell-code">
                 <div class="cell-code-body">
                   <code class="cell-python"
-                    >{compiled?.importLine}{#each shownLines(cell, i).slice(1) as line, k (k)}<span
+                    >{#each highlightPython(compiled?.importLine ?? '') as tok, j (j)}<span
+                        class={tok.cls ? `tok-${tok.cls}` : undefined}
+                        >{tok.text}</span
+                      >{/each}{#each shownLines(cell, i).slice(1) as line, k (k)}<span
                         class="cell-line"
-                        transition:fade={{ duration: fadeMs }}>{'\n'}{line}</span
+                        transition:fade={{ duration: appStore.fadeMs }}
+                        >{'\n'}{#each highlightPython(line) as tok, j (j)}<span
+                            class={tok.cls ? `tok-${tok.cls}` : undefined}
+                            >{tok.text}</span
+                          >{/each}</span
                       >{/each}</code
                   >
                   <button
@@ -510,8 +513,8 @@
                 {#if (shownIssues(i).length > 0 || hasParseError(i)) && issuesVisible[cell.id]}
                   <ul
                     class="cell-issues"
-                    in:fade={{ duration: fadeInMs }}
-                    out:fade={{ duration: fadeOutMs }}
+                    in:fade={{ duration: appStore.fadeInMs }}
+                    out:fade={{ duration: appStore.fadeOutMs }}
                   >
                     {#each shownIssues(i) as iss, j (j)}
                       <li class="issue-{iss.severity}">

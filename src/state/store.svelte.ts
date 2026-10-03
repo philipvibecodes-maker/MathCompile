@@ -64,6 +64,15 @@ export class AppStore {
   // Python output mode: `from sympy import *` (default, bare names) vs
   // `import sympy as sp` (sp.-qualified).
   importAll = $state(loadPrefs().importAll ?? true);
+  // Animation knobs (persisted prefs). fadeMs drives code-line fades
+  // (also exported as --fade-ms for CSS mount animations); debounceMs
+  // delays issue overlays until typing pauses; fadeInMs/fadeOutMs are
+  // the overlays' transition times. Shared so the settings menu drives
+  // every target live.
+  fadeMs = $state(loadPrefs().fadeMs ?? 150);
+  debounceMs = $state(loadPrefs().debounceMs ?? 600);
+  fadeInMs = $state(loadPrefs().fadeInMs ?? 150);
+  fadeOutMs = $state(loadPrefs().fadeOutMs ?? 150);
   paletteOpen = $state(false);
   darkMode = $state(initDarkMode());
 
