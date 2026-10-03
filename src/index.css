@@ -404,6 +404,16 @@ body {
   white-space: nowrap;
 }
 
+/* Caret-context hint under the focused field: names the non-obvious
+   keystroke for wherever the caret is sitting (inside a bound, a grid,
+   an open \… command). */
+.cell-input .field-hint {
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--muted);
+  padding: 2px 4px 0;
+}
+
 /* Calculator-style LaTeX output beside each cell (target = latex). */
 /* Draggable divider between the input column and the output column.
    Occupies the 6px gap the .cell-output margin used to give; its width
