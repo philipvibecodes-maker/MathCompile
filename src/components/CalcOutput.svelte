@@ -28,6 +28,16 @@
   let showPlumbing = $state(false);
   // Folded body of the clean_and_simplify helper block in row-0 code.
   let showHelpers = $state(false);
+  // Row whose generating code was last copied (for the Copied flash).
+  let copiedRow = $state<number | null>(null);
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+  function copyGeneratingCode(code: string, i: number) {
+    // A denied copy rejects the promise — swallow it.
+    navigator.clipboard.writeText(code).catch(() => {});
+    copiedRow = i;
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (copiedRow = null), 1200);
+  }
   const hasPlumbing = $derived(
     appStore.showCode &&
       rows.some((r) => r.ok && r.displayCode && r.displayCode !== r.code),
@@ -163,7 +173,15 @@
                 showPlumbing && row.displayCode ? row.displayCode : row.code}
               {@const split = splitHelperBlock(shown)}
               {#if split}
-                <pre class="calc-code"><code
+                <pre class="calc-code has-fold"><button
+                    type="button"
+                    class="code-copy"
+                    title="Copy the code that generates this answer"
+                    onclick={() => copyGeneratingCode(shown, i)}
+                    >{copiedRow === i
+                      ? 'Copied'
+                      : 'Copy generating code'}</button
+                  ><code
                     >{#each highlightPython(split.head) as tok, j (j)}<span
                         class={tok.cls ? `tok-${tok.cls}` : undefined}
                         >{tok.text}</span
@@ -174,10 +192,13 @@
                       aria-expanded={showHelpers}
                       onclick={() => (showHelpers = !showHelpers)}
                       >{showHelpers ? '▾' : '▸'}</button
-                    >{#each highlightPython(split.sig) as tok, j (j)}<span
-                        class={tok.cls ? `tok-${tok.cls}` : undefined}
-                        >{tok.text}</span
-                      >{/each}{#if !showHelpers}<span
+                    ><span class="code-helper">{#each highlightPython(
+                        split.sig,
+                      ) as tok, j (j)}<span
+                          class={tok.cls ? `tok-${tok.cls}` : undefined}
+                          >{tok.text}</span
+                        >{/each}</span
+                    >{#if !showHelpers}<span
                         class="code-elide"> ⋯</span>{/if}{'\n'}{#if showHelpers}{#each highlightPython(
                           split.body + '\n',
                         ) as tok, j (j)}<span
@@ -191,7 +212,15 @@
                       >{/each}</code
                   ></pre>
               {:else}
-                <pre class="calc-code"><code
+                <pre class="calc-code"><button
+                    type="button"
+                    class="code-copy"
+                    title="Copy the code that generates this answer"
+                    onclick={() => copyGeneratingCode(shown, i)}
+                    >{copiedRow === i
+                      ? 'Copied'
+                      : 'Copy generating code'}</button
+                  ><code
                     >{#each highlightPython(shown) as tok, j (j)}<span
                         class={tok.cls ? `tok-${tok.cls}` : undefined}
                         >{tok.text}</span

@@ -1,7 +1,6 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
   import { cellIssues } from '../calc/calculator.svelte.ts';
-  import { loadPrefs } from '../state/persistence';
   import { appStore, type Cell } from '../state/store.svelte';
 
   // This cell's issue messages in the input column: once typing has
@@ -12,10 +11,8 @@
   // CalcOutput publishes the issues into cellIssues as evals land.
   let { cell }: { cell: Cell } = $props();
 
-  const animPrefs = loadPrefs();
-  const debounceMs = animPrefs.debounceMs ?? 600;
-  const fadeInMs = animPrefs.fadeInMs ?? 150;
-  const fadeOutMs = animPrefs.fadeOutMs ?? 150;
+  // Animation knobs live on the store so the settings sliders apply
+  // without a remount.
   const issues = $derived(cellIssues[cell.id] ?? []);
   let issuesVisible = $state(false);
   let issueTimer: ReturnType<typeof setTimeout> | undefined;
@@ -33,7 +30,7 @@
     clearTimeout(issueTimer);
     issueTimer = setTimeout(() => {
       issuesVisible = cell.latex === armed;
-    }, debounceMs);
+    }, appStore.debounceMs);
   });
 
   // Per-line anchors in field coordinates, re-measured whenever the
@@ -88,8 +85,8 @@
       <ul
         class="calc-issues calc-issues-inline"
         bind:this={overlayEl}
-        in:fade={{ duration: fadeInMs }}
-        out:fade={{ duration: fadeOutMs }}
+        in:fade={{ duration: appStore.fadeInMs }}
+        out:fade={{ duration: appStore.fadeOutMs }}
       >
         {#each chips as chip (chip.row)}
           {@const a = chip.a}
@@ -115,8 +112,8 @@
     {:else}
       <ul
         class="calc-issues"
-        in:fade={{ duration: fadeInMs }}
-        out:fade={{ duration: fadeOutMs }}
+        in:fade={{ duration: appStore.fadeInMs }}
+        out:fade={{ duration: appStore.fadeOutMs }}
       >
         {#each issues as iss, j (j)}
           <li class="issue-{iss.severity}">
