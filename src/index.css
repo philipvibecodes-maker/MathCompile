@@ -173,9 +173,12 @@ body {
   color: var(--accent-text);
 }
 
-/* Click-anywhere focus: the whole input column is a focus target. */
+/* Click-anywhere focus: the whole input column is a focus target —
+   the padding insets the field into a clickable gutter on all sides. */
 .cell-input {
   cursor: text;
+  padding: 6px;
+  border-radius: 6px;
 }
 
 .expr-row:hover math-field:not(:focus-within) {

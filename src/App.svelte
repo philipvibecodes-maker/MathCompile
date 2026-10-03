@@ -465,13 +465,17 @@
           <li class="expr-row">
             <span
               class="expr-index"
-              onpointerdown={() => appStore.focusCell(cell.id)}
+              onpointerdown={(e) => {
+                e.preventDefault();
+                appStore.focusCell(cell.id);
+              }}
               >{i + 1}</span
             >
             <div
               class="cell-input"
               onpointerdown={(e) => {
                 if (!(e.target as HTMLElement).closest('math-field')) {
+                  e.preventDefault();
                   appStore.focusCell(cell.id);
                 }
               }}
