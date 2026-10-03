@@ -223,6 +223,28 @@ body {
   box-shadow: 0 0 0 1px var(--accent);
 }
 
+/* Empty-field hint: ghost text standing in for MQ's empty-box glyph,
+   which is painted transparent while the hint shows. */
+.expr-row math-field.empty {
+  position: relative;
+}
+
+.expr-row math-field.empty .mq-root-block.mq-empty {
+  color: transparent;
+  border-color: transparent;
+  background: transparent;
+}
+
+.expr-row math-field.empty::after {
+  content: 'Type math — \\ for commands, Shift+Enter for a new cell';
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  font-size: 15px;
+  color: var(--faint);
+  pointer-events: none;
+}
+
 /* Calculator-style LaTeX output beside each cell (target = latex). */
 /* Draggable divider between the input column and the output column.
    Occupies the 6px gap the .cell-output margin used to give; its width

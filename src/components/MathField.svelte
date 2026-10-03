@@ -46,4 +46,4 @@
   $effect(() => handle?.setSmartMode(appStore.smartMode));
 </script>
 
-<math-field bind:this={mf}></math-field>
+<math-field bind:this={mf} class:empty={cell.latex.trim() === ''}></math-field>
