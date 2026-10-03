@@ -728,11 +728,8 @@ function normalizeStatementEqual(
 
 export function normalizeIR(json: MathJson | undefined): NormResult {
   const issues: Issue[] = [];
-  // Identical repeated messages render as identical overlay rows — one
-  // report covers every occurrence in the cell.
   const pushIssue = (severity: Issue['severity'], message: string) => {
-    if (!issues.some((i) => i.severity === severity && i.message === message))
-      issues.push(issue(severity, message));
+    issues.push(issue(severity, message));
   };
   if (json === undefined) return { ok: true, ir: undefined, issues };
   // Tracks whether the current Block is the outermost (\displaylines)

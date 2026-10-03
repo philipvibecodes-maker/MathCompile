@@ -1280,42 +1280,6 @@ describe('worksheet matrix tracking', () => {
   });
 });
 
-describe('issue deduplication', () => {
-  it('identical normalize errors collapse to one issue', () => {
-    const out = compileWorksheet(
-      [
-        {
-          json: parseCellLatex(
-            '\\displaylines{ \\perm(5,2) \\\\ \\perm(7,3) \\\\ \\perm(9,1) }',
-          ),
-        },
-      ],
-      'python',
-    );
-    const perms = out.cellIssues[0].filter(
-      (i) => i.message === 'incomplete or unsupported command "\\perm"',
-    );
-    expect(perms).toHaveLength(1);
-  });
-
-  it('identical codegen flags collapse to one issue', () => {
-    const out = compileWorksheet(
-      [
-        {
-          json: parseCellLatex(
-            '\\displaylines{ \\mathrm{trace}(x) \\\\ \\mathrm{trace}(y) }',
-          ),
-        },
-      ],
-      'python',
-    );
-    const traceNotes = out.cellIssues[0].filter(
-      (i) => i.message === 'trace needs a matrix — the argument isn\'t one',
-    );
-    expect(traceNotes).toHaveLength(1);
-  });
-});
-
 describe('latexToStatementStrings', () => {
   it('splits \\displaylines rows at depth 0', () => {
     expect(latexToStatementStrings('\\displaylines{ a = 1 \\\\ b = a + 2 }')).toEqual([

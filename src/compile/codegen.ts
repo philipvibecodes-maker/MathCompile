@@ -3062,23 +3062,12 @@ function buildScope(
     matrixDims: new Map(),
     flag(severity, message) {
       if (severity === 'error') this.errorCount += 1;
-      // A repeated identical note/error in one cell renders as identical
-      // overlay rows — one report covers every occurrence.
-      if (this.cell > 0) {
-        const bucket = this.cellIssues[this.cell - 1];
-        if (
-          bucket.some((i) => i.severity === severity && i.message === message)
-        )
-          return;
-        bucket.push({ severity, message });
-      } else if (
-        this.issues.some((i) => i.severity === severity && i.message === message)
-      )
-        return;
       this.issues.push({
         severity,
         message: this.cell > 0 ? `cell ${this.cell}: ${message}` : message,
       });
+      if (this.cell > 0)
+        this.cellIssues[this.cell - 1].push({ severity, message });
     },
   };
 }
