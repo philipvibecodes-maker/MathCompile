@@ -71,7 +71,7 @@ export function attachSymbolPicker(field: MathFieldElement) {
     items = [...starts, ...inside];
     sel = Math.min(sel, Math.max(0, items.length - 1));
     grid.replaceChildren(...items.map(card));
-    items[sel] && grid.children[sel]?.scrollIntoView({ block: 'nearest' });
+    if (items[sel]) grid.children[sel]?.scrollIntoView({ block: 'nearest' });
   };
 
   const open = () => {
