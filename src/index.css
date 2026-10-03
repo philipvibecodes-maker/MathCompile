@@ -155,7 +155,7 @@ body {
 .expr-row {
   display: flex;
   align-items: stretch;
-  margin-bottom: 6px;
+  margin-bottom: 10px;
 }
 
 .expr-index {
@@ -185,12 +185,14 @@ body {
   flex: 1;
   min-width: 0;
   display: block;
-  font-size: 18px;
+  font-size: 20px;
   background: var(--panel-bg);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 8px;
   outline: none;
-  transition: border-color 0.12s ease;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
 /* The host is a plain custom element; MathQuill renders a
@@ -207,7 +209,7 @@ body {
 
 .expr-row math-field .mq-editable-field {
   min-height: 100%;
-  padding: 10px 12px;
+  padding: 14px 16px;
   cursor: text;
   /* The host draws the box. MQ's own border shows as a stray line in the
      stretch margin when a tall output cell stretches this row. */
@@ -220,7 +222,7 @@ body {
 
 .expr-row:focus-within math-field {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 /* Calculator-style LaTeX output beside each cell (target = latex). */
@@ -261,7 +263,7 @@ body {
   min-width: 0;
   background: var(--panel-bg);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 8px;
 }
 
 .cell-latex {
