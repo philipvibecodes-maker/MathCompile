@@ -135,7 +135,7 @@ LatexCmds['⊋'] =
     );
 
 //the canonical sets of numbers
-// Unicode codepoints for double-struck capitals without a dedicated
+// MATHCOMPILE: Unicode codepoints for double-struck capitals without a dedicated
 // LatexCmds class (the letterlike-symbol letters C/H/N/P/Q/R/Z have
 // their own classes below). Digits use the 𝟘-𝟡 block.
 var MATHBB_GLYPHS: { [ch: string]: number } = {
@@ -197,6 +197,7 @@ LatexCmds.mathbb = class extends MathCommand {
 };
 
 // \Bbb{R} and \mathds{F} are old/amsmath spellings of \mathbb
+// MATHCOMPILE: \Bbb/\mathds spellings of \mathbb
 LatexCmds.Bbb = LatexCmds.mathds = LatexCmds.mathbb;
 
 LatexCmds['ℕ'] =
@@ -260,7 +261,7 @@ LatexCmds.quad = LatexCmds.emsp = bindVanillaSymbol(
 LatexCmds.qquad = bindVanillaSymbol('\\qquad ', '        ', '8 spaces');
 
 
-// style switches (\displaystyle … \nolimits) — invisible atoms that
+// MATHCOMPILE: style switches (\displaystyle … \nolimits) — invisible atoms that
 // serialize their command verbatim. \limits/\nolimits sit between an
 // operator and its bounds; the bound then attaches to this zero-width
 // atom, so `\sum\limits_{i}` renders like `\sum_{i}` and round-trips.
@@ -465,6 +466,7 @@ LatexCmds['≯'] = LatexCmds.ngtr = bindVanillaSymbol(
   '&#8815;',
   'not greater than'
 );
+// MATHCOMPILE: extra relation glyphs real LaTeX emits
 LatexCmds['≰'] = LatexCmds.nleq = LatexCmds.nle = bindVanillaSymbol(
   '\\nleq ',
   '&#8816;',
@@ -732,6 +734,7 @@ LatexCmds['∘'] =
     bindVanillaSymbol('\\circ ', '&#8728;', 'circle');
 
 // \ring/\mathring are LaTeX ring accents (˚ above), not the ∘ operator
+// MATHCOMPILE: \ring/\mathring ring accents
 LatexCmds.ring = () =>
   new DiacriticAbove('\\ring', h.text('˚'), ['ring(', ')']);
 LatexCmds.mathring = () =>
@@ -747,7 +750,7 @@ LatexCmds['∖'] =
   LatexCmds.smallsetminus =
     bindVanillaSymbol('\\setminus ', '&#8726;', 'set minus');
 
-LatexCmds.lnot = // plain negation
+LatexCmds.lnot = // MATHCOMPILE: \lnot spelling of \neg; plain negation
   LatexCmds['¬'] =
   LatexCmds.neg =
     bindVanillaSymbol('\\neg ', '&not;', 'not');
@@ -755,6 +758,7 @@ LatexCmds.lnot = // plain negation
 // `\not` + a relation produces the negated relation glyph:
 // `\not\in` → ∉, `\not=` → ≠, `\not\subset` → ⊄. Relations without a
 // known negation keep a standalone \not (∕) so the text round-trips.
+// MATHCOMPILE: \not<rel> negated-relation mapping
 const NOT_RELATIONS: { [rel: string]: string } = {
   '=': 'ne',
   '<': 'nless',
@@ -812,7 +816,7 @@ LatexCmds.not = class extends MathCommand {
   }
 };
 
-// negated relations needed by the \not mapping (and parsed on their own)
+// MATHCOMPILE: negated relations needed by the \not mapping (and parsed on their own)
 LatexCmds['≉'] = LatexCmds.napprox = bindBinaryOperator(
   '\\not\\approx ',
   '&#8777;',
@@ -1011,7 +1015,7 @@ LatexCmds['∩'] =
   LatexCmds.intersection =
     bindBinaryOperator('\\cap ', '&cap;', 'intersection');
 
-// ===== Round-trip coverage: more commands real LaTeX emits =====
+// MATHCOMPILE: ===== Round-trip coverage: more commands real LaTeX emits =====
 // Each entry below previously failed parse and blanked the field.
 
 // Named spacing commands (the \, \: \; \! single-char forms are in

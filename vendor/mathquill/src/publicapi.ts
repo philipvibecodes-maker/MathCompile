@@ -480,7 +480,7 @@ function getInterface(v: number): MathQuill.v3.API | MathQuill.v1.API {
         this.__controller.typedText(text.charAt(i));
       return this;
     }
-    // Vendored patch: Enter semantics — matrix row inside a matrix,
+    // MATHCOMPILE: Enter semantics — matrix row inside a matrix,
     // \displaylines row split otherwise (src/commands/math/environments.ts).
     insertLineBreak() {
       var ctrlr = this.__controller;

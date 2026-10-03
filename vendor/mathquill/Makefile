@@ -55,6 +55,7 @@ SOURCES_FULL = \
   $(SRC_DIR)/commands/math/basicSymbols.ts \
   $(SRC_DIR)/commands/math/commands.ts \
   $(SRC_DIR)/commands/math/LatexCommandInput.ts \
+  $(SRC_DIR)/commands/math/extraCommands.ts \
   $(SRC_DIR)/commands/math/environments.ts
 
 
@@ -62,7 +63,8 @@ SOURCES_BASIC = \
   $(BASE_SOURCES) \
   $(SRC_DIR)/commands/math.ts \
   $(SRC_DIR)/commands/math/basicSymbols.ts \
-  $(SRC_DIR)/commands/math/commands.ts
+  $(SRC_DIR)/commands/math/commands.ts \
+  $(SRC_DIR)/commands/math/extraCommands.ts
 
 CSS_DIR = $(SRC_DIR)/css
 CSS_MAIN = $(CSS_DIR)/main.less

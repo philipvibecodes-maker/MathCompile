@@ -333,7 +333,7 @@ Options.prototype.autoCommands = {
   _maxLength: 0
 };
 baseOptionProcessors.autoCommands = function (cmds: string | undefined) {
-  // '' disables autoCommands entirely (the stock processor had no way to
+  // MATHCOMPILE: '' disables autoCommands entirely (the stock processor had no way to
   // turn the list back off once set — needed for the smartMode toggle).
   if (cmds === '') {
     return { _maxLength: 0 };
@@ -577,7 +577,7 @@ class Letter extends Variable {
       first && i < str.length;
       i += 1, first = (first as MQNode)[R]
     ) {
-      // A letter run inside \operatorname{...}/\mathrm{...} (its first
+      // MATHCOMPILE: A letter run inside \operatorname{...}/\mathrm{...} (its first
       // letter's ctrlSeq carries the `\name{` prefix and its last carries
       // `}`) is already an explicit operator name — keep it whole and
       // upright. Scanning it for built-in names split e.g.
@@ -731,7 +731,7 @@ function defaultAutoOpNames() {
 
   // compat with some of the nonstandard LaTeX exported by MathQuill
   // before #247. None of these are real LaTeX commands so, seems safe.
-  // 'sign' (not built into LaTeX) exports as \operatorname{sign}, which
+  // MATHCOMPILE: 'sign' (not built into LaTeX) exports as \operatorname{sign}, which
   // MathCompile's compile pipeline lowers to SymPy's sign().
   var moreNonstandardOps = 'gcf hcf lcm proj span sign'.split(' ');
   for (var i = 0; i < moreNonstandardOps.length; i += 1) {
@@ -844,7 +844,7 @@ LatexCmds.operatorname = class extends MathCommand {
     return 1 as const;
   }
   parser() {
-    // \operatorname* is the limits-form operator — consume the star so
+    // MATHCOMPILE: \operatorname* is the limits-form operator — consume the star so
     // it doesn't surface as a stray literal '*' (previously
     // \operatorname*{argmin} -> *\arg\min)
     return Parser.optWhitespace
@@ -897,7 +897,7 @@ LatexCmds.f = class extends Letter {
 LatexCmds[' '] = LatexCmds.space = () =>
   new DigitGroupingChar('\\ ', h('span', {}, [h.text(U_NO_BREAK_SPACE)]), ' ');
 
-// \<char> escapes — spacing (\, \: \; \!), braces (\{ \}) and the norm
+// MATHCOMPILE: \<char> escapes — spacing (\, \: \; \!), braces (\{ \}) and the norm
 // shorthand (\|). These are keyed with a backslash prefix so they only
 // resolve through the '\'-prefixed parse branch (see latex.ts): bare
 // ',', ';', '{', ... keep their literal meaning and '}' still closes
@@ -973,7 +973,7 @@ LatexCmds['@'] = () => new NonSymbolaSymbol('@');
 LatexCmds['&'] = () =>
   new NonSymbolaSymbol('\\&', h.entityText('&amp;'), 'and');
 
-// escaped delimiters/specials — the parser passes the backslash
+// MATHCOMPILE: escaped delimiters/specials — the parser passes the backslash
 // through in ctrlSeq ('\_'), so the bare characters are untouched
 LatexCmds['\\_'] = () =>
   new NonSymbolaSymbol('\\_', h.text('_'), 'underscore');
