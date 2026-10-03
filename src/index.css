@@ -185,6 +185,8 @@ body {
   flex: 1;
   min-width: 0;
   display: block;
+  /* Offset parent for the autocomplete ghost. */
+  position: relative;
   font-size: 18px;
   background: var(--panel-bg);
   border: 1px solid var(--border);
@@ -221,6 +223,36 @@ body {
 .expr-row:focus-within math-field {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* Ghost-text autocomplete overlay, anchored at the caret. */
+.mc-ghost {
+  position: absolute;
+  z-index: 30;
+  pointer-events: none;
+  white-space: nowrap;
+  color: var(--faint);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.mc-ghost-suffix {
+  font-family: ui-monospace, monospace;
+}
+
+.mc-ghost-kbd {
+  font-family: inherit;
+  font-size: 0.6em;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 3px;
+  background: var(--bg);
+  transform: translateY(-2px);
+}
+
+.mc-ghost-prev {
+  font-size: 0.85em;
 }
 
 /* Calculator-style LaTeX output beside each cell (target = latex). */
