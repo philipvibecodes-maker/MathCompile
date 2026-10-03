@@ -13175,13 +13175,17 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             var rightFrag = rightStart
                 ? new Fragment(rightStart, rightEnd)
                 : new Fragment(0, 0);
-            var newCell = new MatrixCell(cell.row + 1, this);
+            // Bump the rows below before the new cell exists: `new MatrixCell`
+            // self-adopts into the child chain, so a bump after construction
+            // would visit it too (a mid-row split then merges the tail into the
+            // next row as 'x&y').
             this.eachChild(function (child) {
                 var c = child;
                 if (c.row > cell.row)
                     c.row += 1;
                 return undefined;
             });
+            var newCell = new MatrixCell(cell.row + 1, this);
             this.blocks.splice(this.cells.indexOf(cell) + 1, 0, newCell);
             rightFrag.disown();
             rightFrag.adopt(newCell, 0, 0);
@@ -16825,6 +16829,12 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 mq.moveToRightEnd().keystroke('Left'); // between + and 1
                 mq.insertLineBreak();
                 assert.equal(mq.latex(), '\\displaylines{x\\\\ +\\\\ 1}');
+            });
+            test('inside a non-last displaylines row splits without merging rows', function () {
+                mq.latex('\\displaylines{abc\\\\ de\\\\ fg}');
+                mq.moveToLeftEnd().keystroke('Right').keystroke('Right'); // after 'b' in row 0
+                mq.insertLineBreak();
+                assert.equal(mq.latex(), '\\displaylines{ab\\\\ c\\\\ de\\\\ fg}');
             });
             test('inside a matrix cell adds a row below', function () {
                 mq.latex('\\begin{matrix}a&b\\\\c&d\\end{matrix}');

@@ -411,12 +411,16 @@ class CellGrid extends MathCommand {
       ? new Fragment(rightStart, rightEnd)
       : new Fragment(0, 0);
 
-    var newCell = new MatrixCell(cell.row + 1, this);
+    // Bump the rows below before the new cell exists: `new MatrixCell`
+    // self-adopts into the child chain, so a bump after construction
+    // would visit it too (a mid-row split then merges the tail into the
+    // next row as 'x&y').
     this.eachChild(function (child) {
       const c = child as MatrixCell;
       if (c.row > cell.row) c.row += 1;
       return undefined;
     });
+    var newCell = new MatrixCell(cell.row + 1, this);
     this.blocks.splice(this.cells.indexOf(cell) + 1, 0, newCell);
 
     rightFrag.disown();

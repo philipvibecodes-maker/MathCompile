@@ -77,6 +77,13 @@ suite('environments', function () {
       assert.equal(mq.latex(), '\\displaylines{x\\\\ +\\\\ 1}');
     });
 
+    test('inside a non-last displaylines row splits without merging rows', function () {
+      mq.latex('\\displaylines{abc\\\\ de\\\\ fg}');
+      mq.moveToLeftEnd().keystroke('Right').keystroke('Right'); // after 'b' in row 0
+      mq.insertLineBreak();
+      assert.equal(mq.latex(), '\\displaylines{ab\\\\ c\\\\ de\\\\ fg}');
+    });
+
     test('inside a matrix cell adds a row below', function () {
       mq.latex('\\begin{matrix}a&b\\\\c&d\\end{matrix}');
       mq.moveToRightEnd().keystroke('Left'); // into cell d
