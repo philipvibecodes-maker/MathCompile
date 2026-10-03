@@ -610,7 +610,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // only a concrete matrix operand can exec; a bare `A^{+}` flags).
     const pinv = calc('A^{+}');
     expect(pinv.statements[0].error).toContain(
-      'pseudoinverse needs a concrete matrix',
+      "sympy doesn't support pinv for abstract matrices",
     );
   });
 

@@ -1174,13 +1174,25 @@ const FIXTURES: {
     ],
   },
   {
-    // `x \in S^{+}` reads S⁺ as the positive part of {S} — not the
-    // pseudoinverse (which needs a concrete matrix; `Matrix.pinv()` is
-    // a method, `sp.pinv` doesn't exist).
+    // `x \in S^{+}` — the S ∩ (0,∞) reading only holds when S is ℝ or
+    // ℤ; on any other operand `^{+}` is the pseudoinverse, which sympy
+    // can't take on an abstract matrix (no sp.pinv, MatrixSymbol has
+    // no pinv) — flag and drop.
     latex: 'x \\in \\mathbb{S}^{+}',
     expectedPython: [
-      "x, S_doublestruck = sp.symbols('x S_doublestruck')",
-      'sp.Contains(x, sp.Intersection(sp.FiniteSet(S_doublestruck), sp.Interval.open(0, sp.oo)))',
+      'x = sp.Symbol("x")',
+      'S_doublestruck = sp.MatrixSymbol("S_doublestruck", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
+    ],
+    issues: ["sympy doesn't support pinv for abstract matrices"],
+  },
+  {
+    // `x \in A^{+}` with a concrete matrix — the pinv is real, so
+    // membership emits as the singleton ({A⁺} — x = A⁺).
+    latex: '\\displaylines{A = \\begin{pmatrix}1&0\\\\0&1\\end{pmatrix} \\\\ x \\in A^{+}}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'A = sp.Matrix([[1, 0], [0, 1]])',
+      'sp.Contains(x, sp.FiniteSet((A).pinv()))',
     ],
   },
   {
@@ -1195,7 +1207,7 @@ const FIXTURES: {
     expectedPython: [
       'A = sp.MatrixSymbol("A", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
     ],
-    issues: ['pseudoinverse needs a concrete matrix'],
+    issues: ["sympy doesn't support pinv for abstract matrices"],
   },
   {
     // sympy's quantifier signature is (symbol, condition) — the opaque

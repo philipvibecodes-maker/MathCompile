@@ -767,20 +767,22 @@ class Emitter {
       // A call-wrapped set op emits a set only when its operands do.
       if (SETISH_OP_HEADS.has(n[1]))
         return n.slice(2).every((a) => this.isSetish(a));
-      // The \mathbb{S}^±/^*/_0 callees all emit a set when their
-      // operand is a set (`S^-` → S ∩ (−∞,0), `S*` → S∖{0}) —
-      // otherwise they fold to conjugate/pseudoinverse, not a set.
+      // `S*` emits a set when S is a set (S ∖ {0}); S^± only reads
+      // as S ∩ (0,±∞) on the number sets ℝ/ℤ (and their `_0` forms)
+      // — on anything else `^{+}` is the pseudoinverse, not a set.
+      if (n[1] === 'Superstar')
+        return this.isSetish(n[2]);
       if (
         n[1] === 'Superminus' ||
         n[1] === 'Superplus' ||
-        n[1] === 'PseudoInverse' ||
-        n[1] === 'Superstar'
+        n[1] === 'PseudoInverse'
       )
         return (
-          this.isSetish(n[2]) ||
-          (isStr(n[2]) &&
-            SETISH_SYMBOLS.has(n[2].replace(/_\{?0\}?$/, '')) &&
-            /_\{?0\}?$/.test(n[2]))
+          isStr(n[2]) &&
+          (n[2] === 'RealNumbers' ||
+            n[2] === 'Integers' ||
+            (SETISH_SYMBOLS.has(n[2].replace(/_\{?0\}?$/, '')) &&
+              /_\{?0\}?$/.test(n[2])))
         );
       return false;
     }
@@ -813,24 +815,6 @@ class Emitter {
    * Complement compute instead of raising TypeError on bare Symbols. */
   private setArg(n: MathJson): string {
     if (this.isSetish(n)) return this.emit(n);
-    // `x \in S^{+}` / `A \cup S^{-}` — a signed-superscript operand that
-    // isn't a known set still reads as the signed part of the singleton:
-    // `{S} ∩ (0,∞)`. (In operand position `S^{+}` is the pseudoinverse
-    // reading — the call tier handles that, with a concrete-matrix flag.)
-    if (
-      isHead(n, 'call') &&
-      n.length === 3 &&
-      isStr(n[1]) &&
-      (n[1] === 'Superminus' ||
-        n[1] === 'Superplus' ||
-        n[1] === 'PseudoInverse')
-    ) {
-      const range =
-        n[1] === 'Superminus'
-          ? `${this.sp}Interval.open(-${this.sp}oo, 0)`
-          : `${this.sp}Interval.open(0, ${this.sp}oo)`;
-      return `${this.sp}Intersection(${this.sp}FiniteSet(${this.emit(n[2])}), ${range})`;
-    }
     return `${this.sp}FiniteSet(${this.emit(n)})`;
   }
 
@@ -2218,7 +2202,9 @@ class Emitter {
             isStr(a) &&
             SETISH_SYMBOLS.has(a.replace(/_\{?0\}?$/, '')) &&
             /_\{?0\}?$/.test(a);
-          if (this.isSetish(a) || zeroed) {
+          // The S ∩ (0,±∞) reading only holds on ℝ/ℤ — `A^{+}` on any
+          // other operand is the pseudoinverse (handled below).
+          if ((isStr(a) && (a === 'RealNumbers' || a === 'Integers')) || zeroed) {
             const base = zeroed
               ? this.emit(a.replace(/_\{?0\}?$/, '') as MathJson)
               : this.emit(a);
@@ -2262,7 +2248,7 @@ class Emitter {
           if (!concrete)
             this.scope.flag(
               'error',
-              'pseudoinverse needs a concrete matrix — sympy has no symbolic pinv',
+              "sympy doesn't support pinv for abstract matrices",
             );
           return [
             `(${isStr(a) ? this.mat(a) : this.emit(a, PREC_ATOM)}).pinv()`,
