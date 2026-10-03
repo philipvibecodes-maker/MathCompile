@@ -287,13 +287,13 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // `f: x ↦ x²` emitted `sp.Lambda(x, x**2)` bare — `f` stayed an
     // unapplied Function and a following `f(2)` showed `f(2)`, not `4`.
     const prog = calc('f: x \\mapsto x^{2}');
-    expect(prog.statements[0].code).toBe('f = sp.Lambda(x, x**2)');
+    expect(prog.statements[0].code).toBe('def f(x):\n    return x**2');
     expect(prog.statements[0].display).toBe(
-      F('sp.Eq(sp.Symbol("f"), sp.Lambda(x, x**2))'),
+      F('(lambda x: sp.Eq(sp.Function("f")(x), x**2))(sp.Symbol("x"))'),
     );
     // Multi-param colon form `f: (x,y) ↦ x+y` lowers the same way.
     expect(calc('f: (x,y) \\mapsto x + y').statements[0].code).toBe(
-      'f = sp.Lambda((x, y), x + y)',
+      'def f(x, y):\n    return x + y',
     );
   });
 
@@ -326,6 +326,24 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
     expect(calc('x+1 \\text{ for } x=2').statements[0].code).toBe(
       F('sp.imageset(sp.Lambda(x, x + 1), sp.FiniteSet(2))'),
+    );
+    // `\forall` is a different input — a predicate, not a set-builder:
+    // `∀x∈S, p` is "False not in the predicate's image" (vacuous truth
+    // included); `∃x∈S, p` is "True in the image".
+    expect(
+      calc('\\forall x \\in \\mathbb{R}, x > x + 1').statements[0].code,
+    ).toBe(
+      F('sp.Not(sp.Contains(sp.false, sp.ImageSet(sp.Lambda(x, sp.Gt(x, x + 1)), sp.S.Reals), evaluate=False))'),
+    );
+    expect(
+      calc('\\exists x \\in \\mathbb{R}, x^{2}=2').statements[0].code,
+    ).toBe(
+      F('sp.Contains(sp.true, sp.ImageSet(sp.Lambda(x, sp.Eq(x**2, 2)), sp.S.Reals), evaluate=False)'),
+    );
+    // Finite-set domains iterate so the answer evaluates at exec —
+    // names bound to a Set literal (A = {1,2,4}) iterate the same way.
+    expect(calc('\\forall x \\in \\{1,2\\}, x>0').statements[0].code).toBe(
+      F('sp.And(*[(sp.Gt(x, 0)).subs(x, _e) for _e in sp.FiniteSet(1, 2)])'),
     );
   });
 
@@ -495,15 +513,20 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
   });
 
-  it('singleton-wraps bare names in subset/superset ops too', () => {
-    expect(calc('A \\subseteq B').statements[0].code).toBe(
-      F('(sp.FiniteSet(A)).is_subset(sp.FiniteSet(B))'),
+  it('subset ops emit Union/Eq on set operands, error on abstract ones', () => {
+    // Subset relations lower through Union/Eq — `.is_subset` returns
+    // None on undecidable operands and `sp.Not(None)` raises
+    // AttributeError in the worker. Non-set operands flag an error:
+    // sympy has no set-typed symbol, and FiniteSet(A) would read as
+    // the singleton (membership), not subset.
+    expect(calc('A \\subseteq B').statements[0].error).toBe(
+      'subset/superset needs concrete set operands — sympy has no set-typed symbols',
     );
     expect(calc('\\mathbb{Z} \\subseteq \\mathbb{R}').statements[0].code).toBe(
-      F('(sp.S.Integers).is_subset(sp.S.Reals)'),
+      F('sp.Eq(sp.Union(sp.S.Integers, sp.S.Reals), sp.S.Reals)'),
     );
-    expect(calc('A \\not\\subseteq B').statements[0].code).toBe(
-      F('sp.Not((sp.FiniteSet(A)).is_subset(sp.FiniteSet(B)))'),
+    expect(calc('A \\not\\subseteq B').statements[0].error).toBe(
+      'subset/superset needs concrete set operands — sympy has no set-typed symbols',
     );
   });
 
@@ -600,9 +623,26 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(calc('x \\in \\mathbb{Z}^{*}').statements[0].code).toBe(
       F('sp.Contains(x, sp.Complement(sp.S.Integers, sp.FiniteSet(0)))'),
     );
-    // `A^{+}` — Moore–Penrose pseudoinverse (a Matrix method in sympy
-    // 1.14 — no sp.pinv exists).
-    expect(calc('A^{+}').statements[0].code).toBe(F('(A).pinv()'));
+    // `A^{+}` — Moore–Penrose pseudoinverse (a MatrixBase method in
+    // sympy 1.14 — no sp.pinv, and MatrixSymbol has no pinv either, so
+    // only a concrete matrix operand can exec; a bare `A^{+}` flags).
+    const pinv = calc('A^{+}');
+    expect(pinv.statements[0].error).toContain(
+      "sympy doesn't support pinv for abstract matrices",
+    );
+  });
+
+  it('emits .pinv() for concrete-matrix pseudoinverse operands', () => {
+    // `A` bound to a pmatrix in the same cell → `(A).pinv()` execs.
+    const out = calc(
+      'A = \\begin{pmatrix}1&0\\\\0&1\\end{pmatrix} \\\\ A^{+}',
+    );
+    expect(out.statements.at(-1)!.code).toBe(F('(A).pinv()'));
+    // A matrix literal operand likewise.
+    expect(
+      calc('\\begin{pmatrix}1&0\\\\0&1\\end{pmatrix}^{+}').statements[0]
+        .code,
+    ).toBe(F('(sp.Matrix([[1, 0], [0, 1]])).pinv()'));
   });
 
   it('shows matrix assignments unevaluated — Eq(Symbol, Matrix) is literal False', () => {

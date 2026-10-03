@@ -196,6 +196,64 @@ export function latexToStatementStrings(latex: string): string[] {
   return statements.map((s) => s.trim()).filter((s) => s !== '');
 }
 
+// `\text{for}`/`operatorname{for}`-style comprehensions (`2x \text{ for }
+// x \in S`) parse to the same ForAll head as `\forall` — the IR cannot
+// tell them apart, so this is decided here where the latex is still
+// known. A statement containing a for-token has every ForAll node
+// rewritten to CE's own Comprehension head (expr-first arg order),
+// which codegen lowers to sp.imageset — the set-building reading —
+// while `\forall` keeps its head and emits a predicate.
+const TEXT_FOR =
+  /\\(?:operatorname|math[a-z]*|text[a-z]*)\s*\{?\s*for(?![a-zA-Z])(?!\s+all\b)/;
+const forToComprehension = (n: MathJson): MathJson => {
+  if (!isArray(n)) return n;
+  const kids = n.slice(1).map(forToComprehension);
+  return head(n) === 'ForAll' && kids.length === 2
+    ? (['Comprehension', kids[1], kids[0]] as MathJson)
+    : ([head(n), ...kids] as MathJson);
+};
+
+// `name = (a,b)` / `name = [a,b]` binds an interval, not a list — CE
+// only mints an Interval node in membership context (`x ∈ (1,2)`), so
+// a 2-element List binding is rewritten here, `(`/`)` endpoints
+// marking open. Longer lists (`B=[1,2,3]`) stay List — a real sequence.
+const intervalBind = (s: string, j: MathJson): MathJson => {
+  if (
+    !isArray(j) ||
+    (head(j) !== 'Assign' && head(j) !== 'Equal') ||
+    // A structured lhs (`(x,y) = (1,2)`) is tuple unpacking, not a bind.
+    !isString(j[1])
+  )
+    return j;
+  const rhs = j[2];
+  if (!isArray(rhs)) return j;
+  let e1: MathJson | undefined;
+  let e2: MathJson | undefined;
+  let lb = '';
+  let rb = '';
+  const seq = isArray(rhs[1]) && head(rhs[1]) === 'Sequence' ? rhs[1] : null;
+  if (head(rhs) === 'Delimiter' && seq && seq.length === 3 && isString(rhs[2])) {
+    // `Delimiter(Sequence(a,b), '(,)')` — the IR itself records the
+    // brackets for paren-delimited pairs.
+    [e1, e2] = [seq[1], seq[2]];
+    const d = rhs[2].replace(/['\s]/g, '');
+    [lb, rb] = [d[0] ?? '', d[d.length - 1] ?? ''];
+  } else if (head(rhs) === 'List' && rhs.length === 3) {
+    // `[a,b]` arrives as a bare List — the brackets live in the latex.
+    const eq = s.indexOf('=');
+    if (eq < 0) return j;
+    const tail = s.slice(eq + 1);
+    const l = tail.search(/[(\[]/);
+    const r = tail.search(/[)\]]\s*$/);
+    if (l < 0 || r < 0) return j;
+    [e1, e2, lb, rb] = [rhs[1], rhs[2], tail[l], tail[r]];
+  } else return j;
+  if (!'(['.includes(lb) || !')]'.includes(rb)) return j;
+  const lo = lb === '(' ? (['Open', e1] as MathJson) : e1;
+  const hi = rb === ')' ? (['Open', e2] as MathJson) : e2;
+  return [head(j), j[1], ['Interval', lo, hi]] as MathJson;
+};
+
 // Parse a cell's LaTeX into raw MathJSON. Multiple statements become a
 // `["Block", ...]` node so downstream code sees one tree per cell. Parse
 // failures degrade to an Error node — the pipeline reports, never throws.
@@ -203,16 +261,18 @@ export function parseCellLatex(latex: string): MathJson | undefined {
   const statements = latexToStatementStrings(latex);
   if (statements.length === 0) return undefined;
   const parsed = statements.map((s) => {
+    let j: MathJson;
     try {
       // `form: 'raw'` skips CE canonicalization so the user's term order
       // survives to codegen (a * 2 stays Multiply(a, 2), not sorted).
       // \antid/\iint (MathQuill's boundless insertion aliases for \int)
       // already read as \int here — outputLatex canonicalizes them in
       // latexToStatementStrings, so CE sees an ordinary Integrate node.
-      return ce().parse(s, { form: 'raw' }).json as MathJson;
+      j = ce().parse(s, { form: 'raw' }).json as MathJson;
     } catch {
       return ['Error', `'parse-failed'`] as MathJson;
     }
+    return intervalBind(s, TEXT_FOR.test(s) ? forToComprehension(j) : j);
   });
   // A single statement can itself parse to a Block (`x² \text{ where }
   // x>0` — CE parks the condition first). Tag those so real `\\` rows
@@ -252,7 +312,7 @@ const KNOWN_HEADS = new Set([
   'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
   'NotLess', 'NotGreater', 'NotLessEqual', 'NotGreaterEqual', 'NotDivides',
   'Implies', 'Equivalent', 'IdenticallyEqual', 'Degrees',
-  'Minimum', 'Maximum', 'Interval', 'Open',
+  'Minimum', 'Maximum', 'Interval', 'Open', 'IntegerRange',
   // set operators — codegen emits real SymPy when operands are set-like,
   // and the same flagged Function stub as before otherwise.
   'Element', 'NotElement', 'Union', 'Intersection', 'SetMinus',
@@ -267,11 +327,33 @@ const KNOWN_HEADS = new Set([
   'Assign', 'Def', 'Block', 'WhereBlock', 'Function',
   // structural helpers
   'Limits', 'Tuple', 'List', 'Subscript', 'Delimiters', 'Error',
+  // 'Set' reaches codegen directly (FiniteSet / ConditionSet / ImageSet
+  // lowering) and 'Condition' is its predicate child. 'call' marks a node
+  // already escaped by this pass — without it a nested g(f(x)) re-wraps
+  // into ['call', 'call', ...].
+  'Set', 'Condition', 'call',
+  // MatrixMethod lowers `trace(A)`-style word applications on a matrix
+  // literal (CE fuses `\mathrm{trace}(M)` into Multiply or an
+  // InvisibleOperator call) to `(<matrix>).trace()` in codegen.
+  'MatrixMethod',
 ]);
 
 // CE string literals arrive as "'text'" (e.g. \text{...}); unwrap to the
 // inner name so it can be treated as a symbol with a note.
 const TEXT_LITERAL = /^'(.*)'$/;
+
+// Words that read as matrix operations when juxtaposed with a matrix
+// literal: `\mathrm{trace}(A)` etc. — codegen lowers them to method
+// calls on the emitted Matrix.
+const MATRIX_WORD_OPS = new Set([
+  'trace',
+  'rank',
+  'eigenvals',
+  'eigenvects',
+  'inverse',
+  'transpose',
+  'norm',
+]);
 
 // CE marks unparseable atoms as the *quoted* symbol 'unexpected-command'
 // (a string literal), e.g. `['Power', "'unexpected-command'", LatexString]
@@ -341,6 +423,8 @@ function flattenSubscript(node: MathJson): string {
     const h = head(node);
     if (h === 'Add') return node.slice(1).map(flattenSubscript).join('+');
     if (h === 'Multiply') return node.slice(1).map(flattenSubscript).join('');
+    if (h === 'InvisibleOperator')
+      return node.slice(1).map(flattenSubscript).join('');
     if (h === 'Negate') return `-${flattenSubscript(node[1])}`;
     if (h === 'Power')
       return `${flattenSubscript(node[1])}^${flattenSubscript(node[2])}`;
@@ -359,6 +443,15 @@ function flattenSubscript(node: MathJson): string {
 // Is this node a plain symbol usable as an assignment target?
 const isSymbolString = (v: MathJson): v is string =>
   isString(v) && v !== '' && !v.startsWith("'");
+
+// A parameter name slot — `x` or the quoted literal `'x'` CE puts in
+// Typed declaration signatures (`f: x \mapsto x^2`). Strips the quotes
+// without emitting a literal note; undefined for anything else.
+const paramName = (v: MathJson): string | undefined => {
+  if (isSymbolString(v)) return v;
+  const m = isString(v) ? TEXT_LITERAL.exec(v) : null;
+  return m ? m[1] : undefined;
+};
 
 // A Delimiter node's argument list: Delimiter(x) -> [x],
 // Delimiter(Sequence(a, b), '(,)') -> [a, b] (the '(,)' marker is dropped).
@@ -407,7 +500,10 @@ function functionDefShape(
     node[0] !== 'InvisibleOperator'
   ) {
     const params = node.slice(1);
-    if (params.every(isSymbolString)) return { name: node[0], params };
+    // `D` is CE's derivative operator head (\dot{x}, \frac{dy}{dx}) —
+    // `D(x,t) = rhs` is an ODE equation, never `def D(x,t)`.
+    if (node[0] !== 'D' && params.every(isSymbolString))
+      return { name: node[0], params };
   }
   if (head(node) === 'InvisibleOperator' && node.length === 3) {
     const [, fn, delim] = node;
@@ -422,6 +518,207 @@ function functionDefShape(
   }
   return null;
 }
+
+// Heads that read as an adjacent-pair chain when nested or multi-arg:
+// `x > y > z` arrives right-nested (Greater(x, Greater(y, z))), `a < b <= c`
+// cross-nests (LessEqual(Less(a, b), c)), `a != b != c` nests NotEqual —
+// every relation head except Equal (flattenEqual handles it separately,
+// since statement-level `=` is the assignment path).
+const REL_CHAIN = new Set([
+  'Less',
+  'LessEqual',
+  'Greater',
+  'GreaterEqual',
+  'NotEqual',
+]);
+
+// Set leaf names that Superplus/Superminus may decorate — S^{+}/S^{-}
+// for a standard set maps to the positive/negative half.
+const SET_LEAF = new Set([
+  'RealNumbers',
+  'RationalNumbers',
+  'Integers',
+  'Naturals',
+  'ComplexNumbers',
+  'AlgebraicNumbers',
+  'ImaginaryNumbers',
+  'PositiveNumbers',
+  'PositiveIntegers',
+  'NonNegativeIntegers',
+  'Primes',
+]);
+
+// Linearize a (possibly nested/mixed) relation chain into parallel
+// (ops, operands) lists: ops[i] relates args[i] and args[i+1]. A nested
+// chain operand contributes its own pairs; the op between an operand
+// group boundary and the next arg is this node's head.
+function chainLinear(node: MathJson[]): { ops: string[]; args: MathJson[] } {
+  const h = head(node) as string;
+  const ops: string[] = [];
+  const args: MathJson[] = [];
+  node.slice(1).forEach((a, i) => {
+    if (i > 0) ops.push(h);
+    if (isArray(a) && REL_CHAIN.has(head(a) ?? '')) {
+      const sub = chainLinear(a);
+      args.push(...sub.args);
+      ops.push(...sub.ops);
+    } else {
+      args.push(a);
+    }
+  });
+  return { ops, args };
+}
+
+// The \min_{u} f / \sup_{u} f underscript: a bare variable, `x \in S`,
+// or a relational bound on the variable (x >= 0, 0 <= x <= 1). Returns
+// the variable plus an Interval/Set domain node when one is expressible.
+function underVarDomain(under: MathJson): { v: MathJson; domain?: MathJson } {
+  if (!isArray(under)) return { v: under };
+  const uh = head(under);
+  if (uh === 'Element' && under.length === 3)
+    return { v: under[1], domain: under[2] };
+  // \min_{i=lo}^{hi}: the underscript `i=lo` and overscript `hi` fold
+  // into Power(Equal(i, lo), hi) — recover (v, [lo, hi]). This is an
+  // integer index range (like \sum bounds), NOT a real interval.
+  if (
+    uh === 'Power' &&
+    isArray(under[1]) &&
+    head(under[1]) === 'Equal' &&
+    under[1].length === 3 &&
+    isSymbolString(under[1][1])
+  )
+    return { v: under[1][1], domain: ['IntegerRange', under[1][2], under[2]] };
+  if (
+    uh === 'Less' ||
+    uh === 'LessEqual' ||
+    uh === 'Greater' ||
+    uh === 'GreaterEqual'
+  ) {
+    const a = under.slice(1);
+    const vi = a.findIndex(isSymbolString);
+    if (vi < 0) return { v: under };
+    const strict = uh === 'Less' || uh === 'Greater';
+    const mark = (b: MathJson): MathJson => (strict ? ['Open', b] : b);
+    const NEG_INF: MathJson = ['Negate', 'PositiveInfinity'];
+    if (a.length === 2) {
+      const other = a[1 - vi];
+      // `x >= a` / `a <= x` place a lower bound; `x <= a` / `a >= x` upper.
+      const isLower =
+        uh === 'Greater' || uh === 'GreaterEqual' ? vi === 0 : vi === 1;
+      const bound = mark(other);
+      return {
+        v: a[vi],
+        domain: isLower
+          ? ['Interval', bound, 'PositiveInfinity']
+          : ['Interval', NEG_INF, bound],
+      };
+    }
+    if (a.length === 3 && vi === 1) {
+      const lo =
+        uh === 'Greater' || uh === 'GreaterEqual'
+          ? a[2]
+          : a[0];
+      const hi =
+        uh === 'Greater' || uh === 'GreaterEqual'
+          ? a[0]
+          : a[2];
+      return { v: a[vi], domain: ['Interval', mark(lo), mark(hi)] };
+    }
+  }
+  return { v: under };
+}
+
+// Unknown-head names codegen's CALL_RENAMES maps onto real SymPy
+// functions — they still become `call` nodes, but without the "unknown
+// head" note (mirrors codegen.ts's table).
+const CALL_RENAMED = new Set([
+  'Factorial2',
+  'Erf',
+  'Erfc',
+  'Conjugate',
+  'Re',
+  'Im',
+  'Arg',
+  'Real',
+  'Imaginary',
+  'Argument',
+  'Superstar',
+  'Congruent',
+  'nCk',
+  'nCr',
+  'nPr',
+  'perm',
+  'Pi',
+  'Trace',
+  'trace',
+  'tr',
+  'rank',
+  'eigenvals',
+  'eigenvects',
+  'inverse',
+  'transpose',
+  'norm',
+  // Codegen's `call`-tier name branches (compositions, quantifier stubs,
+  // set/pseudoinverse superscripts, greek/operator aliases) — all real
+  // emissions or self-flagged degradations, not unknown heads.
+  'Ring',
+  'GoldenRatio',
+  'Mean',
+  'ForAll',
+  'Exists',
+  'Comprehension',
+  'PseudoInverse',
+  'Superminus',
+  'Superplus',
+  'KroneckerDelta',
+  'Arsinh',
+  'Arcosh',
+  'Artanh',
+  'Arcsinh',
+  'Arccosh',
+  'Arctanh',
+  'diff',
+  'integrate',
+  'summation',
+  'product',
+  // The lowercase names codegen's SP_BUILTIN_CALL table maps — mirrors
+  // codegen.ts (kept in sync manually; \operatorname{erf}/solve/... get
+  // here as call heads too).
+  ...(
+    'erf erfc erfi erfinv erfcinv Ei expint Si Ci Shi Chi li Li zeta ' +
+    'lerchphi polylog digamma trigamma polygamma loggamma beta betainc ' +
+    'lowergamma uppergamma LambertW besselj bessely besseli besselk ' +
+    'hankel1 hankel2 jn yn airyai airybi airyaiprime airybiprime ' +
+    'marcumq fresnels fresnelc hyper meijerg appellf1 legendre ' +
+    'assoc_legendre hermite hermite_prob chebyshevt chebyshevu ' +
+    'gegenbauer jacobi laguerre assoc_laguerre fibonacci lucas ' +
+    'tribonacci bernoulli euler bell catalan harmonic genocchi ' +
+    'partition primepi mobius totient reduced_totient divisor_sigma ' +
+    'nextprime prevprime prime isprime factorint divisors ' +
+    'divisor_count proper_divisor_count primefactors integer_nthroot ' +
+    'cbrt gcdex trace ' +
+    'legendre_symbol jacobi_symbol kronecker_symbol rf ff factorial2 ' +
+    'subfactorial Piecewise ' +
+    'sign ceiling conjugate arg re im ' +
+    'gcd lcm binomial sqrt floor factorial ' +
+    'solve solveset linsolve nonlinsolve simplify factor expand cancel ' +
+    'collect apart together trigsimp expand_trig powsimp nsimplify ' +
+    'radsimp ratsimp fraction limit series residue solve_linear'
+  ).split(' '),
+]);
+
+// CE constant names — `i` beside one of these (or a number) is the
+// imaginary unit, not a symbol (`e^{i\pi}`, `\pi i`); `xi` stays a symbol.
+const CE_CONSTANTS = new Set([
+  'Pi',
+  'ExponentialE',
+  'GoldenRatio',
+  'EulerGamma',
+  'CatalansConstant',
+  'PositiveInfinity',
+  'NegativeInfinity',
+  'ImaginaryUnit',
+]);
 
 // a = b = c arrives right-nested as Equal(a, Equal(b, c)); flatten into a
 // multi-arg Equal so codegen sees the chained-relation shape (sp.And of
@@ -444,7 +741,42 @@ function normalizeStatementEqual(
 ): MathJson {
   const [, lhs, rhs] = node;
   if (node.length === 3) {
-    if (isSymbolString(lhs)) return ['Assign', lhs, normalizeExpr(rhs)];
+    // `x := y := 5` — chain-assign binds left-to-right, and `Assign`
+    // isn't a value. Flatten to sequential statements: y = 5, x = y.
+    const mkAssign = (lhsN: MathJson): MathJson => {
+      const rhsN = normalizeExpr(rhs);
+      if (isArray(rhsN) && head(rhsN) === 'Assign')
+        return ['Block', rhsN, ['Assign', lhsN, rhsN[1]]];
+      return ['Assign', lhsN, rhsN];
+    };
+    if (isSymbolString(lhs)) return mkAssign(lhs);
+    // x' = rhs / x'' = rhs — a primed-variable assignment, not a
+    // `def Prime(x)` (functionDefShape would match the Prime(x) shape).
+    if (
+      isArray(lhs) &&
+      head(lhs) === 'Prime' &&
+      lhs.length >= 2 &&
+      isSymbolString(lhs[1]) &&
+      lhs.slice(2).every((t) => typeof t === 'number')
+    )
+      return mkAssign(normalizeExpr(lhs));
+    // (x, y) = (1, 2) — a symbol-tuple target assigns via python
+    // unpacking; anything else stays an equation. Read the raw shape
+    // (Delimiter(Sequence(...)) or List) so `f(x) = ...` on the next
+    // branch isn't normalized into a flagged `call`.
+    const tuple = (() => {
+      const members = isDelimiterGroup(lhs)
+        ? delimiterArgs(lhs)
+        : isArray(lhs) && (head(lhs) === 'Sequence' || head(lhs) === 'List')
+          ? lhs.slice(1)
+          : null;
+      return members !== null &&
+        members.length > 1 &&
+        members.every(isSymbolString)
+        ? (members as string[])
+        : null;
+    })();
+    if (tuple) return mkAssign(['List', ...tuple]);
     const def = functionDefShape(lhs);
     if (def)
       return [
@@ -459,10 +791,20 @@ function normalizeStatementEqual(
 
 export function normalizeIR(json: MathJson | undefined): NormResult {
   const issues: Issue[] = [];
+  const pushIssue = (severity: Issue['severity'], message: string) => {
+    issues.push(issue(severity, message));
+  };
   if (json === undefined) return { ok: true, ir: undefined, issues };
   // Tracks whether the current Block is the outermost (\displaylines)
   // one — only its children count as input lines.
   let blockDepth = 0;
+
+  // Names declared callable by statements seen so far, in cell order —
+  // `f(x) = …`, `f(x) := …`, `f: x \mapsto …`, `g: (x,y) \mapsto …`.
+  // Calls to one of these aren't "unknown head" (the flag at the tail
+  // consults this), and a forward reference still flags because the
+  // declaration hasn't been scanned yet.
+  const declaredFns = new Set<string>();
 
   const normalize = (
     node: MathJson,
@@ -479,14 +821,12 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
         // Bare marker outside a Power/Subscript pair (the quoted source is
         // recovered there) — flag generically and keep it an Error node so
         // codegen drops the statement.
-        issues.push(issue('error', 'incomplete or unsupported command'));
+        pushIssue('error', 'incomplete or unsupported command');
         return ['Error', "'unexpected-command'"];
       }
       const text = TEXT_LITERAL.exec(node);
       if (text) {
-        issues.push(
-          issue('note', `text literal "${text[1]}" treated as a symbol`),
-        );
+        pushIssue('note', `text literal "${text[1]}" treated as a symbol`);
         return text[1];
       }
       if (node === 'Nothing') {
@@ -494,7 +834,7 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
         // means an indefinite operator (\int f dx) — legitimate input, not
         // a hole — so it is only an error elsewhere.
         if (!allowNothing)
-          issues.push(issue('error', 'empty slot — fill it in or delete it'));
+          pushIssue('error', 'empty slot — fill it in or delete it');
         return node;
       }
       // Non-canonical parse leaves `e` as a bare symbol; it is always
@@ -511,7 +851,7 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       ) {
         // {str: "..."} wrapper — same handling as a text literal.
         const inner = String((node as { str: unknown }).str);
-        issues.push(issue('note', `text literal "${inner}" treated as a symbol`));
+        pushIssue('note', `text literal "${inner}" treated as a symbol`);
         return inner;
       }
       return node;
@@ -519,7 +859,7 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
 
     const h = head(node);
     if (h === undefined) {
-      issues.push(issue('error', 'malformed node without a head'));
+      pushIssue('error', 'malformed node without a head');
       return node;
     }
 
@@ -536,7 +876,7 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     if (node.length === 1) return 'Nothing';
 
     if (h === 'Error') {
-      issues.push(issue('error', describeError(node)));
+      pushIssue('error', describeError(node));
       return node;
     }
 
@@ -549,11 +889,9 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
         isArray(node[2]) && head(node[2]) === 'LatexString' && isString(node[2][1])
           ? node[2][1].replace(/^'(.*)'$/s, '$1').trim()
           : '';
-      issues.push(
-        issue(
-          'error',
-          describeCommand(src, src ? ` "${src}"` : ''),
-        ),
+      pushIssue(
+        'error',
+        describeCommand(src, src ? ` "${src}"` : ''),
       );
       return ['Error', "'unexpected-command'"];
     }
@@ -562,7 +900,7 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     // fragment — anything reaching normal normalization is a fragment of
     // a broken expression; flag rather than emit a LatexString symbol.
     if (h === 'LatexString') {
-      issues.push(issue('error', 'incomplete or unsupported command'));
+      pushIssue('error', 'incomplete or unsupported command');
       return ['Error', "'unexpected-command'"];
     }
 
@@ -678,11 +1016,16 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     }
 
     // \min_{x} f / \max_{x} f: CE folds the underscript into the body as
-    // InvisibleOperator('_', var, body) — split it back out so codegen
-    // sees (body, var) and can emit minimum/maximum rather than
-    // sp.Min(_ * x * f) with a garbage `_` symbol in it.
+    // InvisibleOperator('_', under, ...bodyFactors) — the factor list is
+    // (underscript, body parts like `f` + `(x)`). Split it back out and
+    // rebuild the body through the InvisibleOperator branch so `f(x)`
+    // stays an application; codegen then sees (body, var, domain?)
+    // rather than sp.Min(_ * x * f) with a garbage `_` symbol in it.
     if (
-      (h === 'Min' || h === 'Max') &&
+      (h === 'Min' ||
+        h === 'Max' ||
+        h === 'Infimum' ||
+        h === 'Supremum') &&
       node.length === 2 &&
       isArray(node[1]) &&
       head(node[1]) === 'InvisibleOperator' &&
@@ -690,30 +1033,27 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     ) {
       // Keep every factor after the bound var — `\max_{x} f(x)` parses
       // as ('_', x, f, (x)) and dropping the delimiter loses the apply.
-      const v = node[1][2];
-      const rest = node[1].slice(3);
-      const body =
-        rest.length === 1 ? rest[0] : ['InvisibleOperator', ...rest];
-      return [
-        h === 'Min' ? 'Minimum' : 'Maximum',
-        normalize(body, false),
-        normalize(v, false),
-      ];
-    }
-    // \inf_{n} a_n / \sup — no SymPy infimum, but emit a readable
-    // Infimum(a_n, n) stub instead of Infimum(_ * n * a_n).
-    if (
-      (h === 'Infimum' || h === 'Supremum') &&
-      node.length === 2 &&
-      isArray(node[1]) &&
-      head(node[1]) === 'InvisibleOperator' &&
-      node[1][1] === '_'
-    ) {
-      const v2 = node[1][2];
-      const rest2 = node[1].slice(3);
-      const body2 =
-        rest2.length === 1 ? rest2[0] : ['InvisibleOperator', ...rest2];
-      return [h, normalize(body2, false), normalize(v2, false)];
+      const io = node[1];
+      const under = io[2];
+      const rest = io.slice(3);
+      const bodyN = normalize(
+        rest.length === 0
+          ? 'Nothing'
+          : rest.length === 1
+            ? rest[0]
+            : (['InvisibleOperator', ...rest] as MathJson),
+        false,
+      );
+      const { v, domain } = underVarDomain(under);
+      const head2 = h === 'Min' ? 'Minimum' : h === 'Max' ? 'Maximum' : h;
+      return domain === undefined
+        ? [head2, bodyN, normalize(v, false, false, true)]
+        : [
+            head2,
+            bodyN,
+            normalize(v, false, false, true),
+            normalize(domain, false),
+          ];
     }
 
     // \underbrace{x}_{a} parses as Subscript(UnderBrace(x), a) — the
@@ -726,11 +1066,99 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     ) {
       return normalize(node[1][1], false);
     }
+    // \overbrace{x}^{a} similarly parses as Power(OverBrace(x), a) —
+    // `a` is a label, not an exponent (it emitted (x)**a before).
+    if (
+      h === 'Power' &&
+      node.length === 3 &&
+      isArray(node[1]) &&
+      (head(node[1]) === 'UnderBrace' || head(node[1]) === 'OverBrace')
+    ) {
+      return normalize((node[1] as MathJson[])[1], false);
+    }
 
     if (h === 'Equal') node = flattenEqual(node);
 
+    // a < b <= c / x > y > z etc. — CE nests (sometimes right-, sometimes
+    // left-) and mixes heads across a chain; codegen needs the flat
+    // pairwise form since sp.Lt(Lt(a,b), c) raises at eval. Equal has its
+    // own flattenEqual path above (statement-position `=` handling).
+    if (REL_CHAIN.has(h)) {
+      const { ops, args } = chainLinear(node);
+      if (args.length > 2)
+        return [
+          'And',
+          ...ops.map((op, i) =>
+            normalize([op, args[i], args[i + 1]] as MathJson, false),
+          ),
+        ];
+      node = [h, ...args];
+    }
+
+    // Declaration pre-scan: statement-level shapes that bind a callable
+    // name (function def, mapsto declaration, `f := (x \mapsto …)`) —
+    // recorded before the statement normalizes so the name is visible to
+    // calls inside it (recursion) and in later statements.
+    if (atStatement) {
+      let decl: string | undefined;
+      if (h === 'Equal' && isArray(node[1]))
+        decl = functionDefShape(node[1])?.name;
+      else if (
+        h === 'Colon' &&
+        isString(node[1]) &&
+        isArray(node[2]) &&
+        head(node[2]) === 'Function'
+      )
+        decl = node[1];
+      else if (
+        h === 'Function' &&
+        isArray(node[2]) &&
+        head(node[2]) === 'Typed'
+      )
+        decl = paramName(node[2][1]);
+      else if (
+        h === 'Assign' &&
+        isString(node[1]) &&
+        isArray(node[2]) &&
+        head(node[2]) === 'Function'
+      )
+        decl = node[1];
+      // `f = x \mapsto body` (with `=`, not `:=`) binds a callable the
+      // same way — without this `f(2)` in a later statement flags
+      // 'unknown head' even though the cell defines f.
+      else if (
+        h === 'Equal' &&
+        isString(node[1]) &&
+        isArray(node[2]) &&
+        head(node[2]) === 'Function'
+      )
+        decl = node[1];
+      if (decl !== undefined) declaredFns.add(decl);
+    }
+
     if (atStatement && h === 'Equal') {
       return normalizeStatementEqual(node, (n) => normalize(n, false));
+    }
+
+    // `g: (x,y) \mapsto body` — CE types a named function declaration
+    // as Colon(name, Function(body, params...)). That's a def
+    // like `f(x) = body`, not a Colon(...) call (which sympifies the
+    // emitted lambda and dies).
+    if (
+      atStatement &&
+      h === 'Colon' &&
+      node.length === 3 &&
+      isString(node[1]) &&
+      isArray(node[2]) &&
+      head(node[2]) === 'Function' &&
+      node[2].slice(2).every((p) => paramName(p) !== undefined)
+    ) {
+      return [
+        'Def',
+        node[1],
+        ['List', ...node[2].slice(2).map((p) => paramName(p) as string)],
+        normalize(node[2][1], false),
+      ];
     }
 
     // CE already emits Add/Negate instead of Subtract under canonical
@@ -753,27 +1181,34 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     }
 
     // Accent marks that denote distinct variables — \hat{x}, \vec{v},
-    // \bar{z}, \dot{x}, \tilde{t} — become suffixed symbol names
-    // (x_hat, v_vec, ...) rather than collapsing to the unmarked name.
+    // \bar{z} (CE 'Mean'), \tilde{t} ('OverTilde') — become suffixed
+    // symbol names (x_hat, v_vec, ...) rather than collapsing to the
+    // unmarked name. \dot{x} isn't here: CE already lowers it to
+    // D(x, t) before this pass.
     const ACCENT_SUFFIX: Record<string, string> = {
       OverHat: 'hat',
       OverVector: 'vec',
       OverBar: 'bar',
+      Mean: 'bar', // \bar{z}
       Overline: 'bar',
       Overarc: 'arc',
       OverDot: 'dot',
       OverDDot: 'ddot',
       OverTilde: 'tilde',
       Overtilde: 'tilde',
+      UnderBar: 'ubar', // \underline{x}
+      OverRightArrow: 'vec', // \overrightarrow{v}
+      OverLeftArrow: 'vec', // \overleftarrow{v}
     };
     if (ACCENT_SUFFIX[h] !== undefined && node.length >= 2) {
-      return `${flattenSubscript(node[1])}_${ACCENT_SUFFIX[h]}`;
+      return `${flattenSubscript(normalize(node[1], false))}_${ACCENT_SUFFIX[h]}`;
     }
 
-    // \widehat{AB}: CE reads the decoration as the arc/segment AB;
-    // a single arg is just a wide hat over one symbol.
+    // \widehat{AB} / \arc{AB}: CE reads the decoration as the
+    // arc/segment AB — a distinct marked symbol, not the product A·B.
+    // A single arg is just a wide hat over one symbol.
     if (h === 'Arc' && node.length === 3) {
-      return ['Multiply', normalize(node[1], false), normalize(node[2], false)];
+      return `${flattenSubscript(node[1])}${flattenSubscript(node[2])}_arc`;
     }
     if (h === 'Arc' && node.length === 2) {
       return `${flattenSubscript(node[1])}_hat`;
@@ -838,14 +1273,33 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
         }
       }
       const args = items.map((n) => normalize(n, false));
+      // `\mathrm{trace}(M)`-style word ops fused to a matrix literal
+      // arrive as InvisibleOperator(word, Matrix) — a method call, not
+      // a product (the Delimiter-less pmatrix shape).
+      if (args.length === 2) {
+        const [w, m] =
+          isString(args[0]) && MATRIX_WORD_OPS.has(args[0])
+            ? ([args[0], args[1]] as const)
+            : isString(args[1]) && MATRIX_WORD_OPS.has(args[1])
+              ? ([args[1], args[0]] as const)
+              : [undefined, undefined];
+        if (
+          w !== undefined &&
+          isArray(m) &&
+          head(m as MathJson) === 'Matrix'
+        )
+          return ['MatrixMethod', w, m as MathJson];
+      }
       const folded = foldDQuotient(args);
       if (folded) {
         return folded.length === 1 ? folded[0] : ['Multiply', ...folded];
       }
-      // `2i` (number times bare i) means the imaginary unit — matches the
-      // canonical Complex-node output. `xi`/`ij` keep i as a symbol.
+      // `2i` — and `\pi i`, `e^{i\pi}` (i alongside a number or a named
+      // constant) — mean the imaginary unit, matching the canonical
+      // Complex-node output. `xi`/`ij` keep i as a symbol.
       const imaginary =
-        args.includes('i') && args.some((a) => typeof a === 'number');
+        args.includes('i') &&
+        args.some((a) => typeof a === 'number' || CE_CONSTANTS.has(a as string));
       return [
         'Multiply',
         ...args.map((a) => (imaginary && a === 'i' ? 'ImaginaryUnit' : a)),
@@ -1047,11 +1501,36 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
         isArray(body) && head(body) === 'Block' && body.length === 2
           ? body[1]
           : body;
-      return [
-        'Function',
-        normalize(unwrapped, false),
-        ...node.slice(2).map((p) => normalize(p, false, false, true)),
-      ];
+      // `f: x \mapsto body` — the other half of the colon-declaration
+      // shape: the signature slot is Typed(name, params...). At
+      // statement level bind the name like `f(params) = body`; inside an
+      // expression it stays an anonymous lambda. Read the raw slot (not
+      // its normalize) so the signature doesn't emit Typed/literal
+      // notes on the way to a shape that discards it.
+      const sig = node[2];
+      if (
+        atStatement &&
+        node.length === 3 &&
+        isArray(sig) &&
+        head(sig) === 'Typed' &&
+        sig.length >= 3
+      ) {
+        const name = paramName(sig[1]);
+        const sigParams = sig
+          .slice(2)
+          .map((p) => paramName(p) as string | undefined);
+        if (name !== undefined && sigParams.every((p) => p !== undefined))
+          return [
+            'Def',
+            name,
+            ['List', ...(sigParams as string[])],
+            normalize(unwrapped, false),
+          ];
+      }
+      const params = node
+        .slice(2)
+        .map((p) => normalize(p, false, false, true));
+      return ['Function', normalize(unwrapped, false), ...params];
     }
 
     if (h === 'Limits') {
@@ -1069,6 +1548,101 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       // Parenthesized group — CE wraps (a+b) as ["Delimiters", inner, ...];
       // keep the inner expression.
       return normalize(node[1], atStatement);
+    }
+
+    // `x := y := 5` — `:=>`-nested Assign isn't a value (codegen would
+    // emit sp.Assign, which doesn't exist). Flatten to sequential
+    // statements: y = 5, x = y.
+    if (
+      h === 'Assign' &&
+      node.length === 3 &&
+      isArray(node[2]) &&
+      head(node[2]) === 'Assign'
+    ) {
+      return [
+        'Block',
+        normalize(node[2], atStatement),
+        ['Assign', node[1], node[2][1]],
+      ];
+    }
+
+    // S^{+} / S^{-} / S^{*}: the positive/negative/nonzero part of a
+    // standard set — Intersect(S, half) / Complement(S, {0}). Anything
+    // else keeps the 'call' stub (a decorated non-set has no set meaning).
+    if (
+      (h === 'Superplus' || h === 'Superminus') &&
+      node.length === 2 &&
+      isString(node[1]) &&
+      SET_LEAF.has(node[1])
+    ) {
+      return [
+        'Intersection',
+        node[1],
+        h === 'Superplus' ? 'PositiveNumbers' : 'NegativeNumbers',
+      ];
+    }
+    if (
+      h === 'Superstar' &&
+      node.length === 2 &&
+      isString(node[1]) &&
+      SET_LEAF.has(node[1])
+    ) {
+      return ['SetMinus', node[1], ['Set', 0]];
+    }
+    // S^{\times}: the \times lands as an Error exponent — recover the
+    // multiplicative-group reading (nonzero elements) for a set base.
+    if (
+      h === 'Power' &&
+      node.length === 3 &&
+      isString(node[1]) &&
+      SET_LEAF.has(node[1]) &&
+      isArray(node[2]) &&
+      head(node[2]) === 'Error' &&
+      isArray(node[2][2]) &&
+      isString(node[2][2][1]) &&
+      node[2][2][1] === "'\\times'"
+    ) {
+      return ['SetMinus', node[1], ['Set', 0]];
+    }
+
+    // `\text{if }x` (common in \begin{cases} conditions) fuses the
+    // label into an InvisibleOperator application — the operator has no
+    // sympy meaning; unwrap to the operand.
+    if (h === 'InvisibleOperator' && node.length === 2)
+      return normalize(node[1], atStatement, allowNothing);
+
+    // M^{\mathrm{T}} / M^{\mathrm{H}}: CE wraps the superscript text as
+    // a `__unit__` node — read it as transpose / adjoint rather than an
+    // unknown-unit call.
+    if (
+      h === 'Power' &&
+      node.length === 3 &&
+      isArray(node[2]) &&
+      head(node[2]) === '__unit__' &&
+      isString(node[2][1])
+    ) {
+      const unit = node[2][1];
+      if (unit === 'T') return ['Transpose', normalize(node[1], false)];
+      if (unit === 'H' || unit === '\u2020')
+        return ['ConjugateTranspose', normalize(node[1], false)];
+      if (unit === 'C')
+        return ['call', 'Conjugate', normalize(node[1], false)];
+    }
+
+    // `\mathrm{trace}(A)`, `\mathrm{rank}(A)`, ... on a matrix literal:
+    // CE fuses the operator word and the matrix into a bare product.
+    // Only fold when the operand is literally a Matrix — a word *
+    // symbol stays a product (and `\mathrm{trace}(M)` on a symbol
+    // reaches sp.trace through the call path).
+    if (h === 'Multiply' && node.length === 3) {
+      const [w, m] =
+        isString(node[1]) && MATRIX_WORD_OPS.has(node[1])
+          ? ([node[1], node[2]] as const)
+          : isString(node[2]) && MATRIX_WORD_OPS.has(node[2])
+            ? ([node[2], node[1]] as const)
+            : [undefined, undefined];
+      if (w !== undefined && isArray(m) && head(m) === 'Matrix')
+        return ['MatrixMethod', w, normalize(m as MathJson, false)];
     }
 
     // CE tags an environment's delimiter style onto the Matrix node as
@@ -1090,41 +1664,15 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       ];
     }
 
-    // `\min_{x} f` — CE encodes the subscript bound as a leading `_`
-    // factor in an InvisibleOperator body. SymPy Min can't take a bound
-    // variable; drop it, keep the body, and note the loss.
-    if (
-      (h === 'Min' || h === 'Max') &&
-      node.length === 2 &&
-      isArray(node[1]) &&
-      head(node[1]) === 'InvisibleOperator' &&
-      node[1][1] === '_' &&
-      node[1].length >= 3
-    ) {
-      const rest = node[1].slice(3); // drop '_' and the bound variable
-      issues.push(
-        issue(
-          'note',
-          `${h.toLowerCase()} bound "${String(node[1][2])}" can't be applied — showing the body`,
-        ),
-      );
-      return [
-        h,
-        ...(rest.length === 1
-          ? [normalize(rest[0], false)]
-          : [['Multiply', ...rest.map((n) => normalize(n, false))]]),
-      ];
-    }
-
-    // A 'call' node is already the escape-hatch shape — re-wrapping it
-    // produces ['call','call',...], which codegen reads as a function
-    // literally named "call" (g(f(x)) -> g(call(f, x))).
-    if (h === 'call') {
-      return ['call', node[1], ...node.slice(2).map((n) => normalize(n, false))];
-    }
 
     if (!KNOWN_HEADS.has(h)) {
-      issues.push(issue('note', `unknown head "${h}" — emitted as ${h}(...)`));
+      // Heads codegen remaps to real SymPy functions (sp.conjugate,
+      // sp.factorial2, ...) aren't "unknown" — flagging them would warn
+      // about a stub that never reaches the output. A worksheet-declared
+      // name isn't unknown either — `f(3)` after `f(x) = …` calls the
+      // def the cell already made.
+      if (!CALL_RENAMED.has(h) && !declaredFns.has(h))
+        pushIssue('note', `unknown head "${h}" — emitted as ${h}(...)`);
       return ['call', h, ...node.slice(1).map((n) => normalize(n, false))];
     }
 
