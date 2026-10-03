@@ -2261,18 +2261,13 @@ class Emitter {
           return [`${this.sp}conjugate(${this.emit(args[1])})`, PREC_ATOM];
         // `expr \text{ for } x \in S` — the image of expr over the set,
         // sp.imageset(Lambda(x, expr), S). `for x = 2` parses as a
-        // Comprehension with swapped arg order — same lowering. A
-        // relational condition (x>0) becomes a real domain
-        // (Interval/FiniteSet/Complement) so the image actually
-        // evaluates; the bare-var form `x for ...` collapses to the
-        // domain itself. Unhandled conditions keep the honest opaque
-        // call (no sp.ForAll/Comprehension exists in sympy 1.14).
-        if (
-          (name === 'ForAll' || name === 'Comprehension') &&
-          args.length === 3
-        ) {
-          const [cond, expr] =
-            name === 'ForAll' ? [args[1], args[2]] : [args[2], args[1]];
+        // Comprehension with swapped arg order. A relational condition
+        // (x>0) becomes a real domain (Interval/FiniteSet/Complement)
+        // so the image actually evaluates; the bare-var form
+        // `x for ...` collapses to the domain itself. Unhandled
+        // conditions keep the honest opaque call.
+        if (name === 'Comprehension' && args.length === 3) {
+          const [cond, expr] = [args[2], args[1]];
           if (isArr(cond) && cond[0] === 'Element' && isStr(cond[1])) {
             const v = cond[1];
             const dom = this.isSetish(cond[2])
@@ -2297,12 +2292,38 @@ class Emitter {
             PREC_ATOM,
           ];
         }
-        // sympy's quantifier signature is (symbol, condition).
-        if (name === 'Exists' && args.length === 3)
+        // `\forall`/`\exists` — sympy 1.14 has no quantifier objects at
+        // all, so the predicate is the emitted form: `∀x∈S, p` →
+        // `Implies(Contains(x, S), p)` and `∃x∈S, p` → `And(Contains,
+        // p)`; a relational domain (`∀x>0, p`) emits the condition the
+        // same way. CE also parses `expr \text{ for } x \in S` to this
+        // same head — a non-Boolean body (`2x`) isn't a predicate, so
+        // flag rather than emitting `Implies(..., 2*x)` (TypeError at
+        // exec). `∀x, p` binds no domain — emit the predicate itself.
+        if (
+          (name === 'ForAll' || name === 'Exists') &&
+          args.length === 3
+        ) {
+          const [dom, pred] = [args[1], args[2]];
+          if (
+            !isArr(pred) ||
+            !BOOLISH_HEADS.has(headOf(pred) ?? '') ||
+            (!isStr(dom) &&
+              !(isArr(dom) && BOOLISH_HEADS.has(headOf(dom) ?? '')))
+          ) {
+            this.scope.flag(
+              'error',
+              `${name === 'ForAll' ? '\\forall' : '\\exists'} needs a boolean predicate — sympy has no quantifiers`,
+            );
+            return [`${this.sp}True`, PREC_ATOM];
+          }
+          if (isStr(dom)) return [this.emit(pred), PREC_ATOM];
+          const comb = name === 'ForAll' ? 'Implies' : 'And';
           return [
-            `${this.fn(name)}(${this.emit(args[1])}, ${this.emit(args[2])})`,
+            `${this.sp}${comb}(${this.emit(dom)}, ${this.emit(pred)})`,
             PREC_ATOM,
           ];
+        }
         // `f \circ g` — CE's composition head is literally 'Ring',
         // which the tiers below would resolve to sympy's ring-domain
         // constructor.

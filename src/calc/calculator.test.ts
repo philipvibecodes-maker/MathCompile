@@ -303,27 +303,25 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     ).toBe(F('sp.ConditionSet(x, sp.Gt(x, 0), sp.S.Reals)'));
   });
 
-  it('lowers `expr \\text{ for } x \\in S` to sp.imageset', () => {
+  it('lowers \\forall/\\exists to predicate encodings; `expr for x\\in S` is not a predicate', () => {
+    // sympy 1.14 has no ForAll/Exists — the predicate is the emitted
+    // form: `∀x∈S, p` → Implies(Contains(x, S), p), `∃x∈S, p` → And.
     expect(
-      calc('2x \\text{ for } x \\in \\{1,2,3\\}').statements[0].code,
-    ).toBe(F('sp.imageset(sp.Lambda(x, 2 * x), sp.FiniteSet(1, 2, 3))'));
-    // `x for x \\in S` / `x for x>0` is just the domain itself.
-    expect(calc('x \\text{ for } x \\in \\{1,2\\}').statements[0].code).toBe(
-      F('sp.FiniteSet(1, 2)'),
+      calc('\\forall x \\in \\mathbb{R}, x > x + 1').statements[0].code,
+    ).toBe(F('sp.Implies(sp.Contains(x, sp.S.Reals), sp.Gt(x, x + 1))'));
+    expect(calc('\\forall x: x>0').statements[0].code).toBe(F('sp.Gt(x, 0)'));
+    expect(
+      calc('\\exists x \\in \\mathbb{R}, x^{2}=2').statements[0].code,
+    ).toBe(F('sp.And(sp.Contains(x, sp.S.Reals), sp.Eq(x**2, 2))'));
+    // `expr \text{ for } x \in S` parses to the same ForAll head — the
+    // set-defining lowering is removed, so a non-Boolean body flags.
+    expect(
+      calc('2x \\text{ for } x \\in \\{1,2,3\\}').statements[0].error,
+    ).toContain('needs a boolean predicate');
+    expect(calc('x \\text{ for } x>0').statements[0].error).toContain(
+      'needs a boolean predicate',
     );
-    expect(calc('x \\text{ for } x>0').statements[0].code).toBe(
-      F('sp.Interval.open(0, sp.oo)'),
-    );
-    // Relational conditions become real domains so imageset evaluates.
-    expect(calc('x+1 \\text{ for } x>0').statements[0].code).toBe(
-      F('sp.imageset(sp.Lambda(x, x + 1), sp.Interval.open(0, sp.oo))'),
-    );
-    expect(calc('2x \\text{ for } x>0').statements[0].code).toBe(
-      F('sp.imageset(sp.Lambda(x, 2 * x), sp.Interval.open(0, sp.oo))'),
-    );
-    expect(calc('x^{2} \\text{ for } 0<x').statements[0].code).toBe(
-      F('sp.imageset(sp.Lambda(x, x**2), sp.Interval.open(0, sp.oo))'),
-    );
+    // `for x = 2` is a Comprehension head — real set-builder, kept.
     expect(calc('x+1 \\text{ for } x=2').statements[0].code).toBe(
       F('sp.imageset(sp.Lambda(x, x + 1), sp.FiniteSet(2))'),
     );

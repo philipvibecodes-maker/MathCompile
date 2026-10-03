@@ -1210,15 +1210,25 @@ const FIXTURES: {
     issues: ["sympy doesn't support pinv for abstract matrices"],
   },
   {
-    // sympy's quantifier signature is (symbol, condition) — the opaque
-    // fallback used to emit the arguments swapped.
+    // sympy 1.14 has no quantifier objects — the predicate is the
+    // emitted form. `∀x, p` (no domain) emits p itself.
     latex: '\\forall x: x>0',
+    expectedPython: ['x = sp.Symbol("x")', 'sp.Gt(x, 0)'],
+  },
+  {
+    // `∀x∈S, p` → Implies(Contains(x, S), p); `∃x∈S, p` → And.
+    latex: '\\forall x \\in \\mathbb{R}, x > x + 1',
     expectedPython: [
-      'x = sp.Symbol("x")',
-      'ForAll = sp.Function("ForAll")',
-      'ForAll(x, sp.Gt(x, 0))',
+      'x = sp.Symbol("x", real=True)',
+      'sp.Implies(sp.Contains(x, sp.S.Reals), sp.Gt(x, x + 1))',
     ],
-    issues: ['unknown head "ForAll"'],
+  },
+  {
+    latex: '\\exists x \\in \\mathbb{R}, x^{2}=2',
+    expectedPython: [
+      'x = sp.Symbol("x", real=True)',
+      'sp.And(sp.Contains(x, sp.S.Reals), sp.Eq(x**2, 2))',
+    ],
   },
   {
     latex: 'f \\circ g',
