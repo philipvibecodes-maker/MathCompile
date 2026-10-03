@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { attachField } from '../editor/math-field';
-  import type { FieldHandle, MathFieldElement } from '../editor/math-field';
+  import { attachField } from '../editor/attach-field';
+  import type { FieldHandle } from '../editor/attach-field';
+  import type { MathFieldElement } from '../editor/math-field';
   import { appStore } from '../state/store.svelte';
   import type { Cell } from '../state/store.svelte';
 

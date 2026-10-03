@@ -1,4 +1,4 @@
-import type { FieldHandle } from '../editor/math-field';
+import type { FieldHandle } from '../editor/attach-field';
 import type { TargetId } from '../compile/targets';
 import { parseCellLatex, type MathJson } from '../compile/ir';
 import {
