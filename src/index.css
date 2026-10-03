@@ -185,6 +185,8 @@ body {
   flex: 1;
   min-width: 0;
   display: block;
+  /* Offset parent for the autocomplete dropdown. */
+  position: relative;
   font-size: 18px;
   background: var(--panel-bg);
   border: 1px solid var(--border);
@@ -221,6 +223,58 @@ body {
 .expr-row:focus-within math-field {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* Autocomplete dropdown anchored under the caret/command input. */
+.mc-ac {
+  position: absolute;
+  z-index: 30;
+  min-width: 180px;
+  max-width: 320px;
+  max-height: 15em;
+  overflow-y: auto;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px var(--shadow);
+  font-size: 13px;
+  padding: 3px;
+}
+
+.mc-ac-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.mc-ac-item.sel {
+  background: var(--selected-bg);
+}
+
+.mc-ac-name {
+  font-family: ui-monospace, monospace;
+  color: var(--accent-text);
+  min-width: 72px;
+}
+
+.mc-ac-name::before {
+  content: '\\';
+}
+
+.mc-ac-prev {
+  flex: 0 0 auto;
+  color: var(--text);
+}
+
+.mc-ac-hint {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 /* Calculator-style LaTeX output beside each cell (target = latex). */
