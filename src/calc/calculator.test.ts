@@ -495,18 +495,20 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
   });
 
-  it('singleton-wraps bare names in subset/superset ops too', () => {
+  it('subset ops emit Union/Eq on set operands, error on abstract ones', () => {
     // Subset relations lower through Union/Eq — `.is_subset` returns
     // None on undecidable operands and `sp.Not(None)` raises
-    // AttributeError in the worker.
-    expect(calc('A \\subseteq B').statements[0].code).toBe(
-      F('sp.Eq(sp.Union(sp.FiniteSet(A), sp.FiniteSet(B)), sp.FiniteSet(B))'),
+    // AttributeError in the worker. Non-set operands flag an error:
+    // sympy has no set-typed symbol, and FiniteSet(A) would read as
+    // the singleton (membership), not subset.
+    expect(calc('A \\subseteq B').statements[0].error).toBe(
+      'subset/superset needs concrete set operands — sympy has no set-typed symbols',
     );
     expect(calc('\\mathbb{Z} \\subseteq \\mathbb{R}').statements[0].code).toBe(
       F('sp.Eq(sp.Union(sp.S.Integers, sp.S.Reals), sp.S.Reals)'),
     );
-    expect(calc('A \\not\\subseteq B').statements[0].code).toBe(
-      F('sp.Not(sp.Eq(sp.Union(sp.FiniteSet(A), sp.FiniteSet(B)), sp.FiniteSet(B)))'),
+    expect(calc('A \\not\\subseteq B').statements[0].error).toBe(
+      'subset/superset needs concrete set operands — sympy has no set-typed symbols',
     );
   });
 

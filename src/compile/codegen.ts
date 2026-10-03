@@ -1431,6 +1431,15 @@ class Emitter {
         const [sub, sup] = h.startsWith('NotSup') || h.startsWith('Sup')
           ? [args[1], args[0]]
           : [args[0], args[1]];
+        if (!this.isSetish(sub) || !this.isSetish(sup)) {
+          // SymPy has no set-typed symbol (unlike MatrixSymbol), so a
+          // bare `A ⊆ B` can't name two unknown sets — FiniteSet(A)
+          // would be the singleton, turning ⊆ into membership.
+          this.scope.flag(
+            'error',
+            'subset/superset needs concrete set operands — sympy has no set-typed symbols',
+          );
+        }
         const l = this.setArg(sub);
         const r = this.setArg(sup);
         const strict =

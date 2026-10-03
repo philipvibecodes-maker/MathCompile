@@ -1099,25 +1099,24 @@ const FIXTURES: {
     // wrap raised AttributeError on `sp.Not(None)`. Subset relations
     // lower through `Union(A,B) == B` (+ `A != B` when strict), which
     // always yields a Boolean.
-    latex: 'A \\subseteq B',
+    latex: '\\{1\\} \\subseteq \\{1,2\\}',
     expectedPython: [
-      "A, B = sp.symbols('A B')",
-      'sp.Eq(sp.Union(sp.FiniteSet(A), sp.FiniteSet(B)), sp.FiniteSet(B))',
+      'sp.Eq(sp.Union(sp.FiniteSet(1), sp.FiniteSet(1, 2)), sp.FiniteSet(1, 2))',
     ],
   },
   {
-    latex: 'A \\subset B',
+    latex: '\\mathbb{Z} \\subset \\mathbb{R}',
     expectedPython: [
-      "A, B = sp.symbols('A B')",
-      'sp.And(sp.Eq(sp.Union(sp.FiniteSet(A), sp.FiniteSet(B)), sp.FiniteSet(B)), sp.Ne(sp.FiniteSet(A), sp.FiniteSet(B)))',
+      'sp.And(sp.Eq(sp.Union(sp.S.Integers, sp.S.Reals), sp.S.Reals), sp.Ne(sp.S.Integers, sp.S.Reals))',
     ],
   },
   {
+    // sympy has no set-typed symbol, so `A ⊆ B` on non-set operands
+    // can't name two unknown sets — error rather than emitting the
+    // singleton (membership) reading.
     latex: 'A \\nsubseteq B',
-    expectedPython: [
-      "A, B = sp.symbols('A B')",
-      'sp.Not(sp.Eq(sp.Union(sp.FiniteSet(A), sp.FiniteSet(B)), sp.FiniteSet(B)))',
-    ],
+    expectedPython: ["A, B = sp.symbols('A B')"],
+    issues: ['subset/superset needs concrete set operands'],
   },
   {
     // A D-operator-declared name is a function of the variable — later
