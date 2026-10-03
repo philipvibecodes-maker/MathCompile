@@ -1182,11 +1182,10 @@ class Emitter {
         ];
       }
       case 'Congruent':
-        // `x \equiv b \pmod m` — CE's pmod form. [x, b, m] -> Eq(Mod(x, m), b).
-        return [
-          `${this.sp}Eq(${this.sp}Mod(${this.emit(args[0])}, ${this.emit(args[2])}), ${this.emit(args[1])})`,
-          PREC_ATOM,
-        ];
+        // `x \equiv b \pmod m` — sympy has no congruence relation, and
+        // Eq(Mod(x, m), b) is only right when b is the canonical residue
+        // (x ≡ 9 (mod 7) is true with Mod(x,7) = 2, not 9). Honest stub.
+        return this.unknownCall('Congruent', args);
       case 'Condition': {
         // A Condition escaping a Set wrapper — defensive; the variable
         // comes from the predicate's single free name.
@@ -2387,13 +2386,9 @@ class Emitter {
           );
           return [`${this.fn(name)}(${this.emit(args[1])})`, PREC_ATOM];
         }
-        // `a \equiv b \pmod{m}` — SymPy has no modular-congruence
-        // relation, but Eq(Mod(a, m), b) states it faithfully.
-        if (name === 'Congruent' && args.length === 4)
-          return [
-            `${this.sp}Eq(${this.sp}Mod(${this.emit(args[1])}, ${this.emit(args[3])}), ${this.emit(args[2])})`,
-            PREC_ATOM,
-          ];
+        // `a \equiv b \pmod{m}` — sympy has no congruence relation and
+        // Eq(Mod(a,m), b) is wrong for non-canonical b; the generic path
+        // keeps the honest Congruent(...) stub.
         if (CALL_RENAMES[name])
           return [`${this.sp}${CALL_RENAMES[name]}(${rendered})`, PREC_ATOM];
         if (this.scope.declared.has(name) || !SP_BUILTIN_CALL.has(name)) {
