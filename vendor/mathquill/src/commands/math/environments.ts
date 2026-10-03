@@ -774,6 +774,10 @@ class DisplayLines extends CellGrid {
   rowSep = '\\\\ ';
   gridClass = 'mq-displaylines mq-non-leaf';
   cellTextAlign = 'left';
+  // Filling the root makes this the field's line container: the cursor
+  // clamps to the first/last line's ends instead of sitting beside the
+  // whole block (see Cursor::rootEdgeEnd).
+  fillsRootEdge = true;
 
   latexOpen() {
     return '\\displaylines{';

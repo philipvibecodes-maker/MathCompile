@@ -72,7 +72,7 @@ suite('environments', function () {
 
     test('inside a displaylines row splits the row', function () {
       mq.latex('\\displaylines{x\\\\ +1}');
-      mq.moveToRightEnd().keystroke('Left').keystroke('Left'); // between + and 1
+      mq.moveToRightEnd().keystroke('Left'); // between + and 1
       mq.insertLineBreak();
       assert.equal(mq.latex(), '\\displaylines{x\\\\ +\\\\ 1}');
     });

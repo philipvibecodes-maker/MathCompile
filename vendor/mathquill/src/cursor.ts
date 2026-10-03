@@ -110,12 +110,30 @@ class Cursor extends Point {
     // FIXME pass cursor to .blur() so text can fix cursor pointers when removing itself
     if (oldParent !== parent && oldParent.blur) oldParent.blur(this);
   }
+  // MATHCOMPILE: when a \displaylines grid fills the whole root, the
+  // field's edges are the first line's start and the last line's end —
+  // the cursor never sits beside the whole (vertically centered) block.
+  rootEdgeEnd(dir: Direction): NodeRef {
+    var root = this.controller.root;
+    if (this.parent !== root) return;
+    var edge = root.getEnd(L);
+    if (
+      edge &&
+      edge === root.getEnd(R) &&
+      (edge as MQNode & { fillsRootEdge?: boolean }).fillsRootEdge
+    ) {
+      return (edge as MQNode).getEnd(dir);
+    }
+    return;
+  }
   /** Place the cursor before or after `el`, according the side specified by `dir`. */
   insDirOf(dir: Direction, el: MQNode) {
     prayDirection(dir);
     this.domFrag().insDirOf(dir, el.domFrag());
     this.withDirInsertAt(dir, el.parent, el[dir], el);
     this.parent.domFrag().addClass('mq-hasCursor');
+    var edgeEnd = this.rootEdgeEnd(dir);
+    if (edgeEnd) this.insAtDirEnd(dir, edgeEnd as MQNode);
     return this;
   }
   insLeftOf(el: MQNode) {
@@ -131,6 +149,8 @@ class Cursor extends Point {
     this.domFrag().insAtDirEnd(dir, el.domFrag().oneElement());
     this.withDirInsertAt(dir, el, 0, el.getEnd(dir));
     el.focus();
+    var edgeEnd = this.rootEdgeEnd(dir);
+    if (edgeEnd) this.insAtDirEnd(dir, edgeEnd as MQNode);
     return this;
   }
   insAtLeftEnd(el: MQNode) {
