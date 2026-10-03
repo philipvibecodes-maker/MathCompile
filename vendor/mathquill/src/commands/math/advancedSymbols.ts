@@ -524,7 +524,8 @@ LatexCmds['⇕'] = LatexCmds.Updownarrow = bindVanillaSymbol(
   '&#8661;',
   'up and down arrow'
 );
-LatexCmds['↦'] = LatexCmds.mapsto = bindVanillaSymbol(
+// MATHCOMPILE: \mapsto is a relation — binary-operator spacing like \to
+LatexCmds['↦'] = LatexCmds.mapsto = bindBinaryOperator(
   '\\mapsto ',
   '&#8614;',
   'maps to'

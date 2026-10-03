@@ -504,6 +504,29 @@
     }
   }
 
+  // MATHCOMPILE: \displaylines is the field's line container, not a
+  // boxed grid — no horizontal indent, so line 1 doesn't shift when a
+  // second line is added.
+  .mq-displaylines {
+    margin-left: 0;
+    margin-right: 0;
+
+    table {
+      border-spacing: 0 3px;
+    }
+
+    td {
+      padding-left: 0;
+      padding-right: 0;
+    }
+  }
+
+  // MATHCOMPILE: display-mode comma — thin space after, like LaTeX's
+  // mathpunct spacing.
+  .mq-comma {
+    padding-right: 0.167em;
+  }
+
   .mq-array > span {
     display: block;
   }

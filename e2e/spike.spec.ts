@@ -228,7 +228,6 @@ test('insertLineBreak inside displaylines splits the row', async ({ page }) => {
     const { mq } = window.spike;
     mq.latex('\\displaylines{x\\\\ +1}');
     mq.focus();
-    mq.keystroke('Left'); // enter env -> right end of last row ('+1')
     mq.keystroke('Left'); // caret between '+' and '1'
     mq.insertLineBreak();
     return { latex: mq.latex(), rows: mq.latex().split('\\\\').length };

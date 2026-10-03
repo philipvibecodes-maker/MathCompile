@@ -411,19 +411,26 @@ class CellGrid extends MathCommand {
       ? new Fragment(rightStart, rightEnd)
       : new Fragment(0, 0);
 
-    var newCell = new MatrixCell(cell.row + 1, this);
+    // Bump the rows below before the new cell exists: `new MatrixCell`
+    // self-adopts into the child chain, so a bump after construction
+    // would visit it too (a mid-row split then merges the tail into the
+    // next row as 'x&y').
     this.eachChild(function (child) {
       const c = child as MatrixCell;
       if (c.row > cell.row) c.row += 1;
       return undefined;
     });
+    var newCell = new MatrixCell(cell.row + 1, this);
     this.blocks.splice(this.cells.indexOf(cell) + 1, 0, newCell);
 
     rightFrag.disown();
     rightFrag.adopt(newCell, 0, 0);
 
-    // DOM: append a new <tr> after this cell's row.
+    // DOM: append a new <tr> after this cell's row and move the
+    // split-off content's elements into its <td> (adopt() only relinks
+    // the tree; the spans would stay behind in the old row).
     const td = this.renderCell(newCell);
+    if (rightFrag.ends[L]) rightFrag.domFrag().appendTo(td);
     const tr = cell.domFrag().oneElement().closest('tr');
     tr?.after(h('tr', {}, [td]));
 
@@ -774,6 +781,10 @@ class DisplayLines extends CellGrid {
   rowSep = '\\\\ ';
   gridClass = 'mq-displaylines mq-non-leaf';
   cellTextAlign = 'left';
+  // Filling the root makes this the field's line container: the cursor
+  // clamps to the first/last line's ends instead of sitting beside the
+  // whole block (see Cursor::rootEdgeEnd).
+  fillsRootEdge = true;
 
   latexOpen() {
     return '\\displaylines{';

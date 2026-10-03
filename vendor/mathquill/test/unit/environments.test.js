@@ -72,9 +72,16 @@ suite('environments', function () {
 
     test('inside a displaylines row splits the row', function () {
       mq.latex('\\displaylines{x\\\\ +1}');
-      mq.moveToRightEnd().keystroke('Left').keystroke('Left'); // between + and 1
+      mq.moveToRightEnd().keystroke('Left'); // between + and 1
       mq.insertLineBreak();
       assert.equal(mq.latex(), '\\displaylines{x\\\\ +\\\\ 1}');
+    });
+
+    test('inside a non-last displaylines row splits without merging rows', function () {
+      mq.latex('\\displaylines{abc\\\\ de\\\\ fg}');
+      mq.moveToLeftEnd().keystroke('Right').keystroke('Right'); // after 'b' in row 0
+      mq.insertLineBreak();
+      assert.equal(mq.latex(), '\\displaylines{ab\\\\ c\\\\ de\\\\ fg}');
     });
 
     test('inside a matrix cell adds a row below', function () {

@@ -487,6 +487,20 @@
 .mq-math-mode .mq-displaylines .mq-bracket-r {
   right: 0;
 }
+.mq-math-mode .mq-displaylines {
+  margin-left: 0;
+  margin-right: 0;
+}
+.mq-math-mode .mq-displaylines table {
+  border-spacing: 0 3px;
+}
+.mq-math-mode .mq-displaylines td {
+  padding-left: 0;
+  padding-right: 0;
+}
+.mq-math-mode .mq-comma {
+  padding-right: 0.167em;
+}
 .mq-math-mode .mq-array > span {
   display: block;
 }
