@@ -68,6 +68,36 @@ test('calculator evaluates each statement row of a multi-line cell', async ({
   await expect(rows.nth(1)).toContainText('5');
 });
 
+// The calculator reports issues like the python target's overlay, but
+// in the input column: the message panel mounts under the math-field —
+// in flow, so it never covers the field's other input lines — while
+// the failing statement's output row keeps just its ! marker.
+test('a failing statement reports the error in the input column', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await setTarget(page, 'calculator');
+
+  const mf = cell(page, 0);
+  await mf.click();
+  await mf.pressSequentially('2+2', { delay: 40 });
+  await page.keyboard.press('Enter');
+  await mf.pressSequentially('\\sum', { delay: 40 });
+  // Enter accepts the open latex command (the sum template lands with
+  // the caret in the lower bound); the upper bound stays empty.
+  await page.keyboard.press('Enter');
+  await mf.pressSequentially('i=0', { delay: 40 });
+
+  const rows = page.locator('.calc-row');
+  await expect(rows).toHaveCount(2, { timeout: 90_000 });
+  await expect(rows.nth(0).locator('.calc-math')).toContainText('4');
+  await expect(rows.nth(1).locator('.parse-error-icon')).toBeVisible();
+  const issues = page.locator('.cell-input .calc-issues');
+  await expect(issues).toBeVisible();
+  await expect(issues).toContainText('missing argument');
+  await expect(page.locator('.cell-output .calc-issues')).toHaveCount(0);
+});
+
 test('indefinite integral shows the constant of integration last', async ({
   page,
 }) => {

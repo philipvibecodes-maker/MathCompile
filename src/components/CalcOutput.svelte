@@ -1,11 +1,13 @@
 <script lang="ts">
   import {
     calcEngine,
+    cellIssues,
     evaluate,
     interimEvaluate,
     type CalcRow,
+    type CalcRowErr,
   } from '../calc/calculator.svelte.ts';
-  import { latexToStatementStrings } from '../compile/ir';
+  import { latexToStatementStrings, type Issue } from '../compile/ir';
   import { mountStaticMath } from '../editor/static-math';
   import { highlightPython } from '../calc/python-highlight';
   import { appStore, type Cell } from '../state/store.svelte';
@@ -30,6 +32,27 @@
     appStore.showCode &&
       rows.some((r) => r.ok && r.displayCode && r.displayCode !== r.code),
   );
+
+  // Issue reporting is split like the python overlay's marker/panel:
+  // the failing row keeps just its ! / i severity marker here, while
+  // the messages go to cellIssues — the input column's CalcIssues
+  // mounts the panel under the field once typing has paused.
+  $effect(() => {
+    const issues: Issue[] =
+      failed !== ''
+        ? [{ severity: 'error', message: failed }]
+        : rows
+            .filter((r): r is CalcRowErr => !r.ok)
+            .map((r) => ({
+              severity: r.severity ?? 'error',
+              message: r.error,
+              line: r.line,
+            }));
+    cellIssues[cell.id] = issues;
+    return () => {
+      delete cellIssues[cell.id];
+    };
+  });
 
   const statusLabel = $derived(
     calcEngine.status === 'loading'
@@ -119,7 +142,7 @@
 
 <div class="cell-output calc-output">
   {#if failed !== ''}
-    <span class="calc-error" title={failed}>{failed}</span>
+    <span class="parse-error-icon" title={failed}>!</span>
   {:else if rows.length > 0}
     <div class="calc-rows" class:pending={pending}>
       {#each rows as row, i (i)}
@@ -176,8 +199,10 @@
                   ></pre>
               {/if}
             {/if}
+          {:else if (row.severity ?? 'error') === 'error'}
+            <span class="parse-error-icon" title={row.error}>!</span>
           {:else}
-            <code class="calc-error" title={row.error}>{row.error}</code>
+            <span class="note-icon" title={row.error}>i</span>
           {/if}
         </div>
       {/each}

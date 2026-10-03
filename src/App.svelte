@@ -3,6 +3,7 @@
   import { fade } from 'svelte/transition';
   import MathField from './components/MathField.svelte';
   import CalcOutput from './components/CalcOutput.svelte';
+  import CalcIssues from './components/CalcIssues.svelte';
   import { TARGETS } from './compile/targets';
   import type { TargetId } from './compile/targets';
   import CommandPalette from './components/CommandPalette.svelte';
@@ -333,12 +334,14 @@
             >
               {#if calcEngine.status === 'loading'}
                 <span class="engine-spinner" aria-hidden="true"></span>
-                SymPy engine loading — interim results use nerdamer, a
-                faster but less accurate engine
+                <span class="engine-chip-text"
+                  >SymPy engine loading — interim results use nerdamer, a
+                  faster but less accurate engine</span
+                >
               {:else if calcEngine.status === 'error'}
-                SymPy failed to load
+                <span class="engine-chip-text">SymPy failed to load</span>
               {:else}
-                SymPy ready
+                <span class="engine-chip-text">SymPy ready</span>
               {/if}
               <button
                 type="button"
@@ -461,7 +464,12 @@
         {#each appStore.cells as cell, i (cell.id)}
           <li class="expr-row">
             <span class="expr-index">{i + 1}</span>
-            <MathField {cell} />
+            <div class="cell-input">
+              <MathField {cell} />
+              {#if appStore.target === 'calculator'}
+                <CalcIssues {cell} />
+              {/if}
+            </div>
             <div
               class="col-resize"
               role="separator"

@@ -32,6 +32,9 @@ export type MathJson =
 export interface Issue {
   severity: 'error' | 'note';
   message: string;
+  /** 0-based input line (displayline index) the issue was raised at,
+   * when codegen can place it — where a line-anchored indicator pins. */
+  line?: number;
 }
 
 export interface NormResult {
@@ -299,9 +302,7 @@ function describeError(node: MathJson[]): string {
     case 'missing':
       return 'empty slot — fill it in or delete it';
     case 'unexpected-command':
-      return src === '\\int'
-        ? 'integral sign with no integrand — type the integrand after ∫'
-        : `incomplete or unsupported command${hint}`;
+      return describeCommand(src, hint);
     case 'unexpected-operator':
       return `stray operator${hint} — delete it or finish the expression`;
     case 'unexpected-delimiter':
@@ -315,6 +316,20 @@ function describeError(node: MathJson[]): string {
     default:
       return `unparseable input (${code})`;
   }
+}
+
+// A 'unexpected-command' diagnostic names the command CE couldn't
+// place. \\ and \displaylines are serialization internals (the row
+// separator and the multi-line wrapper), so inside an expression they
+// mean a line break leaked into a group — describe that, not the token.
+function describeCommand(src: string, hint: string): string {
+  if (src === '\\int')
+    return 'integral sign with no integrand — type the integrand after ∫';
+  if (src === '\\\\' || src === '\\newline')
+    return 'unexpected line break inside an expression';
+  if (src === '\\displaylines')
+    return 'unexpected \\displaylines inside an expression';
+  return `incomplete or unsupported command${hint}`;
 }
 
 // Flatten a subscript position to symbol-name text: a_{n+1} -> 'a_{n+1}'.
@@ -445,6 +460,9 @@ function normalizeStatementEqual(
 export function normalizeIR(json: MathJson | undefined): NormResult {
   const issues: Issue[] = [];
   if (json === undefined) return { ok: true, ir: undefined, issues };
+  // Tracks whether the current Block is the outermost (\displaylines)
+  // one — only its children count as input lines.
+  let blockDepth = 0;
 
   const normalize = (
     node: MathJson,
@@ -534,9 +552,7 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       issues.push(
         issue(
           'error',
-          src === '\\int'
-            ? 'integral sign with no integrand — type the integrand after ∫'
-            : `incomplete or unsupported command${src ? ` "${src}"` : ''}`,
+          describeCommand(src, src ? ` "${src}"` : ''),
         ),
       );
       return ['Error', "'unexpected-command'"];
@@ -551,7 +567,22 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     }
 
     if (h === 'Block' || h === 'WhereBlock') {
-      return [h, ...node.slice(1).map((n) => normalize(n, true))];
+      // The outermost Block is the \displaylines wrapper — each child is
+      // one input line, so issues raised inside it get stamped with the
+      // line's index for line-anchored reporting. (WhereBlock children
+      // are fragments of a single line — never top-level lines.)
+      const top = h === 'Block' && blockDepth === 0;
+      blockDepth++;
+      const kids = node.slice(1).map((n, i) => {
+        const issuesAt = issues.length;
+        const norm = normalize(n, true);
+        if (top)
+          for (const iss of issues.slice(issuesAt))
+            if (iss.line === undefined) iss.line = i;
+        return norm;
+      });
+      blockDepth--;
+      return [h, ...kids];
     }
 
     // \left. f \right|_{a}^{b}: CE emits the evaluation bar as
