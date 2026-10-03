@@ -121,11 +121,13 @@ export const buildCommands = (store: AppStore): Command[] => {
       id: `insert-${ins.id}`,
       title: ins.title,
       hint: ins.hint,
-      // Title minus 'Insert ' + a single shared 'insert' keyword: every
-      // entry matches 'insert <thing>' queries, but ranking is decided by
-      // the rest of the query hitting the real name — title words can't
-      // act as a bridge into keyword noise.
-      search: `${ins.title.replace(/^Insert /, '')} insert ${ins.keywords}`,
+      // Title minus 'Insert ' behind a single leading 'insert' keyword:
+      // every entry matches 'insert <thing>' queries, and since
+      // fuzzyScore is an ordered subsequence match, query terms after
+      // 'insert' hit the real title/keywords — the leading keyword can't
+      // hide a title word that precedes it (e.g. 'insert definite'
+      // reaching 'definite integral', not just 'indefinite').
+      search: `insert ${ins.title.replace(/^Insert /, '')} ${ins.keywords}`,
       keywords: ins.keywords,
       run: () => {
         const h = store.fields.get(focusId);
