@@ -156,6 +156,35 @@ body {
   display: flex;
   align-items: stretch;
   margin-bottom: 6px;
+  border-radius: 6px;
+  transition: background 0.12s ease;
+}
+
+/* Focused row: accent left-bar + row tint + highlighted index — the
+   field itself keeps a quiet border so the active cell is found by the
+   bar, not a ring. */
+.expr-row:focus-within {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.expr-row:focus-within .cell-input::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 2px 0 0 2px;
+  background: var(--accent);
+}
+
+.expr-row:focus-within .expr-index {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.expr-row:hover math-field:not(:focus-within) {
+  border-color: var(--faint);
 }
 
 .expr-index {
@@ -220,7 +249,6 @@ body {
 
 .expr-row:focus-within math-field {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
 }
 
 /* Calculator-style LaTeX output beside each cell (target = latex). */
