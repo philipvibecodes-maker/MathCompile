@@ -1139,6 +1139,42 @@ const FIXTURES: {
     ],
   },
   {
+    // A declared function name in call-arg position is the unapplied
+    // function — `g(f)` emits the eta form `sp.Lambda(x, f(x))` (the
+    // bare name can't sympify; `f(x)` would read as the composition
+    // arg evaluated at x).
+    latex: '\\displaylines{f(x) = x^2 \\\\ g(f)}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'g = sp.Function("g")',
+      'def f(x):',
+      '    return x**2',
+      'g(sp.Lambda(x, f(x)))',
+    ],
+  },
+  {
+    latex: '\\displaylines{f(x) = x^2 \\\\ \\sin(f)}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'def f(x):',
+      '    return x**2',
+      'sp.sin(sp.Lambda(x, f(x)))',
+    ],
+  },
+  {
+    // Multi-arg signatures eta-expand over the tuple; `f + 1` stays
+    // applied (`f(x) + 1`) — arithmetic position is the pointwise
+    // reading, not a function value.
+    latex: '\\displaylines{f(x,y) = x+y \\\\ g(f)}',
+    expectedPython: [
+      "x, y = sp.symbols('x y')",
+      'g = sp.Function("g")',
+      'def f(x, y):',
+      '    return x + y',
+      'g(sp.Lambda((x, y), f(x, y)))',
+    ],
+  },
+  {
     // `x \in S^{+}` reads S⁺ as the positive part of {S} — not the
     // pseudoinverse (which needs a concrete matrix; `Matrix.pinv()` is
     // a method, `sp.pinv` doesn't exist).

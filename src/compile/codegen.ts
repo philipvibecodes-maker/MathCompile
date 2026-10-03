@@ -346,6 +346,12 @@ interface Scope {
   /** Function names currently emitting their applied form — guards
    * `f`/`g` mutual-reference cycles (`f` in g's args, `g` in f's). */
   emitting: Set<string>;
+  /** Dependent variables — names declared as functions through
+   * derivative notation (`\dot{x}`, `D(x,t)`, `y'`, `f^{(n)}`). A bare
+   * reference is the value `x(t)`, never the unapplied function —
+   * they're exempt from callArg's eta-expansion (`f(x)` in
+   * `\dot{x} = f(x)` emits `f(x(t))`, not `f(Lambda(t, x(t)))`). */
+  depVars: Set<string>;
   /** Symbol kwargs inferred from memberships (`x \in \mathbb{R}` ->
    * `real=True`) applied to this cell's Symbol def lines. */
   assumptions: Map<string, Set<string>>;
@@ -540,10 +546,12 @@ class Emitter {
       const argNodes = this.scope.fnArgs.get(name);
       if (argNodes === undefined || this.scope.emitting.has(name))
         return ident;
-      // `g(f)`/`f + 1` with an unapplied UndefinedFunction raises
-      // TypeError — emit the applied form (`f(x)`) recorded at the
-      // decl/call site. The emitting guard breaks f/g mutual-reference
-      // cycles on the second hop.
+      // Bare function name in arithmetic position (`f + 1`) — emit the
+      // applied form `f(x)` recorded at the decl/call site: the pointwise
+      // reading matches, and the bare name can't sympify anyway. Call-arg
+      // position (`g(f)`, `sin(f)`) is handled in applyArgs, which emits
+      // the unapplied eta form `sp.Lambda(x, f(x))`. The emitting guard
+      // breaks f/g mutual-reference cycles on the second hop.
       this.scope.emitting.add(name);
       try {
         return `${ident}(${argNodes.map((a) => this.emit(a)).join(', ')})`;
@@ -868,9 +876,42 @@ class Emitter {
     const fnArgs = args.filter((a) => a !== h);
     if (fnArgs.length > 0) this.scope.fnArgs.set(h, fnArgs);
     return [
-      `${this.fn(h)}(${args.map((a) => this.emit(a)).join(', ')})`,
+      `${this.fn(h)}(${args.map((a) => this.callArg(a)).join(', ')})`,
       PREC_ATOM,
     ];
+  }
+
+  /** Emit one call argument. A bare declared-function name in arg
+   * position means the function itself (`g(f)`, `sin(f)`) — emit the
+   * unapplied eta form `sp.Lambda(x, f(x))` since the bare name can't
+   * sympify. Dependent variables (depVars) stay applied — `f(x)` in an
+   * ODE body means the value `x(t)`. Arithmetic positions (`f + 1`)
+   * don't reach here — sym() emits those applied. */
+  private callArg(a: MathJson): string {
+    if (
+      isStr(a) &&
+      this.scope.functions.has(a) &&
+      !this.scope.depVars.has(a) &&
+      !this.scope.emitting.has(a)
+    ) {
+      const argNodes = this.scope.fnArgs.get(a);
+      if (argNodes !== undefined) {
+        this.scope.emitting.add(a);
+        try {
+          // A literal call site (`f(2)`) recorded non-symbol args that
+          // can't be Lambda params — synthesize bound names of the same
+          // arity instead of falling back to `f(2)`.
+          const params = argNodes.every(isStr)
+            ? argNodes.map((x) => this.emit(x))
+            : argNodes.map((_, i) => `${this.sp}Symbol("x${i === 0 ? '' : i}")`);
+          const sig = params.length === 1 ? params[0] : `(${params.join(', ')})`;
+          return `${this.sp}Lambda(${sig}, ${this.scope.functions.get(a)!}(${params.join(', ')}))`;
+        } finally {
+          this.scope.emitting.delete(a);
+        }
+      }
+    }
+    return this.emit(a);
   }
 
   /** Emit `node`, wrapping in parens when its precedence is below minPrec. */
@@ -1457,6 +1498,7 @@ class Emitter {
         ) {
           f = `${this.fn(args[0])}(${this.emit(args[1])})`;
           this.scope.fnArgs.set(args[0], [args[1]]);
+          this.scope.depVars.add(args[0]);
         } else {
           f = this.emit(args[0]);
           // `\dot{x}` after `x = 5` — sp.diff(5, t) evaluates to 0, so
@@ -1487,7 +1529,7 @@ class Emitter {
           // inverse(f)(x)-style row instead of InverseFunction garbage.
           const base = callee[1];
           const mapped = isStr(base) ? INVERSE_FUNCS[base] : undefined;
-          const argList = args.slice(1).map((a) => this.emit(a)).join(', ');
+          const argList = args.slice(1).map((a) => this.callArg(a)).join(', ');
           if (base === 'Sqrt')
             return [`(${argList})**2`, PREC_POW];
           if (mapped) return [`${this.sp}${mapped}(${argList})`, PREC_ATOM];
@@ -1536,7 +1578,10 @@ class Emitter {
           // raises TypeError).
           if (isStr(f)) {
             const fvars = argNodes.filter((a) => isStr(a) && a !== f);
-            if (fvars.length > 0) this.scope.fnArgs.set(f, fvars);
+            if (fvars.length > 0) {
+              this.scope.fnArgs.set(f, fvars);
+              this.scope.depVars.add(f);
+            }
           }
           const applied = (list: string[]) =>
             fname !== null
@@ -1569,7 +1614,7 @@ class Emitter {
           // `(x \mapsto x^2)(3)` — a lambda callee is a real call, not
           // juxtaposed factors (the generic multiply path below would
           // emit `(lambda ...) * 3`, a TypeError at exec).
-          const argList = args.slice(1).map((a) => this.emit(a)).join(', ');
+          const argList = args.slice(1).map((a) => this.callArg(a)).join(', ');
           return [`${this.emit(callee)}(${argList})`, PREC_ATOM];
         }
         // `f^{-1}(x)` — the inverse of f applied: a distinct undefined
@@ -1620,7 +1665,10 @@ class Emitter {
         const name = isStr(args[0])
           ? `${this.fn(args[0])}(${arg})`
           : this.emit(args[0], PREC_ATOM);
-        if (isStr(args[0])) this.scope.fnArgs.set(args[0], ['x']);
+        if (isStr(args[0])) {
+          this.scope.fnArgs.set(args[0], ['x']);
+          this.scope.depVars.add(args[0]);
+        }
         const n =
           isNum(args[1]) && numText(args[1]) !== '1'
             ? `, ${numText(args[1])}`
@@ -1654,6 +1702,7 @@ class Emitter {
           // differ from the callee name.
           const v = this.sym(args[0] === 'x' ? 't' : 'x');
           this.scope.fnArgs.set(args[0], [args[0] === 'x' ? 't' : 'x']);
+          this.scope.depVars.add(args[0]);
           if (args[1] !== undefined && !isNum(args[1])) {
             // Same wasm-crashing (v, n) tuple as the applied path.
             this.scope.flag(
@@ -2321,7 +2370,7 @@ class Emitter {
         }
         const rendered = args
           .slice(1)
-          .map((a) => this.emit(a))
+          .map((a) => this.callArg(a))
           .join(', ');
         // `\mathrm{trace|rank|inverse|transpose|norm|eigenvals|
         // eigenvects|tr}(A)`: sympy exposes these as Matrix methods,
@@ -2367,7 +2416,7 @@ class Emitter {
               'error',
               `${fnName} needs at least ${minArgs} arguments`,
             );
-            return [`${this.sp}${fnName}(${args.map((a) => this.emit(a)).join(', ')})`, PREC_ATOM];
+            return [`${this.sp}${fnName}(${args.map((a) => this.callArg(a)).join(', ')})`, PREC_ATOM];
           }
           // gcd/lcm take exactly two terms — a third arg lands in *gens
           // (polynomial generators) and SymPy raises
@@ -2375,12 +2424,12 @@ class Emitter {
           // on numbers. The list form folds over all terms.
           if ((fnName === 'gcd' || fnName === 'lcm') && args.length > 2) {
             return [
-              `${this.sp}${fnName}([${args.map((a) => this.emit(a)).join(', ')}])`,
+              `${this.sp}${fnName}([${args.map((a) => this.callArg(a)).join(', ')}])`,
               PREC_ATOM,
             ];
           }
           return [
-            `${this.sp}${fnName}(${args.map((a) => this.emit(a)).join(', ')})`,
+            `${this.sp}${fnName}(${args.map((a) => this.callArg(a)).join(', ')})`,
             PREC_ATOM,
           ];
         }
@@ -2388,7 +2437,7 @@ class Emitter {
         // but stay unblocked if raw IR is fed in directly.
         this.scope.flag('note', `unknown head "${h}" — emitted as ${h}(...)`);
         return [
-          `${this.sp}${pyIdent(h)}(${args.map((a) => this.emit(a)).join(', ')})`,
+          `${this.sp}${pyIdent(h)}(${args.map((a) => this.callArg(a)).join(', ')})`,
           PREC_ATOM,
         ];
     }
@@ -2697,6 +2746,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       // stays: it carries the pending `x = sp.Function` def line for
       // earlier statements that applied it.
       emitter.scope.fnArgs.delete(name);
+      emitter.scope.depVars.delete(name);
     }
     if (emitter.scope.errorCount > before) return { lines: [] };
     return {
@@ -3002,6 +3052,7 @@ function buildScope(
     functions: new Map(),
     fnArgs: new Map(),
     emitting: new Set(),
+    depVars: new Set(),
     issues,
     cellIssues,
     cell,
