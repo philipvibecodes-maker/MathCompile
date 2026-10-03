@@ -1231,6 +1231,20 @@ const FIXTURES: {
     ],
   },
   {
+    // `expr \text{ for } x \in S` — set-builder notation, rewritten to
+    // the Comprehension head at parse (its ForAll IR is identical to
+    // `\forall`'s); a relational bound becomes a real domain.
+    latex: '2x \\text{ for } x \\in \\{1,2,3\\}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.imageset(sp.Lambda(x, 2 * x), sp.FiniteSet(1, 2, 3))',
+    ],
+  },
+  {
+    latex: 'x \\text{ for } x>0',
+    expectedPython: ['sp.Interval.open(0, sp.oo)'],
+  },
+  {
     latex: 'f \\circ g',
     expectedPython: [
       'f = sp.Function("f")',

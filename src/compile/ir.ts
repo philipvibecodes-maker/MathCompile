@@ -196,6 +196,23 @@ export function latexToStatementStrings(latex: string): string[] {
   return statements.map((s) => s.trim()).filter((s) => s !== '');
 }
 
+// `\text{for}`/`operatorname{for}`-style comprehensions (`2x \text{ for }
+// x \in S`) parse to the same ForAll head as `\forall` — the IR cannot
+// tell them apart, so this is decided here where the latex is still
+// known. A statement containing a for-token has every ForAll node
+// rewritten to CE's own Comprehension head (expr-first arg order),
+// which codegen lowers to sp.imageset — the set-building reading —
+// while `\forall` keeps its head and emits a predicate.
+const TEXT_FOR =
+  /\\(?:operatorname|math[a-z]*|text[a-z]*)\s*\{?\s*for(?![a-zA-Z])(?!\s+all\b)/;
+const forToComprehension = (n: MathJson): MathJson => {
+  if (!isArray(n)) return n;
+  const kids = n.slice(1).map(forToComprehension);
+  return head(n) === 'ForAll' && kids.length === 2
+    ? (['Comprehension', kids[1], kids[0]] as MathJson)
+    : ([head(n), ...kids] as MathJson);
+};
+
 // Parse a cell's LaTeX into raw MathJSON. Multiple statements become a
 // `["Block", ...]` node so downstream code sees one tree per cell. Parse
 // failures degrade to an Error node — the pipeline reports, never throws.
@@ -203,16 +220,18 @@ export function parseCellLatex(latex: string): MathJson | undefined {
   const statements = latexToStatementStrings(latex);
   if (statements.length === 0) return undefined;
   const parsed = statements.map((s) => {
+    let j: MathJson;
     try {
       // `form: 'raw'` skips CE canonicalization so the user's term order
       // survives to codegen (a * 2 stays Multiply(a, 2), not sorted).
       // \antid/\iint (MathQuill's boundless insertion aliases for \int)
       // already read as \int here — outputLatex canonicalizes them in
       // latexToStatementStrings, so CE sees an ordinary Integrate node.
-      return ce().parse(s, { form: 'raw' }).json as MathJson;
+      j = ce().parse(s, { form: 'raw' }).json as MathJson;
     } catch {
       return ['Error', `'parse-failed'`] as MathJson;
     }
+    return TEXT_FOR.test(s) ? forToComprehension(j) : j;
   });
   // A single statement can itself parse to a Block (`x² \text{ where }
   // x>0` — CE parks the condition first). Tag those so real `\\` rows

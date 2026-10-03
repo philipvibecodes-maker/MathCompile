@@ -2261,11 +2261,14 @@ class Emitter {
           return [`${this.sp}conjugate(${this.emit(args[1])})`, PREC_ATOM];
         // `expr \text{ for } x \in S` — the image of expr over the set,
         // sp.imageset(Lambda(x, expr), S). `for x = 2` parses as a
-        // Comprehension with swapped arg order. A relational condition
-        // (x>0) becomes a real domain (Interval/FiniteSet/Complement)
-        // so the image actually evaluates; the bare-var form
-        // `x for ...` collapses to the domain itself. Unhandled
-        // conditions keep the honest opaque call.
+        // Comprehension with swapped arg order, and `\text{for}`-style
+        // inputs are rewritten to Comprehension at parse (their ForAll
+        // IR is identical to `\forall`'s — see parseCellLatex). A
+        // relational condition (x>0) becomes a real domain
+        // (Interval/FiniteSet/Complement) so the image actually
+        // evaluates; the bare-var form `x for ...` collapses to the
+        // domain itself. Unhandled conditions keep the honest opaque
+        // call.
         if (name === 'Comprehension' && args.length === 3) {
           const [cond, expr] = [args[2], args[1]];
           if (isArr(cond) && cond[0] === 'Element' && isStr(cond[1])) {
@@ -2296,10 +2299,10 @@ class Emitter {
         // all, so the predicate is the emitted form: `∀x∈S, p` →
         // `Implies(Contains(x, S), p)` and `∃x∈S, p` → `And(Contains,
         // p)`; a relational domain (`∀x>0, p`) emits the condition the
-        // same way. CE also parses `expr \text{ for } x \in S` to this
-        // same head — a non-Boolean body (`2x`) isn't a predicate, so
-        // flag rather than emitting `Implies(..., 2*x)` (TypeError at
-        // exec). `∀x, p` binds no domain — emit the predicate itself.
+        // same way. A non-Boolean body (`\forall x\in S, 2x`) isn't a
+        // predicate — flag rather than emitting `Implies(..., 2*x)`
+        // (TypeError at exec). `∀x, p` binds no domain — emit the
+        // predicate itself.
         if (
           (name === 'ForAll' || name === 'Exists') &&
           args.length === 3
