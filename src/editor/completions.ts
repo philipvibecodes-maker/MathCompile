@@ -172,15 +172,14 @@ export const COMPLETIONS: CompletionItem[] = [
   { name: 'qquad', hint: 'wider space' },
 ];
 
-// Prefix match, catalog order preserved; exact matches float first so a
-// full word ("sum") ranks above its longer completions ("summation" is
-// not in the list, but "subset" vs "subseteq" matters).
+// Prefix match in catalog order — the list itself is the ranking (most
+// common commands first), so 'i' leads with int, not the shortest name.
 export function matchCompletions(
   prefix: string,
   limit = 8,
 ): CompletionItem[] {
   const p = prefix.toLowerCase();
-  const starts = COMPLETIONS.filter((c) => c.name.toLowerCase().startsWith(p));
-  starts.sort((a, b) => a.name.length - b.name.length);
-  return starts.slice(0, limit);
+  return COMPLETIONS.filter((c) =>
+    c.name.toLowerCase().startsWith(p),
+  ).slice(0, limit);
 }
