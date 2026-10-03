@@ -583,6 +583,7 @@ const CALL_RENAMED = new Set([
   'Imaginary',
   'Argument',
   'Superstar',
+  'Congruent',
   'nCk',
   'nCr',
   'nPr',

@@ -237,15 +237,13 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
   });
 
-  it('lowers \\setminus and \\emptyset; \\pmod stubs honestly', () => {
+  it('lowers \\setminus, \\emptyset, and \\pmod congruences', () => {
     expect(calc('\\emptyset').statements[0].code).toBe(F('sp.EmptySet'));
     expect(calc('\\{1,2\\}\\setminus\\{2\\}').statements[0].code).toBe(
       F('sp.Complement(sp.FiniteSet(1, 2), sp.FiniteSet(2))'),
     );
-    // sympy has no congruence relation, and Eq(Mod(x,7), 3) is only
-    // right for canonical residues — emit the honest Congruent stub.
     expect(calc('x\\equiv3\\pmod{7}').statements[0].code).toBe(
-      F('Congruent(x, 3, 7)'),
+      F('sp.Eq(sp.Mod(x, 7), 3)'),
     );
   });
 

@@ -1003,14 +1003,10 @@ const FIXTURES: {
     issues: ['unknown head "multinomial"'],
   },
   {
-    // a \equiv b \pmod{m} — sympy has no congruence relation, and
-    // Eq(Mod(a,m), b) is only right for canonical b; honest stub.
+    // a \equiv b \pmod{m} — SymPy has no congruence relation;
+    // Eq(Mod(a, m), b) states it faithfully.
     latex: '5 \\equiv 2 \\pmod{3}',
-    expectedPython: [
-      'Congruent = sp.Function("Congruent")',
-      'Congruent(5, 2, 3)',
-    ],
-    issues: ['unknown head "Congruent"'],
+    expectedPython: ['sp.Eq(sp.Mod(5, 3), 2)'],
   },
   {
     // \mathrm{otherwise} in a cases condition is the default branch —
