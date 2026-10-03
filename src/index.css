@@ -237,6 +237,11 @@ body {
   gap: 5px;
 }
 
+/* display:inline-flex above beats the UA [hidden] rule — restore it. */
+.mc-ghost[hidden] {
+  display: none;
+}
+
 .mc-ghost-suffix {
   font-family: ui-monospace, monospace;
 }
