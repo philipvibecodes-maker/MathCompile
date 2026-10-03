@@ -333,6 +333,15 @@ interface Scope {
   /** Assigned names whose value is a set (`A = \{1,2\}`) — later set
    * ops take them as operands directly, not FiniteSet(A) singletons. */
   setNames: Set<string>;
+  /** Assigned names whose value is enumerable-finite (`A = \{1,2\}`,
+   * `B = A`, `C = {1,2} \cup {3}`) — a quantifier `∀x ∈ A` can fold to
+   * `And(*(p.subs(x, e) for e in A))` instead of an unevaluated
+   * symbolic Implies. */
+  finiteNames: Set<string>;
+  /** Assigned names whose value is a python list (`B = [0,1]` — a
+   * `List` IR node, not a sympy Set) — set ops must splat it
+   * (`sp.FiniteSet(*B)`); `FiniteSet(B)` raises TypeError. */
+  listNames: Set<string>;
   /** Free symbol name -> emitted python identifier, insertion-ordered.
    * A def line is emitted in the cell where the name is first needed. */
   symbols: Map<string, string>;
@@ -798,6 +807,23 @@ class Emitter {
     return false;
   }
 
+  /** Enumerable-finite set nodes: a `Set` literal, a name bound to one
+   * (`finiteNames`), or a `Union`/`Intersection` of finite nodes —
+   * `for e in <these>` terminates. Intervals and the number sets are
+   * NOT finite even though they're setish (infinite iteration). */
+  isFiniteSet(n: MathJson | undefined): boolean {
+    if (isStr(n)) return this.scope.finiteNames.has(n);
+    if (!isArr(n)) return false;
+    const off = headOf(n) === 'call' ? 2 : 1;
+    const h = off === 2 ? n[1] : headOf(n);
+    if (h === 'Set' || h === 'FiniteSet') return n.length > off;
+    // A bare `List` (`[0,1]`) emits a python list — finite, iterable.
+    if (h === 'List') return n.length > off;
+    if (h === 'Union' || h === 'Intersection')
+      return n.slice(off).every((a) => this.isFiniteSet(a));
+    return false;
+  }
+
   /** The member operand of Element/NotElement: a `(x, y)` tuple needs
    * `sp.Tuple` — the `List` emission `[x, y]` isn't a SymPy Expr and
    * Function/Contains raise TypeError on it. */
@@ -815,6 +841,9 @@ class Emitter {
    * Complement compute instead of raising TypeError on bare Symbols. */
   private setArg(n: MathJson): string {
     if (this.isSetish(n)) return this.emit(n);
+    // A python list can't nest inside FiniteSet's args — splat it.
+    if (isHead(n, 'List') || (isStr(n) && this.scope.listNames.has(n)))
+      return `${this.sp}FiniteSet(*${this.emit(n)})`;
     return `${this.sp}FiniteSet(${this.emit(n)})`;
   }
 
@@ -2326,13 +2355,12 @@ class Emitter {
           // since a symbolic Implies(x∈{1,2} ⇒ p) never evaluates.
           if (isArr(dom) && dom[0] === 'Element') {
             const [v, set] = [dom[1], dom[2]];
-            if (isStr(v) && isArr(set) && set[0] === 'Set' && set.length > 1) {
+            if (isStr(v) && this.isFiniteSet(set)) {
+              // Iterate the elements so the answer evaluates at exec —
+              // `∀x∈A, p` → `And(*(p.subs(x, e) for e in A))`, `∃` → Or.
               const p = this.emit(pred);
-              const fold = set
-                .slice(1)
-                .map((e) => `(${p}).subs(${this.sym(v)}, ${this.emit(e)})`);
               return [
-                `${this.sp}${name === 'ForAll' ? 'And' : 'Or'}(${fold.join(', ')})`,
+                `${this.sp}${name === 'ForAll' ? 'And' : 'Or'}(*[(${p}).subs(${this.sym(v)}, _e) for _e in ${this.emit(set)}])`,
                 PREC_ATOM,
               ];
             }
@@ -2770,12 +2798,20 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
         (emitter.scope.matrixNames.has(node[2]) ||
           emitter.scope.matrices.has(node[2])));
     const setRhs = emitter.isSetish(node[2]);
+    const finiteRhs = emitter.isFiniteSet(node[2]);
+    const listRhs =
+      isHead(node[2], 'List') ||
+      (isStr(node[2]) && emitter.scope.listNames.has(node[2]));
     if (isStr(node[1])) {
       emitter.scope.defined.add(name);
       if (matrixRhs) emitter.scope.matrixNames.add(name);
       else emitter.scope.matrixNames.delete(name);
       if (setRhs) emitter.scope.setNames.add(name);
       else emitter.scope.setNames.delete(name);
+      if (finiteRhs) emitter.scope.finiteNames.add(name);
+      else emitter.scope.finiteNames.delete(name);
+      if (listRhs) emitter.scope.listNames.add(name);
+      else emitter.scope.listNames.delete(name);
       // A rebound name is a value now, not the earlier Function —
       // later references emit `x`, not `x(t)`. The `functions` entry
       // stays: it carries the pending `x = sp.Function` def line for
@@ -3083,6 +3119,8 @@ function buildScope(
     lambdaBound: new Set(),
     matrices: new Map(),
     setNames: new Set(),
+    finiteNames: new Set(),
+    listNames: new Set(),
     symbols: new Map(),
     functions: new Map(),
     fnArgs: new Map(),

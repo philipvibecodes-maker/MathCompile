@@ -335,9 +335,10 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(
       calc('\\exists x \\in \\mathbb{R}, x^{2}=2').statements[0].code,
     ).toBe(F('sp.And(sp.Contains(x, sp.S.Reals), sp.Eq(x**2, 2))'));
-    // Finite-set domains fold to the evaluated Boolean.
+    // Finite-set domains iterate so the answer evaluates at exec —
+    // names bound to a Set literal (A = {1,2,4}) iterate the same way.
     expect(calc('\\forall x \\in \\{1,2\\}, x>0').statements[0].code).toBe(
-      F('sp.And((sp.Gt(x, 0)).subs(x, 1), (sp.Gt(x, 0)).subs(x, 2))'),
+      F('sp.And(*[(sp.Gt(x, 0)).subs(x, _e) for _e in sp.FiniteSet(1, 2)])'),
     );
   });
 

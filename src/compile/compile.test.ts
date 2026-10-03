@@ -1231,19 +1231,47 @@ const FIXTURES: {
     ],
   },
   {
-    // Finite-set domains fold to the evaluated Boolean —
-    // `∀x∈{1,2}, p` is `And(p[x↦1], p[x↦2])` (exec → True), `∃` the Or.
+    // Finite-set domains iterate so the answer evaluates at exec —
+    // `∀x∈A, p` → `And(*(p.subs(x, e) for e in A))`, `∃` → Or. Names
+    // bound to a Set literal (A = {1,2,4}) iterate the same way.
     latex: '\\forall x \\in \\{1,2\\}, x>0',
     expectedPython: [
       'x = sp.Symbol("x")',
-      'sp.And((sp.Gt(x, 0)).subs(x, 1), (sp.Gt(x, 0)).subs(x, 2))',
+      'sp.And(*[(sp.Gt(x, 0)).subs(x, _e) for _e in sp.FiniteSet(1, 2)])',
     ],
   },
   {
     latex: '\\exists x \\in \\{1,2\\}, x^{2}=4',
     expectedPython: [
       'x = sp.Symbol("x")',
-      'sp.Or((sp.Eq(x**2, 4)).subs(x, 1), (sp.Eq(x**2, 4)).subs(x, 2))',
+      'sp.Or(*[(sp.Eq(x**2, 4)).subs(x, _e) for _e in sp.FiniteSet(1, 2)])',
+    ],
+  },
+  {
+    latex: '\\displaylines{A=\\{1, 2, 4\\}\\\\ \\forall x\\in A,\\ x>0}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'A = sp.FiniteSet(1, 2, 4)',
+      'sp.And(*[(sp.Gt(x, 0)).subs(x, _e) for _e in A])',
+    ],
+  },
+  {
+    // `B = [0,1]` binds a python list — it's finite and iterable, so
+    // `∀x∈B` folds over it; Contains/set ops splat it as `FiniteSet(*B)`
+    // (`FiniteSet(B)` on a list raises TypeError).
+    latex: '\\displaylines{B=[0,1]\\\\ \\forall x\\in B,\\ x>0}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'B = [0, 1]',
+      'sp.And(*[(sp.Gt(x, 0)).subs(x, _e) for _e in B])',
+    ],
+  },
+  {
+    latex: '\\displaylines{B=[0,1]\\\\ x\\in B}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'B = [0, 1]',
+      'sp.Contains(x, sp.FiniteSet(*B))',
     ],
   },
   {
