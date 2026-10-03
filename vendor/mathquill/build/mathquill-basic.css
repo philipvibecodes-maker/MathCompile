@@ -648,14 +648,6 @@
   text-align: center;
   vertical-align: -0.1em;
 }
-.mq-math-mode .mq-overunderset-label {
-  display: block;
-  font-size: 80%;
-  line-height: 1;
-}
-.mq-math-mode .mq-overunderset-main {
-  display: block;
-}
 .mq-math-mode .mq-overarrow {
   min-width: 0.5em;
   border-top: 1px solid;
