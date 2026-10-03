@@ -12,13 +12,32 @@
 
   let groups = $derived.by(() => {
     const q = query.trim();
-    const out: { name: string; items: RefEntry[] }[] = [];
+    const scored: { e: RefEntry; score: number }[] = [];
     for (const e of REFERENCE) {
-      if (q && fuzzyScore(q, `${e.goal} ${e.keys} ${e.kw ?? ''}`) == null)
+      if (!q) {
+        scored.push({ e, score: 0 });
         continue;
+      }
+      const s = fuzzyScore(q, `${e.goal} ${e.keys} ${e.kw ?? ''}`);
+      if (s == null) continue;
+      // Entries in a group the query also matches ('trap' -> Traps)
+      // outrank incidental cross-group hits.
+      scored.push({ e, score: s + (fuzzyScore(q, e.group) ? 100 : 0) });
+    }
+    const out: {
+      name: string;
+      best: number;
+      items: { e: RefEntry; score: number }[];
+    }[] = [];
+    for (const { e, score } of scored) {
       let g = out.find((x) => x.name === e.group);
-      if (!g) out.push((g = { name: e.group, items: [] }));
-      g.items.push(e);
+      if (!g) out.push((g = { name: e.group, best: score, items: [] }));
+      g.best = Math.max(g.best, score);
+      g.items.push({ e, score });
+    }
+    if (q) {
+      for (const g of out) g.items.sort((a, b) => b.score - a.score);
+      out.sort((a, b) => b.best - a.best);
     }
     return out;
   });
@@ -42,15 +61,20 @@
     <dl class="howto-list">
       {#each groups as g (g.name)}
         <dt class="howto-group">{g.name}</dt>
-        {#each g.items as e (e.goal)}
+        {#each g.items as item (item.e.goal)}
           <div class="howto-item">
-            <dt>{e.goal}</dt>
+            <dt>{item.e.goal}</dt>
             <dd>
               <code
-                >{appStore.smartMode && e.smart ? e.smart : e.keys}</code
+                >{appStore.smartMode && item.e.smart
+                  ? item.e.smart
+                  : item.e.keys}</code
               >
-              {#if e.preview}
-                <span class="howto-preview" use:previewMath={e.preview}></span>
+              {#if item.e.preview}
+                <span
+                  class="howto-preview"
+                  use:previewMath={item.e.preview}
+                ></span>
               {/if}
             </dd>
           </div>
