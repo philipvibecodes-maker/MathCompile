@@ -2,6 +2,7 @@ import type {
   MathFieldElement,
   MoveOutDetail,
 } from './math-field';
+import { attachSymbolPicker } from './ac-picker';
 
 export interface FieldCallbacks {
   onChange: (latex: string) => void;
@@ -77,6 +78,8 @@ export function attachField(
   el.addEventListener('new-cell', handleNewCell);
   el.addEventListener('keydown', handleKeydown, true);
 
+  const detachPicker = attachSymbolPicker(el);
+
   return {
     focus: (edge) => el.focus({ edge }),
     getValue: () => el.value,
@@ -124,6 +127,7 @@ export function attachField(
       el.removeEventListener('move-out', handleMoveOut);
       el.removeEventListener('new-cell', handleNewCell);
       el.removeEventListener('keydown', handleKeydown, true);
+      detachPicker();
     },
   };
 }
