@@ -991,6 +991,13 @@ body {
   gap: 4px;
 }
 
+/* This icon sits at the page's left edge — anchor the tip left
+   so it doesn't clip off-viewport. */
+.option-label-row .info-tip {
+  right: auto;
+  left: -8px;
+}
+
 .info-icon {
   position: relative;
   display: inline-flex;
