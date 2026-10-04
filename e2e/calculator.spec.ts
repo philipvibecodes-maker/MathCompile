@@ -322,3 +322,24 @@ test('show generating code toggle reveals the cell program in one block', async 
   await toggle.uncheck();
   await expect(page.locator('.calc-code')).toHaveCount(0);
 });
+
+test('Tab walks field -> row delete -> next field, skipping the per-cell controls', async ({
+  page,
+}) => {
+  await setTarget(page, 'calculator');
+  await page.locator('.add-expr').click();
+  await cell(page, 0).click();
+
+  // The per-cell code toggle and info icon are off the tab order —
+  // Tab hops field -> delete button -> next field like the other
+  // targets do.
+  await page.keyboard.press('Tab');
+  await expect(page.locator('.expr-delete').first()).toBeFocused();
+  await page.keyboard.press('Tab');
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelectorAll('math-field')[1]
+        ?.contains(document.activeElement),
+  );
+});
