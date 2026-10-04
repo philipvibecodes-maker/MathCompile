@@ -1805,12 +1805,30 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             if (oldParent !== parent && oldParent.blur)
                 oldParent.blur(this);
         };
+        // MATHCOMPILE: when a \displaylines grid fills the whole root, the
+        // field's edges are the first line's start and the last line's end —
+        // the cursor never sits beside the whole (vertically centered) block.
+        Cursor.prototype.rootEdgeEnd = function (dir) {
+            var root = this.controller.root;
+            if (this.parent !== root)
+                return;
+            var edge = root.getEnd(L);
+            if (edge &&
+                edge === root.getEnd(R) &&
+                edge.fillsRootEdge) {
+                return edge.getEnd(dir);
+            }
+            return;
+        };
         /** Place the cursor before or after `el`, according the side specified by `dir`. */
         Cursor.prototype.insDirOf = function (dir, el) {
             prayDirection(dir);
             this.domFrag().insDirOf(dir, el.domFrag());
             this.withDirInsertAt(dir, el.parent, el[dir], el);
             this.parent.domFrag().addClass('mq-hasCursor');
+            var edgeEnd = this.rootEdgeEnd(dir);
+            if (edgeEnd)
+                this.insAtDirEnd(dir, edgeEnd);
             return this;
         };
         Cursor.prototype.insLeftOf = function (el) {
@@ -1825,6 +1843,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             this.domFrag().insAtDirEnd(dir, el.domFrag().oneElement());
             this.withDirInsertAt(dir, el, 0, el.getEnd(dir));
             el.focus();
+            var edgeEnd = this.rootEdgeEnd(dir);
+            if (edgeEnd)
+                this.insAtDirEnd(dir, edgeEnd);
             return this;
         };
         Cursor.prototype.insAtLeftEnd = function (el) {
@@ -6894,7 +6915,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds['↕'] = LatexCmds.updownarrow = bindVanillaSymbol('\\updownarrow ', '&#8597;', 'up and down arrow');
     LatexCmds.Longleftrightarrow = bindVanillaSymbol('\\Longleftrightarrow ', '&#8660;', 'left and right arrow');
     LatexCmds['⇕'] = LatexCmds.Updownarrow = bindVanillaSymbol('\\Updownarrow ', '&#8661;', 'up and down arrow');
-    LatexCmds['↦'] = LatexCmds.mapsto = bindVanillaSymbol('\\mapsto ', '&#8614;', 'maps to');
+    // MATHCOMPILE: \mapsto is a relation — binary-operator spacing like \to
+    LatexCmds['↦'] = LatexCmds.mapsto = bindBinaryOperator('\\mapsto ', '&#8614;', 'maps to');
     LatexCmds['↗'] = LatexCmds.nearrow = bindVanillaSymbol('\\nearrow ', '&#8599;', 'northeast arrow');
     LatexCmds['↩'] = LatexCmds.hookleftarrow = bindVanillaSymbol('\\hookleftarrow ', '&#8617;', 'hook left arrow');
     LatexCmds['↪'] = LatexCmds.hookrightarrow = bindVanillaSymbol('\\hookrightarrow ', '&#8618;', 'hook right arrow');
@@ -12777,6 +12799,12 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds.varprojlim = function () {
         return new SummationNotation('\\varprojlim ', 'lim&#8592;', 'inverse limit');
     };
+    //======================================================================
+    //  Operator spacing (display-mode relation/punctuation conventions)
+    //======================================================================
+    // Typed ':' is a relation (f : X → Y) — render it with binary-operator
+    // spacing like = and → instead of a bare symbol.
+    LatexCmds[':'] = bindBinaryOperator(':', ':', ':', 'colon');
     /*************************************************
      * LaTeX environments: \begin{matrix} family and
      * \displaylines{...}, plus insertion-time \derivative.
@@ -13147,18 +13175,26 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             var rightFrag = rightStart
                 ? new Fragment(rightStart, rightEnd)
                 : new Fragment(0, 0);
-            var newCell = new MatrixCell(cell.row + 1, this);
+            // Bump the rows below before the new cell exists: `new MatrixCell`
+            // self-adopts into the child chain, so a bump after construction
+            // would visit it too (a mid-row split then merges the tail into the
+            // next row as 'x&y').
             this.eachChild(function (child) {
                 var c = child;
                 if (c.row > cell.row)
                     c.row += 1;
                 return undefined;
             });
+            var newCell = new MatrixCell(cell.row + 1, this);
             this.blocks.splice(this.cells.indexOf(cell) + 1, 0, newCell);
             rightFrag.disown();
             rightFrag.adopt(newCell, 0, 0);
-            // DOM: append a new <tr> after this cell's row.
+            // DOM: append a new <tr> after this cell's row and move the
+            // split-off content's elements into its <td> (adopt() only relinks
+            // the tree; the spans would stay behind in the old row).
             var td = this.renderCell(newCell);
+            if (rightFrag.ends[L])
+                rightFrag.domFrag().appendTo(td);
             var tr = cell.domFrag().oneElement().closest('tr');
             tr === null || tr === void 0 ? void 0 : tr.after(h('tr', {}, [td]));
             this.relink();
@@ -13518,6 +13554,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             _this_1.rowSep = '\\\\ ';
             _this_1.gridClass = 'mq-displaylines mq-non-leaf';
             _this_1.cellTextAlign = 'left';
+            // Filling the root makes this the field's line container: the cursor
+            // clamps to the first/last line's ends instead of sitting beside the
+            // whole block (see Cursor::rootEdgeEnd).
+            _this_1.fillsRootEdge = true;
             return _this_1;
         }
         DisplayLines.prototype.latexOpen = function () {
@@ -16790,9 +16830,15 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             });
             test('inside a displaylines row splits the row', function () {
                 mq.latex('\\displaylines{x\\\\ +1}');
-                mq.moveToRightEnd().keystroke('Left').keystroke('Left'); // between + and 1
+                mq.moveToRightEnd().keystroke('Left'); // between + and 1
                 mq.insertLineBreak();
                 assert.equal(mq.latex(), '\\displaylines{x\\\\ +\\\\ 1}');
+            });
+            test('inside a non-last displaylines row splits without merging rows', function () {
+                mq.latex('\\displaylines{abc\\\\ de\\\\ fg}');
+                mq.moveToLeftEnd().keystroke('Right').keystroke('Right'); // after 'b' in row 0
+                mq.insertLineBreak();
+                assert.equal(mq.latex(), '\\displaylines{ab\\\\ c\\\\ de\\\\ fg}');
             });
             test('inside a matrix cell adds a row below', function () {
                 mq.latex('\\begin{matrix}a&b\\\\c&d\\end{matrix}');

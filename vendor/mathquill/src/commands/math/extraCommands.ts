@@ -1101,3 +1101,11 @@ LatexCmds.varinjlim = () =>
   new SummationNotation('\\varinjlim ', 'lim&#8594;', 'direct limit');
 LatexCmds.varprojlim = () =>
   new SummationNotation('\\varprojlim ', 'lim&#8592;', 'inverse limit');
+
+//======================================================================
+//  Operator spacing (display-mode relation/punctuation conventions)
+//======================================================================
+
+// Typed ':' is a relation (f : X → Y) — render it with binary-operator
+// spacing like = and → instead of a bare symbol.
+LatexCmds[':'] = bindBinaryOperator(':', ':', ':', 'colon');

@@ -110,9 +110,22 @@ Inline `// MATHCOMPILE:` edits, by file:
   a matrix cell, `\displaylines` row split, or wrap top-level content
   in `\displaylines`) and `dIsDerivative` on `v1.Config` typings.
 - `src/css/math.less` — styles for the additions: `.mq-matrix`/
-  `.mq-displaylines`, script fonts, boxes/braces/cancels/extensible
-  arrows/delimiters, `\bra`/`\ket`, and the boundless-integral sibling
-  supsub rules.
+  `.mq-displaylines` (with zero horizontal indent so line 1 doesn't
+  shift when a second line is added), display-mode comma spacing
+  (`.mq-comma` thin space after), script fonts, boxes/braces/cancels/
+  extensible arrows/delimiters, `\bra`/`\ket`, and the
+  boundless-integral sibling supsub rules.
+- `src/cursor.ts` — a `\displaylines` that fills the whole root owns
+  the field edges: `insDirOf`/`insAtDirEnd` re-descend to the first
+  line's start / last line's end instead of leaving the caret beside
+  the vertically-centered block (`Cursor::rootEdgeEnd`, keyed off
+  `DisplayLines.fillsRootEdge`).
+- `src/commands/math/advancedSymbols.ts` — also: `\mapsto` is a
+  `bindBinaryOperator` (relation spacing like `\to`), not a
+  `VanillaSymbol`.
+- `src/commands/math/extraCommands.ts` — also: typed `:` is a
+  `BinaryOperator` relation (`f : X → Y`), with `.mq-comma` styling
+  covered in `math.less`.
 - `Makefile` — `extraCommands.ts` + `environments.ts` added to
   `SOURCES_FULL` (in that order: environments calls
   `boundlessIntegral()` from extraCommands) and `extraCommands.ts` to
