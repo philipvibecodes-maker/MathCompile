@@ -59,7 +59,8 @@ export class AppStore {
   focusEdge = $state<Edge | undefined>(undefined);
   target = $state<TargetId>(loadPrefs().target ?? 'latex');
   smartMode = $state(loadPrefs().smartMode ?? true);
-  showCode = $state(loadPrefs().showCode ?? false);
+  // Calculator code blocks show the `e = ...` capture lines when on.
+  showPlumbing = $state(loadPrefs().showPlumbing ?? false);
   guideOpen = $state(loadPrefs().guideOpen ?? true);
   // Python output mode: `from sympy import *` (default, bare names) vs
   // `import sympy as sp` (sp.-qualified).

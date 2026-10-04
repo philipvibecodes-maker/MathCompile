@@ -161,8 +161,6 @@
     }
     return installGlobalKeymap({
       onPaletteToggle: () => appStore.togglePalette(),
-      onSmartModeToggle: () => (appStore.smartMode = !appStore.smartMode),
-      isPaletteOpen: () => appStore.paletteOpen,
     });
   });
 
@@ -179,7 +177,7 @@
       smartMode: appStore.smartMode,
       target: appStore.target,
       guideOpen: appStore.guideOpen,
-      showCode: appStore.showCode,
+      showPlumbing: appStore.showPlumbing,
       importAll: appStore.importAll,
       fadeMs: appStore.fadeMs,
       debounceMs: appStore.debounceMs,
@@ -209,51 +207,6 @@
       ><span class="stack-name">mathquill</span>
     </span>
     <div class="output-options">
-      <div class="option">
-        <div class="option-label-row">
-          <label class="option-checkbox">
-            <input
-              type="checkbox"
-              checked={appStore.smartMode}
-              onchange={(e) => (appStore.smartMode = e.currentTarget.checked)}
-            />
-            Smart mode
-          </label>
-          <button
-            type="button"
-            class="info-icon"
-            aria-label="Smart mode auto-converts typed text like 'sqrt' or 'int' into math symbols, and a digit after a letter (x2) into a subscript."
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              aria-hidden="true"
-            >
-              <circle cx="12" cy="12" r="9" />
-              <line x1="12" y1="11" x2="12" y2="16.5" />
-              <circle cx="12" cy="7.5" r="0.75" fill="currentColor" />
-            </svg>
-            <span class="info-tip" role="tooltip" aria-hidden="true">
-              Auto-converts typed text like "sqrt" or "int" into math
-              symbols, and a digit after a letter (x2) into a subscript.
-            </span>
-          </button>
-        </div>
-        <span class="option-shortcut">alt+s</span>
-      </div>
-      {#if appStore.target === 'calculator'}
-        <label class="option-checkbox">
-          <input
-            type="checkbox"
-            checked={appStore.showCode}
-            onchange={(e) => (appStore.showCode = e.currentTarget.checked)}
-          />
-          Show code
-        </label>
-      {/if}
       <button
         class="theme-toggle"
         title={appStore.darkMode
@@ -300,24 +253,42 @@
     <section class="expr-panel" style:--output-w={`${outputPct}%`}>
       <div class="col-headers">
         <span class="col-index"></span>
-        <span class="col-field"></span>
-        <div class="col-output-head">
-          <label class="target-select">
-            Output
-            <select
-              value={appStore.target}
-              onchange={(e) =>
-                (appStore.target = e.currentTarget.value as TargetId)}
-              onpointerdown={prewarm}
-              onfocus={prewarm}
+        <div class="col-field">
+          <div class="option-label-row">
+            <label class="option-checkbox">
+              <input
+                type="checkbox"
+                checked={appStore.smartMode}
+                onchange={(e) =>
+                  (appStore.smartMode = e.currentTarget.checked)}
+              />
+              Smart mode
+            </label>
+            <button
+              type="button"
+              class="info-icon"
+              aria-label="Smart mode auto-converts typed text like 'sqrt' or 'int' into math symbols, and a digit after a letter (x2) into a subscript."
             >
-              {#each TARGETS as t (t.id)}
-                <option value={t.id} disabled={!t.enabled}>
-                  {t.label}
-                </option>
-              {/each}
-            </select>
-          </label>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <line x1="12" y1="11" x2="12" y2="16.5" />
+                <circle cx="12" cy="7.5" r="0.75" fill="currentColor" />
+              </svg>
+              <span class="info-tip" role="tooltip" aria-hidden="true">
+                Auto-converts typed text like "sqrt" or "int" into math
+                symbols, and a digit after a letter (x2) into a subscript.
+              </span>
+            </button>
+          </div>
+        </div>
+        <div class="col-output-head">
           {#if appStore.target === 'calculator'}
             <!-- Persistent inline chip — swaps its label instead of
                  unmounting, so the header row never changes size. -->
@@ -405,6 +376,53 @@
                   <span class="settings-tab active">animations</span>
                 </div>
                 <div class="settings-body">
+                  {#if appStore.target === 'calculator'}
+                    <div class="settings-row">
+                      <label class="option-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={appStore.showPlumbing}
+                          onchange={(e) =>
+                            (appStore.showPlumbing =
+                              e.currentTarget.checked)}
+                        />
+                        display plumbing
+                      </label>
+                      <button
+                        type="button"
+                        class="info-icon"
+                        aria-label="About plumbing"
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          aria-hidden="true"
+                        >
+                          <circle cx="12" cy="12" r="9" />
+                          <line x1="12" y1="11" x2="12" y2="16.5" />
+                          <circle
+                            cx="12"
+                            cy="7.5"
+                            r="0.75"
+                            fill="currentColor"
+                          />
+                        </svg>
+                        <span
+                          class="info-tip"
+                          role="tooltip"
+                          aria-hidden="true"
+                        >
+                          Extra code MathCompile adds to capture each
+                          statement's value for rendering (the "e = …"
+                          lines). Not part of the calculation — hidden
+                          by default.
+                        </span>
+                      </button>
+                    </div>
+                  {/if}
                   <label class="fade-slider" title="Code-line fade duration">
                     fade
                     <input
@@ -453,6 +471,22 @@
               </div>
             {/if}
           {/if}
+          <label class="target-select">
+            Output
+            <select
+              value={appStore.target}
+              onchange={(e) =>
+                (appStore.target = e.currentTarget.value as TargetId)}
+              onpointerdown={prewarm}
+              onfocus={prewarm}
+            >
+              {#each TARGETS as t (t.id)}
+                <option value={t.id} disabled={!t.enabled}>
+                  {t.label}
+                </option>
+              {/each}
+            </select>
+          </label>
         </div>
         <span class="col-delete"></span>
       </div>

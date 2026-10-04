@@ -129,6 +129,8 @@ body {
 .col-field {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
 }
 
 .col-output-head {
@@ -532,6 +534,18 @@ body {
   justify-content: space-between;
 }
 
+/* A checkbox row inside the settings menu — the info icon parks at the
+   right edge so its tip stays inside the menu's width. */
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-row .info-icon {
+  margin-left: auto;
+}
+
 /* Prototype knob: fade-duration slider in the output header. */
 .fade-slider {
   display: flex;
@@ -761,10 +775,10 @@ body {
     transform: rotate(360deg);
   }
 }
-/* "Show code" block: the SymPy python() source under each result.
-   Left padding doubles as a gutter for the helper fold caret, so the
-   caret sits outside the text column and `def`/`import` lines stay
-   aligned. */
+/* "Show generating code" block: the emitted SymPy program at the end
+   of the cell. Left padding doubles as a gutter for the helper fold
+   caret, so the caret sits outside the text column and `def`/`import`
+   lines stay aligned. */
 .calc-code {
   position: relative;
   margin: 2px 0 4px;
@@ -801,8 +815,8 @@ body {
   color: #4078f2;
 }
 
-/* Per-row copy of the shown code — pinned to the block's top-right
-   corner so it never reflows the source. */
+/* Copy of the shown code — pinned to the block's top-right corner so
+   it never reflows the source. */
 .calc-code .code-copy {
   position: absolute;
   top: 3px;
@@ -856,9 +870,9 @@ body {
   color: var(--faint);
 }
 
-/* Per-cell opt-in to reveal the `e = ...` display-plumbing lines — a
-   small control pinned to the output cell's top-right corner. */
-.calc-plumbing {
+/* Per-cell opt-in to reveal the generating-code block — a small
+   control pinned to the output cell's top-right corner. */
+.calc-code-toggle {
   position: absolute;
   top: 3px;
   right: 8px;
@@ -872,18 +886,18 @@ body {
   user-select: none;
 }
 
-.calc-plumbing label {
+.calc-code-toggle label {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   cursor: pointer;
 }
 
-.calc-plumbing input {
+.calc-code-toggle input {
   margin: 0;
 }
 
-.calc-plumbing .info-tip {
+.calc-code-toggle .info-tip {
   right: 0;
   white-space: normal;
 }
@@ -942,14 +956,10 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* Last item in the output column header — pinned to its right end. */
+  margin-left: auto;
   font-size: 13px;
   color: var(--muted);
-}
-
-.option {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
 }
 
 .output-options {
@@ -970,11 +980,6 @@ body {
   white-space: nowrap;
 }
 
-.option-shortcut {
-  font-size: 10px;
-  color: var(--muted);
-}
-
 .option-checkbox input {
   accent-color: var(--accent);
   cursor: pointer;
@@ -984,6 +989,13 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+/* This icon sits at the page's left edge — anchor the tip left
+   so it doesn't clip off-viewport. */
+.option-label-row .info-tip {
+  right: auto;
+  left: -8px;
 }
 
 .info-icon {

@@ -24,24 +24,25 @@
   // they're estimates, so the UI marks them until SymPy rows land.
   let interim = $state(false);
   let failed = $state('');
-  // Per-cell opt-in to the `e = ...` display plumbing lines in .calc-code.
-  let showPlumbing = $state(false);
-  // Folded body of the clean_and_simplify helper block in row-0 code.
+  // Per-cell opt-in to the generated-code block at the end of the cell.
+  let showCode = $state(false);
+  // The emitted program for this cell; displayCode is the same program
+  // with the `e = ...` display-plumbing capture lines inlined (the
+  // settings menu's plumbing toggle picks between them).
+  let cellCode = $state('');
+  let cellDisplayCode = $state('');
+  // Folded body of the clean_and_simplify helper block in the code block.
   let showHelpers = $state(false);
-  // Row whose generating code was last copied (for the Copied flash).
-  let copiedRow = $state<number | null>(null);
+  // For the Copied flash on the code block's copy button.
+  let copied = $state(false);
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
-  function copyGeneratingCode(code: string, i: number) {
+  function copyGeneratingCode(code: string) {
     // A denied copy rejects the promise — swallow it.
     navigator.clipboard.writeText(code).catch(() => {});
-    copiedRow = i;
+    copied = true;
     clearTimeout(copiedTimer);
-    copiedTimer = setTimeout(() => (copiedRow = null), 1200);
+    copiedTimer = setTimeout(() => (copied = false), 1200);
   }
-  const hasPlumbing = $derived(
-    appStore.showCode &&
-      rows.some((r) => r.ok && r.displayCode && r.displayCode !== r.code),
-  );
 
   // Issue reporting is split like the python overlay's marker/panel:
   // the failing row keeps just its ! / i severity marker here, while
@@ -81,6 +82,8 @@
       pending = false;
       interim = false;
       failed = '';
+      cellCode = '';
+      cellDisplayCode = '';
       return;
     }
     pending = true;
@@ -103,7 +106,9 @@
       evaluate(cell).then(
         (r) => {
           if (mine !== seq) return;
-          rows = r;
+          rows = r.rows;
+          cellCode = r.code ?? '';
+          cellDisplayCode = r.displayCode ?? '';
           pending = false;
           interim = false;
           failed = '';
@@ -112,6 +117,8 @@
           if (mine !== seq) return;
           pending = false;
           interim = false;
+          cellCode = '';
+          cellDisplayCode = '';
           failed = e instanceof Error ? e.message : String(e);
         },
       );
@@ -123,7 +130,6 @@
   // block: head is everything before the signature line, sig is the
   // `def` line itself, body is its indented suite, rest is the
   // remainder of the program.
-  // Only row-0 code contains the block.
   function splitHelperBlock(
     code: string,
   ): { head: string; sig: string; body: string; rest: string } | null {
@@ -151,6 +157,34 @@
 </script>
 
 <div class="cell-output calc-output">
+  <div class="calc-code-toggle">
+    <label>
+      <input type="checkbox" bind:checked={showCode} />
+      Show generating code
+    </label>
+    <button
+      type="button"
+      class="info-icon"
+      aria-label="About the generating code"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="9" />
+        <line x1="12" y1="11" x2="12" y2="16.5" />
+        <circle cx="12" cy="7.5" r="0.75" fill="currentColor" />
+      </svg>
+      <span class="info-tip" role="tooltip" aria-hidden="true">
+        The Python program MathCompile generated and ran through SymPy to
+        produce this cell's results.
+      </span>
+    </button>
+  </div>
   {#if failed !== ''}
     <span class="parse-error-icon" title={failed}>!</span>
   {:else if rows.length > 0}
@@ -168,66 +202,6 @@
                 <span class="calc-approx">≈ {row.approx}</span>
               {/if}
             </div>
-            {#if appStore.showCode && row.code}
-              {@const shown =
-                showPlumbing && row.displayCode ? row.displayCode : row.code}
-              {@const split = splitHelperBlock(shown)}
-              {#if split}
-                <pre class="calc-code has-fold"><button
-                    type="button"
-                    class="code-copy"
-                    title="Copy the code that generates this answer"
-                    onclick={() => copyGeneratingCode(shown, i)}
-                    >{copiedRow === i
-                      ? 'Copied'
-                      : 'Copy generating code'}</button
-                  ><code
-                    >{#each highlightPython(split.head) as tok, j (j)}<span
-                        class={tok.cls ? `tok-${tok.cls}` : undefined}
-                        >{tok.text}</span
-                      >{/each}{split.head === '' ? '' : '\n'}<button
-                      type="button"
-                      class="code-fold"
-                      title="Toggle the clean_and_simplify helper definitions"
-                      aria-expanded={showHelpers}
-                      onclick={() => (showHelpers = !showHelpers)}
-                      >{showHelpers ? '▾' : '▸'}</button
-                    ><span class="code-helper">{#each highlightPython(
-                        split.sig,
-                      ) as tok, j (j)}<span
-                          class={tok.cls ? `tok-${tok.cls}` : undefined}
-                          >{tok.text}</span
-                        >{/each}</span
-                    >{#if !showHelpers}<span
-                        class="code-elide"> ⋯</span>{/if}{'\n'}{#if showHelpers}{#each highlightPython(
-                          split.body + '\n',
-                        ) as tok, j (j)}<span
-                          class={tok.cls ? `tok-${tok.cls}` : undefined}
-                          >{tok.text}</span
-                        >{/each}{/if}{#each highlightPython(
-                        split.rest,
-                      ) as tok, j (j)}<span
-                        class={tok.cls ? `tok-${tok.cls}` : undefined}
-                        >{tok.text}</span
-                      >{/each}</code
-                  ></pre>
-              {:else}
-                <pre class="calc-code"><button
-                    type="button"
-                    class="code-copy"
-                    title="Copy the code that generates this answer"
-                    onclick={() => copyGeneratingCode(shown, i)}
-                    >{copiedRow === i
-                      ? 'Copied'
-                      : 'Copy generating code'}</button
-                  ><code
-                    >{#each highlightPython(shown) as tok, j (j)}<span
-                        class={tok.cls ? `tok-${tok.cls}` : undefined}
-                        >{tok.text}</span
-                      >{/each}</code
-                  ></pre>
-              {/if}
-            {/if}
           {:else if (row.severity ?? 'error') === 'error'}
             <span class="parse-error-icon" title={row.error}>!</span>
           {:else}
@@ -242,41 +216,68 @@
           >estimate · SymPy still loading</span
         >
       {/if}
+      {#if showCode && cellCode !== ''}
+        {@const shown =
+          appStore.showPlumbing && cellDisplayCode !== ''
+            ? cellDisplayCode
+            : cellCode}
+        {@const split = splitHelperBlock(shown)}
+        {#if split}
+          <pre class="calc-code has-fold"><button
+              type="button"
+              class="code-copy"
+              title="Copy the code that generates this cell's results"
+              onclick={() => copyGeneratingCode(shown)}
+              >{copied ? 'Copied' : 'Copy generating code'}</button
+            ><code
+              >{#each highlightPython(split.head) as tok, j (j)}<span
+                  class={tok.cls ? `tok-${tok.cls}` : undefined}
+                  >{tok.text}</span
+                >{/each}{split.head === '' ? '' : '\n'}<button
+                type="button"
+                class="code-fold"
+                title="Toggle the clean_and_simplify helper definitions"
+                aria-expanded={showHelpers}
+                onclick={() => (showHelpers = !showHelpers)}
+                >{showHelpers ? '▾' : '▸'}</button
+              ><span class="code-helper">{#each highlightPython(
+                  split.sig,
+                ) as tok, j (j)}<span
+                    class={tok.cls ? `tok-${tok.cls}` : undefined}
+                    >{tok.text}</span
+                  >{/each}</span
+              >{#if !showHelpers}<span
+                  class="code-elide"> ⋯</span>{/if}{'\n'}{#if showHelpers}{#each highlightPython(
+                    split.body + '\n',
+                  ) as tok, j (j)}<span
+                    class={tok.cls ? `tok-${tok.cls}` : undefined}
+                    >{tok.text}</span
+                  >{/each}{/if}{#each highlightPython(
+                  split.rest,
+                ) as tok, j (j)}<span
+                  class={tok.cls ? `tok-${tok.cls}` : undefined}
+                  >{tok.text}</span
+                >{/each}</code
+            ></pre>
+        {:else}
+          <pre class="calc-code"><button
+              type="button"
+              class="code-copy"
+              title="Copy the code that generates this cell's results"
+              onclick={() => copyGeneratingCode(shown)}
+              >{copied ? 'Copied' : 'Copy generating code'}</button
+            ><code
+              >{#each highlightPython(shown) as tok, j (j)}<span
+                  class={tok.cls ? `tok-${tok.cls}` : undefined}
+                  >{tok.text}</span
+                >{/each}</code
+            ></pre>
+        {/if}
+      {/if}
     </div>
   {:else if pending}
     <!-- Empty cells and complete-but-empty results render nothing — a
          bare '…' reads as "still evaluating" forever. -->
     <span class="calc-status">{statusLabel}</span>
-  {/if}
-  {#if hasPlumbing}
-    <div class="calc-plumbing">
-      <label
-        ><input type="checkbox" bind:checked={showPlumbing} /> display
-        plumbing</label
-      >
-      <button
-        type="button"
-        class="info-icon"
-        aria-label="Display plumbing is the 'e = …' code MathCompile inserts to capture each statement's value for rendering — hidden by default since it isn't part of the calculation."
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          aria-hidden="true"
-        >
-          <circle cx="12" cy="12" r="9" />
-          <line x1="12" y1="11" x2="12" y2="16.5" />
-          <circle cx="12" cy="7.5" r="0.75" fill="currentColor" />
-        </svg>
-        <span class="info-tip" role="tooltip" aria-hidden="true">
-          Extra code MathCompile adds to capture each statement's value for
-          rendering (the "e = …" lines). Not part of the calculation —
-          hidden by default.
-        </span>
-      </button>
-    </div>
   {/if}
 </div>

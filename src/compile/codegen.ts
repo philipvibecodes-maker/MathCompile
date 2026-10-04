@@ -3248,7 +3248,7 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
     .map(({ out, error, line }) => ({
       // The worker evals each statement as written, so the result
       // pipeline (doit -> simplify -> decreasing-degree order) is
-      // emitted INTO the program — Show code then displays exactly
+      // emitted INTO the program — the generating-code block then shows exactly
       // the code that produced the row. The mc_* helpers are the
       // worker runtime in calculator.worker.ts.
       code:

@@ -43,7 +43,7 @@ src/
   editor/               the only code that touches MathQuill
     math-field.ts         <math-field> element + attachField() -> FieldHandle
     mathquill.ts          vendored build shim (mq3 + types)
-    keymap.ts             capture-phase global keys (Ctrl+K, Alt+S)
+    keymap.ts             capture-phase global keys (Ctrl+K)
   state/
     store.svelte.ts       runes store: cells, field registry, focus, prefs
     persistence.ts        localStorage (cells, prefs, theme)

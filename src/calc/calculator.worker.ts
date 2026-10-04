@@ -91,15 +91,8 @@ def mc_run(prog_json):
         exec('\\n'.join(prog['prelude']), ns)
     except Exception as e:
         return json.dumps([{'ok': False, 'error': str(e)}])
-    prelude = list(prog['prelude'])
-    # Boilerplate — import lines and the clean_and_simplify runtime
-    # block — shows only in the first row's code block; later rows keep
-    # the Symbol/Function defs.
-    tail = [l for l in prelude
-            if not l.startswith(('import ', 'from ', '# ',
-                                 'def clean_and_simplify'))]
     out = []
-    for i, stmt in enumerate(prog['statements']):
+    for stmt in prog['statements']:
         try:
             # A statement that failed to compile keeps its row as an
             # in-place error instead of vanishing (rows keep order).
@@ -109,22 +102,6 @@ def mc_run(prog_json):
                 continue
             row = _mc_row(_mc_eval_stmt(stmt, ns))
             row['ok'] = True
-            # Show code = the emitted program for this row (prelude
-            # defs + statement source, which itself applies the
-            # clean_and_simplify pipeline), not the result's
-            # python() repr. The 'e = ...' capture lines exist only to
-            # drive row rendering — display plumbing, split out so the
-            # UI can hide it by default.
-            pre = prelude if i == 0 else tail
-            disp = stmt.get('display')
-            row['code'] = '\\n'.join(pre + [stmt['code']])
-            plumb = list(pre)
-            if disp is None:
-                plumb.append('e = ' + stmt['code'])
-            else:
-                plumb.append(stmt['code'])
-                plumb.append('e = ' + disp)
-            row['displayCode'] = '\\n'.join(plumb)
             out.append(row)
         except Exception as e:
             out.append({'ok': False, 'error': str(e)})

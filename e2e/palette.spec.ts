@@ -231,13 +231,6 @@ test('palette input keeps focus after opening right after an edit', async ({
   await expect(page.locator('.palette-input')).toBeFocused();
 });
 
-test('Alt+S is ignored while the palette is open', async ({ page }) => {
-  await page.keyboard.press('Control+k');
-  await page.keyboard.press('Alt+s');
-  // Smart mode defaults on; a swallowed Alt+S must leave it unchanged.
-  await expect(page.locator('.option-checkbox input')).toBeChecked();
-});
-
 test('exposes dialog/listbox semantics for assistive tech', async ({ page }) => {
   await page.keyboard.press('Control+k');
   await expect(page.locator('[role="dialog"]')).toBeVisible();

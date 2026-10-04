@@ -45,7 +45,6 @@ export const buildCommands = (store: AppStore): Command[] => {
       id: 'toggle-smart',
       title: 'Smart mode',
       keywords: 'toggle option autocomplete',
-      hint: 'Alt+S',
       current: store.smartMode,
       run: () => (store.smartMode = !store.smartMode),
     },
