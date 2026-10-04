@@ -12808,19 +12808,21 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     //======================================================================
     //  \def — insertion alias for \text{def}
     //======================================================================
-    // Typing `\def` expands to a real \text{def} TextBlock — the marker the
-    // compiler reads for a function def (`f(x)` alone is f·x now) — the same
-    // insertion-time expansion \derivative uses. A `\def` in pasted latex
-    // renders the same "def" text and serializes as \text{def}, so stored
-    // latex canonicalizes on the next save. This overrides the TeX-macro
-    // \def RawArgCommand — MathCompile has no macro facility.
+    // Typing `\def` expands to a real \text{def} TextBlock plus a trailing
+    // space — the marker the compiler reads for a function def (`f(x)`
+    // alone is f·x now), with the caret after the space ready for the
+    // signature — the same insertion-time expansion \derivative uses. A
+    // `\def` in pasted latex renders the same "def" text and serializes as
+    // \text{def}, so stored latex canonicalizes on the next save. This
+    // overrides the TeX-macro \def RawArgCommand — MathCompile has no
+    // macro facility.
     var DefAlias = /** @class */ (function (_super) {
         __extends(DefAlias, _super);
         function DefAlias() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
         DefAlias.prototype.createLeftOf = function (cursor) {
-            cursor.parent.writeLatex(cursor, '\\text{def}');
+            cursor.parent.writeLatex(cursor, '\\text{def}\\ ');
         };
         return DefAlias;
     }(MQSymbol));

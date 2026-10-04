@@ -71,9 +71,14 @@ test('with dIsDerivative off, \\derivative expands to D() with the caret inside'
   expect(await cellValue(mf)).toBe('D(f)');
 });
 
-test('\\def expands to a \\text{def} TextBlock', async ({ page }) => {
+test('\\def expands to a \\text{def} TextBlock plus a space', async ({
+  page,
+}) => {
   const mf = cell(page);
   await mf.pressSequentially('\\def', { delay: 60 });
   await page.keyboard.press('Enter');
-  expect(await cellValue(mf)).toBe('\\text{def}');
+  expect(await cellValue(mf)).toBe('\\text{def}\\ ');
+  // The caret is after the space — typing fills the signature directly.
+  await mf.pressSequentially('g(x)', { delay: 60 });
+  expect(await cellValue(mf)).toBe('\\text{def}\\ g\\left(x\\right)');
 });

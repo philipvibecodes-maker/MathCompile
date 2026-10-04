@@ -176,7 +176,8 @@ empty strings, the vendored patch allows it).
 
 `f(x)` reads as `f * x` — parentheses are a factor, not a call or a
 signature. To define a function, mark the statement with `\text{def}`
-(the `\def` command inserts that text):
+(the `\def` command inserts `\text{def} ` — text block plus a trailing
+space, so the caret is ready for the signature):
 
 ```
 \text{def} g(x) = 2x       →   def g(x): return 2*x
