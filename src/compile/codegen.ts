@@ -467,9 +467,6 @@ const PREC_ATOM = 90;
 
 class Emitter {
   scope: Scope;
-  /** Nested-integral depth — `+ C` belongs only on the outermost
-   * indefinite sign. */
-  private integralDepth = 0;
   constructor(scope: Scope) {
     this.scope = scope;
   }
@@ -1773,16 +1770,16 @@ class Emitter {
         let v = limits?.[0] ?? params[0];
         const lo = limits?.[1];
         const hi = limits?.[2];
-        // Nested integrals (\int\int f dx dy) only take `+ C` on the
-        // outermost sign — an inner constant integrates into the result.
-        const outermost = this.integralDepth === 0;
-        const emitBody = () => {
-          this.integralDepth++;
-          try {
-            return this.emit(body);
-          } finally {
-            this.integralDepth--;
-          }
+        // Every indefinite integral takes its own `+ C` — per level, so
+        // an inner constant integrates into a real term (`∬f dx dy` ->
+        // F + C·y + D). The emitted program nests integrate() calls so
+        // each level's constant is visible.
+        const constTerm = () => {
+          const c = nextConstName(this.scope);
+          const shape = this.matrixShape(body);
+          return shape
+            ? `${this.sp}MatrixSymbol(${JSON.stringify(c)}, ${shape})`
+            : `${this.sp}Symbol(${JSON.stringify(c)})`;
         };
         let extraVars: string[] = [];
         // `\int x^2 \text{d}x` — CE leaves a \text{d} differential as a
@@ -1905,7 +1902,7 @@ class Emitter {
               'error',
               "can't infer the integration variable — add a differential like dx",
             );
-            return [`${this.sp}integrate(${emitBody()})`, PREC_ATOM];
+            return [`${this.sp}integrate(${this.emit(body)})`, PREC_ATOM];
           }
         }
         // The integration variable is bound for the body's emission (a
@@ -1921,56 +1918,44 @@ class Emitter {
               'error',
               `${hasLo ? 'upper' : 'lower'} bound is empty — fill it in or delete it`,
             );
-            return [`${this.sp}integrate(${emitBody()}, ${this.emit(v)})`, PREC_ATOM];
+            return [`${this.sp}integrate(${this.emit(body)}, ${this.emit(v)})`, PREC_ATOM];
           }
           // Several differentials on one sign (`\iint f dx dy`) — an
           // iterated integral, innermost first. A lone bound pair
           // applies to every variable (`\iint_a^b` reads as a square).
           if (extraVars.length > 0) {
             const vars = [v, ...extraVars].filter(isStr);
-            const specs = hasLo
-              ? vars.map(
-                  (w) =>
-                    `(${this.emit(w)}, ${this.emit(lo)}, ${this.emit(hi)})`,
-                )
-              : vars.map((w) => this.emit(w));
-            const call = `${this.sp}integrate(${emitBody()}, ${specs.join(', ')})`;
-            // One +C for the whole iterated antiderivative — same
-            // convention as the single-variable path.
-            if (hasLo || !outermost) return [call, PREC_ATOM];
-            const c = nextConstName(this.scope);
-            const shape = this.matrixShape(body);
-            return [
-              `${call} + ${
-                shape
-                  ? `${this.sp}MatrixSymbol(${JSON.stringify(c)}, ${shape})`
-                  : `${this.sp}Symbol(${JSON.stringify(c)})`
-              }`,
-              PREC_ADD,
-            ];
+            if (hasLo)
+              return [
+                `${this.sp}integrate(${this.emit(body)}, ${vars
+                  .map(
+                    (w) =>
+                      `(${this.emit(w)}, ${this.emit(lo)}, ${this.emit(hi)})`,
+                  )
+                  .join(', ')})`,
+                PREC_ATOM,
+              ];
+            // Indefinite: a nested call per level so each `+ C`
+            // integrates through — `integrate(f, x, y) + C` would show
+            // one constant where the antiderivative has one per level.
+            let acc = `${this.sp}integrate(${this.emit(body)}, ${this.emit(vars[0])}) + ${constTerm()}`;
+            for (const w of vars.slice(1))
+              acc = `${this.sp}integrate(${acc}, ${this.emit(w)}) + ${constTerm()}`;
+            return [acc, PREC_ADD];
           }
           if (hasLo)
             return [
-              `${this.sp}integrate(${emitBody()}, (${this.emit(v)}, ${this.emit(lo)}, ${this.emit(hi)}))`,
+              `${this.sp}integrate(${this.emit(body)}, (${this.emit(v)}, ${this.emit(lo)}, ${this.emit(hi)}))`,
               PREC_ATOM,
             ];
-          // Indefinite: append the constant of integration (`+ C`). PREC_ADD
-          // keeps the sum parenthesized when the integral nests inside a
-          // larger term (`(∫x dx)^2` -> `(x**2/2 + C)**2`). A matrix
+          // Indefinite: append the constant of integration (`+ C`) at
+          // every level. PREC_ADD keeps the sum parenthesized when the
+          // integral nests inside a larger term (`(∫x dx)^2` ->
+          // `(x**2/2 + C)**2`) or inside an outer integrand. A matrix
           // integrand's constant is a matrix too — `Matrix + Symbol`
           // raises TypeError, so emit a same-shape MatrixSymbol.
-          const indefinite = `${this.sp}integrate(${emitBody()}, ${this.emit(v)})`;
-          if (!outermost) return [indefinite, PREC_ATOM];
-          const c = nextConstName(this.scope);
-          const shape = this.matrixShape(body);
-          return [
-            `${indefinite} + ${
-              shape
-                ? `${this.sp}MatrixSymbol(${JSON.stringify(c)}, ${shape})`
-                : `${this.sp}Symbol(${JSON.stringify(c)})`
-            }`,
-            PREC_ADD,
-          ];
+          const indefinite = `${this.sp}integrate(${this.emit(body)}, ${this.emit(v)})`;
+          return [`${indefinite} + ${constTerm()}`, PREC_ADD];
         };
         const out = finish();
         this.scope.lambdaBound = savedBound;
