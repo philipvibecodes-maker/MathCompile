@@ -43,6 +43,20 @@ test('\\begin{matrix} renders as a table inside the cell', async ({ page }) => {
   );
 });
 
+test('typed \\cases opens a cases environment', async ({ page }) => {
+  const mf = cell(page);
+  await page.keyboard.type('\\cases');
+  await page.keyboard.press('Enter');
+  await expect(mf.locator('.mq-matrix tr')).toHaveCount(2);
+  expect(await cellValue(mf)).toBe('\\begin{cases}&\\\\&\\end{cases}');
+});
+
+test('typed \\array{spec} applies the column spec', async ({ page }) => {
+  const mf = cell(page);
+  await page.keyboard.type('\\array{cc}');
+  expect(await cellValue(mf)).toBe('\\begin{array}{cc}&\\\\&\\end{array}');
+});
+
 test('Enter inside a matrix cell adds a row, not a displaylines wrap', async ({
   page,
 }) => {

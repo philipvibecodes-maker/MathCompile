@@ -1648,7 +1648,8 @@ suite('latex', function () {
     assertParsesLatex('\\mathbfsf{x}', '\\mathbfsf{x}');
     assertParsesLatex('\\texteuro', '\\texteuro ');
     assertParsesLatex('\\oldstylenums{0}', '\\oldstylenums{0}');
-    assertParsesLatex('\\cases{a&b}', '\\cases a\\&b');
+    // \cases is the env shortcut — a braced group lands in one cell
+    assertParsesLatex('\\cases{a&b}', '\\begin{cases}a\\&b\\end{cases}');
     // tabular parses as an array twin (spec + pos + cells)
     assertParsesLatex(
       '\\begin{tabular}{cc}a&b\\end{tabular}',

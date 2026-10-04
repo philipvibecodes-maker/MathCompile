@@ -8196,6 +8196,7 @@ var __assign = (this && this.__assign) || function () {
         return new RawArgCommand('\\vcenter ', new RegExp('^(?:to\\s+[^\\s{]+)?' + RAW_GROUP), 'v center');
     };
     // Extra math fonts + \cases leaf (the begin-env form is \begin{cases}).
+    // MATHCOMPILE: overridden in environments.ts \u2014 \cases opens the cases grid.
     bindMathWrap('mathbfsf');
     bindMathWrap('mathbold');
     bindMathWrap('mathfrak');
@@ -12856,17 +12857,23 @@ var __assign = (this && this.__assign) || function () {
             // `\begin{\left\{cases\right\}}`).
             var resolve = function (cursor) {
                 var env = nameBlock.latex().trim();
-                var grid = Environments[env.replace(/\*/g, '')] &&
-                    Environments[env.replace(/\*/g, '')]();
-                var node = grid ||
-                    new VanillaSymbol('\\begin{' + env + '} ', h.text('\\begin{' + env + '}'), 'begin ' + env);
+                var envName = env.replace(/\*/g, '');
+                var grid = Environments[envName] && Environments[envName]();
+                // Envs with a required argument (\begin{array}{spec},
+                // alignat{n}, subarray{spec}, tabular{spec}) resolve to a pending
+                // arg input first \u2014 the grid only exists once the arg is closed.
+                var node = grid
+                    ? needsSpecArg(grid)
+                        ? new EnvSpecInput(envName)
+                        : grid
+                    : new VanillaSymbol('\\begin{' + env + '} ', h.text('\\begin{' + env + '}'), 'begin ' + env);
                 beginNode.remove();
                 if (beginNode[R])
                     cursor.insLeftOf(beginNode[R]);
                 else
                     cursor.insAtRightEnd(beginNode.parent);
                 node.createLeftOf(cursor.show());
-                if (grid)
+                if (grid && node === grid)
                     cursor.insAtLeftEnd(grid.getEnd(L));
             };
             var origWrite = nameBlock.write;
@@ -14010,6 +14017,98 @@ var __assign = (this && this.__assign) || function () {
         e.envName = 'alignedat';
         return e;
     };
+    /*************************************************
+     * `\name` insertion shortcuts: typed \cases, \aligned, \gathered, \u2026
+     * open the same grid \begin{name} resolves to.
+     *************************************************/
+    // Envs carrying a required argument \u2014 \begin{array}{spec},
+    // \begin{alignat}{n}, \begin{subarray}{spec}, \begin{tabular}{spec} \u2014
+    // can't open a grid directly, so their shortcut (and typed
+    // \begin{<spec-env>}) opens a pending `\begin{name}{arg}` input, the
+    // arg-entry twin of \begin{name}'s name input: `}`/Enter/Tab resolves
+    // to the environment with the arg applied. `{` is ignored at the start
+    // of the empty arg block by MathBlock::write, so `\array{cc}` and
+    // `\begin{array}{cc}` type straight through. An unresolved input
+    // serializes `\name{arg}` and re-parses to this pending state.
+    var EnvSpecInput = /** @class */ (function (_super) {
+        __extends(EnvSpecInput, _super);
+        function EnvSpecInput(envName) {
+            var _this_1 = _super.call(this, '\\' + envName, new DOMView(1, function (blocks) {
+                return h('span', { class: 'mq-non-leaf' }, [
+                    h.text('\\begin{' + envName + '}{'),
+                    h.block('span', {}, blocks[0]),
+                    h.text('}'),
+                ]);
+            })) || this;
+            _this_1.envName = envName;
+            return _this_1;
+        }
+        EnvSpecInput.prototype.createBlocks = function () {
+            _super.prototype.createBlocks.call(this);
+            var input = this;
+            var argBlock = this.getEnd(L);
+            var resolve = function (cursor) {
+                var grid = Environments[input.envName]();
+                applySpecArg(grid, argBlock.latex());
+                input.remove();
+                if (input[R])
+                    cursor.insLeftOf(input[R]);
+                else
+                    cursor.insAtRightEnd(input.parent);
+                grid.createLeftOf(cursor.show());
+                cursor.insAtLeftEnd(grid.getEnd(L));
+            };
+            var origWrite = argBlock.write;
+            argBlock.write = function (cursor, ch) {
+                if (ch === '}') {
+                    resolve(cursor);
+                    return;
+                }
+                origWrite.call(this, cursor, ch);
+            };
+            var origKeystroke = argBlock.keystroke;
+            argBlock.keystroke = function (key, e, ctrlr) {
+                if (key === 'Enter' || key === 'Tab') {
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    resolve(ctrlr.cursor);
+                    return;
+                }
+                return origKeystroke.call(this, key, e, ctrlr);
+            };
+        };
+        return EnvSpecInput;
+    }(MathCommand));
+    function needsSpecArg(grid) {
+        return (grid instanceof ArrayEnv ||
+            grid instanceof SubarrayEnv ||
+            grid instanceof AlignatEnv);
+    }
+    // Apply a typed arg to a spec env's fields: the column spec (array,
+    // subarray, tabular) or column-pair count (alignat/alignedat).
+    function applySpecArg(grid, text) {
+        var g = grid;
+        var spec = text.trim();
+        if (g.spec !== undefined)
+            g.spec = spec;
+        if (g.n !== undefined)
+            g.n = spec;
+    }
+    // The matrix/displaylines family keep their own LatexCmds bindings
+    // above (bare-brace parse forms); \cases replaces upstream's
+    // literal-marker leaf (\eqnarray/\eqalign keep theirs \u2014 real
+    // old-style commands whose stored text shouldn't rewrite to aligned);
+    // the spec envs go through EnvSpecInput; the loop picks up every
+    // remaining registered environment.
+    LatexCmds.cases = function () { return new Cases(); };
+    LatexCmds.array = function () { return new EnvSpecInput('array'); };
+    LatexCmds.subarray = function () { return new EnvSpecInput('subarray'); };
+    LatexCmds.tabular = function () { return new EnvSpecInput('tabular'); };
+    LatexCmds.alignat = function () { return new EnvSpecInput('alignat'); };
+    LatexCmds.alignedat = function () { return new EnvSpecInput('alignedat'); };
+    for (var name in Environments) {
+        if (!(name in LatexCmds))
+            LatexCmds[name] = Environments[name];
+    }
     // For backwards compatibility, set up the global MathQuill object as an instance of API interface v1
     if (window.jQuery) {
         MQ1 = getInterface(1);

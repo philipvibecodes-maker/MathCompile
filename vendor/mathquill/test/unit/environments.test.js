@@ -121,6 +121,75 @@ suite('environments', function () {
     });
   });
 
+  suite('env shortcuts', function () {
+    test('\\cases opens the cases grid with the caret in the first cell', function () {
+      mq.typedText('\\cases');
+      mq.keystroke('Enter');
+      assert.equal(mq.latex(), '\\begin{cases}&\\\\&\\end{cases}');
+      mq.typedText('x');
+      assert.equal(mq.latex(), '\\begin{cases}x&\\\\&\\end{cases}');
+    });
+
+    test('env names canonicalize like \\begin{name}', function () {
+      mq.typedText('\\gather');
+      mq.keystroke('Enter');
+      assert.equal(mq.latex(), '\\begin{gathered}\\\\ \\end{gathered}');
+      mq.latex('');
+      mq.typedText('\\split');
+      mq.keystroke('Enter');
+      assert.equal(mq.latex(), '\\begin{aligned}&\\\\&\\end{aligned}');
+    });
+
+    test('\\array{spec} opens the grid with the column spec applied', function () {
+      mq.typedText('\\array{cc}');
+      assert.equal(mq.latex(), '\\begin{array}{cc}&\\\\&\\end{array}');
+      mq.typedText('x');
+      assert.equal(mq.latex(), '\\begin{array}{cc}x&\\\\&\\end{array}');
+    });
+
+    test('\\subarray \\tabular \\alignat \\alignedat carry their arg', function () {
+      mq.typedText('\\subarray{c}');
+      assert.equal(mq.latex(), '\\begin{subarray}{c}&\\\\&\\end{subarray}');
+      mq.latex('');
+      mq.typedText('\\tabular{ll}');
+      assert.equal(mq.latex(), '\\begin{tabular}{ll}&\\\\&\\end{tabular}');
+      mq.latex('');
+      mq.typedText('\\alignat{2}');
+      assert.equal(mq.latex(), '\\begin{alignat}{2}&\\\\&\\end{alignat}');
+      mq.latex('');
+      mq.typedText('\\alignedat{3}');
+      assert.equal(
+        mq.latex(),
+        '\\begin{alignedat}{3}&\\\\&\\end{alignedat}'
+      );
+    });
+
+    test('typed \\begin{array}{spec} routes through the arg input', function () {
+      mq.typedText('\\begin{array}{cc}');
+      assert.equal(mq.latex(), '\\begin{array}{cc}&\\\\&\\end{array}');
+    });
+
+    test('Enter/Tab inside the pending arg input resolves it', function () {
+      mq.typedText('\\array');
+      mq.keystroke('Enter'); // accepts \array, opens the pending arg input
+      assert.equal(mq.latex(), '\\array{ }');
+      mq.typedText('lr');
+      mq.keystroke('Enter');
+      assert.equal(mq.latex(), '\\begin{array}{lr}&\\\\&\\end{array}');
+      mq.latex('');
+      mq.typedText('\\array');
+      mq.keystroke('Enter');
+      mq.typedText('c');
+      mq.keystroke('Tab');
+      assert.equal(mq.latex(), '\\begin{array}{c}&\\\\&\\end{array}');
+    });
+
+    test('an unresolved arg input serializes \\name{arg} and re-parses', function () {
+      mq.latex('\\array{cc}');
+      assert.equal(mq.latex(), '\\array{cc}');
+    });
+  });
+
   suite('derivative', function () {
     test('expands to \\frac{d#1}{d#2} with caret in the denominator', function () {
       mq.typedText('\\derivative');

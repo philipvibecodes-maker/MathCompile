@@ -2507,6 +2507,7 @@ LatexCmds.vcenter = () =>
   );
 
 // Extra math fonts + \cases leaf (the begin-env form is \begin{cases}).
+// MATHCOMPILE: overridden in environments.ts — \cases opens the cases grid.
 bindMathWrap('mathbfsf');
 bindMathWrap('mathbold');
 bindMathWrap('mathfrak');

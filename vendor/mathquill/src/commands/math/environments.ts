@@ -33,21 +33,26 @@ LatexCmds.begin = class extends MathCommand {
     // `\begin{\left\{cases\right\}}`).
     const resolve = function (cursor: Cursor) {
       const env = nameBlock.latex().trim();
-      const grid =
-        Environments[env.replace(/\*/g, '')] &&
-        Environments[env.replace(/\*/g, '')]();
-      const node: MQNode =
-        grid ||
-        new VanillaSymbol(
-          '\\begin{' + env + '} ',
-          h.text('\\begin{' + env + '}'),
-          'begin ' + env
-        );
+      const envName = env.replace(/\*/g, '');
+      const grid = Environments[envName] && Environments[envName]();
+      // Envs with a required argument (\begin{array}{spec},
+      // alignat{n}, subarray{spec}, tabular{spec}) resolve to a pending
+      // arg input first — the grid only exists once the arg is closed.
+      const node: MQNode = grid
+        ? needsSpecArg(grid)
+          ? new EnvSpecInput(envName)
+          : grid
+        : new VanillaSymbol(
+            '\\begin{' + env + '} ',
+            h.text('\\begin{' + env + '}'),
+            'begin ' + env
+          );
       beginNode.remove();
       if (beginNode[R]) cursor.insLeftOf(beginNode[R] as MQNode);
       else cursor.insAtRightEnd(beginNode.parent);
       node.createLeftOf(cursor.show());
-      if (grid) cursor.insAtLeftEnd(grid.getEnd(L) as MQNode);
+      if (grid && node === (grid as MQNode))
+        cursor.insAtLeftEnd(grid.getEnd(L) as MQNode);
     };
 
     const origWrite = nameBlock.write;
@@ -1211,3 +1216,103 @@ Environments.alignedat = () => {
   e.envName = 'alignedat';
   return e;
 };
+
+/*************************************************
+ * `\name` insertion shortcuts: typed \cases, \aligned, \gathered, …
+ * open the same grid \begin{name} resolves to.
+ *************************************************/
+
+// Envs carrying a required argument — \begin{array}{spec},
+// \begin{alignat}{n}, \begin{subarray}{spec}, \begin{tabular}{spec} —
+// can't open a grid directly, so their shortcut (and typed
+// \begin{<spec-env>}) opens a pending `\begin{name}{arg}` input, the
+// arg-entry twin of \begin{name}'s name input: `}`/Enter/Tab resolves
+// to the environment with the arg applied. `{` is ignored at the start
+// of the empty arg block by MathBlock::write, so `\array{cc}` and
+// `\begin{array}{cc}` type straight through. An unresolved input
+// serializes `\name{arg}` and re-parses to this pending state.
+class EnvSpecInput extends MathCommand {
+  envName: string;
+
+  constructor(envName: string) {
+    super(
+      '\\' + envName,
+      new DOMView(1, (blocks) =>
+        h('span', { class: 'mq-non-leaf' }, [
+          h.text('\\begin{' + envName + '}{'),
+          h.block('span', {}, blocks[0]),
+          h.text('}'),
+        ])
+      )
+    );
+    this.envName = envName;
+  }
+
+  createBlocks() {
+    super.createBlocks();
+    const input = this;
+    const argBlock = this.getEnd(L);
+
+    const resolve = function (cursor: Cursor) {
+      const grid = Environments[input.envName]();
+      applySpecArg(grid, argBlock.latex());
+      input.remove();
+      if (input[R]) cursor.insLeftOf(input[R] as MQNode);
+      else cursor.insAtRightEnd(input.parent);
+      grid.createLeftOf(cursor.show());
+      cursor.insAtLeftEnd(grid.getEnd(L) as MQNode);
+    };
+
+    const origWrite = argBlock.write;
+    argBlock.write = function (cursor: Cursor, ch: string) {
+      if (ch === '}') {
+        resolve(cursor);
+        return;
+      }
+      origWrite.call(this, cursor, ch);
+    };
+
+    const origKeystroke = argBlock.keystroke;
+    argBlock.keystroke = function (key, e, ctrlr) {
+      if (key === 'Enter' || key === 'Tab') {
+        e?.preventDefault();
+        resolve(ctrlr.cursor);
+        return;
+      }
+      return origKeystroke.call(this, key, e, ctrlr);
+    };
+  }
+}
+
+function needsSpecArg(grid: CellGrid) {
+  return (
+    grid instanceof ArrayEnv ||
+    grid instanceof SubarrayEnv ||
+    grid instanceof AlignatEnv
+  );
+}
+
+// Apply a typed arg to a spec env's fields: the column spec (array,
+// subarray, tabular) or column-pair count (alignat/alignedat).
+function applySpecArg(grid: CellGrid, text: string) {
+  const g = grid as { spec?: string; n?: string };
+  const spec = text.trim();
+  if (g.spec !== undefined) g.spec = spec;
+  if (g.n !== undefined) g.n = spec;
+}
+
+// The matrix/displaylines family keep their own LatexCmds bindings
+// above (bare-brace parse forms); \cases replaces upstream's
+// literal-marker leaf (\eqnarray/\eqalign keep theirs — real
+// old-style commands whose stored text shouldn't rewrite to aligned);
+// the spec envs go through EnvSpecInput; the loop picks up every
+// remaining registered environment.
+LatexCmds.cases = () => new Cases();
+LatexCmds.array = () => new EnvSpecInput('array');
+LatexCmds.subarray = () => new EnvSpecInput('subarray');
+LatexCmds.tabular = () => new EnvSpecInput('tabular');
+LatexCmds.alignat = () => new EnvSpecInput('alignat');
+LatexCmds.alignedat = () => new EnvSpecInput('alignedat');
+for (const name in Environments) {
+  if (!(name in LatexCmds)) LatexCmds[name] = Environments[name];
+}

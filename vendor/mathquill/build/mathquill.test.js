@@ -8205,6 +8205,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         return new RawArgCommand('\\vcenter ', new RegExp('^(?:to\\s+[^\\s{]+)?' + RAW_GROUP), 'v center');
     };
     // Extra math fonts + \cases leaf (the begin-env form is \begin{cases}).
+    // MATHCOMPILE: overridden in environments.ts — \cases opens the cases grid.
     bindMathWrap('mathbfsf');
     bindMathWrap('mathbold');
     bindMathWrap('mathfrak');
@@ -12865,17 +12866,23 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             // `\begin{\left\{cases\right\}}`).
             var resolve = function (cursor) {
                 var env = nameBlock.latex().trim();
-                var grid = Environments[env.replace(/\*/g, '')] &&
-                    Environments[env.replace(/\*/g, '')]();
-                var node = grid ||
-                    new VanillaSymbol('\\begin{' + env + '} ', h.text('\\begin{' + env + '}'), 'begin ' + env);
+                var envName = env.replace(/\*/g, '');
+                var grid = Environments[envName] && Environments[envName]();
+                // Envs with a required argument (\begin{array}{spec},
+                // alignat{n}, subarray{spec}, tabular{spec}) resolve to a pending
+                // arg input first — the grid only exists once the arg is closed.
+                var node = grid
+                    ? needsSpecArg(grid)
+                        ? new EnvSpecInput(envName)
+                        : grid
+                    : new VanillaSymbol('\\begin{' + env + '} ', h.text('\\begin{' + env + '}'), 'begin ' + env);
                 beginNode.remove();
                 if (beginNode[R])
                     cursor.insLeftOf(beginNode[R]);
                 else
                     cursor.insAtRightEnd(beginNode.parent);
                 node.createLeftOf(cursor.show());
-                if (grid)
+                if (grid && node === grid)
                     cursor.insAtLeftEnd(grid.getEnd(L));
             };
             var origWrite = nameBlock.write;
@@ -14019,6 +14026,98 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         e.envName = 'alignedat';
         return e;
     };
+    /*************************************************
+     * `\name` insertion shortcuts: typed \cases, \aligned, \gathered, …
+     * open the same grid \begin{name} resolves to.
+     *************************************************/
+    // Envs carrying a required argument — \begin{array}{spec},
+    // \begin{alignat}{n}, \begin{subarray}{spec}, \begin{tabular}{spec} —
+    // can't open a grid directly, so their shortcut (and typed
+    // \begin{<spec-env>}) opens a pending `\begin{name}{arg}` input, the
+    // arg-entry twin of \begin{name}'s name input: `}`/Enter/Tab resolves
+    // to the environment with the arg applied. `{` is ignored at the start
+    // of the empty arg block by MathBlock::write, so `\array{cc}` and
+    // `\begin{array}{cc}` type straight through. An unresolved input
+    // serializes `\name{arg}` and re-parses to this pending state.
+    var EnvSpecInput = /** @class */ (function (_super) {
+        __extends(EnvSpecInput, _super);
+        function EnvSpecInput(envName) {
+            var _this_1 = _super.call(this, '\\' + envName, new DOMView(1, function (blocks) {
+                return h('span', { class: 'mq-non-leaf' }, [
+                    h.text('\\begin{' + envName + '}{'),
+                    h.block('span', {}, blocks[0]),
+                    h.text('}'),
+                ]);
+            })) || this;
+            _this_1.envName = envName;
+            return _this_1;
+        }
+        EnvSpecInput.prototype.createBlocks = function () {
+            _super.prototype.createBlocks.call(this);
+            var input = this;
+            var argBlock = this.getEnd(L);
+            var resolve = function (cursor) {
+                var grid = Environments[input.envName]();
+                applySpecArg(grid, argBlock.latex());
+                input.remove();
+                if (input[R])
+                    cursor.insLeftOf(input[R]);
+                else
+                    cursor.insAtRightEnd(input.parent);
+                grid.createLeftOf(cursor.show());
+                cursor.insAtLeftEnd(grid.getEnd(L));
+            };
+            var origWrite = argBlock.write;
+            argBlock.write = function (cursor, ch) {
+                if (ch === '}') {
+                    resolve(cursor);
+                    return;
+                }
+                origWrite.call(this, cursor, ch);
+            };
+            var origKeystroke = argBlock.keystroke;
+            argBlock.keystroke = function (key, e, ctrlr) {
+                if (key === 'Enter' || key === 'Tab') {
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    resolve(ctrlr.cursor);
+                    return;
+                }
+                return origKeystroke.call(this, key, e, ctrlr);
+            };
+        };
+        return EnvSpecInput;
+    }(MathCommand));
+    function needsSpecArg(grid) {
+        return (grid instanceof ArrayEnv ||
+            grid instanceof SubarrayEnv ||
+            grid instanceof AlignatEnv);
+    }
+    // Apply a typed arg to a spec env's fields: the column spec (array,
+    // subarray, tabular) or column-pair count (alignat/alignedat).
+    function applySpecArg(grid, text) {
+        var g = grid;
+        var spec = text.trim();
+        if (g.spec !== undefined)
+            g.spec = spec;
+        if (g.n !== undefined)
+            g.n = spec;
+    }
+    // The matrix/displaylines family keep their own LatexCmds bindings
+    // above (bare-brace parse forms); \cases replaces upstream's
+    // literal-marker leaf (\eqnarray/\eqalign keep theirs — real
+    // old-style commands whose stored text shouldn't rewrite to aligned);
+    // the spec envs go through EnvSpecInput; the loop picks up every
+    // remaining registered environment.
+    LatexCmds.cases = function () { return new Cases(); };
+    LatexCmds.array = function () { return new EnvSpecInput('array'); };
+    LatexCmds.subarray = function () { return new EnvSpecInput('subarray'); };
+    LatexCmds.tabular = function () { return new EnvSpecInput('tabular'); };
+    LatexCmds.alignat = function () { return new EnvSpecInput('alignat'); };
+    LatexCmds.alignedat = function () { return new EnvSpecInput('alignedat'); };
+    for (var name in Environments) {
+        if (!(name in LatexCmds))
+            LatexCmds[name] = Environments[name];
+    }
     var assert = (function () {
         var AssertionError = /** @class */ (function (_super) {
             __extends(AssertionError, _super);
@@ -16894,6 +16993,65 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 assert.equal(mq.latex(), '\\begin{matrix}a&b\\end{matrix}');
             });
         });
+        suite('env shortcuts', function () {
+            test('\\cases opens the cases grid with the caret in the first cell', function () {
+                mq.typedText('\\cases');
+                mq.keystroke('Enter');
+                assert.equal(mq.latex(), '\\begin{cases}&\\\\&\\end{cases}');
+                mq.typedText('x');
+                assert.equal(mq.latex(), '\\begin{cases}x&\\\\&\\end{cases}');
+            });
+            test('env names canonicalize like \\begin{name}', function () {
+                mq.typedText('\\gather');
+                mq.keystroke('Enter');
+                assert.equal(mq.latex(), '\\begin{gathered}\\\\ \\end{gathered}');
+                mq.latex('');
+                mq.typedText('\\split');
+                mq.keystroke('Enter');
+                assert.equal(mq.latex(), '\\begin{aligned}&\\\\&\\end{aligned}');
+            });
+            test('\\array{spec} opens the grid with the column spec applied', function () {
+                mq.typedText('\\array{cc}');
+                assert.equal(mq.latex(), '\\begin{array}{cc}&\\\\&\\end{array}');
+                mq.typedText('x');
+                assert.equal(mq.latex(), '\\begin{array}{cc}x&\\\\&\\end{array}');
+            });
+            test('\\subarray \\tabular \\alignat \\alignedat carry their arg', function () {
+                mq.typedText('\\subarray{c}');
+                assert.equal(mq.latex(), '\\begin{subarray}{c}&\\\\&\\end{subarray}');
+                mq.latex('');
+                mq.typedText('\\tabular{ll}');
+                assert.equal(mq.latex(), '\\begin{tabular}{ll}&\\\\&\\end{tabular}');
+                mq.latex('');
+                mq.typedText('\\alignat{2}');
+                assert.equal(mq.latex(), '\\begin{alignat}{2}&\\\\&\\end{alignat}');
+                mq.latex('');
+                mq.typedText('\\alignedat{3}');
+                assert.equal(mq.latex(), '\\begin{alignedat}{3}&\\\\&\\end{alignedat}');
+            });
+            test('typed \\begin{array}{spec} routes through the arg input', function () {
+                mq.typedText('\\begin{array}{cc}');
+                assert.equal(mq.latex(), '\\begin{array}{cc}&\\\\&\\end{array}');
+            });
+            test('Enter/Tab inside the pending arg input resolves it', function () {
+                mq.typedText('\\array');
+                mq.keystroke('Enter'); // accepts \array, opens the pending arg input
+                assert.equal(mq.latex(), '\\array{ }');
+                mq.typedText('lr');
+                mq.keystroke('Enter');
+                assert.equal(mq.latex(), '\\begin{array}{lr}&\\\\&\\end{array}');
+                mq.latex('');
+                mq.typedText('\\array');
+                mq.keystroke('Enter');
+                mq.typedText('c');
+                mq.keystroke('Tab');
+                assert.equal(mq.latex(), '\\begin{array}{c}&\\\\&\\end{array}');
+            });
+            test('an unresolved arg input serializes \\name{arg} and re-parses', function () {
+                mq.latex('\\array{cc}');
+                assert.equal(mq.latex(), '\\array{cc}');
+            });
+        });
         suite('derivative', function () {
             test('expands to \\frac{d#1}{d#2} with caret in the denominator', function () {
                 mq.typedText('\\derivative');
@@ -18312,7 +18470,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             assertParsesLatex('\\mathbfsf{x}', '\\mathbfsf{x}');
             assertParsesLatex('\\texteuro', '\\texteuro ');
             assertParsesLatex('\\oldstylenums{0}', '\\oldstylenums{0}');
-            assertParsesLatex('\\cases{a&b}', '\\cases a\\&b');
+            // \cases is the env shortcut — a braced group lands in one cell
+            assertParsesLatex('\\cases{a&b}', '\\begin{cases}a\\&b\\end{cases}');
             // tabular parses as an array twin (spec + pos + cells)
             assertParsesLatex('\\begin{tabular}{cc}a&b\\end{tabular}', '\\begin{tabular}{cc}a&b\\end{tabular}');
             assertParsesLatex('\\begin{tabular}[t]{|c|c|}a&b\\end{tabular}', '\\begin{tabular}[t]{|c|c|}a&b\\end{tabular}');
@@ -20950,9 +21109,12 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 typed('\\begin{align}');
                 assert.equal(mq.latex(), '\\begin{aligned}&\\\\&\\end{aligned}');
             });
-            test('\\begin{alignat} resolves to a grid without crashing', function () {
+            test('\\begin{alignat} opens the arg input; `}` resolves the grid', function () {
                 typed('\\begin{alignat}');
-                assert.equal(mq.latex(), '\\begin{alignat}{}&\\\\&\\end{alignat}');
+                assert.equal(mq.latex(), '\\alignat{ }');
+                mq.typedText('2');
+                mq.typedText('}');
+                assert.equal(mq.latex(), '\\begin{alignat}{2}&\\\\&\\end{alignat}');
             });
         });
         suite('accent diacritics are not clipped by the field top', function () {

@@ -32,7 +32,13 @@ New files:
   (`\displaylines{a\\ b}`, the multi-line row model — a 1-column
   CellGrid), and `\derivative`, which expands via `writeLatex` to
   `\frac{d#1}{d#2}` (or `D(#1)` when `config({dIsDerivative:false})`)
-  so the expansion is ordinary editable atoms.
+  so the expansion is ordinary editable atoms. Every environment is
+  also reachable by a `\name` insertion shortcut (`\cases`, `\aligned`,
+  `\gathered`…) that opens the same grid `\begin{name}` resolves to;
+  spec-taking envs (`\array`, `\subarray`, `\tabular`, `\alignat`,
+  `\alignedat` — and typed `\begin{<spec-env>}`) go through a pending
+  `\begin{name}{arg}` input (`EnvSpecInput`) that applies the arg on
+  `}`/Enter/Tab.
 - `src/commands/math/extraCommands.ts` (in `SOURCES_FULL` and
   `SOURCES_BASIC`) — the additions that used to be
   inline in `commands.ts`: `LatexCmds`/`CharCmds` and their helper

@@ -140,11 +140,18 @@ textit textmd textnormal textrm textsc textsf textsl texttt textup
 ### Environments
 
 ```
-\begin{matrix|pmatrix|bmatrix|Bmatrix|vmatrix|Vmatrix|displaylines}
+\begin{matrix|pmatrix|bmatrix|Bmatrix|vmatrix|Vmatrix|cases|displaylines|
+gathered|smallmatrix|aligned|array|subarray|tabular|alignat|alignedat}
 ```
 
 plus bare forms `\matrix \pmatrix \bmatrix \Bmatrix \vmatrix \Vmatrix
-\displaylines`.
+\displaylines`, and `\name` insertion shortcuts that open the
+environment directly (`\cases`, `\aligned`, `\gathered`, …; canonical
+aliases `\gather`, `\align`, `\split`, `\equation`, `\multline`,
+`\flalign`, `\eqnarray`, `\eqalign` resolve to the same grids).
+`\array`, `\subarray`, `\tabular`, `\alignat`, `\alignedat` take the
+required argument inline — `\array{cc}` — and a typed
+`\begin{array}{cc}` lands in the same arg input.
 
 ## Words typed without `\`
 
