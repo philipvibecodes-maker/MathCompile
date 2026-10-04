@@ -157,21 +157,14 @@
 </script>
 
 <div class="cell-output calc-output">
-  <!-- Off the tab order: a per-row tab stop between fields would break
-       Tab's field-to-field hop through the worksheet. -->
   <div class="calc-code-toggle">
     <label>
-      <input
-        type="checkbox"
-        tabindex="-1"
-        bind:checked={showCode}
-      />
+      <input type="checkbox" bind:checked={showCode} />
       Show generating code
     </label>
     <button
       type="button"
       class="info-icon"
-      tabindex="-1"
       aria-label="About the generating code"
     >
       <svg
