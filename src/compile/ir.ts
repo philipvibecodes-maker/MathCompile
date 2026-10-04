@@ -1281,11 +1281,20 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       if (isDelimiterGroup(last)) {
         const callArgs = delimiterArgs(last).map((n) => normalize(n, false));
         const mid = items.slice(1, -1).map((n) => normalize(n, false));
-        // Still applied when the callee is more than a bare name:
+        // Still applied when the callee is more than a bare name: a
+        // name the worksheet already defined (`g(2)` after
+        // `\text{def} g(x) = …`/`f := x↦…` — declaredFns is populated
+        // in statement order, so a forward reference still multiplies),
         // an upright word (\mathrm{foo}(x)/\text{foo}(x) — font-grouped
         // names arrive as one multi-char token; typed letters never
-        // fuse into a single token) or a \mapsto lambda in parens
+        // fuse into a single token), or a \mapsto lambda in parens
         // ((x↦x²)(3)).
+        if (isString(fn) && declaredFns.has(fn))
+          return [
+            'Apply',
+            fn,
+            ...(mid.length === 0 ? callArgs : [...mid, ...callArgs]),
+          ];
         if (isString(fn) && fn.length > 1) {
           if (mid.length === 0)
             return normalize([fn, ...callArgs], atStatement);
