@@ -7407,9 +7407,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds.DeclareMathOperator = function () {
         return new RawArgCommand('\\DeclareMathOperator', new RegExp('^\\*?' + RAW_GROUP + '(?:' + RAW_GROUP + ')?'), 'declare math operator');
     };
-    LatexCmds.def = function () {
-        return new RawArgCommand('\\def', new RegExp('^(?:\\\\[a-zA-Z]+|\\S)(?:#[0-9])*(?:' + RAW_GROUP + ')?'), 'def');
-    };
+    // MATHCOMPILE: \def moved to extraCommands.ts — the app binds it as an
+    // insertion alias for \text{def}, so upstream's TeX-macro RawArgCommand
+    // form is dropped (\def\foo{bar} no longer round-trips).
     // Literal-marker symbols: a visible \name leaf so a\choose b keeps its
     // text and shows the command rather than blanking or silently dropping it.
     function bindLiteralCmd(ctrlSeq, speak) {
@@ -12805,6 +12805,28 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     // Typed ':' is a relation (f : X → Y) — render it with binary-operator
     // spacing like = and → instead of a bare symbol.
     LatexCmds[':'] = bindBinaryOperator(':', ':', ':', 'colon');
+    //======================================================================
+    //  \def — insertion alias for \text{def}
+    //======================================================================
+    // Typing `\def` expands to a real \text{def} TextBlock — the marker the
+    // compiler reads for a function def (`f(x)` alone is f·x now) — the same
+    // insertion-time expansion \derivative uses. A `\def` in pasted latex
+    // renders the same "def" text and serializes as \text{def}, so stored
+    // latex canonicalizes on the next save. This overrides the TeX-macro
+    // \def RawArgCommand — MathCompile has no macro facility.
+    var DefAlias = /** @class */ (function (_super) {
+        __extends(DefAlias, _super);
+        function DefAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        DefAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{def}');
+        };
+        return DefAlias;
+    }(MQSymbol));
+    LatexCmds.def = function () {
+        return new DefAlias('\\text{def}', h('span', { class: 'mq-text-mode' }, [h.text('def')]), 'def', 'def');
+    };
     /*************************************************
      * LaTeX environments: \begin{matrix} family and
      * \displaylines{...}, plus insertion-time \derivative.
@@ -17434,7 +17456,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             assertParsesLatex('\\newcommand{\\foo}{x}', '\\newcommand{\\foo}{x}');
             assertParsesLatex('\\renewcommand{\\foo}[1]{#1x}', '\\renewcommand{\\foo}[1]{#1x}');
             assertParsesLatex('\\providecommand{\\bar}{z}', '\\providecommand{\\bar}{z}');
-            assertParsesLatex('\\def\\foo{bar}', '\\def\\foo{bar}');
+            // MATHCOMPILE: \def is the app's insertion alias for \text{def},
+            // not upstream's TeX-macro RawArgCommand — \def\foo{bar} parses as
+            // a "def" text block followed by \foo and bar.
+            assertParsesLatex('\\def\\foo{bar}', '\\text{def}\\foo bar');
             assertParsesLatex('\\DeclareMathOperator{\\Tr}{Tr}', '\\DeclareMathOperator{\\Tr}{Tr}');
             assertParsesLatex('\\genfrac(){}{}{x}{y}', '\\genfrac(){}{}{x}{y}');
             assertParsesLatex('\\genfrac(]{0pt}{0}{x}{y}', '\\genfrac(]{0pt}{0}{x}{y}');

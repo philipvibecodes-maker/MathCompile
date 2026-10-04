@@ -29,7 +29,7 @@ export interface FieldHandle {
 }
 
 const SMART_AUTO_COMMANDS =
-  'int iint antid sum sqrt prod pi infty theta derivative';
+  'int iint antid sum sqrt prod pi infty theta derivative def';
 
 // "Only one blank line": an empty field, or a lone \displaylines wrap
 // around nothing (what a single Enter-then-blank line serializes as).

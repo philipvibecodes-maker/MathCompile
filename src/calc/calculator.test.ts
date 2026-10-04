@@ -47,7 +47,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
   });
 
   it('gives a function def a lambda display expression', () => {
-    const prog = calc('f(x) = x^2');
+    const prog = calc('\\text{def} f(x) = x^2');
     expect(prog.statements).toEqual([
       {
         code: 'def f(x):\n    return x**2',
@@ -103,9 +103,10 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
   });
 
   it('calls unknown functions through a Function fallback, not sp.<name>', () => {
-    // sp.f would AttributeError — f may not exist on sympy.
-    expect(calc('f(3)').prelude).toContain('f = sp.Function("f")');
-    expect(calc('f(3)').statements[0].code).toBe(F('f(3)'));
+    // `f(3)` is f·3 — parens multiply. An upright word callee keeps the
+    // call path: sp.foo would AttributeError — foo may not exist on sympy.
+    expect(calc('f(3)').prelude).toContain('f = sp.Symbol("f")');
+    expect(calc('f(3)').statements[0].code).toBe(F('f * 3'));
     expect(calc('\\operatorname{foo}(x)').prelude).toContain(
       'foo = sp.Function("foo")',
     );
@@ -718,7 +719,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
         .statements[1].code,
     ).toBe(F('sp.integrate(f(x), x) + sp.Symbol("C")'));
     expect(
-      calc('\\displaylines{f(x) = x^{2} \\\\ \\int f(x)\\text{d}x}')
+      calc('\\displaylines{\\text{def} f(x) = x^{2} \\\\ \\int f(x)\\text{d}x}')
         .statements[1].code,
     ).toBe(F('sp.integrate(f(x), x) + sp.Symbol("C")'));
     // A scalar binding is not a call — `a x` stays `a*x`.
@@ -855,10 +856,10 @@ describe('toNerdamerInput (latex → nerdamer calls)', () => {
   });
 
   it('applies nested calls, not a literal call(f, x)', () => {
-    const p = calc('g(f(x))');
-    expect(p.statements[0]?.code).toBe(F('g(f(x))'));
-    expect(p.prelude).toContain('f = sp.Function("f")');
-    expect(p.prelude).toContain('g = sp.Function("g")');
+    const p = calc('\\mathrm{hh}(\\mathrm{kk}(x))');
+    expect(p.statements[0]?.code).toBe(F('hh(kk(x))'));
+    expect(p.prelude).toContain('kk = sp.Function("kk")');
+    expect(p.prelude).toContain('hh = sp.Function("hh")');
   });
 
   it('keeps a comma subscript in the symbol name', () => {

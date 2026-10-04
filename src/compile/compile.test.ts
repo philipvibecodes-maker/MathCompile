@@ -30,10 +30,24 @@ const FIXTURES: {
     expectedPython: ['x = sp.Symbol("x")', 'sp.Eq(x + 1, 2)'],
   },
   {
-    latex: 'f(x) = x^2 + 1',
+    latex: '\\text{def} f(x) = x^2 + 1',
     expectedIR: ['Def', 'f', ['List', 'x'], ['Add', ['Power', 'x', 2], 1]],
     // x is a def parameter (bound), f is bound by the def itself — no defs.
     expectedPython: ['def f(x):', '    return x**2 + 1'],
+  },
+  {
+    // Without the \text{def} marker `f(x)` is f·x — parens multiply
+    // everywhere — so this is an ordinary equation.
+    latex: 'f(x) = x^2 + 1',
+    expectedIR: [
+      'Equal',
+      ['Multiply', 'f', 'x'],
+      ['Add', ['Power', 'x', 2], 1],
+    ],
+    expectedPython: [
+      "f, x = sp.symbols('f x')",
+      'sp.Eq(f * x, x**2 + 1)',
+    ],
   },
   {
     latex: '\\frac{x+1}{y-2}',
@@ -153,18 +167,18 @@ const FIXTURES: {
     // A non-name "callee" is juxtaposed factors, not a call — emitting
     // `sqrt(x)(x + 1)` raised 'Pow' object is not callable in the worker.
     latex: '\\sqrt{x}(x+1)',
-    expectedIR: ['Apply', ['Sqrt', 'x'], ['Add', 'x', 1]],
+    expectedIR: ['Multiply', ['Sqrt', 'x'], ['Add', 'x', 1]],
     expectedPython: ['x = sp.Symbol("x")', 'sp.sqrt(x) * (x + 1)'],
   },
   {
     // `2(x+1)` hit the same bug as 'int' object is not callable.
     latex: '2(x+1)',
-    expectedIR: ['Apply', 2, ['Add', 'x', 1]],
+    expectedIR: ['Multiply', 2, ['Add', 'x', 1]],
     expectedPython: ['x = sp.Symbol("x")', '2 * (x + 1)'],
   },
   {
     latex: 'x^{2}(y+1)',
-    expectedIR: ['Apply', ['Power', 'x', 2], ['Add', 'y', 1]],
+    expectedIR: ['Multiply', ['Power', 'x', 2], ['Add', 'y', 1]],
     expectedPython: ["x, y = sp.symbols('x y')", 'x**2 * (y + 1)'],
   },
   {
@@ -173,7 +187,7 @@ const FIXTURES: {
     latex: '\\int \\frac{1}{\\sqrt{x}(x+1)}dx',
     expectedIR: [
       'Integrate',
-      ['Divide', 1, ['Apply', ['Sqrt', 'x'], ['Add', 'x', 1]]],
+      ['Divide', 1, ['Multiply', ['Sqrt', 'x'], ['Add', 'x', 1]]],
       ['Limits', 'x', 'Nothing', 'Nothing'],
     ],
     expectedPython: [
@@ -300,16 +314,11 @@ const FIXTURES: {
     expectedPython: ['a = sp.Symbol("a")'],
   },
   {
-    // A bare `f(x)` used to emit `sp.f(x)` — AttributeError in the
-    // worker. Unknown applied names become worksheet Function defs.
+    // `f(x)` is f·x — parens after a bare name multiply. Calls need an
+    // upright word callee (\mathrm{foo}(x)) or a \text{def}-declared name.
     latex: 'f(x)',
-    expectedIR: ['call', 'f', 'x'],
-    expectedPython: [
-      'x = sp.Symbol("x")',
-      'f = sp.Function("f")',
-      'f(x)',
-    ],
-    issues: ['unknown head "f"'],
+    expectedIR: ['Multiply', 'f', 'x'],
+    expectedPython: ["f, x = sp.symbols('f x')", 'f * x'],
   },
   {
     // `a'` is a primed name, not an applied derivative — `sp.prime`
@@ -433,9 +442,9 @@ const FIXTURES: {
   },
   {
     // \Big( ... \Big) sizes are dropped — the parens stay an implicit
-    // application, so `a` resolves as an undefined worksheet function.
+    // product, so `a\Big(b\Big)` is a·b.
     latex: 'a\\Big(b\\Big)',
-    expectedPython: ['b = sp.Symbol("b")', 'a = sp.Function("a")', 'a(b)'],
+    expectedPython: ["a, b = sp.symbols('a b')", 'a * b'],
   },
   {
     // \; spacing commands are stripped for codegen (implicit multiply).
@@ -637,15 +646,9 @@ const FIXTURES: {
     ],
   },
   {
-    // Nested application used to re-wrap the inner call as
-    // ['call', 'call', 'f', 'x'] and emit 'call(f)'-shaped garbage.
+    // Nested parens flatten to one product — `g(f(x))` is g·f·x.
     latex: 'g(f(x))',
-    expectedPython: [
-      'x = sp.Symbol("x")',
-      'f = sp.Function("f")',
-      'g = sp.Function("g")',
-      'g(f(x))',
-    ],
+    expectedPython: ["g, f, x = sp.symbols('g f x')", 'g * f * x'],
   },
   {
     // \mathbb{P} — sp.S.Primes doesn't exist; the primes set is a
@@ -775,16 +778,12 @@ const FIXTURES: {
     ],
   },
   {
-    // \min_{x} f(x) on an undefined function — sp.minimum can't bound
-    // its range (NotImplementedError) so it keeps the stub.
+    // \min_{x} f(x) — `f(x)` is f·x, so the body is the product f*x.
     latex: '\\min_{x} f(x)',
     expectedPython: [
-      'x = sp.Symbol("x")',
-      'Minimum = sp.Function("Minimum")',
-      'f = sp.Function("f")',
-      'Minimum(f(x), x)',
+      "f, x = sp.symbols('f x')",
+      'sp.minimum(f * x, x)',
     ],
-    issues: ['Minimum'],
   },
   {
     // \dot{x} parses as D(x, t) — x is a function of t, so it emits
@@ -925,13 +924,12 @@ const FIXTURES: {
   },
   {
     // \dot{x} = f(x) is an ODE — the D operator must not read as a
-    // function name in functionDefShape (`def D(x,t): return f(x)`).
+    // function name; `f(x)` is f·x, and depvar x emits x(t).
     latex: '\\dot{x} = f(x)',
     expectedPython: [
-      't = sp.Symbol("t")',
+      "t, f = sp.symbols('t f')",
       'x = sp.Function("x")',
-      'f = sp.Function("f")',
-      'sp.Eq(sp.diff(x(t), t), f(x(t)))',
+      'sp.Eq(sp.diff(x(t), t), f * x(t))',
     ],
   },
   {
@@ -974,17 +972,22 @@ const FIXTURES: {
     issues: ['evaluated w.r.t. x'],
   },
   {
-    // Calling a name the cell itself declares isn't "unknown head" —
-    // suppression follows source order (f(3) after the def is clean).
+    // `f(x) = x^2` is an equation now — `f(3)` is f·3, not a call.
     latex: '\\displaylines{f(x) = x^2 \\\\ f(3)}',
-    expectedPython: ['def f(x):', '    return x**2', 'f(3)'],
+    expectedPython: [
+      "f, x = sp.symbols('f x')",
+      'sp.Eq(f * x, x**2)',
+      'f * 3',
+    ],
   },
   {
-    // A forward reference still flags — g(3) precedes the def and
-    // NameErrors at exec, so the note is honest.
+    // Same for g — both lines are ordinary multiply/equation forms.
     latex: '\\displaylines{g(3) \\\\ g(x) = x+1}',
-    expectedPython: ['g(3)', 'def g(x):', '    return x + 1'],
-    issues: ['unknown head "g"'],
+    expectedPython: [
+      "g, x = sp.symbols('g x')",
+      'g * 3',
+      'sp.Eq(g * x, x + 1)',
+    ],
   },
   {
     // sp.gcd takes exactly two terms — a third arg lands in *gens and
@@ -1014,8 +1017,8 @@ const FIXTURES: {
     latex:
       'f(x) = \\begin{cases} x^2 & x > 0 \\\\ 0 & \\mathrm{otherwise} \\end{cases}',
     expectedPython: [
-      'def f(x):',
-      '    return sp.Piecewise((x**2, sp.Gt(x, 0)), (0, True))',
+      "f, x = sp.symbols('f x')",
+      'sp.Eq(f * x, sp.Piecewise((x**2, sp.Gt(x, 0)), (0, True)))',
     ],
   },
   {
@@ -1139,20 +1142,21 @@ const FIXTURES: {
   },
   {
     // A declared function name in call-arg position is the unapplied
-    // function — `g(f)` emits the eta form `sp.Lambda(x, f(x))` (the
-    // bare name can't sympify; `f(x)` would read as the composition
-    // arg evaluated at x).
-    latex: '\\displaylines{f(x) = x^2 \\\\ g(f)}',
+    // function — `\mathrm{foo}(f)` emits the eta form
+    // `sp.Lambda(x, f(x))` (the bare name can't sympify; `f(x)` would
+    // read as the composition arg evaluated at x).
+    latex: '\\displaylines{\\text{def} f(x) = x^2 \\\\ \\mathrm{foo}(f)}',
     expectedPython: [
       'x = sp.Symbol("x")',
-      'g = sp.Function("g")',
+      'foo = sp.Function("foo")',
       'def f(x):',
       '    return x**2',
-      'g(sp.Lambda(x, f(x)))',
+      'foo(sp.Lambda(x, f(x)))',
     ],
+    issues: ['unknown head "foo"'],
   },
   {
-    latex: '\\displaylines{f(x) = x^2 \\\\ \\sin(f)}',
+    latex: '\\displaylines{\\text{def} f(x) = x^2 \\\\ \\sin(f)}',
     expectedPython: [
       'x = sp.Symbol("x")',
       'def f(x):',
@@ -1164,14 +1168,15 @@ const FIXTURES: {
     // Multi-arg signatures eta-expand over the tuple; `f + 1` stays
     // applied (`f(x) + 1`) — arithmetic position is the pointwise
     // reading, not a function value.
-    latex: '\\displaylines{f(x,y) = x+y \\\\ g(f)}',
+    latex: '\\displaylines{\\text{def} f(x,y) = x+y \\\\ \\mathrm{foo}(f)}',
     expectedPython: [
       "x, y = sp.symbols('x y')",
-      'g = sp.Function("g")',
+      'foo = sp.Function("foo")',
       'def f(x, y):',
       '    return x + y',
-      'g(sp.Lambda((x, y), f(x, y)))',
+      'foo(sp.Lambda((x, y), f(x, y)))',
     ],
+    issues: ['unknown head "foo"'],
   },
   {
     // `x \in S^{+}` — the S ∩ (0,∞) reading only holds when S is ℝ or
@@ -1417,9 +1422,19 @@ describe('normalizeIR', () => {
     expect(Array.isArray(ir) && ir[0]).toBe('Assign');
   });
 
-  it('statement-level = with f(x) LHS becomes Def', () => {
+  it('statement-level = with f(x) LHS stays an equation', () => {
     const { ir } = normalizeIR(parseCellLatex('f(x) = x^2'));
+    expect(Array.isArray(ir) && ir[0]).toBe('Equal');
+  });
+
+  it('statement-level = with \\text{def} f(x) LHS becomes Def', () => {
+    const { ir } = normalizeIR(parseCellLatex('\\text{def} f(x) = x^2'));
     expect(Array.isArray(ir) && ir[0]).toBe('Def');
+  });
+
+  it('a bare \\text{def} f(x) declares f as a function', () => {
+    const { ir } = normalizeIR(parseCellLatex('\\text{def} f(x)'));
+    expect(ir).toEqual(['Declare', 'f', ['List', 'x']]);
   });
 
   it('nested = stays Equal', () => {
@@ -1685,20 +1700,23 @@ describe('worksheet program', () => {
     expect(out.program).not.toMatch(/sp\.Symbol\("f"\)/);
   });
 
-  it('declared function names call directly, not via sp.', () => {
+  it('\\text{def} declares a function; f(3) is still f·3', () => {
     const cells = [
-      { json: parseCellLatex('f(x) = x^2') },
+      { json: parseCellLatex('\\text{def} f(x) = x^2') },
       { json: parseCellLatex('f(3)') },
     ];
     const out = compileWorksheet(cells, 'python', { importAll: false });
-    // Standalone cell 2 declares f with an sp.Function def, then calls it.
+    expect(out.cellLines[0]).toEqual([
+      'import sympy as sp',
+      'def f(x):',
+      '    return x**2',
+    ]);
+    // Each cell compiles on its own — f(3) is f·3 in the second cell.
     expect(out.cellLines[1]).toEqual([
       'import sympy as sp',
-      'f = sp.Function("f")',
-      'f(3)',
+      'f = sp.Symbol("f")',
+      'f * 3',
     ]);
-    expect(out.program).toContain('f(3)');
-    expect(out.program).not.toContain('sp.f(3)');
   });
 
   it('the seed cell compiles to an equation', () => {

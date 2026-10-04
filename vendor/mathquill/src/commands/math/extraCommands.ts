@@ -1109,3 +1109,26 @@ LatexCmds.varprojlim = () =>
 // Typed ':' is a relation (f : X → Y) — render it with binary-operator
 // spacing like = and → instead of a bare symbol.
 LatexCmds[':'] = bindBinaryOperator(':', ':', ':', 'colon');
+
+//======================================================================
+//  \def — insertion alias for \text{def}
+//======================================================================
+
+// Typing `\def` expands to a real \text{def} TextBlock — the marker the
+// compiler reads for a function def (`f(x)` alone is f·x now) — the same
+// insertion-time expansion \derivative uses. A `\def` in pasted latex
+// renders the same "def" text and serializes as \text{def}, so stored
+// latex canonicalizes on the next save. This overrides the TeX-macro
+// \def RawArgCommand — MathCompile has no macro facility.
+class DefAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{def}');
+  }
+}
+LatexCmds.def = () =>
+  new DefAlias(
+    '\\text{def}',
+    h('span', { class: 'mq-text-mode' }, [h.text('def')]) as HTMLElement,
+    'def',
+    'def'
+  );

@@ -10326,6 +10326,28 @@ var __assign = (this && this.__assign) || function () {
     // Typed ':' is a relation (f : X \u2192 Y) \u2014 render it with binary-operator
     // spacing like = and \u2192 instead of a bare symbol.
     LatexCmds[':'] = bindBinaryOperator(':', ':', ':', 'colon');
+    //======================================================================
+    //  \def \u2014 insertion alias for \text{def}
+    //======================================================================
+    // Typing `\def` expands to a real \text{def} TextBlock \u2014 the marker the
+    // compiler reads for a function def (`f(x)` alone is f\u00b7x now) \u2014 the same
+    // insertion-time expansion \derivative uses. A `\def` in pasted latex
+    // renders the same "def" text and serializes as \text{def}, so stored
+    // latex canonicalizes on the next save. This overrides the TeX-macro
+    // \def RawArgCommand \u2014 MathCompile has no macro facility.
+    var DefAlias = /** @class */ (function (_super) {
+        __extends(DefAlias, _super);
+        function DefAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        DefAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{def}');
+        };
+        return DefAlias;
+    }(MQSymbol));
+    LatexCmds.def = function () {
+        return new DefAlias('\\text{def}', h('span', { class: 'mq-text-mode' }, [h.text('def')]), 'def', 'def');
+    };
     // For backwards compatibility, set up the global MathQuill object as an instance of API interface v1
     if (window.jQuery) {
         MQ1 = getInterface(1);

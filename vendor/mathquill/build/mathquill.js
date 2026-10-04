@@ -7398,9 +7398,9 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.DeclareMathOperator = function () {
         return new RawArgCommand('\\DeclareMathOperator', new RegExp('^\\*?' + RAW_GROUP + '(?:' + RAW_GROUP + ')?'), 'declare math operator');
     };
-    LatexCmds.def = function () {
-        return new RawArgCommand('\\def', new RegExp('^(?:\\\\[a-zA-Z]+|\\S)(?:#[0-9])*(?:' + RAW_GROUP + ')?'), 'def');
-    };
+    // MATHCOMPILE: \def moved to extraCommands.ts \u2014 the app binds it as an
+    // insertion alias for \text{def}, so upstream's TeX-macro RawArgCommand
+    // form is dropped (\def\foo{bar} no longer round-trips).
     // Literal-marker symbols: a visible \name leaf so a\choose b keeps its
     // text and shows the command rather than blanking or silently dropping it.
     function bindLiteralCmd(ctrlSeq, speak) {
@@ -12796,6 +12796,28 @@ var __assign = (this && this.__assign) || function () {
     // Typed ':' is a relation (f : X \u2192 Y) \u2014 render it with binary-operator
     // spacing like = and \u2192 instead of a bare symbol.
     LatexCmds[':'] = bindBinaryOperator(':', ':', ':', 'colon');
+    //======================================================================
+    //  \def \u2014 insertion alias for \text{def}
+    //======================================================================
+    // Typing `\def` expands to a real \text{def} TextBlock \u2014 the marker the
+    // compiler reads for a function def (`f(x)` alone is f\u00b7x now) \u2014 the same
+    // insertion-time expansion \derivative uses. A `\def` in pasted latex
+    // renders the same "def" text and serializes as \text{def}, so stored
+    // latex canonicalizes on the next save. This overrides the TeX-macro
+    // \def RawArgCommand \u2014 MathCompile has no macro facility.
+    var DefAlias = /** @class */ (function (_super) {
+        __extends(DefAlias, _super);
+        function DefAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        DefAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{def}');
+        };
+        return DefAlias;
+    }(MQSymbol));
+    LatexCmds.def = function () {
+        return new DefAlias('\\text{def}', h('span', { class: 'mq-text-mode' }, [h.text('def')]), 'def', 'def');
+    };
     /*************************************************
      * LaTeX environments: \begin{matrix} family and
      * \displaylines{...}, plus insertion-time \derivative.

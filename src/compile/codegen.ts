@@ -158,7 +158,7 @@ const SP_FUNCS: Record<string, string> = {
 
 // Statement-position heads that only lower to Python.
 const STATEMENT_HEADS = new Set([
-  'Assign', 'Def', 'Block', 'WhereBlock', 'Which', 'Piecewise',
+  'Assign', 'Def', 'Declare', 'Block', 'WhereBlock', 'Which', 'Piecewise',
 ]);
 const CMP_NESTABLE_HEADS = new Set([
   'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
@@ -2829,6 +2829,27 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       display: assignDisplay(sp, name, rhs, matrixRhs || setRhs),
     };
   }
+  // `\text{def} f(x)` — a declaration without a body: f binds an
+  // undefined function so `f'(x)` and operand uses still apply it.
+  if (h === 'Declare') {
+    const name = isStr(node[1]) ? node[1] : 'f';
+    const params = isHead(node[2], 'List')
+      ? node[2].slice(1).filter(isStr)
+      : [];
+    emitter.scope.defined.add(name);
+    emitter.scope.functions.set(name, pyIdent(name));
+    if (params.length > 0) emitter.scope.fnArgs.set(name, params);
+    return {
+      lines: [`${pyIdent(name)} = ${sp}Function(${JSON.stringify(name)})`],
+      // Zero params: show `f` (the function itself), not `f()`.
+      display:
+        params.length === 0
+          ? `${sp}Function(${JSON.stringify(name)})`
+          : `${sp}Function(${JSON.stringify(name)})(${params
+              .map((p) => `${sp}Symbol(${JSON.stringify(p)})`)
+              .join(', ')})`,
+    };
+  }
   if (h === 'Def') {
     const name = isStr(node[1]) ? node[1] : 'f';
     const params =
@@ -3057,7 +3078,7 @@ function collectDeclared(
     if (!isArr(n)) return;
     const h = headOf(n);
     if (h === 'Assign' && isStr(n[1])) declared.add(n[1]);
-    if (h === 'Def' && isStr(n[1])) {
+    if ((h === 'Def' || h === 'Declare') && isStr(n[1])) {
       declared.add(n[1]);
       declaredFns.add(n[1]);
     }

@@ -458,7 +458,10 @@ suite('latex', function () {
       '\\providecommand{\\bar}{z}',
       '\\providecommand{\\bar}{z}'
     );
-    assertParsesLatex('\\def\\foo{bar}', '\\def\\foo{bar}');
+    // MATHCOMPILE: \def is the app's insertion alias for \text{def},
+    // not upstream's TeX-macro RawArgCommand — \def\foo{bar} parses as
+    // a "def" text block followed by \foo and bar.
+    assertParsesLatex('\\def\\foo{bar}', '\\text{def}\\foo bar');
     assertParsesLatex(
       '\\DeclareMathOperator{\\Tr}{Tr}',
       '\\DeclareMathOperator{\\Tr}{Tr}'

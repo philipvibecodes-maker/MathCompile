@@ -324,7 +324,7 @@ const KNOWN_HEADS = new Set([
   'Complement',
   'Difference',
   // statement-level IR
-  'Assign', 'Def', 'Block', 'WhereBlock', 'Function',
+  'Assign', 'Def', 'Declare', 'Block', 'WhereBlock', 'Function',
   // structural helpers
   'Limits', 'Tuple', 'List', 'Subscript', 'Delimiters', 'Error',
   // 'Set' reaches codegen directly (FiniteSet / ConditionSet / ImageSet
@@ -517,6 +517,29 @@ function functionDefShape(
     }
   }
   return null;
+}
+
+// `\text{def}` arrives as a text literal 'def' — the statement-level
+// marker that asks for a function def. `f(x)` alone now reads as f·x, so
+// the sig shape only binds when the marker prefixes it.
+const isDefMark = (v: MathJson): boolean => {
+  const m = isString(v) ? TEXT_LITERAL.exec(v) : null;
+  return m !== null && m[1].trim() === 'def';
+};
+
+// Statement `\text{def} f(x)…`: the marker lands as the first factor of
+// an InvisibleOperator chain (also inside an Equal lhs). Returns the
+// signature when what's left is a name (+args); a bare `\text{def} f`
+// declares f with no params.
+function defMarkedShape(
+  node: MathJson,
+): { name: string; params: string[] } | null {
+  if (!isArray(node) || head(node) !== 'InvisibleOperator') return null;
+  if (node.length < 3 || !isDefMark(node[1])) return null;
+  const rest = node.slice(2);
+  if (rest.length === 1 && isSymbolString(rest[0]))
+    return { name: rest[0], params: [] };
+  return functionDefShape(['InvisibleOperator', ...rest] as MathJson[]);
 }
 
 // Heads that read as an adjacent-pair chain when nested or multi-arg:
@@ -777,7 +800,10 @@ function normalizeStatementEqual(
         : null;
     })();
     if (tuple) return mkAssign(['List', ...tuple]);
-    const def = functionDefShape(lhs);
+    // `\text{def} f(x) = body` — the marker restores the function-def
+    // reading; a bare `f(x) = body` is now an ordinary equation
+    // (f·x = body, parens multiply like everywhere else).
+    const def = defMarkedShape(lhs);
     if (def)
       return [
         'Def',
@@ -1018,9 +1044,10 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     // \min_{x} f / \max_{x} f: CE folds the underscript into the body as
     // InvisibleOperator('_', under, ...bodyFactors) — the factor list is
     // (underscript, body parts like `f` + `(x)`). Split it back out and
-    // rebuild the body through the InvisibleOperator branch so `f(x)`
-    // stays an application; codegen then sees (body, var, domain?)
-    // rather than sp.Min(_ * x * f) with a garbage `_` symbol in it.
+    // rebuild the body through the InvisibleOperator branch so the body
+    // folds the same way as a top-level juxtaposition; codegen then
+    // sees (body, var, domain?) rather than sp.Min(_ * x * f) with a
+    // garbage `_` symbol in it.
     if (
       (h === 'Min' ||
         h === 'Max' ||
@@ -1096,13 +1123,14 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     }
 
     // Declaration pre-scan: statement-level shapes that bind a callable
-    // name (function def, mapsto declaration, `f := (x \mapsto …)`) —
-    // recorded before the statement normalizes so the name is visible to
-    // calls inside it (recursion) and in later statements.
+    // name (`\text{def}` def/decl, mapsto declaration,
+    // `f := (x \mapsto …)`) — recorded before the statement normalizes
+    // so the name is visible to calls inside it and in later statements.
     if (atStatement) {
       let decl: string | undefined;
       if (h === 'Equal' && isArray(node[1]))
-        decl = functionDefShape(node[1])?.name;
+        decl = defMarkedShape(node[1])?.name;
+      else if (h === 'InvisibleOperator') decl = defMarkedShape(node)?.name;
       else if (
         h === 'Colon' &&
         isString(node[1]) &&
@@ -1142,20 +1170,24 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
 
     // `g: (x,y) \mapsto body` — CE types a named function declaration
     // as Colon(name, Function(body, params...)). That's a def
-    // like `f(x) = body`, not a Colon(...) call (which sympifies the
-    // emitted lambda and dies).
+    // like `\text{def} g(x) = body`, not a Colon(...) call (which
+    // sympifies the emitted lambda and dies). A `\text{def}`-marked name
+    // lands as InvisibleOperator('def', g).
+    const colonName = isString(node[1])
+      ? node[1]
+      : defMarkedShape(node[1])?.name;
     if (
       atStatement &&
       h === 'Colon' &&
       node.length === 3 &&
-      isString(node[1]) &&
+      colonName !== undefined &&
       isArray(node[2]) &&
       head(node[2]) === 'Function' &&
       node[2].slice(2).every((p) => paramName(p) !== undefined)
     ) {
       return [
         'Def',
-        node[1],
+        colonName,
         ['List', ...node[2].slice(2).map((p) => paramName(p) as string)],
         normalize(node[2][1], false),
       ];
@@ -1225,33 +1257,69 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     }
 
     // InvisibleOperator is the non-canonical implicit-application head:
-    // `x y` / `2x` are multiplication, `f(x)` is a call (the Delimiter
-    // group marks the argument list). Calls reshape to ["name", ...args]
-    // so they join the same unknown-head/call path canonical f(x) takes.
+    // `x y` / `2x` are multiplication — and so is `f(x)` (f·x): the
+    // parenthesized group is just a factor. Function defs need the
+    // `\text{def}` marker; derivative/inverse applications (f'(x),
+    // \sin^{-1}(x)) arrive as real Apply nodes from CE, not here.
     if (h === 'InvisibleOperator' && node.length >= 3) {
       // Spacing commands (x\,y) carry no value — they would otherwise
       // leak into the product as `sp.HorizontalSpacing`.
       const items = node.slice(1).filter((n) => !isSpacing(n));
       if (items.length === 0) return 'Nothing';
       if (items.length === 1) return normalize(items[0], atStatement);
+      // `\text{def} f(x)` — a declaration with no `=`: the marker names
+      // the function so `f'(x)`/operand forms still apply it.
+      if (atStatement && isDefMark(items[0])) {
+        const def = defMarkedShape(['InvisibleOperator', ...items]);
+        if (def) return ['Declare', def.name, ['List', ...def.params]];
+      }
       const last = items[items.length - 1];
+      // firstNorm caches normalize(items[0]) for the callee check so a
+      // flagging first factor (e.g. a broken \foo) isn't reported twice.
+      let firstNorm: MathJson | undefined;
+      const fn = items[0];
       if (isDelimiterGroup(last)) {
         const callArgs = delimiterArgs(last).map((n) => normalize(n, false));
         const mid = items.slice(1, -1).map((n) => normalize(n, false));
-        const fn = items[0];
-        if (isString(fn) && mid.length === 0)
-          return normalize([fn, ...callArgs], atStatement);
-        return ['Apply', normalize(fn, false), ...mid, ...callArgs];
+        // Still applied when the callee is more than a bare name:
+        // an upright word (\mathrm{foo}(x)/\text{foo}(x) — font-grouped
+        // names arrive as one multi-char token; typed letters never
+        // fuse into a single token), a \mapsto lambda in parens
+        // ((x↦x²)(3)), or a power whose exponent is parenthesized or
+        // negative (f^{(n)}(x) — derivative order, g^{-1}(x) — inverse).
+        if (isString(fn) && fn.length > 1) {
+          if (mid.length === 0)
+            return normalize([fn, ...callArgs], atStatement);
+          firstNorm = normalize(fn, false);
+          return ['Apply', firstNorm, ...mid, ...callArgs];
+        }
+        if (isArray(fn)) {
+          firstNorm = normalize(fn, false);
+          const fnHead = head(firstNorm);
+          if (
+            fnHead === 'Function' ||
+            fnHead === 'Derivative' ||
+            fnHead === 'InverseFunction' ||
+            (head(fn) === 'Power' &&
+              isArray(fn[2]) &&
+              (isDelimiterGroup(fn[2]) || head(fn[2]) === 'Negate'))
+          )
+            return ['Apply', firstNorm, ...mid, ...callArgs];
+        }
       }
+      // Fold `()` groups into the factor list — `f(x,y)` reads as f·x·y.
+      const flatItems = items.flatMap((n): MathJson[] =>
+        isDelimiterGroup(n) ? delimiterArgs(n) : [n],
+      );
       // `\iint f dx dy` / `\iiint` — a single sign binds only the FIRST
       // differential; the rest land as `d v` pairs in the juxtaposition.
       // Repark every pair inside the integral so codegen sees one
       // iterated integral instead of `∫f dx * d * y`.
-      if (isArray(items[0]) && head(items[0]) === 'Integrate') {
-        const inner = normalize(items[0], false) as MathJson[];
+      if (isArray(flatItems[0]) && head(flatItems[0]) === 'Integrate') {
+        const inner = normalize(flatItems[0], false) as MathJson[];
         const integ =
           isArray(inner) && head(inner) === 'Integrate' ? inner : null;
-        const rest = items.slice(1);
+        const rest = flatItems.slice(1);
         const pairs: MathJson[] = [];
         if (
           integ &&
@@ -1272,7 +1340,9 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
           ];
         }
       }
-      const args = items.map((n) => normalize(n, false));
+      const args = flatItems.map((n) =>
+        n === fn && firstNorm !== undefined ? firstNorm : normalize(n, false),
+      );
       // `\mathrm{trace}(M)`-style word ops fused to a matrix literal
       // arrive as InvisibleOperator(word, Matrix) — a method call, not
       // a product (the Delimiter-less pmatrix shape).
