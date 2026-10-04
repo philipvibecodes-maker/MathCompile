@@ -1636,24 +1636,6 @@ class Emitter {
           const argList = args.slice(1).map((a) => this.callArg(a)).join(', ');
           return [`${this.emit(callee)}(${argList})`, PREC_ATOM];
         }
-        // `f^{-1}(x)` — the inverse of f applied: a distinct undefined
-        // function named `f^{-1}` (latex prints it literally).
-        if (
-          isHead(callee, 'Power') &&
-          callee.length === 3 &&
-          isStr(callee[1]) &&
-          ((isNum(callee[2]) && numText(callee[2]) === '-1') ||
-            (isHead(callee[2], 'Negate') &&
-              isNum(callee[2][1]) &&
-              numText(callee[2][1]) === '1'))
-        )
-          return [
-            `${this.sp}Function(${JSON.stringify(`${callee[1]}^{-1}`)})(${args
-              .slice(1)
-              .map((a) => this.emit(a))
-              .join(', ')})`,
-            PREC_ATOM,
-          ];
         if (!isStr(callee)) {
           // A non-name "callee" isn't a call — `\sqrt{x}(x+1)`, `2(x+1)`,
           // `x^2(y)` are juxtaposed factors (the delimiter group was the

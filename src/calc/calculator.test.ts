@@ -113,10 +113,10 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(calc('\\operatorname{foo}(x)').statements[0].code).toBe(F('foo(x)'));
   });
 
-  it('maps \\sin^{-1} to asin and f^{-1} to an inverse-named function', () => {
+  it('maps \\sin^{-1} to asin; f^{-1} is a plain power factor', () => {
     expect(calc('\\sin^{-1}(x)').statements[0].code).toBe(F('sp.asin(x)'));
     expect(calc('f^{-1}(x)').statements[0].code).toBe(
-      F('sp.Function("f^{-1}")(x)'),
+      F('sp.Pow(f, -1) * x'),
     );
   });
 

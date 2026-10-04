@@ -1284,9 +1284,8 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
         // Still applied when the callee is more than a bare name:
         // an upright word (\mathrm{foo}(x)/\text{foo}(x) — font-grouped
         // names arrive as one multi-char token; typed letters never
-        // fuse into a single token), a \mapsto lambda in parens
-        // ((x↦x²)(3)), or a power whose exponent is parenthesized or
-        // negative (f^{(n)}(x) — derivative order, g^{-1}(x) — inverse).
+        // fuse into a single token) or a \mapsto lambda in parens
+        // ((x↦x²)(3)).
         if (isString(fn) && fn.length > 1) {
           if (mid.length === 0)
             return normalize([fn, ...callArgs], atStatement);
@@ -1299,10 +1298,7 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
           if (
             fnHead === 'Function' ||
             fnHead === 'Derivative' ||
-            fnHead === 'InverseFunction' ||
-            (head(fn) === 'Power' &&
-              isArray(fn[2]) &&
-              (isDelimiterGroup(fn[2]) || head(fn[2]) === 'Negate'))
+            fnHead === 'InverseFunction'
           )
             return ['Apply', firstNorm, ...mid, ...callArgs];
         }
