@@ -1,4 +1,4 @@
-// Minimal Python tokenizer for the calculator "Show code" block — splits
+// Minimal Python tokenizer for the calculator "Show generating code" block — splits
 // source into typed spans the component colors via .tok-* classes. The
 // alternative is a runtime highlighter dependency; five token classes are
 // all the SymPy code we emit needs.

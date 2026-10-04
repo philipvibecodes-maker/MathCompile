@@ -12,10 +12,6 @@ export interface CalcRowOk {
   latex?: string;
   text?: string;
   approx?: string;
-  code?: string;
-  // The emitted program with display plumbing (the `e = ...` capture
-  // lines that exist only to drive row rendering). Hidden by default.
-  displayCode?: string;
 }
 export interface CalcRowErr {
   ok: false;
@@ -29,6 +25,15 @@ export interface CalcRowErr {
   line?: number;
 }
 export type CalcRow = CalcRowOk | CalcRowErr;
+
+export interface CalcResult {
+  rows: CalcRow[];
+  // The emitted program for the whole cell (prelude + statement code)
+  // — shown by the per-cell code block. displayCode is the same program
+  // with the `e = ...` display-plumbing capture lines inlined.
+  code?: string;
+  displayCode?: string;
+}
 
 export type EngineStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -95,11 +100,9 @@ function ensureWorker(): Worker {
     if (!p) return;
     pending.delete(m.id);
     if (m.ok) {
-      // Debug: echo the SymPy python() source produced for each row, or
-      // the eval error when a row failed.
+      // Debug: echo the eval error when a row failed.
       for (const r of m.rows ?? []) {
-        if (r.ok && r.code) console.log('[calc]', r.code);
-        else if (!r.ok) console.log('[calc] error:', r.error);
+        if (!r.ok) console.log('[calc] error:', r.error);
       }
       // arcTrigNames is a safety net over the worker's inv_trig_style
       // — anything still emitting \operatorname{atan}-style a- names
@@ -133,19 +136,21 @@ function ensureWorker(): Worker {
 export function evaluate(cell: {
   latex: string;
   json?: MathJson;
-}): Promise<CalcRow[]> {
+}): Promise<CalcResult> {
   let prog: ReturnType<typeof compileCellForCalc>;
   try {
     prog = compileCellForCalc(cell);
   } catch (e) {
     // The compiler reports issues instead of throwing — a hard throw
     // must still not leave the cell stuck on '…' forever.
-    return Promise.resolve([
-      {
-        ok: false as const,
-        error: `compile failed — ${e instanceof Error ? e.message : String(e)}`,
-      },
-    ]);
+    return Promise.resolve({
+      rows: [
+        {
+          ok: false as const,
+          error: `compile failed — ${e instanceof Error ? e.message : String(e)}`,
+        },
+      ],
+    });
   }
   // Issues not bound to a statement (errors plus advisory notes, like
   // the python overlay's list) become error rows interleaved by line.
@@ -161,17 +166,34 @@ export function evaluate(cell: {
       }) as CalcRowErr,
   );
   if (prog.statements.length === 0)
-    return Promise.resolve([
-      // Uncompileable cells show their issues; a cell with none at all
-      // (empty, or only notes) shows nothing.
-      ...issueRows,
-    ]);
+    // Uncompileable cells show their issues; a cell with none at all
+    // (empty, or only notes) shows nothing.
+    return Promise.resolve({ rows: issueRows });
+  // The emitted program as one block — prelude plus each compilable
+  // statement. The plumbing variant swaps expression statements for
+  // their `e = ...` capture lines and adds `e = <display>` after
+  // assignments/defs, mirroring the worker's exec/eval split.
+  const okStmts = prog.statements.filter(
+    (s) => s.error === undefined && s.code !== '',
+  );
+  const code = [
+    ...prog.prelude,
+    ...okStmts.map((s) => s.code),
+  ].join('\n');
+  const displayCode = [
+    ...prog.prelude,
+    ...okStmts.flatMap((s) =>
+      s.display === undefined
+        ? [`e = ${s.code}`]
+        : [s.code, `e = ${s.display}`],
+    ),
+  ].join('\n');
   // A multi-statement cell keeps its good rows when a sibling statement
   // is broken — and issue rows interleave at their own input line, not
   // at the bottom of the output.
   const w = ensureWorker();
   const id = nextId++;
-  return new Promise<CalcRow[]>((resolve, reject) => {
+  return new Promise<CalcResult>((resolve, reject) => {
     pending.set(id, {
       resolve: (r) => {
         clearTimeout(timer);
@@ -187,7 +209,7 @@ export function evaluate(cell: {
           .map(({ row, line }) =>
             row.ok || line === undefined ? row : { ...row, line },
           );
-        resolve(merged);
+        resolve({ rows: merged, code, displayCode });
       },
       reject: (e) => {
         clearTimeout(timer);

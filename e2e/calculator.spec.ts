@@ -254,7 +254,7 @@ test('reload evaluates each persisted cell to its own result', async ({
   ).toContainText('18', { timeout: 90_000 });
 });
 
-test('show code toggle reveals highlighted SymPy code under the result', async ({
+test('show generating code toggle reveals the cell program in one block', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -268,30 +268,56 @@ test('show code toggle reveals highlighted SymPy code under the result', async (
     page.locator('.calc-row .calc-math').first(),
   ).toContainText('x', { timeout: 90_000 });
   // Wait for the real SymPy row — the nerdamer interim satisfies the
-  // text check while the engine boots but carries no `code` block.
+  // text check while the engine boots but carries no code block.
   const calcRows = page.locator('.calc-rows').first();
   await expect(calcRows).toBeAttached({ timeout: 90_000 });
   await expect(calcRows).not.toHaveClass(/pending/, { timeout: 90_000 });
   await expect(page.locator('.calc-code')).toHaveCount(0);
 
-  const toggle = page.getByLabel('Show code');
+  // Per-cell toggle pinned to the output cell's top-right corner.
+  const output0 = page.locator('.calc-output').first();
+  const toggle = output0.getByLabel('Show generating code');
   await expect(toggle).toBeVisible();
   await toggle.check();
 
-  // The code block shows the emitted program: symbol decl then the bare
-  // expression. The `e = ...` display plumbing sits behind its checkbox.
-  const code = page.locator('.calc-code').first();
-  await expect(code).toBeVisible();
+  // One consolidated block at the end of the cell: the emitted program —
+  // symbol decl then the bare expression. The `e = ...` display plumbing
+  // sits behind the settings menu's checkbox.
+  const code = output0.locator('.calc-code');
+  await expect(code).toHaveCount(1);
   await expect(code).toContainText('Symbol("x")');
   await expect(code).toContainText('x + 1');
   await expect(code).not.toContainText('e = ');
   await expect(code.locator('.tok-call').first()).toBeAttached();
   await expect(code.locator('.tok-str').first()).toBeAttached();
+  // The block sits after every result row.
+  await expect(
+    code.locator('xpath=preceding-sibling::*').last(),
+  ).toHaveClass(/calc-row/);
 
-  const plumbing = page.getByLabel('display plumbing').first();
-  await expect(plumbing).toBeVisible();
-  await plumbing.check();
+  await page.locator('.settings-btn').click();
+  await page
+    .locator('.settings-menu')
+    .getByLabel('display plumbing')
+    .check();
   await expect(code).toContainText('e = clean_and_simplify(');
+  await page
+    .locator('.settings-menu')
+    .getByLabel('display plumbing')
+    .uncheck();
+  await page.locator('.settings-backdrop').click();
+
+  // A second cell's output is unaffected — the toggle is per cell.
+  await page.locator('.add-expr').click();
+  await cell(page, 1).pressSequentially('2+2', { delay: 40 });
+  const output1 = page.locator('.calc-output').nth(1);
+  await expect(output1.locator('.calc-math').first()).toContainText('4', {
+    timeout: 90_000,
+  });
+  await expect(output1.locator('.calc-code')).toHaveCount(0);
+  await expect(
+    output1.getByLabel('Show generating code'),
+  ).not.toBeChecked();
 
   await toggle.uncheck();
   await expect(page.locator('.calc-code')).toHaveCount(0);

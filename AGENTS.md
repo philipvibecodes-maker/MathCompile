@@ -50,14 +50,14 @@ src/
     calculator.worker.ts  Pyodide + SymPy in a classic worker; exec/evals
                           the emitted program (mc_run)
     nerdamer-latex.ts     latex -> nerdamer calls (interim engine)
-    python-highlight.ts   tiny tokenizer for the Show code block
+    python-highlight.ts   tiny tokenizer for the generating-code block
   editor/
     mathquill.ts      imports the vendored build + CSS; exports mq3 + types
     math-field.ts     <math-field> custom element: MQ handlers -> DOM
                       events (input, move-out, new-cell, delete-out)
     attach-field.ts   attachField() -> FieldHandle + FieldCallbacks —
                       the app-facing editing contract
-    keymap.ts         capture-phase global keys (Ctrl+K, Alt+S)
+    keymap.ts         capture-phase global keys (Ctrl+K)
   components/
     MathField.svelte    <math-field> bind:this -> attachField; registers
                         its handle in the store on mount

@@ -115,7 +115,7 @@ describe('prefs', () => {
       smartMode: false,
       target: 'latex',
       guideOpen: false,
-      showCode: true,
+      showPlumbing: true,
       importAll: false,
       fadeMs: 150,
       debounceMs: 600,
@@ -126,7 +126,7 @@ describe('prefs', () => {
       smartMode: false,
       target: 'latex',
       guideOpen: false,
-      showCode: true,
+      showPlumbing: true,
       importAll: false,
       fadeMs: 150,
       debounceMs: 600,
@@ -141,14 +141,14 @@ describe('prefs', () => {
         smartMode: 'yes',
         target: 'cobol',
         guideOpen: 'nope',
-        showCode: 42,
+        showPlumbing: 42,
       }),
     });
     expect(loadPrefs()).toEqual({
       smartMode: undefined,
       target: undefined,
       guideOpen: undefined,
-      showCode: undefined,
+      showPlumbing: undefined,
       importAll: undefined,
     });
   });

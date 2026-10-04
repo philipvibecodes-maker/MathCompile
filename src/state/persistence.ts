@@ -20,7 +20,7 @@ export interface Prefs {
   smartMode?: boolean;
   target?: TargetId;
   guideOpen?: boolean;
-  showCode?: boolean;
+  showPlumbing?: boolean;
   importAll?: boolean;
   fadeMs?: number;
   debounceMs?: number;
@@ -41,7 +41,8 @@ export function loadPrefs(): Prefs {
         ? (p.target as TargetId)
         : undefined,
       guideOpen: typeof p.guideOpen === 'boolean' ? p.guideOpen : undefined,
-      showCode: typeof p.showCode === 'boolean' ? p.showCode : undefined,
+      showPlumbing:
+        typeof p.showPlumbing === 'boolean' ? p.showPlumbing : undefined,
       importAll:
         typeof p.importAll === 'boolean' ? p.importAll : undefined,
       fadeMs: typeof p.fadeMs === 'number' ? p.fadeMs : undefined,

@@ -3,7 +3,7 @@
 Notes for agents working on the calculator target. Two engines produce a
 cell's results: **SymPy on Pyodide** (authoritative, ~4s cold boot) and
 **nerdamer** (interim, ~ms while Pyodide boots). Interim rows carry no
-`code` field — the console log and Show code block stay SymPy-only.
+`code` field — the per-cell generating-code block stays SymPy-only.
 
 ## Layout
 
@@ -62,9 +62,12 @@ SymPy emitter) now does the input→SymPy translation in TypeScript, so:
 
 - Each row: `doit()` (evaluates integrals/sums) → `simplify()` →
   `{latex: sp.latex(val)}` (or `text: sstr` fallback), `approx` (`sp.N`
-  for non-integer numbers), `code: python(val)` (SymPy's code printer;
-  `e` is its result-name convention) — same string for console `[calc]`
-  logs and the Show code block.
+  for non-integer numbers).
+- The cell's emitted program (prelude + statement code) renders as one
+  block at the end of the cell behind its per-cell "Show generating
+  code" toggle; a display-plumbing variant with the `e = ...` capture
+  lines inlined sits behind the settings menu's "display plumbing"
+  toggle.
 - Equations evaluate honestly: `2^n = \sum\binom{i}{n}` simplifies to
   `True`, `x + 1 = 2` stays an `Eq` — no equation solving.
 - Indefinite integrals carry a constant of integration: codegen emits

@@ -2,9 +2,9 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { clearFirstCell } from './helpers';
 
-// The header holds the option toggles and the target select. With the
-// latex target (the default), each cell shows its LaTeX and a copy button
-// to the right of the input.
+// The column headers hold the smart mode toggle and the target select.
+// With the latex target (the default), each cell shows its LaTeX and a
+// copy button to the right of the input.
 
 const cell = (page: Page, i: number) => page.locator('math-field').nth(i);
 
@@ -34,18 +34,30 @@ const setTarget = (page: Page, value: string) =>
     s.dispatchEvent(new Event('change', { bubbles: true }));
   }, value);
 
-test('header shows the option checkbox and commands button', async ({
+test('header shows the commands button, smart mode sits above the input column', async ({
   page,
 }) => {
   const header = page.locator('.app-header');
-  await expect(header.locator('.option-checkbox input')).toHaveCount(1);
+  await expect(header.locator('.option-checkbox input')).toHaveCount(0);
   await expect(header.locator('.palette-button')).toBeVisible();
+  const colField = page.locator('.col-field');
+  await expect(colField.locator('.option-checkbox input')).toHaveCount(1);
+  await expect(colField).toContainText('Smart mode');
 });
 
-test('output select sits above the output column', async ({ page }) => {
+test('output select sits at the right end of the output column', async ({
+  page,
+}) => {
   const colHead = page.locator('.col-output-head');
-  await expect(colHead.locator('.target-select select')).toBeVisible();
+  const select = colHead.locator('.target-select');
+  await expect(select.locator('select')).toBeVisible();
   await expect(colHead).toContainText('Output');
+
+  // Pinned to the column's right edge.
+  const head = await colHead.boundingBox();
+  const sel = await select.boundingBox();
+  expect(head && sel).toBeTruthy();
+  expect(sel!.x + sel!.width).toBeGreaterThan(head!.x + head!.width - 12);
 });
 
 test('target select offers all codegen targets, calc+python enabled', async ({
@@ -85,17 +97,6 @@ test('smart mode checkbox drives the math-field autoCommands option', async ({
   await expect(box).not.toBeChecked();
   expect(await smartModeOn(page)).toBe(false);
   await box.click();
-  expect(await smartModeOn(page)).toBe(true);
-});
-
-test('Alt+S toggles smart mode', async ({ page }) => {
-  await cell(page, 0).click(); // shortcut must work with a cell focused
-  await page.keyboard.press('Alt+s');
-  await expect(
-    page.locator('.option-checkbox input'),
-  ).not.toBeChecked();
-  expect(await smartModeOn(page)).toBe(false);
-  await page.keyboard.press('Alt+s');
   expect(await smartModeOn(page)).toBe(true);
 });
 
