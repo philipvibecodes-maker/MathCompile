@@ -797,12 +797,12 @@ const FIXTURES: {
     ],
   },
   {
-    // Nested indefinite integrals take +C only on the outermost sign —
-    // an inner constant integrates into the result.
+    // Nested indefinite integrals take +C per level — an inner
+    // constant integrates into a real term (f·x²/2 + C·x + D).
     latex: '\\int\\int f dx dx',
     expectedPython: [
       "f, x = sp.symbols('f x')",
-      'sp.integrate(sp.integrate(f, x), x) + sp.Symbol("C")',
+      'sp.integrate(sp.integrate(f, x) + sp.Symbol("C"), x) + sp.Symbol("D")',
     ],
   },
   {

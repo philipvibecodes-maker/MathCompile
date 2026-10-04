@@ -257,13 +257,19 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
 
   it('folds multiple differentials on one sign into an iterated integral', () => {
     // \iint is a single Integrate node — the `d v` pairs all sit in its
-    // body; leftmost is the innermost variable.
+    // body; leftmost is the innermost variable. Indefinite iterated
+    // integrals emit a nested call per level so each `+ C` integrates
+    // through (F + C·y + D).
     expect(calc('\\iint xy\\text{d}x\\text{d}y').statements[0].code).toBe(
-      F('sp.integrate(x * y, x, y) + sp.Symbol("C")'),
+      F('sp.integrate(sp.integrate(x * y, x) + sp.Symbol("C"), y) + sp.Symbol("D")'),
     );
     expect(
       calc('\\iiint x\\text{d}x\\text{d}y\\text{d}z').statements[0].code,
-    ).toBe(F('sp.integrate(x, x, y, z) + sp.Symbol("C")'));
+    ).toBe(
+      F(
+        'sp.integrate(sp.integrate(sp.integrate(x, x) + sp.Symbol("C"), y) + sp.Symbol("D"), z) + sp.Symbol("E")',
+      ),
+    );
   });
 
   it('declares MatrixSymbol for \\det/\\tr on a bare name', () => {
@@ -448,13 +454,17 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(calc('\\varphi(n)').statements[0].code).toBe(F('sp.totient(n)'));
   });
 
-  it('collapses nested boundless integrals into one iterated call', () => {
-    // \int\int\int nested three Integrate nodes — each appended its own
-    // +C, integrating the inner constants into bogus terms.
+  it('nested boundless integrals take +C per level', () => {
+    // \int\int\int nests three Integrate nodes — each level's constant
+    // integrates into a real term of the antiderivative.
     expect(
       calc('\\int\\int\\int xyz\\text{d}x\\text{d}y\\text{d}z').statements[0]
         .code,
-    ).toBe(F('sp.integrate(x * y * z, x, y, z) + sp.Symbol("C")'));
+    ).toBe(
+      F(
+        'sp.integrate(sp.integrate(sp.integrate(x * y * z, x) + sp.Symbol("C"), y) + sp.Symbol("D"), z) + sp.Symbol("E")',
+      ),
+    );
   });
 
   it('gives \\mathbb{C} membership a complex=True assumption', () => {
