@@ -198,8 +198,13 @@
                           class={tok.cls ? `tok-${tok.cls}` : undefined}
                           >{tok.text}</span
                         >{/each}</span
-                    >{#if !showHelpers}<span
-                        class="code-elide"> ⋯</span>{/if}{'\n'}{#if showHelpers}{#each highlightPython(
+                    >{#if !showHelpers}<button
+                        type="button"
+                        class="code-elide"
+                        title="Expand the clean_and_simplify helper definitions"
+                        onclick={() => (showHelpers = true)}
+                        >...</button
+                      >{/if}{'\n'}{#if showHelpers}{#each highlightPython(
                           split.body + '\n',
                         ) as tok, j (j)}<span
                           class={tok.cls ? `tok-${tok.cls}` : undefined}

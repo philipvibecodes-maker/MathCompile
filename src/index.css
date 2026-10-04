@@ -794,9 +794,26 @@ body {
 }
 
 /* Elision marker for the folded helper body — stays on the signature
-   line. */
+   line as a PyCharm-style fold box: grey rounded chip, clickable to
+   expand the hidden body. */
 .calc-code .code-elide {
-  color: var(--faint);
+  margin-left: 4px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 3px;
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--faint) 30%, var(--panel-bg));
+  cursor: pointer;
+  user-select: none;
+}
+
+.calc-code .code-elide:hover,
+.calc-code .code-elide:focus-visible {
+  background: color-mix(in srgb, var(--faint) 50%, var(--panel-bg));
+  outline: none;
 }
 
 /* Per-cell opt-in to reveal the `e = ...` display-plumbing lines — a
