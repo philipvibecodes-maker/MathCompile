@@ -149,9 +149,12 @@ suite('typed rendering', function () {
       assert.equal(mq.latex(), '\\begin{aligned}&\\\\&\\end{aligned}');
     });
 
-    test('\\begin{alignat} resolves to a grid without crashing', function () {
+    test('\\begin{alignat} opens the arg input; `}` resolves the grid', function () {
       typed('\\begin{alignat}');
-      assert.equal(mq.latex(), '\\begin{alignat}{}&\\\\&\\end{alignat}');
+      assert.equal(mq.latex(), '\\alignat{ }');
+      mq.typedText('2');
+      mq.typedText('}');
+      assert.equal(mq.latex(), '\\begin{alignat}{2}&\\\\&\\end{alignat}');
     });
   });
 

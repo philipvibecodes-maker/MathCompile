@@ -181,7 +181,12 @@ and empty blocks serialize as `{ }`.
   (`\text{def} g(x) = 2x` → `def g(x): return 2*x`); a bare `f(x)` is
   `f * x`, not a call or signature.
 - Matrices: `\begin{matrix|pmatrix|…}` environments + bare
-  `\pmatrix{a&b\\c&d}`. Inside a matrix cell, Enter adds a row and
+  `\pmatrix{a&b\\c&d}`. Typed `\name` shortcuts (`\cases`, `\aligned`,
+  `\gathered`, …) open the same grid `\begin{name}` resolves to;
+  spec-taking envs (`\array`, `\subarray`, `\tabular`, `\alignat`,
+  `\alignedat` — and typed `\begin{<spec-env>}`) first open a pending
+  `\begin{name}{arg}` input that applies the arg on `}`/Enter/Tab.
+  Inside a matrix cell, Enter adds a row and
   Shift+Space adds a column; arrows move cell-to-cell without leaving
   the field.
 - Serializations to pin in tests: empty blocks are `{ }` (with a space);
