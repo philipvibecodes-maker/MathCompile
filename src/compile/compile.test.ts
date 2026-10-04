@@ -1700,7 +1700,7 @@ describe('worksheet program', () => {
     expect(out.program).not.toMatch(/sp\.Symbol\("f"\)/);
   });
 
-  it('\\text{def} declares a function; f(3) is still f·3', () => {
+  it('\\text{def} declares a function; f(3) is still f·3 in another cell', () => {
     const cells = [
       { json: parseCellLatex('\\text{def} f(x) = x^2') },
       { json: parseCellLatex('f(3)') },
@@ -1716,6 +1716,32 @@ describe('worksheet program', () => {
       'import sympy as sp',
       'f = sp.Symbol("f")',
       'f * 3',
+    ]);
+  });
+
+  it('a defined name applies: g(2) after \\text{def} is a call', () => {
+    const out = compileWorksheet(
+      [{ json: parseCellLatex('\\displaylines{\\text{def} g(x) = 5x \\\\ g(2)}') }],
+      'python',
+      { importAll: false },
+    );
+    expect(out.cellLines[0]).toEqual([
+      'import sympy as sp',
+      'def g(x):',
+      '    return 5 * x',
+      'g(2)',
+    ]);
+    // Without a def the same shape still multiplies.
+    const out2 = compileWorksheet(
+      [{ json: parseCellLatex('\\displaylines{g(x) = 5x \\\\ g(2)}') }],
+      'python',
+      { importAll: false },
+    );
+    expect(out2.cellLines[0]).toEqual([
+      'import sympy as sp',
+      'g, x = sp.symbols(\'g x\')',
+      'sp.Eq(g * x, 5 * x)',
+      'g * 2',
     ]);
   });
 
