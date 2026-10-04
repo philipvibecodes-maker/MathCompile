@@ -34,8 +34,8 @@ New files:
   `\frac{d#1}{d#2}` (or `D(#1)` when `config({dIsDerivative:false})`)
   so the expansion is ordinary editable atoms.
 - `src/commands/math/extraCommands.ts` (in `SOURCES_FULL` and
-  `SOURCES_BASIC`) — every *pure addition* that used to be
-  inline in `commands.ts`: new `LatexCmds`/`CharCmds` and their helper
+  `SOURCES_BASIC`) — the additions that used to be
+  inline in `commands.ts`: `LatexCmds`/`CharCmds` and their helper
   classes, grouped into banner sections — fonts (`\mathcal` `\mathscr`
   `\mathfrak` `\boldsymbol` …), boxes/colors/links (`\boxed` `\color`
   `\fcolorbox` `\href` …), under/over scripts and braces (`\underbrace`
@@ -45,6 +45,10 @@ New files:
   diacritics, extensible arrows (`\xrightarrow` `\xmapsto` …), cancels,
   delimiters (`\langle` `\bra` `\big` `\middle` `\[` …), line
   breaks/layout (`\\` `\hline` `\smash` …), and misc large operators.
+  One override also lives here: `LatexCmds.def` (extracted from
+  `advancedSymbols.ts`, tagged at the cut site) — an insertion alias
+  that expands to a real `\text{def}` TextBlock, which is the
+  function-definition marker the app's compiler reads.
   Because these commands previously shipped inside `commands.ts` — part
   of `mathquill-basic` — `extraCommands.ts` is in `SOURCES_BASIC` too:
   anything added there may only reference symbols from `BASE_SOURCES` +

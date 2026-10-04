@@ -158,7 +158,7 @@ const SP_FUNCS: Record<string, string> = {
 
 // Statement-position heads that only lower to Python.
 const STATEMENT_HEADS = new Set([
-  'Assign', 'Def', 'Block', 'WhereBlock', 'Which', 'Piecewise',
+  'Assign', 'Def', 'Declare', 'Block', 'WhereBlock', 'Which', 'Piecewise',
 ]);
 const CMP_NESTABLE_HEADS = new Set([
   'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
@@ -1636,24 +1636,6 @@ class Emitter {
           const argList = args.slice(1).map((a) => this.callArg(a)).join(', ');
           return [`${this.emit(callee)}(${argList})`, PREC_ATOM];
         }
-        // `f^{-1}(x)` — the inverse of f applied: a distinct undefined
-        // function named `f^{-1}` (latex prints it literally).
-        if (
-          isHead(callee, 'Power') &&
-          callee.length === 3 &&
-          isStr(callee[1]) &&
-          ((isNum(callee[2]) && numText(callee[2]) === '-1') ||
-            (isHead(callee[2], 'Negate') &&
-              isNum(callee[2][1]) &&
-              numText(callee[2][1]) === '1'))
-        )
-          return [
-            `${this.sp}Function(${JSON.stringify(`${callee[1]}^{-1}`)})(${args
-              .slice(1)
-              .map((a) => this.emit(a))
-              .join(', ')})`,
-            PREC_ATOM,
-          ];
         if (!isStr(callee)) {
           // A non-name "callee" isn't a call — `\sqrt{x}(x+1)`, `2(x+1)`,
           // `x^2(y)` are juxtaposed factors (the delimiter group was the
@@ -2829,6 +2811,27 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       display: assignDisplay(sp, name, rhs, matrixRhs || setRhs),
     };
   }
+  // `\text{def} f(x)` — a declaration without a body: f binds an
+  // undefined function so `f'(x)` and operand uses still apply it.
+  if (h === 'Declare') {
+    const name = isStr(node[1]) ? node[1] : 'f';
+    const params = isHead(node[2], 'List')
+      ? node[2].slice(1).filter(isStr)
+      : [];
+    emitter.scope.defined.add(name);
+    emitter.scope.functions.set(name, pyIdent(name));
+    if (params.length > 0) emitter.scope.fnArgs.set(name, params);
+    return {
+      lines: [`${pyIdent(name)} = ${sp}Function(${JSON.stringify(name)})`],
+      // Zero params: show `f` (the function itself), not `f()`.
+      display:
+        params.length === 0
+          ? `${sp}Function(${JSON.stringify(name)})`
+          : `${sp}Function(${JSON.stringify(name)})(${params
+              .map((p) => `${sp}Symbol(${JSON.stringify(p)})`)
+              .join(', ')})`,
+    };
+  }
   if (h === 'Def') {
     const name = isStr(node[1]) ? node[1] : 'f';
     const params =
@@ -3057,7 +3060,7 @@ function collectDeclared(
     if (!isArr(n)) return;
     const h = headOf(n);
     if (h === 'Assign' && isStr(n[1])) declared.add(n[1]);
-    if (h === 'Def' && isStr(n[1])) {
+    if ((h === 'Def' || h === 'Declare') && isStr(n[1])) {
       declared.add(n[1]);
       declaredFns.add(n[1]);
     }

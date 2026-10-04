@@ -30,7 +30,7 @@ const mq = mq3.MathField(el, {
 defineMathField();
 const adapterEl = document.getElementById('adapter-field') as MathFieldElement;
 adapterEl.options = {
-  autoCommands: 'int sum sqrt prod pi infty theta derivative',
+  autoCommands: 'int sum sqrt prod pi infty theta derivative def',
 };
 adapterEl.addEventListener('input', () => log('adapter:input'));
 adapterEl.addEventListener('move-out', (e) =>

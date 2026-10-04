@@ -1396,14 +1396,9 @@ LatexCmds.DeclareMathOperator = () =>
     new RegExp('^\\*?' + RAW_GROUP + '(?:' + RAW_GROUP + ')?'),
     'declare math operator'
   );
-LatexCmds.def = () =>
-  new RawArgCommand(
-    '\\def',
-    new RegExp(
-      '^(?:\\\\[a-zA-Z]+|\\S)(?:#[0-9])*(?:' + RAW_GROUP + ')?'
-    ),
-    'def'
-  );
+// MATHCOMPILE: \def moved to extraCommands.ts — the app binds it as an
+// insertion alias for \text{def}, so upstream's TeX-macro RawArgCommand
+// form is dropped (\def\foo{bar} no longer round-trips).
 
 // Literal-marker symbols: a visible \name leaf so a\choose b keeps its
 // text and shows the command rather than blanking or silently dropping it.

@@ -2,10 +2,10 @@ import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { clearFirstCell } from './helpers';
 
-// \derivative is the app's one custom command: the vendored MathQuill patch
-// expands it to real \frac{d}{d} atoms (or D() when the option is off) at
-// insertion time — there is no macro atom, so nothing downstream needs to
-// bake or canonicalize it.
+// \derivative and \def are insertion-time expansions from the vendored
+// MathQuill patch: \derivative becomes real \frac{d}{d} atoms (or D()
+// when the option is off) and \def becomes \text{def} — there is no
+// macro atom, so nothing downstream needs to bake or canonicalize them.
 
 const cell = (page: Page, i = 0): Locator =>
   page.locator('math-field').nth(i);
@@ -69,4 +69,16 @@ test('with dIsDerivative off, \\derivative expands to D() with the caret inside'
   // Caret lands inside the parens: typing fills D(f).
   await mf.pressSequentially('f', { delay: 60 });
   expect(await cellValue(mf)).toBe('D(f)');
+});
+
+test('\\def expands to a \\text{def} TextBlock plus a space', async ({
+  page,
+}) => {
+  const mf = cell(page);
+  await mf.pressSequentially('\\def', { delay: 60 });
+  await page.keyboard.press('Enter');
+  expect(await cellValue(mf)).toBe('\\text{def}\\ ');
+  // The caret is after the space — typing fills the signature directly.
+  await mf.pressSequentially('g(x)', { delay: 60 });
+  expect(await cellValue(mf)).toBe('\\text{def}\\ g\\left(x\\right)');
 });

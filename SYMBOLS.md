@@ -162,12 +162,30 @@ plus generated `arc`/`h`/`arh`/`arch` variants of
 
 ### autoCommands — app smart mode
 
-`src/editor/math-field.ts` sets `SMART_AUTO_COMMANDS`:
+`src/editor/attach-field.ts` sets `SMART_AUTO_COMMANDS`:
 
 ```
-int sum sqrt prod pi infty theta derivative
+int sum sqrt prod pi infty theta derivative def
 ```
 
 These complete to the real command without a backslash when smart mode
 is on (`autoCommands: ''` disables; upstream's processor throws on
 empty strings, the vendored patch allows it).
+
+## Function definitions
+
+`f(x)` reads as `f * x` — parentheses are a factor, not a call or a
+signature. To define a function, mark the statement with `\text{def}`
+(the `\def` command inserts `\text{def} ` — text block plus a trailing
+space, so the caret is ready for the signature):
+
+```
+\text{def} g(x) = 2x       →   def g(x): return 2*x
+\text{def} f(x)            →   f = sp.Function("f")   (declare, no body)
+```
+
+Calls on upright word names still apply: `\mathrm{foo}(x)`,
+`\operatorname{foo}(x)`, `\text{foo}(x)`, plus canonical operators
+(`\sin(x)`, `\sin^{-1}(x)` → `asin`), `f'(x)`, `f^{(2)}(x)` (nth
+derivative), `(x \mapsto x^2)(3)`, and names bound by `\text{def}`/
+`f := x \mapsto …` in arithmetic position (`f + 1` → `f(x) + 1`).

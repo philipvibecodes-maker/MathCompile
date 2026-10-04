@@ -175,6 +175,11 @@ and empty blocks serialize as `{ }`.
   at insertion time to real `\frac{d }{d }` atoms — or `D( )` when
   `dIsDerivative` is off — with the caret in the denominator/parens.
   There is no macro atom and no bake/canonicalize pass.
+- `\def` is an insertion alias for `\text{def} ` (block + trailing
+  space) — the statement marker
+  `src/compile/ir.ts` reads as the function-definition prefix
+  (`\text{def} g(x) = 2x` → `def g(x): return 2*x`); a bare `f(x)` is
+  `f * x`, not a call or signature.
 - Matrices: `\begin{matrix|pmatrix|…}` environments + bare
   `\pmatrix{a&b\\c&d}`. Inside a matrix cell, Enter adds a row and
   Shift+Space adds a column; arrows move cell-to-cell without leaving
