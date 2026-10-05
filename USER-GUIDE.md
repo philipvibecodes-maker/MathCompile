@@ -33,16 +33,16 @@ With Smart mode on — the checkbox in the header — you rarely need a
 backslash. Whole words convert to symbols as you type, and a digit
 right after a letter becomes a subscript:
 
-| Type | Get |
-| --- | --- |
-| `int` | \(\int\) with upper and lower bound blocks |
-| `iint` or `antid` | a bare \(\int\) for indefinite integrals |
-| `sum`, `prod` | \(\sum\), \(\prod\) with bound blocks |
-| `sqrt` | \(\sqrt{\phantom{x}}\) |
-| `pi`, `theta`, `infty` | \(\pi\), \(\theta\), \(\infty\) |
-| `derivative` | \(\frac{d}{d}\) — caret lands in the denominator |
-| `def` | the function-definition marker (see *Output*) |
-| `x2` | \(x_2\) |
+| You want | Type | Renders |
+| --- | --- | --- |
+| Definite integral | `int` | \(\int\) with upper and lower bound blocks |
+| Indefinite integral | `iint` or `antid` | a bare \(\int\) |
+| Sum / product | `sum`, `prod` | \(\sum\), \(\prod\) with bound blocks |
+| Square root | `sqrt` | \(\sqrt{\phantom{x}}\) |
+| Constants and Greek | `pi`, `theta`, `infty` | \(\pi\), \(\theta\), \(\infty\) |
+| Derivative operator | `derivative` | \(\frac{d}{d}\) — caret lands in the denominator |
+| Function definition | `def` | \(\text{def}\ f(x)\) — the def marker (see *Output*) |
+| Auto-subscript | `x2` | \(x_2\) |
 
 Operator names like `sin`, `lim`, and `det` stay upright and space
 correctly without any command.
@@ -64,26 +64,26 @@ works.
 
 ### Common things you'll type
 
-| You want | Type |
-| --- | --- |
-| Fraction | `1/2`, or `\frac` then fill the blocks |
-| Subscript / superscript | `_`, `^` (or `x2` in Smart mode) |
-| Square / nth root | `sqrt`, or `\nthroot` |
-| Sum / product with bounds | `sum` or `prod`, then `_` and `^` |
-| Definite integral | `int`, then `_` and `^` |
-| Indefinite integral | `iint` or `antid` — add bounds later with `_` |
-| Limit | `\lim`, then `_` for \(x\to0\) |
-| Binomial coefficient | `\binom` |
-| Matrix | `\pmatrix` — Enter adds a row, `Shift+Space` a column |
-| Piecewise | `\cases` |
-| Greek letters | `\alpha`, `\beta`, … or `pi`, `theta`, `infty` |
-| Text inside math | `\text{…}` |
-| Accents | `\dot`, `\ddot`, `\bar`, `\hat`, `\vec`, `\tilde` |
-| Sets | `\in`, `\notin`, `\subseteq`, `\cup`, `\cap`, `\emptyset`, `\mathbb{R}` |
-| Relations | `\leq`, `\geq`, `\neq`, `\approx`, `\pm` |
-| Arrows | `\to`, `\Rightarrow`, `\Leftrightarrow` |
-| Calculus | `\partial`, `\nabla`, `\infty`, `\prime` |
-| Logic | `\forall`, `\exists`, `\therefore`, `\land`, `\lor`, `\lnot` |
+| You want | Type | Renders |
+| --- | --- | --- |
+| Fraction | `1/2`, or `\frac` then fill the blocks | \(\frac{1}{2}\) |
+| Subscript / superscript | `_`, `^` (or `x2` in Smart mode) | \(x_1\), \(x^2\) |
+| Square / nth root | `sqrt`, or `\nthroot` | \(\sqrt{x}\), \(\sqrt[3]{x}\) |
+| Sum / product with bounds | `sum` or `prod`, fill the bound blocks | \(\sum_{k=1}^{n}\), \(\prod_{k=1}^{n}\) |
+| Definite integral | `int`, fill the bound blocks | \(\int_{0}^{1}\) |
+| Indefinite integral | `iint` or `antid` — add bounds later with `_` | \(\int\) |
+| Limit | `\lim`, then `_{x\to0}` | \(\lim_{x \to 0}\) |
+| Binomial coefficient | `\binom` | \(\binom{n}{k}\) |
+| Matrix | `\pmatrix` — Enter adds a row, `Shift+Space` a column | \(\begin{pmatrix} a & b \\ c & d \end{pmatrix}\) |
+| Piecewise | `\cases` | \(\begin{cases} x & x > 0 \\ 0 & x \le 0 \end{cases}\) |
+| Greek letters | `\alpha`, `\beta`, … or `pi`, `theta`, `infty` | \(\alpha\), \(\beta\), \(\pi\) |
+| Text inside math | `\text{…}` | \(\text{rate}\) |
+| Accents | `\dot`, `\ddot`, `\bar`, `\hat`, `\vec`, `\tilde` | \(\dot{x}\), \(\hat{x}\), \(\vec{v}\) |
+| Sets | `\in`, `\notin`, `\subseteq`, `\cup`, `\cap`, `\emptyset`, `\R` | \(x \in A\), \(A \cup B\), \(\varnothing\), \(\mathbb{R}\) |
+| Relations | `\leq`, `\geq`, `\neq`, `\approx`, `\pm` | \(a \le b\), \(a \neq b\), \(a \pm b\) |
+| Arrows | `\to`, `\Rightarrow`, `\Leftrightarrow` | \(x \to 0\), \(p \Rightarrow q\), \(p \Leftrightarrow q\) |
+| Calculus | `\partial`, `\nabla`, `\infty`, `\prime` | \(\partial\), \(\nabla\), \(\infty\), \(f'\) |
+| Logic | `\forall`, `\exists`, `\therefore`, `\land`, `\lor`, `\lnot` | \(\forall x\), \(\exists x\), \(\therefore\), \(\lnot p\) |
 
 `SYMBOLS.md` in the repository lists every command the editor accepts.
 
@@ -114,15 +114,15 @@ shortcut and what a `a,b / c,d` grid renders as.
 
 #### Matrices
 
-| Type | Renders |
-| --- | --- |
-| `\pmatrix` | \(\begin{pmatrix} a & b \\ c & d \end{pmatrix}\) |
-| `\bmatrix` | \(\begin{bmatrix} a & b \\ c & d \end{bmatrix}\) |
-| `\Bmatrix` | \(\begin{Bmatrix} a & b \\ c & d \end{Bmatrix}\) |
-| `\vmatrix` | \(\begin{vmatrix} a & b \\ c & d \end{vmatrix}\) |
-| `\Vmatrix` | \(\begin{Vmatrix} a & b \\ c & d \end{Vmatrix}\) |
-| `\matrix` | \(\begin{matrix} a & b \\ c & d \end{matrix}\) |
-| `\smallmatrix` | \(\begin{smallmatrix} a & b \\ c & d \end{smallmatrix}\) |
+| You want | Type | Renders |
+| --- | --- | --- |
+| Parenthesized matrix | `\pmatrix` | \(\begin{pmatrix} a & b \\ c & d \end{pmatrix}\) |
+| Bracketed matrix | `\bmatrix` | \(\begin{bmatrix} a & b \\ c & d \end{bmatrix}\) |
+| Braced matrix | `\Bmatrix` | \(\begin{Bmatrix} a & b \\ c & d \end{Bmatrix}\) |
+| Barred matrix | `\vmatrix` | \(\begin{vmatrix} a & b \\ c & d \end{vmatrix}\) |
+| Double-barred matrix | `\Vmatrix` | \(\begin{Vmatrix} a & b \\ c & d \end{Vmatrix}\) |
+| Bare grid | `\matrix` | \(\begin{matrix} a & b \\ c & d \end{matrix}\) |
+| Compact inline matrix | `\smallmatrix` | \(\begin{smallmatrix} a & b \\ c & d \end{smallmatrix}\) |
 
 Inside a matrix grid: **Enter** adds a row, **Shift+Space** adds a
 column, and the arrow keys walk cell to cell. `&` separates columns
@@ -152,11 +152,11 @@ Calculator and Python targets. A name that isn't built in, like
 
 ### Multi-line equations
 
-| Type | Renders |
-| --- | --- |
-| `\gathered` | \(\begin{gathered} x + y = 1 \\ x - y = 3 \end{gathered}\) |
-| `\aligned` | \(\begin{aligned} x &= y \\ a &= b \end{aligned}\) |
-| `\cases` | \(\begin{cases} x^2 & x > 0 \\ 0 & x \le 0 \end{cases}\) |
+| You want | Type | Renders |
+| --- | --- | --- |
+| Centered stack of equations | `\gathered` | \(\begin{gathered} x + y = 1 \\ x - y = 3 \end{gathered}\) |
+| Equations aligned on `=` | `\aligned` | \(\begin{aligned} x &= y \\ a &= b \end{aligned}\) |
+| Piecewise function | `\cases` | \(\begin{cases} x^2 & x > 0 \\ 0 & x \le 0 \end{cases}\) |
 
 Aliases open the same grid: `\gather`, `\equation`, `\multline`, and
 `\flalign` all open a centered stack like `\gathered`; `\align` and
@@ -171,13 +171,13 @@ Grids that take a column spec or a count open a pending `{ }` block
 when you type the `\name` — enter the argument (`cc`, `l|r`, `2`)
 and press `}`, `Enter`, or `Tab` to apply it.
 
-| Type | Renders |
-| --- | --- |
-| `\array{lr}` | \(\begin{array}{lr} a & b \\ cc & d \end{array}\) |
-| `\tabular{ll}` | a spec'd grid like `\array`, for text content |
-| `\subarray{c}` | \(\begin{subarray}{c} a \\ b \end{subarray}\) |
-| `\alignat{2}` / `\alignedat{2}` | \(\begin{alignedat}{2} x &= y &\;\;& u = v \\ a &= b &\;\;& c = d \end{alignedat}\) |
-| `\substack` | \(\substack{a \\ b}\) |
+| You want | Type | Renders |
+| --- | --- | --- |
+| Grid with a column spec | `\array{lr}` | \(\begin{array}{lr} a & b \\ cc & d \end{array}\) |
+| Spec'd grid for text | `\tabular{ll}` | a spec'd grid like `\array`, for text content |
+| Stacked limit labels | `\subarray{c}` | \(\begin{subarray}{c} a \\ b \end{subarray}\) |
+| Column pairs aligned together | `\alignat{2}` / `\alignedat{2}` | \(\begin{alignedat}{2} x &= y &\;\;& u = v \\ a &= b &\;\;& c = d \end{alignedat}\) |
+| Compact vertical stack | `\substack` | \(\substack{a \\ b}\) |
 
 ### Set theory
 
@@ -185,18 +185,18 @@ The named sets are single-letter commands — `\R`, `\N`, `\Z`, `\Q`,
 `\C`, `\P`, `\H`. Spelling out `\mathbb{R}` doesn't resolve as a
 command; use the letter.
 
-| Type | Renders |
-| --- | --- |
-| `\R` (same pattern for `\N` `\Z` `\Q` `\C` `\P` `\H`) | \(\mathbb{R}\) |
-| `\Z` then `_n` | \(\mathbb{Z}_{n}\) |
-| `x` `\in` `A`, `\notin` | \(x \in A\), \(x \notin A\) |
-| `\cup` `\cap` `\setminus` | \(A \cup B\), \(A \cap B\), \(A \setminus B\) |
-| `\subset` `\subseteq` `\nsubseteq` | \(A \subset B\), \(A \subseteq B\), \(A \nsubseteq B\) |
-| `\emptyset` or `\varnothing` | \(\varnothing\) |
-| `\{1,2,3\}` | \(\{1, 2, 3\}\) — braces auto-pair |
-| `\{ x \in \R \mid x > 0 \}` | \(\{x \in \mathbb{R} \mid x > 0\}\) |
-| `\bigcup` `\bigcap`, then `_{i=1}^{n}` | \(\bigcup_{i=1}^{n} A_i\), \(\bigcap_{i=1}^{n} A_i\) |
-| `(a,b)`, `[a,b)`, `[a,b]` | \((a,b)\), \([a,b)\), \([a,b]\) — parens/brackets auto-pair |
+| You want | Type | Renders |
+| --- | --- | --- |
+| Named number set | `\R` (same pattern for `\N` `\Z` `\Q` `\C` `\P` `\H`) | \(\mathbb{R}\) |
+| Integers mod n | `\Z` then `_n` | \(\mathbb{Z}_{n}\) |
+| Membership | `x` `\in` `A`, `\notin` | \(x \in A\), \(x \notin A\) |
+| Union / intersection / difference | `\cup` `\cap` `\setminus` | \(A \cup B\), \(A \cap B\), \(A \setminus B\) |
+| Subset | `\subset` `\subseteq` `\nsubseteq` | \(A \subset B\), \(A \subseteq B\), \(A \nsubseteq B\) |
+| Empty set | `\emptyset` or `\varnothing` | \(\varnothing\) |
+| Finite set | `\{1,2,3\}` | \(\{1, 2, 3\}\) — braces auto-pair |
+| Set-builder | `\{ x \in \R \mid x > 0 \}` | \(\{x \in \mathbb{R} \mid x > 0\}\) |
+| Indexed union / intersection | `\bigcup` `\bigcap`, then `_{i=1}^{n}` | \(\bigcup_{i=1}^{n} A_i\), \(\bigcap_{i=1}^{n} A_i\) |
+| Interval | `(a,b)`, `[a,b)`, `[a,b]` | \((a,b)\), \([a,b)\), \([a,b]\) — parens/brackets auto-pair |
 
 These compile to real SymPy sets: `x \in \mathbb{R}` puts `real=True`
 on `x`'s symbol (likewise `\Z` → integer, `\Q` → rational, `\C` →
@@ -209,14 +209,14 @@ get an `!` error note.
 
 ### Logic
 
-| Type | Renders |
-| --- | --- |
-| `\land` `\lor` `\neg` | \(p \land q\), \(p \lor q\), \(\neg p\) |
-| `\implies` `\iff` | \(p \implies q\), \(p \iff q\) |
-| `\forall` `\exists` | \(\forall x \in S\), \(\exists x \in S\) |
-| `\vdash` `\models` | \(T \vdash p\), \(M \models p\) |
-| `\top` `\bot` | \(\top\), \(\bot\) |
-| `\therefore` `\because` | \(\therefore\), \(\because\) |
+| You want | Type | Renders |
+| --- | --- | --- |
+| Connectives | `\land` `\lor` `\neg` | \(p \land q\), \(p \lor q\), \(\neg p\) |
+| Implication / equivalence | `\implies` `\iff` | \(p \implies q\), \(p \iff q\) |
+| Quantifiers | `\forall` `\exists` | \(\forall x \in S\), \(\exists x \in S\) |
+| Turnstile / satisfaction | `\vdash` `\models` | \(T \vdash p\), \(M \models p\) |
+| True / false | `\top` `\bot` | \(\top\), \(\bot\) |
+| Therefore / because | `\therefore` `\because` | \(\therefore\), \(\because\) |
 
 Connectives lower to `And` / `Or` / `Not` / `Implies` / `Equivalent`.
 A quantifier over a concrete set folds elementwise (`\forall x \in
@@ -230,18 +230,18 @@ made — type the bound, then `Right` or `Tab` to the next block. A
 typed `_`/`^` inside a bound nests a block instead of moving.
 `\lim` has no pre-made bound: type `_{x \to 0}` yourself.
 
-| Type | Renders |
-| --- | --- |
-| `\int`, bounds `0` then `1`, `x^2` `Right` `dx` | \(\int_{0}^{1} x^2\,dx\) |
-| `\antid` | \(\int f\,dx\) — indefinite (adds \(+C\) in the calculator) |
-| `\iint` `\iiint` | \(\iint\), \(\iiint\) — boundless signs |
-| `\oint` `\oiint` | \(\oint\), \(\oiint\) — closed integrals |
-| `\frac{d}{dx}` or `\derivative` | \(\frac{dy}{dx}\) |
-| `f'`, `f''`, `f^{(n)}` | \(f'(x)\), \(f''(x)\), \(f^{(n)}(x)\) |
-| `\sum` then `k=1` `Right` `n`; `\prod` same | \(\sum_{k=1}^{n} a_k\), \(\prod_{k=1}^{n} a_k\) |
-| `\lim` then `_{x \to 0}`; one-sided `0^{+}` | \(\lim_{x \to 0} f(x)\), \(\lim_{x \to 0^{+}} f(x)\) |
-| `lim`, `limsup`, `liminf` | \(\lim\), \(\limsup\), \(\liminf\) — upright operator names |
-| `\infty` | \(\infty\) |
+| You want | Type | Renders |
+| --- | --- | --- |
+| Definite integral | `\int`, bounds `0` then `1`, `x^2` `Right` `dx` | \(\int_{0}^{1} x^2\,dx\) |
+| Indefinite integral | `\antid` | \(\int f\,dx\) — adds \(+C\) in the calculator |
+| Double / triple integral | `\iint` `\iiint` | \(\iint\), \(\iiint\) — boundless signs |
+| Closed integral | `\oint` `\oiint` | \(\oint\), \(\oiint\) |
+| Derivative | `\frac{d}{dx}` or `\derivative` | \(\frac{dy}{dx}\) |
+| Prime / nth derivative | `f'`, `f''`, `f^{(n)}` | \(f'(x)\), \(f''(x)\), \(f^{(n)}(x)\) |
+| Sum / product | `\sum` then `k=1` `Right` `n`; `\prod` same | \(\sum_{k=1}^{n} a_k\), \(\prod_{k=1}^{n} a_k\) |
+| Limit, incl. one-sided | `\lim` then `_{x \to 0}`; `0^{+}` | \(\lim_{x \to 0} f(x)\), \(\lim_{x \to 0^{+}} f(x)\) |
+| Lim sup / lim inf | `limsup`, `liminf` | \(\limsup\), \(\liminf\) — upright operator names |
+| Infinity | `\infty` | \(\infty\) |
 
 Integrals, derivatives, sums, products, and limits all compile to the
 real SymPy calls — `integrate`, `diff`, `Sum`/`Product`, `limit`
@@ -249,16 +249,16 @@ real SymPy calls — `integrate`, `diff`, `Sum`/`Product`, `limit`
 
 ### Multivariable calculus
 
-| Type | Renders |
-| --- | --- |
-| `\partial` | \(\partial\) |
-| `\frac{\partial u}{\partial t}` | \(\frac{\partial u}{\partial t}\) |
-| `\partial_` `x` then `u` | \(\partial_{x} u\) — reads as the same partial derivative |
-| `\iint`, `\iiint`, then `f` `dx dy` | \(\iint f\,dx\,dy\), \(\iiint f\,dx\,dy\,dz\) |
-| `\oiint` | \(\oiint\) — closed surface integral |
-| `\nabla` | \(\nabla f\), \(\nabla^{2} u\) |
-| `\Delta` | \(\Delta u\) |
-| `\vec{v}` | \(\vec{v}\) |
+| You want | Type | Renders |
+| --- | --- | --- |
+| Partial symbol | `\partial` | \(\partial\) |
+| Partial derivative | `\frac{\partial u}{\partial t}` | \(\frac{\partial u}{\partial t}\) |
+| Partial derivative, shorter | `\partial_` `x` then `u` | \(\partial_{x} u\) — reads as the same derivative |
+| Iterated integral | `\iint`, `\iiint`, then `f` `dx dy` | \(\iint f\,dx\,dy\), \(\iiint f\,dx\,dy\,dz\) |
+| Closed surface integral | `\oiint` | \(\oiint\) |
+| Gradient / Laplacian notation | `\nabla` | \(\nabla f\), \(\nabla^{2} u\) |
+| Laplacian symbol | `\Delta` | \(\Delta u\) |
+| Vector | `\vec{v}` | \(\vec{v}\) |
 
 `\partial_{x}u` compiles to the partial derivative like the `\frac`
 form. `\nabla` and `\Delta` are display notation — the compiler reads
@@ -267,18 +267,18 @@ than becoming a gradient call.
 
 ### Topology
 
-| Type | Renders |
-| --- | --- |
-| `f : X` `\to` `Y` | \(f : X \to Y\) — a continuous map |
-| `\mapsto` | \(x \mapsto x^2\) |
-| `\cong` | \(X \cong Y\) — homeomorphic |
-| `\times` | \(X \times Y\) — product |
-| `\bar{A}` or `\overline{A}` | \(\overline{A}\) — closure |
-| `\partial` `A` | \(\partial A\) — boundary |
-| `A^{\circ}` | \(A^{\circ}\) — interior |
-| `A'` | \(A'\) — complement |
-| `(a,b)`, `[a,b)` | \((a,b)\), \([a,b)\) — open/half-open sets |
-| `\varepsilon` `\delta` | \(\varepsilon\), \(\delta\) |
+| You want | Type | Renders |
+| --- | --- | --- |
+| Map between spaces | `f : X` `\to` `Y` | \(f : X \to Y\) |
+| Element mapping | `\mapsto` | \(x \mapsto x^2\) |
+| Homeomorphic | `\cong` | \(X \cong Y\) |
+| Product space | `\times` | \(X \times Y\) |
+| Closure | `\bar{A}` or `\overline{A}` | \(\overline{A}\) |
+| Boundary | `\partial` `A` | \(\partial A\) |
+| Interior | `A^{\circ}` | \(A^{\circ}\) |
+| Complement | `A'` | \(A'\) |
+| Open / half-open sets | `(a,b)`, `[a,b)` | \((a,b)\), \([a,b)\) |
+| Neighborhood eps / delta | `\varepsilon` `\delta` | \(\varepsilon\), \(\delta\) |
 
 Topology rows are notation — unions, intersections, closures, and
 maps display but carry no topological semantics. One exception to
@@ -287,35 +287,35 @@ know: `\cong` is read by the compiler as modular congruence
 
 ### Complex analysis
 
-| Type | Renders |
-| --- | --- |
-| `\C` | \(\mathbb{C}\) |
-| `\Re` `\Im` | \(\Re z\), \(\Im z\) |
-| `\arg` | \(\arg z\) |
-| `\bar{z}` or `\overline{z}` | \(\overline{z}\) — conjugate |
-| `\|z\|` | \(\lvert z \rvert\) — modulus; `\|` auto-pairs |
-| `e^{i\theta}` | \(e^{i\theta}\) |
-| `\oint` | \(\oint_{\gamma} f(z)\,dz\) — contour integral |
-| `\wp` `\ell` | \(\wp\), \(\ell\) |
+| You want | Type | Renders |
+| --- | --- | --- |
+| Complex numbers | `\C` | \(\mathbb{C}\) |
+| Real / imaginary part | `\Re` `\Im` | \(\Re z\), \(\Im z\) |
+| Argument | `\arg` | \(\arg z\) |
+| Conjugate | `\bar{z}` or `\overline{z}` | \(\overline{z}\) |
+| Modulus | `\|z\|` | \(\lvert z \rvert\) — `\|` auto-pairs |
+| Polar form | `e^{i\theta}` | \(e^{i\theta}\) |
+| Contour integral | `\oint` | \(\oint_{\gamma} f(z)\,dz\) |
+| Weierstrass p / script ell | `\wp` `\ell` | \(\wp\), \(\ell\) |
 
 `\Re`, `\Im`, `\arg`, and `\overline{z}` compile to `re`, `im`,
 `arg`, and `conjugate`; `i` is the imaginary unit.
 
 ### Abstract algebra
 
-| Type | Renders |
-| --- | --- |
-| `\Z` then `_n` | \(\mathbb{Z}_{n}\) — integers mod n |
-| `\langle a \rangle` | \(\langle a \rangle\) — generated subgroup; auto-pairs |
-| `\times` `\oplus` `\otimes` | \(G \times H\), \(G \oplus H\), \(G \otimes H\) |
-| `\circ` | \(f \circ g\) — composition |
-| `\star` | \(a \ast b\) — generic operation |
-| `\ker` `\phi` | \(\ker \phi\) — kernel of a map |
-| `\|G\|` | \(\lvert G \rvert\) — order |
-| `\trianglelefteq` | \(N \trianglelefteq G\) — normal subgroup |
-| `G/H` | \(G/H\) — quotient |
-| `\mathfrak{g}` | \(\mathfrak{g}\) — Lie algebra |
-| `x \equiv b \pmod{m}` | \(x \equiv b \pmod{m}\) |
+| You want | Type | Renders |
+| --- | --- | --- |
+| Integers mod n | `\Z` then `_n` | \(\mathbb{Z}_{n}\) |
+| Generated subgroup | `\langle a \rangle` | \(\langle a \rangle\) — auto-pairs |
+| Product / direct sum / tensor | `\times` `\oplus` `\otimes` | \(G \times H\), \(G \oplus H\), \(G \otimes H\) |
+| Composition | `\circ` | \(f \circ g\) |
+| Generic operation | `\star` | \(a \ast b\) |
+| Kernel of a map | `\ker` `\phi` | \(\ker \phi\) |
+| Group order | `\|G\|` | \(\lvert G \rvert\) |
+| Normal subgroup | `\trianglelefteq` | \(N \trianglelefteq G\) |
+| Quotient | `G/H` | \(G/H\) |
+| Lie algebra | `\mathfrak{g}` | \(\mathfrak{g}\) |
+| Congruence mod m | `x \equiv b \pmod{m}` | \(x \equiv b \pmod{m}\) |
 
 The modular form compiles: `x \equiv b \pmod{m}` lowers to
 `Eq(Mod(x, m), b)`. Group notation (`\langle`, `\circ`, `\star`,
@@ -324,14 +324,14 @@ structure attached.
 
 ### Differential equations
 
-| Type | Renders |
-| --- | --- |
-| `y'`, `y''` | \(y'\), \(y''\) |
-| `\dot{x}` `\ddot{x}` | \(\dot{x}\), \(\ddot{x}\) — time derivatives |
-| `f^{(n)}(x)` | \(f^{(n)}(x)\) — nth derivative |
-| `\frac{dy}{dx}` | \(\frac{dy}{dx}\) |
-| `\text{def} y(t)` | declares `y` a function of `t` |
-| `\mathcal{L}` | \(\mathcal{L}\{f\}\) — Laplace transform notation |
+| You want | Type | Renders |
+| --- | --- | --- |
+| First / second derivative | `y'`, `y''` | \(y'\), \(y''\) |
+| Time derivative | `\dot{x}` `\ddot{x}` | \(\dot{x}\), \(\ddot{x}\) |
+| nth derivative | `f^{(n)}(x)` | \(f^{(n)}(x)\) |
+| Leibniz derivative | `\frac{dy}{dx}` | \(\frac{dy}{dx}\) |
+| Dependent variable | `\text{def} y(t)` | declares `y` a function of `t` |
+| Laplace transform | `\mathcal{L}` | \(\mathcal{L}\{f\}\) — notation only |
 
 Declaring `\text{def} y(t)` marks `y` as a dependent variable, so
 `y'`, `y''`, and `y^{(n)}` emit real `Derivative`/`diff` calls in
@@ -340,14 +340,14 @@ is `x(t)` differentiated once. `\mathcal{L}` is notation only.
 
 ### Partial differential equations
 
-| Type | Renders |
-| --- | --- |
-| `\frac{\partial u}{\partial t}` | \(\frac{\partial u}{\partial t}\) |
-| `\partial_` `t` then `u` | \(\partial_{t} u\) — same operator, shorter |
-| `\nabla^{2}` `u` or `\Delta` `u` | \(\nabla^{2} u\), \(\Delta u\) — Laplacian |
-| `\nabla` `\cdot` / `\nabla` `\times` | \(\nabla \cdot \vec{F}\), \(\nabla \times \vec{F}\) |
-| `u_t`, `u_{xx}` | \(u_{t}\), \(u_{xx}\) — subscript notation |
-| `\infty` | \(\infty\) — conditions at infinity |
+| You want | Type | Renders |
+| --- | --- | --- |
+| Partial derivative | `\frac{\partial u}{\partial t}` | \(\frac{\partial u}{\partial t}\) |
+| Partial derivative, shorter | `\partial_` `t` then `u` | \(\partial_{t} u\) |
+| Laplacian | `\nabla^{2}` `u` or `\Delta` `u` | \(\nabla^{2} u\), \(\Delta u\) |
+| Divergence / curl | `\nabla` `\cdot` / `\nabla` `\times` | \(\nabla \cdot \vec{F}\), \(\nabla \times \vec{F}\) |
+| Subscript notation | `u_t`, `u_{xx}` | \(u_{t}\), \(u_{xx}\) |
+| Condition at infinity | `\infty` | \(\infty\) |
 
 `\partial_{t}u` compiles to the partial derivative, like the `\frac`
 form. The `\nabla`, `\Delta`, divergence, and curl spellings are
@@ -355,15 +355,15 @@ display notation — no vector-calculus semantics behind them.
 
 ### Combinatorics
 
-| Type | Renders |
-| --- | --- |
-| `\binom{n}{k}` | \(\binom{n}{k}\) — `binomial(n, k)` |
-| `n!`, `n!!` | \(n!\), \(n!!\) — factorial / double factorial |
-| `\lfloor x \rfloor`, `\lceil x \rceil` | \(\lfloor x \rfloor\), \(\lceil x \rceil\) |
-| `\sum` / `\prod` with bounds | \(\sum_{k=0}^{n}\), \(\prod_{k=1}^{n}\) |
-| `\Gamma(z)` | \(\Gamma(z)\) — `gamma(z)` |
-| `\mathrm{totient}(n)` | \(\mathrm{totient}(n)\) — Euler's totient |
-| `\dots` `\cdots` | \(1, 2, \dots, n\) |
+| You want | Type | Renders |
+| --- | --- | --- |
+| Binomial coefficient | `\binom{n}{k}` | \(\binom{n}{k}\) — `binomial(n, k)` |
+| Factorial / double factorial | `n!`, `n!!` | \(n!\), \(n!!\) |
+| Floor / ceiling | `\lfloor x \rfloor`, `\lceil x \rceil` | \(\lfloor x \rfloor\), \(\lceil x \rceil\) |
+| Sum / product | `\sum` / `\prod` with bounds | \(\sum_{k=0}^{n}\), \(\prod_{k=1}^{n}\) |
+| Gamma function | `\Gamma(z)` | \(\Gamma(z)\) — `gamma(z)` |
+| Totient and friends | `\mathrm{totient}(n)` | \(\mathrm{totient}(n)\) |
+| Ellipsis | `\dots` `\cdots` | \(1, 2, \dots, n\) |
 
 `\binom`, `!`/`!!`, floors, ceilings, and `\Gamma` compile to the
 matching SymPy calls. Other number-theory words work like `totient`
