@@ -12921,6 +12921,28 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.def = function () {
         return new DefAlias('\\text{def}', h('span', { class: 'mq-text-mode' }, [h.text('def')]), 'def', 'def');
     };
+    //======================================================================
+    //  \tr \u2014 insertion alias for \mathrm{tr}
+    //======================================================================
+    // Typing `\tr` expands to \mathrm{tr} \u2014 the word-op form the compiler
+    // reads for the matrix trace (`\mathrm{tr}(A)` -> `(A).trace()`); `\tr`
+    // isn't a real LaTeX command, so stored latex canonicalizes to
+    // \mathrm{tr} on the next save \u2014 the same insertion-time expansion
+    // \def and \derivative use. No trailing space: `\mathrm{tr}\ ` would
+    // put a space node between the name and the argument parens.
+    var TrAlias = /** @class */ (function (_super) {
+        __extends(TrAlias, _super);
+        function TrAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        TrAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\mathrm{tr}');
+        };
+        return TrAlias;
+    }(MQSymbol));
+    LatexCmds.tr = function () {
+        return new TrAlias('\\mathrm{tr}', h('span', { class: 'mq-roman' }, [h.text('tr')]), 'tr', 'tr');
+    };
     /*************************************************
      * LaTeX environments: \begin{matrix} family and
      * \displaylines{...}, plus insertion-time \derivative.
@@ -13274,7 +13296,13 @@ var __assign = (this && this.__assign) || function () {
             if (frag.isEmpty())
                 return [];
             var table = frag.oneElement().querySelector('table');
-            return table ? Array.from(table.querySelectorAll('tr')) : [];
+            // Own rows only \u2014 a nested grid's <tr>s are also descendants of
+            // this table; indexing the flat list hits the wrong table when a
+            // cell holds a matrix (deleting a line eats a nested row, a new
+            // row lands inside the nested grid).
+            return table
+                ? Array.from(table.querySelectorAll(':scope > tr, :scope > tbody > tr'))
+                : [];
         };
         CellGrid.prototype.renderCell = function (cell) {
             var td = h('td', {
@@ -13377,15 +13405,82 @@ var __assign = (this && this.__assign) || function () {
                 (_c = trs[row]) === null || _c === void 0 ? void 0 : _c.remove();
             }
             if (isEmpty(myColumn) && myRow.length > 1) {
-                var col_1 = columns.indexOf(myColumn);
+                // remove() detaches each cell's <td> itself \u2014 indexing
+                // tr.children[col] afterwards would hit the *next* column's td
+                // (the deleted cells already shifted out of the child list).
                 remove(myColumn);
-                // Remove the orphaned <td>s from each row
-                this.tableRows().forEach(function (tr) {
-                    var _c;
-                    (_c = tr.children[col_1]) === null || _c === void 0 ? void 0 : _c.remove();
-                });
             }
             this.finalizeTree();
+        };
+        // Cells laid out row-major, as an array of rows.
+        CellGrid.prototype.cellRows = function () {
+            var rows = [];
+            this.eachChild(function (child) {
+                var cell = child;
+                rows[cell.row] = rows[cell.row] || [];
+                rows[cell.row].push(cell);
+                return undefined;
+            });
+            return rows;
+        };
+        // Force-delete the row containing `cell`, discarding its content \u2014
+        // unlike deleteCell, which only removes a fully-empty row. A grid
+        // keeps at least one row. Returns the cell to focus, or undefined.
+        CellGrid.prototype.deleteRow = function (currentCell) {
+            var rows = this.cellRows(), blocks = this.cells, row = -1;
+            for (var i = 0; i < rows.length; i += 1) {
+                if (rows[i] && rows[i].indexOf(currentCell) > -1)
+                    row = i;
+            }
+            if (row === -1 || rows.length <= 1)
+                return undefined;
+            var column = rows[row].indexOf(currentCell), focusRow = rows[row + 1] || rows[row - 1], focus = focusRow === null || focusRow === void 0 ? void 0 : focusRow[Math.min(column, focusRow.length - 1)], tr = rows[row][0].domFrag().oneElement().closest('tr');
+            for (i = 0; i < rows[row].length; i += 1) {
+                var cell = rows[row][i];
+                if (blocks.indexOf(cell) > -1) {
+                    cell.remove();
+                    blocks.splice(blocks.indexOf(cell), 1);
+                }
+            }
+            tr === null || tr === void 0 ? void 0 : tr.remove();
+            // Decrease all following row numbers
+            this.eachChild(function (child) {
+                var cell = child;
+                if (cell.row > row)
+                    cell.row -= 1;
+                return undefined;
+            });
+            return focus || blocks[0];
+        };
+        // Force-delete the column containing `cell`, discarding its content.
+        // A grid keeps at least one column. Returns the cell to focus, or
+        // undefined.
+        CellGrid.prototype.deleteColumn = function (currentCell) {
+            var rows = this.cellRows(), blocks = this.cells, row = -1, column = -1, columns = 0;
+            for (var i = 0; i < rows.length; i += 1) {
+                if (!rows[i])
+                    continue;
+                columns = Math.max(columns, rows[i].length);
+                var at = rows[i].indexOf(currentCell);
+                if (at > -1) {
+                    row = i;
+                    column = at;
+                }
+            }
+            if (column === -1 || columns <= 1)
+                return undefined;
+            // cell.remove() detaches the <td> itself; no <tr> bookkeeping.
+            var focus = rows[row][column + 1] || rows[row][column - 1];
+            for (i = 0; i < rows.length; i += 1) {
+                if (!rows[i])
+                    continue;
+                var cell = rows[i][column];
+                if (cell && blocks.indexOf(cell) > -1) {
+                    cell.remove();
+                    blocks.splice(blocks.indexOf(cell), 1);
+                }
+            }
+            return focus || blocks[0];
         };
         CellGrid.prototype.addRow = function (afterCell) {
             var _c;
@@ -13463,6 +13558,21 @@ var __assign = (this && this.__assign) || function () {
             });
             ctrlr.cursor.insAtRightEnd(cellToFocus);
         };
+        CellGrid.prototype.deleteRowOrColumn = function (method, cell, ctrlr) {
+            var cursor = ctrlr.cursor;
+            // The removal can detach nodes the selection still points at.
+            cursor.clearSelection();
+            cursor.endSelection();
+            var cellToFocus = this[method](cell);
+            if (!cellToFocus)
+                return;
+            this.finalizeTree();
+            this.bubble(function (node) {
+                node.reflow();
+                return undefined;
+            });
+            cursor.insAtRightEnd(cellToFocus);
+        };
         CellGrid.prototype.backspace = function (cell, dir, cursor, finalDeleteCallback) {
             var dirwards = cell[dir];
             if (cell.isEmpty()) {
@@ -13472,8 +13582,19 @@ var __assign = (this && this.__assign) || function () {
                     this.cells.indexOf(dirwards) === -1) {
                     dirwards = dirwards[dir];
                 }
+                if (dirwards && this.cells.indexOf(dirwards) === -1) {
+                    // Walked off the end through removed cells.
+                    dirwards = 0;
+                }
                 if (dirwards) {
                     cursor.insAtDirEnd(-dir, dirwards);
+                }
+                else if (this.cells.length) {
+                    // The deleted row/column was on the dir edge (e.g. the first
+                    // row via Backspace) \u2014 land the caret on the surviving edge
+                    // cell instead of leaving it inside a detached <td>.
+                    var edge = dir === L ? this.cells[0] : this.cells[this.cells.length - 1];
+                    cursor.insAtDirEnd(dir, edge);
                 }
                 if (this.cells.length === 1 && this.cells[0].isEmpty()) {
                     finalDeleteCallback();
@@ -13512,6 +13633,20 @@ var __assign = (this && this.__assign) || function () {
                         return;
                     e === null || e === void 0 ? void 0 : e.preventDefault();
                     return this.parent.insert('addColumn', this, ctrlr);
+                case 'Ctrl-Shift-Backspace':
+                    // Word-delete's key, rebound inside matrices: delete the
+                    // current row outright, content and all. In \displaylines and
+                    // outside a grid this falls through to word-delete as usual.
+                    if (this.parent instanceof DisplayLines)
+                        break;
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    return this.parent.deleteRowOrColumn('deleteRow', this, ctrlr);
+                case 'Ctrl-Shift-Del':
+                    // Delete the current column \u2014 same scoping as above.
+                    if (this.parent instanceof DisplayLines)
+                        break;
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    return this.parent.deleteRowOrColumn('deleteColumn', this, ctrlr);
             }
             return _super.prototype.keystroke.call(this, key, e, ctrlr);
         };

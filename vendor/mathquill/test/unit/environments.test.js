@@ -119,6 +119,190 @@ suite('environments', function () {
       mq.keystroke('Backspace');
       assert.equal(mq.latex(), '\\begin{matrix}a&b\\end{matrix}');
     });
+
+    var ownRows = function (gridEl) {
+      return gridEl
+        .querySelector(':scope > table')
+        .querySelectorAll(':scope > tr').length;
+    };
+    var rootEl = function () {
+      return mq.__controller.root.domFrag().oneElement();
+    };
+
+    test('deleting an empty line below a matrix keeps the matrix rows', function () {
+      mq.latex(
+        '\\displaylines{\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}\\\\ }'
+      );
+      mq.moveToRightEnd(); // into the empty second line
+      mq.keystroke('Backspace');
+      assert.equal(
+        mq.latex(),
+        '\\displaylines{\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}'
+      );
+      var root = rootEl();
+      // the displaylines row is gone — and the nested matrix kept both
+      // of its own <tr>s (the flat tr list used to index into them)
+      assert.equal(ownRows(root.querySelector('.mq-displaylines')), 1);
+      assert.equal(ownRows(root.querySelector('.mq-matrix')), 2);
+    });
+
+    test('adding a row to a matrix with a nested matrix keeps rows apart', function () {
+      mq.latex(
+        '\\begin{pmatrix}\\begin{matrix}x&y\\\\z&w\\end{matrix}&b\\\\c&d\\end{pmatrix}'
+      );
+      mq.moveToRightEnd().keystroke('Left'); // into outer cell d
+      mq.insertLineBreak();
+      assert.equal(
+        mq.latex(),
+        '\\begin{pmatrix}\\begin{matrix}x&y\\\\z&w\\end{matrix}&b\\\\c&d\\\\&\\end{pmatrix}'
+      );
+      var grids = rootEl().querySelectorAll('.mq-matrix');
+      assert.equal(ownRows(grids[0]), 3); // outer gained the row
+      assert.equal(ownRows(grids[1]), 2); // nested kept its own rows
+    });
+
+    test('adding a column to a matrix with a nested matrix keeps cells apart', function () {
+      mq.latex(
+        '\\begin{pmatrix}\\begin{matrix}x&y\\\\z&w\\end{matrix}&b\\\\c&d\\end{pmatrix}'
+      );
+      mq.moveToRightEnd().keystroke('Left');
+      mq.keystroke('Shift-Spacebar');
+      assert.equal(
+        mq.latex(),
+        '\\begin{pmatrix}\\begin{matrix}x&y\\\\z&w\\end{matrix}&b&\\\\c&d&\\end{pmatrix}'
+      );
+      var grids = rootEl().querySelectorAll('.mq-matrix');
+      assert.equal(
+        grids[0]
+          .querySelector(':scope > table')
+          .querySelectorAll(':scope > tr > td').length,
+        6
+      );
+      assert.equal(
+        grids[1]
+          .querySelector(':scope > table')
+          .querySelectorAll(':scope > tr > td').length,
+        4
+      );
+    });
+
+    test('deleting an empty first column keeps the other cells rendered', function () {
+      mq.latex('\\begin{matrix}&a\\\\&b\\end{matrix}');
+      // moveToLeftEnd stops at the root edge, left of the matrix atom —
+      // one Right steps into the first cell (empty, col 0).
+      mq.moveToLeftEnd().keystroke('Right');
+      mq.keystroke('Backspace');
+      assert.equal(mq.latex(), '\\begin{matrix}a\\\\b\\end{matrix}');
+      // the surviving column's <td>s must stay attached — the old code
+      // re-removed tr.children[col] after the cells already detached
+      assert.equal(
+        rootEl().querySelectorAll('.mq-matrix > table > tr > td').length,
+        2
+      );
+      // and the caret landed on a surviving cell, not a detached td
+      mq.typedText('z');
+      assert.equal(mq.latex(), '\\begin{matrix}za\\\\b\\end{matrix}');
+    });
+
+    test('deleting the first line keeps the caret alive', function () {
+      mq.latex(
+        '\\displaylines{ \\\\ \\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}'
+      );
+      mq.moveToLeftEnd(); // first (empty) line
+      mq.keystroke('Backspace');
+      assert.equal(
+        mq.latex(),
+        '\\displaylines{\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}'
+      );
+      mq.typedText('z');
+      assert.equal(
+        mq.latex(),
+        '\\displaylines{z\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}'
+      );
+    });
+    test('Ctrl-Shift-Backspace deletes the current row, content and all', function () {
+      mq.latex('\\begin{matrix}a&b\\\\x&y\\\\c&d\\end{matrix}');
+      mq.moveToLeftEnd().keystroke('Right'); // cell a (row 0)
+      mq.keystroke('Ctrl-Shift-Backspace');
+      assert.equal(mq.latex(), '\\begin{matrix}x&y\\\\c&d\\end{matrix}');
+      assert.equal(ownRows(rootEl().querySelector('.mq-matrix')), 2);
+      // caret lands live on the cell that slid up into the deleted row
+      mq.typedText('z');
+      assert.equal(mq.latex(), '\\begin{matrix}xz&y\\\\c&d\\end{matrix}');
+    });
+
+    test('Ctrl-Shift-Del deletes the current column', function () {
+      mq.latex('\\begin{matrix}a&b\\\\c&d\\end{matrix}');
+      mq.moveToLeftEnd().keystroke('Right'); // cell a (col 0)
+      mq.keystroke('Ctrl-Shift-Del');
+      assert.equal(mq.latex(), '\\begin{matrix}b\\\\d\\end{matrix}');
+      assert.equal(
+        rootEl().querySelector('.mq-matrix').querySelectorAll('td').length,
+        2
+      );
+      mq.typedText('z');
+      assert.equal(mq.latex(), '\\begin{matrix}bz\\\\d\\end{matrix}');
+    });
+
+    test('Ctrl-Shift-Backspace/Ctrl-Shift-Del refuse on the last row or column', function () {
+      mq.latex('\\begin{matrix}a&b\\end{matrix}');
+      mq.moveToLeftEnd().keystroke('Right');
+      mq.keystroke('Ctrl-Shift-Backspace'); // one row: no-op
+      assert.equal(mq.latex(), '\\begin{matrix}a&b\\end{matrix}');
+      mq.keystroke('Ctrl-Shift-Del'); // delete col 0 -> single column
+      assert.equal(mq.latex(), '\\begin{matrix}b\\end{matrix}');
+      mq.keystroke('Ctrl-Shift-Del'); // one column: no-op
+      assert.equal(mq.latex(), '\\begin{matrix}b\\end{matrix}');
+    });
+
+    test('inside \\displaylines the delete shortcuts keep word-delete', function () {
+      // \displaylines is a grid internally, but the rebinding is
+      // matrices-only: the keys still clear the current line's content.
+      mq.latex('\\displaylines{a\\\\b\\\\c}');
+      mq.moveToRightEnd(); // last line (fillsRootEdge descends)
+      mq.keystroke('Ctrl-Shift-Backspace');
+      assert.equal(mq.latex(), '\\displaylines{a\\\\ b\\\\ }');
+      // forward-delete on the now-empty line removes it — the usual
+      // empty-cell delete, not the matrix rebinding
+      mq.keystroke('Ctrl-Shift-Del');
+      assert.equal(mq.latex(), '\\displaylines{a\\\\ b}');
+    });
+
+    test('outside a grid the delete shortcuts still clear the block', function () {
+      // ctrlDeleteDir removes the rest of the current block in that
+      // direction — the rebinding must not change that outside a grid.
+      mq.latex('foo');
+      mq.moveToRightEnd();
+      mq.keystroke('Ctrl-Shift-Backspace');
+      assert.equal(mq.latex(), '');
+      mq.latex('bar');
+      mq.moveToLeftEnd();
+      mq.keystroke('Ctrl-Shift-Del');
+      assert.equal(mq.latex(), '');
+    });
+
+    test('delete with a selected cell clears the stale selection', function () {
+      // The removal detaches nodes the selection still points at —
+      // it must be cleared so the next edit doesn't act on them.
+      mq.latex('\\begin{matrix}a&b\\\\x&y\\end{matrix}');
+      mq.moveToLeftEnd().keystroke('Right'); // cell a
+      mq.keystroke('Shift-Right'); // select a
+      assert.ok(mq.__controller.cursor.selection);
+      mq.keystroke('Ctrl-Shift-Backspace');
+      assert.equal(mq.latex(), '\\begin{matrix}x&y\\end{matrix}');
+      assert.ok(!mq.__controller.cursor.selection);
+      mq.typedText('z');
+      assert.equal(mq.latex(), '\\begin{matrix}xz&y\\end{matrix}');
+
+      mq.latex('\\begin{matrix}a&b\\\\c&d\\end{matrix}');
+      mq.moveToLeftEnd().keystroke('Right');
+      mq.keystroke('Shift-Right'); // select a again
+      mq.keystroke('Ctrl-Shift-Del');
+      assert.equal(mq.latex(), '\\begin{matrix}b\\\\d\\end{matrix}');
+      assert.ok(!mq.__controller.cursor.selection);
+      mq.typedText('z');
+      assert.equal(mq.latex(), '\\begin{matrix}bz\\\\d\\end{matrix}');
+    });
   });
 
   suite('env shortcuts', function () {

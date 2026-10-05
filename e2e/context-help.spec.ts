@@ -36,10 +36,13 @@ test('caret inside a matrix shows row/column editing hints', async ({
   await page.keyboard.press('ArrowLeft'); // step into the last cell
   await expect(help(mf)).toHaveClass(/\bon\b/);
   await expect(help(mf)).toContainText('Enter');
-  await expect(help(mf)).toContainText('add a row');
+  await expect(help(mf)).toContainText('add row');
   await expect(help(mf)).toContainText('Shift+Space');
-  await expect(help(mf)).toContainText('add a column');
-  await expect(help(mf)).toContainText('Backspace');
+  await expect(help(mf)).toContainText('add column');
+  await expect(help(mf)).toContainText('Ctrl+Shift+Backspace');
+  await expect(help(mf)).toContainText('delete row');
+  await expect(help(mf)).toContainText('Ctrl+Shift+Delete');
+  await expect(help(mf)).toContainText('delete column');
 });
 
 test('caret left of a matrix shows determinant and trace hints', async ({
@@ -76,7 +79,7 @@ test('a typed matrix still reaches the left-of hints through the input-wrapper r
   // see through it (hydration-only coverage would miss this).
   await page.keyboard.type('x+\\pmatrix');
   await page.keyboard.press('Enter');
-  await expect(help(mf)).toContainText('add a row'); // inside the grid
+  await expect(help(mf)).toContainText('add row'); // inside the grid
   await page.keyboard.press('ArrowLeft'); // out the left edge
   await expect(help(mf)).toContainText('determinant');
 });
@@ -113,7 +116,7 @@ test('the strip follows the caret out of and back into a matrix', async ({
   await page.keyboard.press('Control+End');
   await expect(help(mf)).toContainText('transpose');
   await page.keyboard.press('ArrowLeft'); // into the matrix
-  await expect(help(mf)).toContainText('add a row');
+  await expect(help(mf)).toContainText('add row');
   await page.keyboard.press('Control+Home'); // left edge
   await expect(help(mf)).toContainText('determinant');
 });

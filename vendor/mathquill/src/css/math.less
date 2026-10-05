@@ -334,11 +334,11 @@
     line-height: 1;
   }
 
-  .mq-substack td {
+  .mq-substack > table > tr > td {
     font-size: 0.8em;
   }
 
-  .mq-aligned td:nth-child(odd) {
+  .mq-aligned > table > tr > td:nth-child(odd) {
     text-align: right;
   }
 
@@ -394,10 +394,10 @@
   .mq-supsub {
     text-align: left;
     font-size: 90%;
-    vertical-align: -0.5em;
+    vertical-align: -0.65em;
 
     &.mq-sup-only {
-      vertical-align: 0.5em;
+      vertical-align: 0.65em;
 
       & > .mq-sup {
         display: inline-block;
@@ -407,6 +407,8 @@
 
     .mq-sup {
       display: block;
+      // spread the pair: lift the sup off the sub
+      margin-bottom: 0.15em;
     }
 
     .mq-sub {
@@ -471,7 +473,10 @@
     margin-right: 0.1em;
     position: relative;
 
-    table {
+    // Scoped to the grid's own rows/cells: nested grids live inside a
+    // cell, and descendant selectors would leak these metrics into them
+    // (a matrix inside \displaylines loses its column spacing).
+    > table {
       width: auto;
       border-bottom: none;
       border-spacing: 3px;
@@ -483,7 +488,7 @@
       }
     }
 
-    td {
+    > table > tr > td {
       border: none;
       width: auto; // defensive resets
       padding: 0.1em 0.3em;
@@ -511,11 +516,11 @@
     margin-left: 0;
     margin-right: 0;
 
-    table {
+    > table {
       border-spacing: 0 3px;
     }
 
-    td {
+    > table > tr > td {
       padding-left: 0;
       padding-right: 0;
     }
@@ -525,6 +530,34 @@
   // mathpunct spacing.
   .mq-comma {
     padding-right: 0.167em;
+  }
+
+  // MATHCOMPILE: scripts beside a matrix pin to the tall line's edges —
+  // sup at its top, sub at its bottom. `.mq-matrix` is middle-aligned,
+  // so the generic supsub offsets stack the pair at the matrix's
+  // vertical center instead. `display: contents` lifts the scripts
+  // into the outer line box so vertical-align: top/bottom resolve
+  // against it; a paired sup takes width:0 so the sub anchors at the
+  // same left edge (the pair's width comes from the sub).
+  .mq-matrix + .mq-supsub,
+  .mq-matrix + .mq-cursor + .mq-supsub,
+  .mq-displaylines + .mq-supsub,
+  .mq-bracket-container + .mq-supsub {
+    display: contents;
+
+    > .mq-sup {
+      display: inline-block;
+      vertical-align: top;
+      overflow: visible;
+    }
+    &:not(.mq-sup-only) > .mq-sup {
+      width: 0;
+    }
+    > .mq-sub {
+      display: inline-block;
+      float: none;
+      vertical-align: bottom;
+    }
   }
 
   .mq-array > span {

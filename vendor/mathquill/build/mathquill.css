@@ -368,10 +368,10 @@
   font-size: 1.5em;
   line-height: 1;
 }
-.mq-math-mode .mq-substack td {
+.mq-math-mode .mq-substack > table > tr > td {
   font-size: 0.8em;
 }
-.mq-math-mode .mq-aligned td:nth-child(odd) {
+.mq-math-mode .mq-aligned > table > tr > td:nth-child(odd) {
   text-align: right;
 }
 .mq-math-mode .mq-cancel-forward {
@@ -391,10 +391,10 @@
 .mq-math-mode .mq-supsub {
   text-align: left;
   font-size: 90%;
-  vertical-align: -0.5em;
+  vertical-align: -0.65em;
 }
 .mq-math-mode .mq-supsub.mq-sup-only {
-  vertical-align: 0.5em;
+  vertical-align: 0.65em;
 }
 .mq-math-mode .mq-supsub.mq-sup-only > .mq-sup {
   display: inline-block;
@@ -402,6 +402,7 @@
 }
 .mq-math-mode .mq-supsub .mq-sup {
   display: block;
+  margin-bottom: 0.15em;
 }
 .mq-math-mode .mq-supsub .mq-sub {
   display: block;
@@ -453,20 +454,20 @@
   margin-right: 0.1em;
   position: relative;
 }
-.mq-math-mode .mq-matrix table,
-.mq-math-mode .mq-displaylines table {
+.mq-math-mode .mq-matrix > table,
+.mq-math-mode .mq-displaylines > table {
   width: auto;
   border-bottom: none;
   border-spacing: 3px;
   border-collapse: separate;
 }
-.mq-math-mode .mq-matrix table.mq-rows-1,
-.mq-math-mode .mq-displaylines table.mq-rows-1 {
+.mq-math-mode .mq-matrix > table.mq-rows-1,
+.mq-math-mode .mq-displaylines > table.mq-rows-1 {
   vertical-align: middle;
   margin-bottom: 1px;
 }
-.mq-math-mode .mq-matrix td,
-.mq-math-mode .mq-displaylines td {
+.mq-math-mode .mq-matrix > table > tr > td,
+.mq-math-mode .mq-displaylines > table > tr > td {
   border: none;
   width: auto;
   padding: 0.1em 0.3em;
@@ -491,15 +492,43 @@
   margin-left: 0;
   margin-right: 0;
 }
-.mq-math-mode .mq-displaylines table {
+.mq-math-mode .mq-displaylines > table {
   border-spacing: 0 3px;
 }
-.mq-math-mode .mq-displaylines td {
+.mq-math-mode .mq-displaylines > table > tr > td {
   padding-left: 0;
   padding-right: 0;
 }
 .mq-math-mode .mq-comma {
   padding-right: 0.167em;
+}
+.mq-math-mode .mq-matrix + .mq-supsub,
+.mq-math-mode .mq-matrix + .mq-cursor + .mq-supsub,
+.mq-math-mode .mq-displaylines + .mq-supsub,
+.mq-math-mode .mq-bracket-container + .mq-supsub {
+  display: contents;
+}
+.mq-math-mode .mq-matrix + .mq-supsub > .mq-sup,
+.mq-math-mode .mq-matrix + .mq-cursor + .mq-supsub > .mq-sup,
+.mq-math-mode .mq-displaylines + .mq-supsub > .mq-sup,
+.mq-math-mode .mq-bracket-container + .mq-supsub > .mq-sup {
+  display: inline-block;
+  vertical-align: top;
+  overflow: visible;
+}
+.mq-math-mode .mq-matrix + .mq-supsub:not(.mq-sup-only) > .mq-sup,
+.mq-math-mode .mq-matrix + .mq-cursor + .mq-supsub:not(.mq-sup-only) > .mq-sup,
+.mq-math-mode .mq-displaylines + .mq-supsub:not(.mq-sup-only) > .mq-sup,
+.mq-math-mode .mq-bracket-container + .mq-supsub:not(.mq-sup-only) > .mq-sup {
+  width: 0;
+}
+.mq-math-mode .mq-matrix + .mq-supsub > .mq-sub,
+.mq-math-mode .mq-matrix + .mq-cursor + .mq-supsub > .mq-sub,
+.mq-math-mode .mq-displaylines + .mq-supsub > .mq-sub,
+.mq-math-mode .mq-bracket-container + .mq-supsub > .mq-sub {
+  display: inline-block;
+  float: none;
+  vertical-align: bottom;
 }
 .mq-math-mode .mq-array > span {
   display: block;
