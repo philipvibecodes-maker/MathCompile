@@ -9,6 +9,7 @@ import {
   type CompletionContext,
 } from './caret-context';
 import { mountStaticMath } from './static-math';
+import { openDefinePopover } from './define-popover';
 import { isMqKeyTarget, type MathFieldElement } from './math-field';
 
 // IDE-style autocomplete: a filtered dropdown anchored under the caret
@@ -28,6 +29,9 @@ export function attachAutocompleteMenu(field: MathFieldElement) {
   let items: CompletionItem[] = [];
   let sel = 0;
   let suppressed = false;
+  // Set when the sole row is the JIT "define \name" offer — the typed
+  // command prefix no completion matched.
+  let defineOffer: string | null = null;
 
   const hide = () => {
     menu.hidden = true;
@@ -35,7 +39,10 @@ export function attachAutocompleteMenu(field: MathFieldElement) {
   };
 
   const row = (item: CompletionItem, i: number) => {
-    let el = rowCache.get(item.name);
+    // The define offer shares its name with the macro it may create —
+    // key it apart so a real completion never inherits the stale row.
+    const key = defineOffer ? `def:${item.name}` : item.name;
+    let el = rowCache.get(key);
     if (!el) {
       el = document.createElement('div');
       el.className = 'mc-ac-item';
@@ -56,7 +63,7 @@ export function attachAutocompleteMenu(field: MathFieldElement) {
         e.preventDefault();
         accept(item);
       });
-      rowCache.set(item.name, el);
+      rowCache.set(key, el);
     }
     el.classList.toggle('sel', i === sel);
     el.dataset.i = String(i);
@@ -77,7 +84,16 @@ export function attachAutocompleteMenu(field: MathFieldElement) {
     if (!ctx || suppressed) return hide();
     if (ctx.kind === 'word' && ctx.prefix.length < 2) return hide();
     items = matchCompletions(ctx.prefix);
-    if (!items.length) return hide();
+    defineOffer = null;
+    if (!items.length) {
+      // No builtin completes this command — offer to define it as
+      // user notation. Word-run context stays hidden (smart-mode
+      // letters aren't command names).
+      if (ctx.kind === 'command' && ctx.prefix.length >= 2) {
+        defineOffer = ctx.prefix;
+        items = [{ name: ctx.prefix, hint: 'define…', preview: ctx.prefix }];
+      } else return hide();
+    }
     sel = Math.min(sel, items.length - 1);
     menu.replaceChildren(...items.map(row));
     const fr = field.getBoundingClientRect();
@@ -92,6 +108,13 @@ export function attachAutocompleteMenu(field: MathFieldElement) {
   const accept = (item: CompletionItem) => {
     const mq = field.mq;
     if (!mq || !ctx) return;
+    if (defineOffer) {
+      const a = ctx.anchor;
+      const n = defineOffer;
+      hide();
+      openDefinePopover(field, n, a);
+      return;
+    }
     if (ctx.kind === 'command') acceptCommandCompletion(mq, item, ctx.prefix);
     else acceptWordCompletion(mq, item, ctx.prefix);
     hide();

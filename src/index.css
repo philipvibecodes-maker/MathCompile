@@ -377,6 +377,54 @@ body {
   color: var(--accent-text);
 }
 
+/* JIT "define \name" popover — opened from the autocomplete menu when a
+   typed command has no completions. Anchored under the caret like .mc-ac. */
+.mc-def {
+  position: absolute;
+  z-index: 31;
+  width: 300px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px var(--shadow);
+  padding: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+.mc-def-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mc-def-name {
+  font-family: ui-monospace, monospace;
+  color: var(--accent-text);
+  white-space: nowrap;
+}
+.mc-def-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-family: ui-monospace, monospace;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+}
+.mc-def-input:focus {
+  outline: none;
+  border-color: var(--accent-text);
+}
+.mc-def-prev {
+  min-height: 24px;
+  padding: 4px 2px 0;
+}
+.mc-def-hint {
+  color: var(--faint);
+  font-size: 11px;
+}
+
 /* User-defined notation (`\vv{u}` renders `vv(u)`) — the name stays
    upright with a dotted underline so a macro reads as a defined thing,
    not an ordinary symbol run. */
