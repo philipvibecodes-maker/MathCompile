@@ -381,6 +381,66 @@ matching SymPy calls. Other number-theory words work like `totient`
 via `\mathrm{name}` — `mobius`, `nextprime`, `factorint` — as long
 as the name is a plain word.
 
+### Statistics
+
+The calculator speaks a set of `scipy.stats` calls, typed as upright
+words `\mathrm{name}(args)`. The first stats cell in a session loads
+the scipy engine on top of SymPy (about a second more before the row
+lands); cells without stats names aren't affected.
+
+#### Distributions
+
+A distribution call is `<name><method>` — `normcdf`, `binompmf`,
+`tppf`. Available distributions: `norm`, `t`, `chi2`, `expon`,
+`uniform`, `beta`, `gamma`, `lognorm`, `cauchy`, `f` (continuous) and
+`binom`, `nbinom`, `poisson`, `geom`, `hypergeom` (discrete).
+Methods: `pdf`/`pmf`, `cdf`, `ppf`, `sf`, `isf`, `mean`, `var`, `std`,
+`median`, `stats`, `moment`, `interval`, `rvs`, and `fit` (continuous
+only). Distribution parameters come after the point and can be left
+off to get scipy's defaults — `\mathrm{normcdf}(x)` is the standard
+normal.
+
+| You want | Type | Renders |
+| --- | --- | --- |
+| Density of N(0,1) at x | `\mathrm{normpdf}(x)` | \(\mathrm{normpdf}(x)\) → `st.norm.pdf(x)` |
+| Normal CDF, mean μ, sd σ | `\mathrm{normcdf}(x,\mu,\sigma)` | \(\mathrm{normcdf}(x,\mu,\sigma)\) → `st.norm.cdf(x, mu, sigma)` |
+| Inverse CDF (quantile) | `\mathrm{tppf}(0.975,9)` | \(\mathrm{tppf}(0.975,9)\) → `st.t.ppf(0.975, 9)` |
+| Upper-tail probability | `\mathrm{normsf}(2)` | \(\mathrm{normsf}(2)\) → `st.norm.sf(2)` |
+| Dist. mean / var / std | `\mathrm{binomvar}(10,0.5)` | \(\mathrm{binomvar}(10,0.5)\) → `st.binom.var(10, 0.5)` |
+| Dist. central interval | `\mathrm{tinterval}(0.95,9)` | \(\mathrm{tinterval}(0.95,9)\) → `st.t.interval(0.95, 9)` |
+| Random draws | `\mathrm{normrvs}(5)` | \(\mathrm{normrvs}(5)\) → `st.norm.rvs(size=5)` |
+| Fit a dist. to data | `\mathrm{normfit}([1,2,3,4])` | \(\mathrm{normfit}(...)\) → `st.norm.fit(list(...))` |
+
+#### Sample statistics
+
+The data argument is a list `[1,2,3]`, a set `{1,2,3}`, or a name the
+cell already bound (`d = [1,2,3]` then `\mathrm{ttest}(d,0)`).
+
+| You want | Type | Renders |
+| --- | --- | --- |
+| Sample mean | `\mathrm{smean}(d)` | \(\mathrm{smean}(d)\) → `np.mean(list(d))` |
+| Median | `\mathrm{median}(d)` | \(\mathrm{median}(d)\) → `np.median(list(d))` |
+| Sample variance / sd | `\mathrm{svar}(d)`, `\mathrm{sstd}(d)` | \(\mathrm{svar}(d)\) → `np.var(list(d), ddof=1)` |
+| Std. error of the mean | `\mathrm{sem}(d)` | \(\mathrm{sem}(d)\) → `st.sem(list(d))` |
+| Skewness / kurtosis | `\mathrm{skew}(d)`, `\mathrm{kurtosis}(d)` | \(\mathrm{skew}(d)\) → `st.skew(list(d))` |
+| Interquartile range | `\mathrm{iqr}(d)` | \(\mathrm{iqr}(d)\) → `st.iqr(list(d))` |
+| Geometric / harmonic mean | `\mathrm{gmean}(d)`, `\mathrm{hmean}(d)` | \(\mathrm{gmean}(d)\) → `st.gmean(list(d))` |
+| Summary tuple | `\mathrm{describe}(d)` | \(\mathrm{describe}(d)\) → `st.describe(list(d))` |
+| Z-scores | `\mathrm{zscore}(d)` | \(\mathrm{zscore}(d)\) → `st.zscore(list(d))` |
+| One-sample t-test | `\mathrm{ttest}(d,0)` | \(\mathrm{ttest}(d,0)\) → `st.ttest_1samp(list(d), 0)` |
+| Conf. interval of mean | `\mathrm{meanconf}(d)` / `(d,0.99)` | \(\mathrm{meanconf}(d)\) → `mc_mean_ci(d, 0.95)` |
+
+Worth knowing:
+
+- `\mathrm{smean}` rather than `\mathrm{mean}` — `mean(x)` already
+  prints the expectation symbol \( \bar{x} \).
+- Sample `svar`/`sstd` are the unbiased versions (`ddof=1`).
+- `pdf` on a discrete distribution (or `pmf` on a continuous one) is
+  an error — the message names the right method.
+- `fit` exists only for the continuous distributions.
+- `\mathrm{meanconf}` emits a small `mc_mean_ci` helper into the
+  generating code — it wraps `st.t.interval` around the sample mean.
+
 ## Output targets
 
 Pick a target from the **Output** menu in the header.

@@ -164,6 +164,25 @@ def mc_run(prog_json):
 `;
 
 let boot: Promise<PyodideLike> | undefined;
+// scipy/numpy aren't part of the base payload (scipy adds ~17 MB of
+// wheels) — programs whose prelude carries the imports trigger this
+// lazy one-time-per-package load; everything else never pays for it.
+const extra = new Map<string, Promise<void>>();
+
+async function ensurePkg(py: PyodideLike, pkg: string): Promise<void> {
+  let p = extra.get(pkg);
+  if (p === undefined) {
+    p = py.loadPackage([pkg]);
+    extra.set(pkg, p);
+  }
+  try {
+    await p;
+  } catch (e) {
+    // A failed fetch retries on the next eval.
+    extra.delete(pkg);
+    throw e;
+  }
+}
 
 async function bootEngine(): Promise<PyodideLike> {
   importScripts(`${PYODIDE_BASE}pyodide.js`);
@@ -201,6 +220,16 @@ scope.onmessage = (e) => {
   const { id, program } = e.data;
   void ensureEngine()
     .then(async (py) => {
+      // A stats cell's prelude carries the scipy/numpy imports — pull
+      // the wheels on first use (scipy pulls numpy+openblas itself).
+      if (program.prelude.some((l) => l.includes('scipy')))
+        await ensurePkg(py, 'scipy').catch(() => {
+          throw new Error('failed to load scipy');
+        });
+      if (program.prelude.some((l) => l.includes('numpy')))
+        await ensurePkg(py, 'numpy').catch(() => {
+          throw new Error('failed to load numpy');
+        });
       // The program travels inside the python source as a quoted literal —
       // a shared globals slot would race when evals overlap.
       const call = `mc_run(${JSON.stringify(JSON.stringify(program))})`;

@@ -28,6 +28,7 @@ import {
   MATRIX_WORD_OPS,
   SET_LEAF,
 } from './notation';
+import { isStatsName } from './stats';
 
 // MathJSON is untyped JSON: head arrays, bare symbol strings, numbers, and
 // occasional `{num: "..."}` / `{str: "..."}` wrappers.
@@ -1127,8 +1128,13 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
             ...(mid.length === 0 ? callArgs : [...mid, ...callArgs]),
           ];
         if (isString(fn) && fn.length > 1) {
-          if (mid.length === 0)
+          if (mid.length === 0) {
+            // `\mathrm{normmean}()` — a stats builtin called with no
+            // args; a bare `[fn]` collapses to 'Nothing' below.
+            if (callArgs.length === 0 && isStatsName(fn))
+              return ['call', fn];
             return ctx.norm([fn, ...callArgs] as MathJson[], ctx.atStatement);
+          }
           firstNorm = ctx.norm(fn);
           return ['Apply', firstNorm, ...mid, ...callArgs];
         }
@@ -1807,7 +1813,7 @@ export function normalizeIR(
       // about a stub that never reaches the output. A worksheet-declared
       // name isn't unknown either — `f(3)` after `f(x) = …` calls the
       // def the cell already made.
-      if (!CALL_RENAMED.has(h) && !declaredFns.has(h))
+      if (!CALL_RENAMED.has(h) && !declaredFns.has(h) && !isStatsName(h))
         pushIssue('note', `unknown head "${h}" — emitted as ${h}(...)`);
       return ['call', h, ...node.slice(1).map((n) => normalize(n, false))];
     }

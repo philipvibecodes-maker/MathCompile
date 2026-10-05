@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compileCellForCalc, compileCellsForCalc } from '../compile/codegen';
+import { compileCellForCalc, compileCellsForCalc, compileWorksheet } from '../compile/codegen';
 import { normalizeIR, parseCellLatex } from '../compile/ir';
 import { interimConstNames, irToNerdamer } from './nerdamer-emit';
 import { interimEvaluate } from './calculator.svelte.ts';
@@ -1141,6 +1141,274 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
     // Unrelated names don't reserve letters.
     const rows2 = await interimEvaluate('\\int x dx', ['a = 7']);
     expect((rows2[0] as { latex?: string }).latex ?? '').toContain('C');
+  });
+});
+
+describe('scipy.stats builtins', () => {
+  // prelude entries past the fixed `import sympy` + CALC_RUNTIME block.
+  const extras = (latex: string) => calc(latex).prelude.slice(2);
+  const stmt = (latex: string) => calc(latex).statements[0];
+
+  it('emits st.<dist>.<method> calls and pulls the scipy import', () => {
+    expect(stmt('\\mathrm{normpdf}(2)').code).toBe(F('st.norm.pdf(2)'));
+    expect(extras('\\mathrm{normpdf}(2)')).toEqual([
+      'import scipy.stats as st',
+    ]);
+    // loc/scale default in scipy — passing them is optional.
+    expect(stmt('\\mathrm{normpdf}(2,0,1)').code).toBe(
+      F('st.norm.pdf(2, 0, 1)'),
+    );
+    expect(stmt('\\mathrm{normcdf}(1.96)').code).toBe(
+      F('st.norm.cdf(1.96)'),
+    );
+    expect(stmt('\\mathrm{normppf}(0.975)').code).toBe(
+      F('st.norm.ppf(0.975)'),
+    );
+    expect(stmt('\\mathrm{normsf}(2)').code).toBe(F('st.norm.sf(2)'));
+    expect(stmt('\\mathrm{normisf}(0.05)').code).toBe(
+      F('st.norm.isf(0.05)'),
+    );
+    // Symbols stay symbolic — scipy resolves them at eval time.
+    const mu = calc('\\mathrm{normcdf}(x,\\mu,\\sigma)');
+    expect(mu.statements[0].code).toBe(F('st.norm.cdf(x, mu, sigma)'));
+    expect(mu.prelude).toContain("mu, sigma, x = sp.symbols('mu sigma x')");
+  });
+
+  it('covers the discrete distributions with pmf (not pdf)', () => {
+    expect(stmt('\\mathrm{binompmf}(2,10,0.5)').code).toBe(
+      F('st.binom.pmf(2, 10, 0.5)'),
+    );
+    expect(stmt('\\mathrm{poissonpmf}(3,4)').code).toBe(
+      F('st.poisson.pmf(3, 4)'),
+    );
+    expect(stmt('\\mathrm{geompmf}(3,0.2)').code).toBe(
+      F('st.geom.pmf(3, 0.2)'),
+    );
+    expect(stmt('\\mathrm{hypergeompmf}(2,20,7,12)').code).toBe(
+      F('st.hypergeom.pmf(2, 20, 7, 12)'),
+    );
+    expect(stmt('\\mathrm{nbinompmf}(4,5,0.5)').code).toBe(
+      F('st.nbinom.pmf(4, 5, 0.5)'),
+    );
+    // pdf on a discrete dist (and vice versa) is an explicit error,
+    // not a call scipy would TypeError on.
+    const pdf = stmt('\\mathrm{binompdf}(2,10,0.5)');
+    expect(pdf.error).toContain('binompmf');
+    const pmf = stmt('\\mathrm{normpmf}(2)');
+    expect(pmf.error).toContain('normpdf');
+  });
+
+  it('maps parametrized distributions to loc/scale tails', () => {
+    // expon takes just a rate; loc is fixed at 0.
+    expect(stmt('\\mathrm{exponpdf}(2,0.5)').code).toBe(
+      F('st.expon.pdf(2, 0, 0.5)'),
+    );
+    // uniform(a, b) — scipy's scale is b - a.
+    expect(stmt('\\mathrm{uniformcdf}(2,1,3)').code).toBe(
+      F('st.uniform.cdf(2, 1, (3) - (1))'),
+    );
+    // gamma(shape, scale?) — scale goes to scipy's third slot.
+    expect(stmt('\\mathrm{gammapdf}(2,3)').code).toBe(
+      F('st.gamma.pdf(2, 3)'),
+    );
+    expect(stmt('\\mathrm{gammapdf}(2,3,2)').code).toBe(
+      F('st.gamma.pdf(2, 3, 0, 2)'),
+    );
+    expect(stmt('\\mathrm{lognormpdf}(1,0.5)').code).toBe(
+      F('st.lognorm.pdf(1, 0.5)'),
+    );
+    expect(stmt('\\mathrm{cauchycdf}(1,0,1)').code).toBe(
+      F('st.cauchy.cdf(1, 0, 1)'),
+    );
+    expect(stmt('\\mathrm{betapdf}(0.5,2,3)').code).toBe(
+      F('st.beta.pdf(0.5, 2, 3)'),
+    );
+    expect(stmt('\\mathrm{fcdf}(1,3,10)').code).toBe(
+      F('st.f.cdf(1, 3, 10)'),
+    );
+    expect(stmt('\\mathrm{chi2cdf}(5,3)').code).toBe(
+      F('st.chi2.cdf(5, 3)'),
+    );
+    expect(stmt('\\mathrm{tcdf}(2.1,9)').code).toBe(F('st.t.cdf(2.1, 9)'));
+  });
+
+  it('emits distribution summaries, intervals, rvs, and fit', () => {
+    expect(stmt('\\mathrm{normmean}(0,1)').code).toBe(
+      F('st.norm.mean(0, 1)'),
+    );
+    // A zero-arg call on a params-only method still emits.
+    expect(stmt('\\mathrm{normmean}()').code).toBe(F('st.norm.mean()'));
+    expect(stmt('\\mathrm{tstd}(9)').code).toBe(F('st.t.std(9)'));
+    expect(stmt('\\mathrm{binomvar}(10,0.5)').code).toBe(
+      F('st.binom.var(10, 0.5)'),
+    );
+    expect(stmt('\\mathrm{binommedian}(10,0.5)').code).toBe(
+      F('st.binom.median(10, 0.5)'),
+    );
+    expect(stmt('\\mathrm{normstats}(0,1)').code).toBe(
+      F("st.norm.stats(0, 1, moments='mvsk')"),
+    );
+    expect(stmt('\\mathrm{normmoment}(2)').code).toBe(
+      F('st.norm.moment(2)'),
+    );
+    // <dist>interval is the confidence-interval kind — first arg is the
+    // confidence level, not a point.
+    expect(stmt('\\mathrm{norminterval}(0.95)').code).toBe(
+      F('st.norm.interval(0.95)'),
+    );
+    expect(stmt('\\mathrm{tinterval}(0.95,9)').code).toBe(
+      F('st.t.interval(0.95, 9)'),
+    );
+    // rvs's first arg is a count — emitted as size=.
+    expect(stmt('\\mathrm{normrvs}(5)').code).toBe(
+      F('sp.Matrix(st.norm.rvs(size=5).tolist())'),
+    );
+    expect(stmt('\\mathrm{binomrvs}(4,10,0.5)').code).toBe(
+      F('sp.Matrix(st.binom.rvs(10, 0.5, size=4).tolist())'),
+    );
+    // fit only exists for the continuous dists.
+    expect(stmt('\\mathrm{normfit}([1,2,3])').code).toBe(
+      F('st.norm.fit(list([1, 2, 3]))'),
+    );
+    expect(stmt('\\mathrm{binomfit}([1,2,3])').error).toContain(
+      'continuous',
+    );
+  });
+
+  it('emits sample statistics with list() around the data arg', () => {
+    // Works on lists, sets, and worksheet names alike.
+    expect(stmt('\\mathrm{smean}([1,2,3,4])').code).toBe(
+      F('np.mean(list([1, 2, 3, 4]))'),
+    );
+    expect(extras('\\mathrm{smean}([1,2,3,4])')).toEqual([
+      'import numpy as np',
+    ]);
+    expect(stmt('\\mathrm{median}(\\{1,2,3\\})').code).toBe(
+      F('np.median(list(sp.FiniteSet(1, 2, 3)))'),
+    );
+    expect(stmt('\\mathrm{smedian}([1,2,3])').code).toBe(
+      F('np.median(list([1, 2, 3]))'),
+    );
+    // sample var/std get ddof=1 (unbiased); numpy defaults to ddof=0.
+    expect(stmt('\\mathrm{svar}([1,2,3,4])').code).toBe(
+      F('np.var(list([1, 2, 3, 4]), ddof=1)'),
+    );
+    expect(stmt('\\mathrm{sstd}([1,2,3,4])').code).toBe(
+      F('np.std(list([1, 2, 3, 4]), ddof=1)'),
+    );
+    expect(stmt('\\mathrm{sem}([1,2,3,4])').code).toBe(
+      F('st.sem(list([1, 2, 3, 4]))'),
+    );
+    expect(stmt('\\mathrm{skew}([1,2,3,4])').code).toBe(
+      F('st.skew(list([1, 2, 3, 4]))'),
+    );
+    expect(stmt('\\mathrm{kurtosis}([1,2,3,4])').code).toBe(
+      F('st.kurtosis(list([1, 2, 3, 4]))'),
+    );
+    expect(stmt('\\mathrm{iqr}([1,2,3,4])').code).toBe(
+      F('st.iqr(list([1, 2, 3, 4]))'),
+    );
+    expect(stmt('\\mathrm{gmean}([1,2,3,4])').code).toBe(
+      F('st.gmean(list([1, 2, 3, 4]))'),
+    );
+    expect(stmt('\\mathrm{hmean}([1,2,3,4])').code).toBe(
+      F('st.hmean(list([1, 2, 3, 4]))'),
+    );
+    expect(stmt('\\mathrm{describe}([1,2,3,4])').code).toBe(
+      F('st.describe(list([1, 2, 3, 4]))'),
+    );
+    expect(stmt('\\mathrm{zscore}([1,2,3,4])').code).toBe(
+      F('sp.Matrix(st.zscore(list([1, 2, 3, 4])).tolist())'),
+    );
+  });
+
+  it('emits the one-sample t-test and mean confidence interval', () => {
+    const t = calc('\\mathrm{ttest}([1,2,3,4],0)');
+    expect(t.statements[0].code).toBe(
+      F('st.ttest_1samp(list([1, 2, 3, 4]), 0)'),
+    );
+    // mu defaults to 0.
+    expect(calc('\\mathrm{ttest}([1,2,3,4])').statements[0].code).toBe(
+      F('st.ttest_1samp(list([1, 2, 3, 4]), 0)'),
+    );
+    const ci = calc('\\mathrm{meanconf}([1,2,3,4])');
+    expect(ci.statements[0].code).toBe(
+      F('mc_mean_ci([1, 2, 3, 4], 0.95)'),
+    );
+    // meanconf needs scipy + numpy + the helper def.
+    expect(ci.prelude.slice(2)).toEqual([
+      'import scipy.stats as st',
+      'import numpy as np',
+      expect.stringContaining('def mc_mean_ci'),
+    ]);
+    expect(
+      calc('\\mathrm{meanconf}([1,2,3,4],0.99)').statements[0].code,
+    ).toBe(F('mc_mean_ci([1, 2, 3, 4], 0.99)'));
+  });
+
+  it('flags arity errors and keeps unknown names as stubs', () => {
+    expect(stmt('\\mathrm{normpdf}()').error).toContain('an argument');
+    expect(stmt('\\mathrm{tpdf}(x)').error).toContain('df');
+    expect(stmt('\\mathrm{smean}()').error).toContain('data list');
+    // custompdf / profit aren't builtins — the usual Function-stub
+    // fallback with its unknown-head note applies.
+    const custom = calc('\\mathrm{custompdf}(2)');
+    expect(custom.statements[0].code).toBe(F('custompdf(2)'));
+    expect(custom.issues.some((i) => i.severity === 'note')).toBe(true);
+  });
+
+  it('lets a declared def shadow a stats builtin in the same cell', () => {
+    // The \text{def} marker needs \mathrm for a multi-letter name.
+    const out = calc(
+      '\\text{def} \\mathrm{normpdf}(x) = 2x\\\\ \\mathrm{normpdf}(2)',
+    );
+    expect(out.statements[0].code).toBe(
+      'def normpdf(x):\n    return 2 * x',
+    );
+    expect(out.statements[1].code).toBe(F('normpdf(2)'));
+    expect(out.prelude).not.toContain('import scipy.stats as st');
+  });
+
+  it('mangles user symbols named st/np/mc_mean_ci', () => {
+    // The builtins reserve st/np/mc_mean_ci — a same-named user symbol
+    // mangles to the trailing-underscore form so the emitted program
+    // can carry both.
+    const prog = calc('\\mathrm{st} + \\mathrm{np} + \\mathrm{normpdf}(2)');
+    expect(prog.prelude).toContain('st_ = sp.Symbol("st")');
+    expect(prog.prelude).toContain('np_ = sp.Symbol("np")');
+    expect(prog.statements[0].code).toBe(
+      F('st_ + np_ + st.norm.pdf(2)'),
+    );
+    const ci = calc('\\text{mc_mean_ci} + \\mathrm{meanconf}([1,2,3])');
+    expect(ci.statements[0].code).toBe(
+      F('mc_mean_ci_ + mc_mean_ci([1, 2, 3], 0.95)'),
+    );
+  });
+
+  it('adds scipy imports once to the merged worksheet program', () => {
+    const out = compileWorksheet(
+      [
+        { json: parseCellLatex('\\mathrm{normpdf}(2)') },
+        { json: parseCellLatex('\\mathrm{meanconf}([1,2,3])') },
+      ],
+      'python',
+      { importAll: false },
+    );
+    const program = out.program.split('\n');
+    expect(
+      program.filter((l) => l === 'import scipy.stats as st'),
+    ).toHaveLength(1);
+    expect(program.filter((l) => l === 'import numpy as np')).toHaveLength(
+      1,
+    );
+    // Per-cell scripts stay self-contained.
+    expect(out.cellLines[1]).toEqual([
+      'import sympy as sp',
+      'import scipy.stats as st',
+      'import numpy as np',
+      expect.stringContaining('def mc_mean_ci'),
+      'mc_mean_ci([1, 2, 3], 0.95)',
+    ]);
   });
 });
 
