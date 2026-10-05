@@ -247,7 +247,9 @@ body {
 
 .expr-row math-field .mq-editable-field {
   min-height: 100%;
-  padding: 10px 12px;
+  /* The extra bottom padding permanently reserves the .caret-help
+     strip's height — the cell never resizes when hints fade in/out. */
+  padding: 10px 12px 30px;
   cursor: text;
   /* The host draws the box. MQ's own border shows as a stray line in the
      stretch margin when a tall output cell stretches this row. */
@@ -336,16 +338,30 @@ body {
   white-space: nowrap;
 }
 
-/* Context help strip under the focused cell — hints keyed off the
-   caret's position (inside/beside a matrix). In flow under the field
-   so it can't cover the issue list. */
+/* Context help strip pinned to the bottom of the field — hints keyed
+   off the caret's position (inside/beside a matrix). Its space is
+   always reserved in the editable field's bottom padding; only the
+   opacity animates so the cell never changes height. */
 .caret-help {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 20px;
   display: flex;
-  flex-wrap: wrap;
-  gap: 1px 14px;
+  align-items: center;
+  gap: 14px;
   padding: 0 12px;
   font-size: 12px;
   color: var(--muted);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.caret-help.on {
+  opacity: 1;
 }
 
 .caret-help-item {

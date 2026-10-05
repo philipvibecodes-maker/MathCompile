@@ -15,12 +15,12 @@ const isInputResidue = (el: Element | null | undefined): boolean =>
 
 const atomAfter = (el: Element): Element | null => {
   let sib = el.nextElementSibling;
-  while (isInputResidue(sib)) sib = sib.nextElementSibling;
+  while (sib && isInputResidue(sib)) sib = sib.nextElementSibling;
   return sib;
 };
 const atomBefore = (el: Element): Element | null => {
   let sib = el.previousElementSibling;
-  while (isInputResidue(sib)) sib = sib.previousElementSibling;
+  while (sib && isInputResidue(sib)) sib = sib.previousElementSibling;
   return sib;
 };
 
