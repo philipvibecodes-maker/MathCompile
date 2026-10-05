@@ -13,7 +13,11 @@ test('a stats call lazy-loads scipy and evaluates through the worker', async ({
   await page.addInitScript(() => {
     window.localStorage.setItem(
       'mathcompile-cells',
-      JSON.stringify([{ id: 1, latex: '\\mathrm{normcdf}(1.96)' }]),
+      JSON.stringify([
+        { id: 1, latex: '\\mathrm{normcdf}(1.96)' },
+        { id: 2, latex: '\\mathrm{ttestind}([1,2,3,4],[2,3,4,5])' },
+        { id: 3, latex: '\\mathrm{shapiro}([1,2,3,4,6])' },
+      ]),
     );
     window.localStorage.setItem(
       'mathcompile-prefs',
@@ -22,7 +26,9 @@ test('a stats call lazy-loads scipy and evaluates through the worker', async ({
   });
   await page.goto('/');
   await page.waitForSelector('math-field');
-  await expect(
-    page.locator('.calc-row .calc-math').first(),
-  ).toContainText('0.975', { timeout: 120_000 });
+  const rows = page.locator('.calc-row .calc-math');
+  await expect(rows.first()).toContainText('0.975', { timeout: 120_000 });
+  // Two-sample and normality tests land as (statistic, p-value) tuples.
+  await expect(rows.nth(1)).toContainText(',');
+  await expect(rows.nth(2)).toContainText(',');
 });

@@ -1239,5 +1239,113 @@ describe('scipy.stats builtins', () => {
       'mc_mean_ci([1, 2, 3], 0.95)',
     ]);
   });
+
+  it('emits two-sample tests with both data args list()-wrapped', () => {
+    const d = 'list([1, 2, 3])';
+    const d2 = 'list([2, 3, 4])';
+    expect(stmt('\\mathrm{ttestind}([1,2,3],[2,3,4])').code).toBe(
+      F(`st.ttest_ind(${d}, ${d2})`),
+    );
+    expect(stmt('\\mathrm{ttestrel}([1,2,3],[2,3,4])').code).toBe(
+      F(`st.ttest_rel(${d}, ${d2})`),
+    );
+    expect(stmt('\\mathrm{mannwhitneyu}([1,2,3],[2,3,4])').code).toBe(
+      F(`st.mannwhitneyu(${d}, ${d2})`),
+    );
+    expect(stmt('\\mathrm{wilcoxon}([1,2,3],[2,3,4])').code).toBe(
+      F(`st.wilcoxon(${d}, ${d2})`),
+    );
+    expect(stmt('\\mathrm{ks2samp}([1,2,3],[2,3,4])').code).toBe(
+      F(`st.ks_2samp(${d}, ${d2})`),
+    );
+    // Correlation tests take two equal-length samples too.
+    expect(stmt('\\mathrm{pearsonr}([1,2,3],[2,3,4])').code).toBe(
+      F(`st.pearsonr(${d}, ${d2})`),
+    );
+    expect(stmt('\\mathrm{spearmanr}([1,2,3],[2,3,4])').code).toBe(
+      F(`st.spearmanr(${d}, ${d2})`),
+    );
+    expect(stmt('\\mathrm{kendalltau}([1,2,3],[2,3,4])').code).toBe(
+      F(`st.kendalltau(${d}, ${d2})`),
+    );
+    expect(stmt('\\mathrm{ttestind}([1,2,3])').error).toContain(
+      '2 data lists',
+    );
+    expect(
+      stmt('\\mathrm{pearsonr}([1,2,3],[2,3,4],[5,6])').error,
+    ).toContain('2 data lists');
+  });
+
+  it('emits multi-sample tests with every arg list()-wrapped', () => {
+    expect(stmt('\\mathrm{levene}([1,2],[3,4],[5,6])').code).toBe(
+      F('st.levene(list([1, 2]), list([3, 4]), list([5, 6]))'),
+    );
+    // bartlett float-coerces its samples — scipy raises on int-typed
+    // data (its NaN-fill path can't write to an int array).
+    expect(stmt('\\mathrm{bartlett}([1,2],[3,4])').code).toBe(
+      F('st.bartlett(list(map(float, [1, 2])), list(map(float, [3, 4])))'),
+    );
+    expect(stmt('\\mathrm{fligner}([1,2],[3,4])').code).toBe(
+      F('st.fligner(list([1, 2]), list([3, 4]))'),
+    );
+    expect(stmt('\\mathrm{foneway}([1,2],[3,4])').code).toBe(
+      F('st.f_oneway(list([1, 2]), list([3, 4]))'),
+    );
+    // friedman compares ≥3 repeated samples.
+    expect(stmt('\\mathrm{friedman}([1,2],[3,4],[5,6])').code).toBe(
+      F('st.friedmanchisquare(list([1, 2]), list([3, 4]), list([5, 6]))'),
+    );
+    expect(stmt('\\mathrm{levene}([1,2])').error).toContain(
+      'at least 2 data lists',
+    );
+    expect(stmt('\\mathrm{friedman}([1,2],[3,4])').error).toContain(
+      'at least 3 data lists',
+    );
+  });
+
+  it('emits normality and goodness-of-fit tests', () => {
+    const d = 'list([1, 2, 3, 4])';
+    expect(stmt('\\mathrm{shapiro}([1,2,3,4])').code).toBe(
+      F(`st.shapiro(${d})`),
+    );
+    expect(stmt('\\mathrm{normaltest}([1,2,3,4])').code).toBe(
+      F(`st.normaltest(${d})`),
+    );
+    expect(stmt('\\mathrm{jarquebera}([1,2,3,4])').code).toBe(
+      F(`st.jarque_bera(${d})`),
+    );
+    expect(stmt('\\mathrm{skewtest}([1,2,3,4])').code).toBe(
+      F(`st.skewtest(${d})`),
+    );
+    expect(stmt('\\mathrm{kurtosistest}([1,2,3,4])').code).toBe(
+      F(`st.kurtosistest(${d})`),
+    );
+    // kstest/anderson take an optional scipy distribution name as a
+    // quoted string (default 'norm').
+    expect(stmt('\\mathrm{kstest}([1,2,3,4])').code).toBe(
+      F(`st.kstest(${d}, 'norm')`),
+    );
+    expect(stmt('\\mathrm{kstest}([1,2,3,4],\\mathrm{expon})').code).toBe(
+      F(`st.kstest(${d}, 'expon')`),
+    );
+    expect(stmt('\\mathrm{anderson}([1,2,3,4])').code).toBe(
+      F(`st.anderson(${d}, 'norm')`),
+    );
+    // chisquare's optional second arg is the expected-frequency list.
+    expect(stmt('\\mathrm{chisquare}([1,2,3])').code).toBe(
+      F('st.chisquare(list([1, 2, 3]))'),
+    );
+    expect(stmt('\\mathrm{chisquare}([1,2,3],[2,2,2])').code).toBe(
+      F('st.chisquare(list([1, 2, 3]), list([2, 2, 2]))'),
+    );
+    // binomtest takes scalar counts, not data lists.
+    expect(stmt('\\mathrm{binomtest}(3,10)').code).toBe(
+      F('st.binomtest(3, 10)'),
+    );
+    expect(stmt('\\mathrm{binomtest}(3,10,0.5)').code).toBe(
+      F('st.binomtest(3, 10, 0.5)'),
+    );
+    expect(stmt('\\mathrm{binomtest}(3)').error).toContain('k, n');
+  });
 });
 
