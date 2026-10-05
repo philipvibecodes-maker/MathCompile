@@ -47,7 +47,11 @@ test('typed \\cases opens a cases environment', async ({ page }) => {
   const mf = cell(page);
   await page.keyboard.type('\\cases');
   await page.keyboard.press('Enter');
-  await expect(mf.locator('.mq-matrix tr')).toHaveCount(2);
+  // Scope to the editable field: the autocomplete preview renders a
+  // real .mq-matrix inside a StaticMath root block too.
+  await expect(
+    mf.locator('.mq-editable-field .mq-matrix tr'),
+  ).toHaveCount(2);
   expect(await cellValue(mf)).toBe('\\begin{cases}&\\\\&\\end{cases}');
 });
 
@@ -80,6 +84,73 @@ test('Shift+Spacebar inside a matrix cell adds a column', async ({ page }) => {
   await page.keyboard.press('ArrowLeft'); // step into the last cell
   await page.keyboard.press('Shift+Space');
   await expect(mf.locator('.mq-matrix td')).toHaveCount(6);
+});
+
+test('a new line after a matrix keeps the matrix column spacing', async ({
+  page,
+}) => {
+  const mf = cell(page);
+  await setValue(mf, '\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}');
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('Enter');
+  expect(await cellValue(mf)).toBe(
+    '\\displaylines{\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}\\\\ }',
+  );
+  // Nested inside \displaylines, the matrix's own td padding and table
+  // border-spacing must not be overridden by the outer grid's styles.
+  const metrics = await mf.evaluate((el) => {
+    const table = el.querySelector<HTMLElement>(
+      '.mq-editable-field .mq-matrix > table',
+    );
+    const td = table?.querySelector<HTMLElement>(':scope > tr > td');
+    if (!table || !td) return null;
+    return {
+      spacing: getComputedStyle(table).borderSpacing,
+      padding: getComputedStyle(td).padding,
+    };
+  });
+  expect(metrics?.spacing).toBe('3px');
+  expect(metrics?.padding).not.toBe('1.84px 0px');
+});
+
+test('deleting the empty line below a matrix keeps the matrix rows', async ({
+  page,
+}) => {
+  const mf = cell(page);
+  await setValue(
+    mf,
+    '\\displaylines{\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}\\\\ }',
+  );
+  await page.keyboard.press('Control+End'); // into the empty second line
+  await page.keyboard.press('Backspace');
+  expect(await cellValue(mf)).toBe(
+    '\\displaylines{\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}',
+  );
+  // Both of the matrix's own <tr>s survive — the row index used to land
+  // on a nested <tr> and remove one.
+  await expect(
+    mf.locator('.mq-editable-field .mq-matrix > table > tr'),
+  ).toHaveCount(2);
+  await expect(
+    mf.locator('.mq-editable-field .mq-displaylines > table > tr'),
+  ).toHaveCount(1);
+});
+
+test('deleting the first line keeps the caret usable', async ({ page }) => {
+  const mf = cell(page);
+  await setValue(
+    mf,
+    '\\displaylines{ \\\\ \\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}',
+  );
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('Backspace');
+  expect(await cellValue(mf)).toBe(
+    '\\displaylines{\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}',
+  );
+  await page.keyboard.type('z');
+  expect(await cellValue(mf)).toBe(
+    '\\displaylines{z\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}',
+  );
 });
 
 test('arrows move between matrix cells without leaving the field', async ({
