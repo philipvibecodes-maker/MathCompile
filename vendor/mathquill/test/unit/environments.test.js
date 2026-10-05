@@ -188,7 +188,9 @@ suite('environments', function () {
 
     test('deleting an empty first column keeps the other cells rendered', function () {
       mq.latex('\\begin{matrix}&a\\\\&b\\end{matrix}');
-      mq.moveToLeftEnd(); // first cell (empty, col 0)
+      // moveToLeftEnd stops at the root edge, left of the matrix atom —
+      // one Right steps into the first cell (empty, col 0).
+      mq.moveToLeftEnd().keystroke('Right');
       mq.keystroke('Backspace');
       assert.equal(mq.latex(), '\\begin{matrix}a\\\\b\\end{matrix}');
       // the surviving column's <td>s must stay attached — the old code
