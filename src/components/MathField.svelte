@@ -3,6 +3,8 @@
   import { attachField } from '../editor/attach-field';
   import type { FieldHandle } from '../editor/attach-field';
   import type { MathFieldElement } from '../editor/math-field';
+  import { HELP_ENTRIES } from '../editor/context-help';
+  import type { HelpContext } from '../editor/context-help';
   import { appStore } from '../state/store.svelte';
   import type { Cell } from '../state/store.svelte';
 
@@ -15,6 +17,8 @@
   let mf: MathFieldElement;
   // $state so the value/smartMode effects re-run once attach lands.
   let handle = $state<FieldHandle | undefined>(undefined);
+  // Caret-position context for the hint strip under the field.
+  let help = $state<HelpContext | null>(null);
 
   onMount(() => {
     const id = cell.id;
@@ -24,6 +28,7 @@
       onMoveOut: (dir) => appStore.moveOut(id, dir),
       onDeleteOut: () => appStore.deleteFocused(),
       onFocus: () => appStore.noteFocus(id),
+      onCaretContext: (ctx) => (help = ctx),
     });
     handle = h;
     // Duplicated cells mount with content already in the store.
@@ -47,3 +52,10 @@
 </script>
 
 <math-field bind:this={mf} class:empty={cell.latex.trim() === ''}></math-field>
+{#if help}
+  <div class="caret-help">
+    {#each HELP_ENTRIES[help] as e (e.key)}
+      <span class="caret-help-item"><kbd>{e.key}</kbd> {e.does}</span>
+    {/each}
+  </div>
+{/if}
