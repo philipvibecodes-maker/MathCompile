@@ -695,6 +695,10 @@ class CellGrid extends MathCommand {
     cell: MatrixCell,
     ctrlr: Controller
   ) {
+    var cursor = ctrlr.cursor;
+    // The removal can detach nodes the selection still points at.
+    cursor.clearSelection();
+    cursor.endSelection();
     var cellToFocus = this[method](cell);
     if (!cellToFocus) return;
     this.finalizeTree();
@@ -702,7 +706,7 @@ class CellGrid extends MathCommand {
       node.reflow();
       return undefined;
     });
-    ctrlr.cursor.insAtRightEnd(cellToFocus);
+    cursor.insAtRightEnd(cellToFocus);
   }
 
   backspace(

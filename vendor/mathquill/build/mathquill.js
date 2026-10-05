@@ -13559,6 +13559,10 @@ var __assign = (this && this.__assign) || function () {
             ctrlr.cursor.insAtRightEnd(cellToFocus);
         };
         CellGrid.prototype.deleteRowOrColumn = function (method, cell, ctrlr) {
+            var cursor = ctrlr.cursor;
+            // The removal can detach nodes the selection still points at.
+            cursor.clearSelection();
+            cursor.endSelection();
             var cellToFocus = this[method](cell);
             if (!cellToFocus)
                 return;
@@ -13567,7 +13571,7 @@ var __assign = (this && this.__assign) || function () {
                 node.reflow();
                 return undefined;
             });
-            ctrlr.cursor.insAtRightEnd(cellToFocus);
+            cursor.insAtRightEnd(cellToFocus);
         };
         CellGrid.prototype.backspace = function (cell, dir, cursor, finalDeleteCallback) {
             var dirwards = cell[dir];

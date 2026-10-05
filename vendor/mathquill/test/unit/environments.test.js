@@ -280,6 +280,29 @@ suite('environments', function () {
       mq.keystroke('Ctrl-Shift-Del');
       assert.equal(mq.latex(), '');
     });
+
+    test('delete with a selected cell clears the stale selection', function () {
+      // The removal detaches nodes the selection still points at —
+      // it must be cleared so the next edit doesn't act on them.
+      mq.latex('\\begin{matrix}a&b\\\\x&y\\end{matrix}');
+      mq.moveToLeftEnd().keystroke('Right'); // cell a
+      mq.keystroke('Shift-Right'); // select a
+      assert.ok(mq.__controller.cursor.selection);
+      mq.keystroke('Ctrl-Shift-Backspace');
+      assert.equal(mq.latex(), '\\begin{matrix}x&y\\end{matrix}');
+      assert.ok(!mq.__controller.cursor.selection);
+      mq.typedText('z');
+      assert.equal(mq.latex(), '\\begin{matrix}xz&y\\end{matrix}');
+
+      mq.latex('\\begin{matrix}a&b\\\\c&d\\end{matrix}');
+      mq.moveToLeftEnd().keystroke('Right');
+      mq.keystroke('Shift-Right'); // select a again
+      mq.keystroke('Ctrl-Shift-Del');
+      assert.equal(mq.latex(), '\\begin{matrix}b\\\\d\\end{matrix}');
+      assert.ok(!mq.__controller.cursor.selection);
+      mq.typedText('z');
+      assert.equal(mq.latex(), '\\begin{matrix}bz\\\\d\\end{matrix}');
+    });
   });
 
   suite('env shortcuts', function () {
