@@ -106,11 +106,13 @@ derivations); **Shift+Enter** starts a whole new cell. While a
 `\command` input is still open, Enter accepts the command instead of
 breaking a line.
 
-### Matrices (linear algebra)
+### Linear algebra
 
 Environments open two ways: type `\name` directly (the shortcut) or
 `\begin{name}` the long way. In the table, each entry shows the
 shortcut and what a `a,b / c,d` grid renders as.
+
+#### Matrices
 
 | Type | Renders |
 | --- | --- |
@@ -127,6 +129,26 @@ column, and the arrow keys walk cell to cell. `&` separates columns
 and `\\` ends a row in the stored LaTeX. The bare forms
 `\pmatrix{a&b\\c&d}` and friends also work — one brace argument, no
 `\begin`.
+
+#### Matrix operations
+
+`det` is an upright name (works with or without Smart mode); the rest
+of the ops go through `\mathrm{name}` — the compiler reads upright
+names as functions, so these become real matrix methods in the
+Calculator and Python targets. A name that isn't built in, like
+`\rank`, types as plain `\text{rank}` — not an operator.
+
+| Operation | Type | Renders |
+| --- | --- | --- |
+| Determinant | `det` then the matrix | \(\det A\) |
+| Trace | `\mathrm{trace}` (or `\mathrm{tr}`) | \(\mathrm{trace}(A)\) |
+| Rank | `\mathrm{rank}` | \(\mathrm{rank}(A)\) |
+| Inverse | `A^{-1}` or `\mathrm{inverse}` | \(A^{-1}\) |
+| Transpose | `A^{\mathrm{T}}` or `\mathrm{transpose}` | \(A^{\mathrm{T}}\) |
+| Norm | `\lVert` (auto-pairs) | \(\lVert A \rVert\) |
+| Eigenvalues | `\mathrm{eigenvals}` | \(\mathrm{eigenvals}(A)\) |
+| Eigenvectors | `\mathrm{eigenvects}` | \(\mathrm{eigenvects}(A)\) |
+| Kernel / null space | `\ker` | \(\ker A\) |
 
 ### Multi-line equations
 
