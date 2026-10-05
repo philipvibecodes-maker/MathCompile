@@ -2976,9 +2976,12 @@ function assignDisplay(
   name: string,
   rhs: string,
   matrixRhs = false,
+  listRhs = false,
 ): string {
-  const uneval = matrixRhs ? ', evaluate=False' : '';
-  return `${sp}Eq(${sp}Symbol(${JSON.stringify(name)}), ${rhs}${uneval})`;
+  // A python-list RHS can't sympify as an Eq arg — show it as a Tuple.
+  const body = listRhs ? `${sp}Tuple(*${rhs})` : rhs;
+  const uneval = matrixRhs || listRhs ? ', evaluate=False' : '';
+  return `${sp}Eq(${sp}Symbol(${JSON.stringify(name)}), ${body}${uneval})`;
 }
 
 function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
@@ -3048,7 +3051,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     if (emitter.scope.errorCount > before) return { lines: [] };
     return {
       lines: [`${pyIdent(name)} = ${rhs}`],
-      display: assignDisplay(sp, name, rhs, matrixRhs || setRhs),
+      display: assignDisplay(sp, name, rhs, matrixRhs || setRhs, listRhs),
     };
   }
   // `\text{def} f(x)` — a declaration without a body: f binds an
