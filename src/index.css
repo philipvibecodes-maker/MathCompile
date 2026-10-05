@@ -377,6 +377,165 @@ body {
   color: var(--accent-text);
 }
 
+/* Notation chip bar — one slim row under the header. Its height is
+   fixed and always reserved; the add-form is an absolute overlay that
+   fades in, so nothing below ever shifts. */
+.notation-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-bg);
+  font-size: 12px;
+}
+.notation-label {
+  color: var(--faint);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.notation-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  flex: 1;
+}
+.notation-chip {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  white-space: nowrap;
+}
+.notation-chip.cell {
+  border-style: dashed;
+}
+.notation-insert {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+.notation-insert:hover {
+  color: var(--accent-text);
+}
+.notation-sig {
+  font-family: ui-monospace, monospace;
+  color: var(--accent-text);
+}
+.notation-arrow {
+  color: var(--faint);
+}
+.notation-body {
+  color: var(--text);
+}
+.notation-body .mq-editable-field,
+.notation-body .mq-static {
+  display: inline;
+}
+.notation-del {
+  border: 0;
+  border-left: 1px solid var(--border);
+  background: none;
+  color: var(--faint);
+  padding: 0 6px;
+  cursor: pointer;
+  font: inherit;
+}
+.notation-del:hover {
+  color: var(--text);
+}
+.notation-add {
+  border: 1px dashed var(--border);
+  border-radius: 5px;
+  background: none;
+  color: var(--faint);
+  padding: 3px 10px;
+  cursor: pointer;
+  font: inherit;
+}
+.notation-add:hover {
+  color: var(--accent-text);
+  border-color: var(--accent-text);
+}
+.notation-form {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 96px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px var(--shadow);
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0.15s ease, visibility 0.15s;
+}
+.notation-form.open {
+  visibility: visible;
+  opacity: 1;
+}
+.notation-form input {
+  font: inherit;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+}
+.notation-form input:focus {
+  outline: none;
+  border-color: var(--accent-text);
+}
+.notation-name {
+  width: 90px;
+}
+.notation-body {
+  width: 150px;
+}
+.notation-eq {
+  color: var(--faint);
+}
+.notation-save {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  padding: 3px 10px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.notation-save:hover {
+  border-color: var(--accent-text);
+  color: var(--accent-text);
+}
+.notation-error {
+  color: #c04545;
+  font-size: 11px;
+}
+.notation-form-prev {
+  min-width: 24px;
+  color: var(--text);
+}
+
 /* User-defined notation (`\vv{u}` renders `vv(u)`) — the name stays
    upright with a dotted underline so a macro reads as a defined thing,
    not an ordinary symbol run. */

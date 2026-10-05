@@ -8,6 +8,7 @@
   import type { TargetId } from './compile/targets';
   import CommandPalette from './components/CommandPalette.svelte';
   import HowToGuide from './components/HowToGuide.svelte';
+  import NotationBar from './components/NotationBar.svelte';
   import { appStore, THEME_STORAGE_KEY } from './state/store.svelte';
   import { savePrefs } from './state/persistence';
   import { copyableLatex, displayLatex } from './compile/latex';
@@ -249,6 +250,7 @@
       <kbd>{isMac ? '⌘' : 'Ctrl'} K</kbd>
     </button>
   </header>
+  <NotationBar />
   <div class="main">
     <section class="expr-panel" style:--output-w={`${outputPct}%`}>
       <div class="col-headers">

@@ -28,6 +28,9 @@ export interface FieldHandle {
   setValue: (latex: string) => void;
   // Smart mode = MQ autoCommands + autoSubscriptNumerals.
   setSmartMode: (v: boolean) => void;
+  // Insert a `\`-command (e.g. '\\vv') at the caret — the panel's
+  // chip-click path. Same as typing the command and accepting it.
+  insertCommand: (latex: string) => void;
   // Per-line anchors of the rendered \\displaylines, in field-relative
   // px — the index is the \\-row index (statement order). `top`/`height`
   // frame the line; `right` is the line's content end, where an inline
@@ -128,6 +131,7 @@ export function attachField(
         autoCommands: v ? SMART_AUTO_COMMANDS : '',
         autoSubscriptNumerals: v,
       }),
+    insertCommand: (latex) => el.mq?.cmd(latex),
     lineAnchors: () => {
       const fieldRect = el.getBoundingClientRect();
       const toAnchor = (r: DOMRect) => ({

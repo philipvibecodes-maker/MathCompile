@@ -140,6 +140,20 @@ export function listMacros(): MacroDef[] {
   return [...cellMacros, ...userMacros];
 }
 
+export interface ListedMacro extends MacroDef {
+  /** 'cell' defs live in a `\text{notation}`/newcommand statement — edit
+   *  or delete them in the cell, not here. */
+  source: 'cell' | 'user';
+}
+
+export function listAll(): ListedMacro[] {
+  restore();
+  return [
+    ...cellMacros.map((m) => ({ ...m, source: 'cell' as const })),
+    ...userMacros.map((m) => ({ ...m, source: 'user' as const })),
+  ];
+}
+
 export function getMacro(name: string): MacroDef | undefined {
   restore();
   return (
