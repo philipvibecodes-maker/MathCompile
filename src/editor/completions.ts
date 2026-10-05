@@ -1,3 +1,5 @@
+import { listMacros } from '../notation/macros.svelte';
+
 // Curated autocomplete candidates for the math field. Every `name` is a
 // real LatexCmds entry in the vendored MathQuill build — inserting
 // `\${name}` via mq.cmd() or the latex command input always resolves.
@@ -200,12 +202,21 @@ export const COMPLETIONS: CompletionItem[] = [
 
 // Prefix match in catalog order — the list itself is the ranking (most
 // common commands first), so 'i' leads with int, not the shortest name.
+// User-defined notation entries come first — a name the user defined is
+// always what they mean.
 export function matchCompletions(
   prefix: string,
   limit = 8,
 ): CompletionItem[] {
   const p = prefix.toLowerCase();
-  return COMPLETIONS.filter((c) =>
-    c.name.toLowerCase().startsWith(p),
-  ).slice(0, limit);
+  const mine: CompletionItem[] = listMacros()
+    .filter((m) => m.name.toLowerCase().startsWith(p))
+    .map((m) => ({ name: m.name, hint: 'your notation', preview: m.body }));
+  const seen = new Set(mine.map((m) => m.name));
+  return [
+    ...mine,
+    ...COMPLETIONS.filter(
+      (c) => !seen.has(c.name) && c.name.toLowerCase().startsWith(p),
+    ),
+  ].slice(0, limit);
 }

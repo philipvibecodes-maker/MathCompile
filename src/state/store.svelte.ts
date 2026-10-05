@@ -1,6 +1,6 @@
 import type { FieldHandle } from '../editor/attach-field';
 import type { TargetId } from '../compile/targets';
-import { parseCellLatex, type MathJson } from '../compile/ir';
+import { parseCellLatex, syncCellMacros, type MathJson } from '../compile/ir';
 import {
   installFlushOnHide,
   loadCells,
@@ -33,6 +33,9 @@ function initCells(): Cell[] {
   const saved = loadCells();
   if (!saved) return [createCell(SEED_LATEX)];
   nextId = saved.maxId + 1;
+  // Notation defs hydrate before any cell parses so a restored macro
+  // expands in the cells that use it.
+  syncCellMacros(saved.cells.map((c) => c.latex));
   // Persisted cells carry no json — recompute it on hydrate.
   return saved.cells.map((c) => ({ ...c, json: parseCellLatex(c.latex) }));
 }
@@ -85,8 +88,12 @@ export class AppStore {
   }
 
   // Debounced snapshot of the worksheet; persistence.ts coalesces the
-  // writes so the keystroke path never touches setItem directly.
+  // writes so the keystroke path never touches setItem directly. Cell
+  // macros (`\text{notation}`/newcommand statements) resync here too —
+  // the one funnel every mutation goes through — so a deleted def
+  // unregisters and a new one applies to this parse on the same edit.
   private persist() {
+    syncCellMacros(this.cells.map((c) => c.latex));
     persistCells(this.cells);
   }
 
@@ -122,6 +129,9 @@ export class AppStore {
     // object would remount the field and lose the caret every keystroke.
     if (c) {
       c.latex = latex;
+      // Sync before re-parsing: a notation defined in this very edit
+      // expands in later statements of the same cell.
+      syncCellMacros(this.cells.map((x) => x.latex));
       c.json = parseCellLatex(latex);
       this.persist();
     }

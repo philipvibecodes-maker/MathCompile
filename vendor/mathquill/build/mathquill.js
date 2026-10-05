@@ -12921,6 +12921,82 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.def = function () {
         return new DefAlias('\\text{def}', h('span', { class: 'mq-text-mode' }, [h.text('def')]), 'def', 'def');
     };
+    //======================================================================
+    //  User notation \u2014 runtime-registered \name{arg}\u2026 macros
+    //======================================================================
+    // The app defines a macro (name + arity); LatexCommandInput and the
+    // latex parser then resolve `\name` like any builtin. A usage renders
+    // the macro's name followed by its argument blocks in parens \u2014 `\vv{u}`
+    // shows as `vv(u)` \u2014 while the app expands the call to the macro's body
+    // latex at compile time, so the field keeps the shorthand visible and
+    // the compiler sees the meaning. `.mq-usermacro-name` styling lives in
+    // the app's index.css.
+    var UserMacro = /** @class */ (function (_super) {
+        __extends(UserMacro, _super);
+        function UserMacro(name, arity) {
+            var _this_1 = _super.call(this) || this;
+            // Zero-arity serializes with a trailing space \u2014 `\halfx` would
+            // read back as a different command name.
+            _this_1.ctrlSeq = arity === 0 ? '\\' + name + ' ' : '\\' + name;
+            _this_1.domView = new DOMView(arity, function (blocks) {
+                var kids = [
+                    h('var', { class: 'mq-usermacro-name' }, [
+                        h.text(name),
+                    ]),
+                ];
+                if (arity > 0) {
+                    kids.push(h.text('('));
+                    blocks.forEach(function (b, i) {
+                        if (i > 0)
+                            kids.push(h.text(','));
+                        kids.push(h.block('span', { class: 'mq-usermacro-arg' }, b));
+                    });
+                    kids.push(h.text(')'));
+                }
+                return h('span', { class: 'mq-usermacro' }, kids);
+            });
+            _this_1.textTemplate = arity === 0 ? [name] : [name + '('].concat(Array(arity - 1)
+                .fill(',')
+                .concat(')'));
+            return _this_1;
+        }
+        return UserMacro;
+    }(MathCommand));
+    var userMacroNames = new Set();
+    var mcWindow = window;
+    // App-side registration (restored macros, live definitions). Builtins
+    // always win \u2014 a builtin name can't be taken over.
+    mcWindow.__mcUserMacro = function (name, arity) {
+        if (LatexCmds[name] && !userMacroNames.has(name))
+            return false;
+        userMacroNames.add(name);
+        LatexCmds[name] = function () { return new UserMacro(name, arity); };
+        return true;
+    };
+    mcWindow.__mcUserMacroRemove = function (name) {
+        if (!userMacroNames.delete(name))
+            return;
+        delete LatexCmds[name];
+    };
+    //======================================================================
+    //  \notation \u2014 insertion alias for \text{notation}
+    //======================================================================
+    // Same shape as \def: typing `\notation` inserts a `\text{notation} `
+    // marker the compiler reads as a user-macro definition statement
+    // (`vv(x) := \mathbf{x}` after it registers `\vv`).
+    var NotationAlias = /** @class */ (function (_super) {
+        __extends(NotationAlias, _super);
+        function NotationAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        NotationAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{notation}\\ ');
+        };
+        return NotationAlias;
+    }(MQSymbol));
+    LatexCmds.notation = function () {
+        return new NotationAlias('\\text{notation}', h('span', { class: 'mq-text-mode' }, [h.text('notation')]), 'notation', 'notation');
+    };
     /*************************************************
      * LaTeX environments: \begin{matrix} family and
      * \displaylines{...}, plus insertion-time \derivative.

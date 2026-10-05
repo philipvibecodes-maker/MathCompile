@@ -377,6 +377,18 @@ body {
   color: var(--accent-text);
 }
 
+/* User-defined notation (`\vv{u}` renders `vv(u)`) — the name stays
+   upright with a dotted underline so a macro reads as a defined thing,
+   not an ordinary symbol run. */
+.mq-usermacro-name {
+  font-style: normal;
+  font-family: inherit;
+  border-bottom: 1px dotted var(--accent-text);
+}
+.mq-usermacro-arg {
+  /* keep args visually plain — same sizing as a normal group */
+}
+
 /* On-demand symbol picker (Ctrl+Space), anchored under the caret. */
 .mc-pick {
   position: absolute;

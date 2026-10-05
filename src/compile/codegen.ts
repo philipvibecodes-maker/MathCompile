@@ -2755,6 +2755,15 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
   const sp = emitter.scope.qualified ? 'sp.' : '';
   if (!isArr(node)) return emitExprStatement(node, emitter);
   const h = headOf(node);
+  // A `\text{notation}`/`\newcommand` definition — the macro is already
+  // registered; the statement emits nothing, only a note confirming it.
+  if (h === 'Notation') {
+    emitter.scope.flag(
+      'note',
+      `\\${isStr(node[1]) ? node[1] : '?'} → ${isStr(node[2]) ? node[2] : ''}`,
+    );
+    return { lines: [] };
+  }
   if (h === 'Assign') {
     // RHS emits first so `x = x + 1` collects x as a symbol; the Assign
     // then marks `x` bound for later statements/cells.

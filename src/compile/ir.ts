@@ -19,6 +19,11 @@
 
 import { ComputeEngine } from '@cortex-js/compute-engine';
 import { outputLatex } from './latex';
+import {
+  expandLatex,
+  parseNotationDef,
+  setCellMacros,
+} from '../notation/macros.svelte';
 
 // MathJSON is untyped JSON: head arrays, bare symbol strings, numbers, and
 // occasional `{num: "..."}` / `{str: "..."}` wrappers.
@@ -254,6 +259,20 @@ const intervalBind = (s: string, j: MathJson): MathJson => {
   return [head(j), j[1], ['Interval', lo, hi]] as MathJson;
 };
 
+// Rescan the worksheet's notation-defining statements
+// (`\text{notation}`/`\newcommand`) into the cell-macro table — the
+// store calls this on every cell mutation so a deleted definition stops
+// expanding and unregisters its `\name` command.
+export function syncCellMacros(latexList: string[]): void {
+  const defs = [];
+  for (const l of latexList)
+    for (const s of latexToStatementStrings(l)) {
+      const d = parseNotationDef(s);
+      if (d) defs.push(d);
+    }
+  setCellMacros(defs);
+}
+
 // Parse a cell's LaTeX into raw MathJSON. Multiple statements become a
 // `["Block", ...]` node so downstream code sees one tree per cell. Parse
 // failures degrade to an Error node — the pipeline reports, never throws.
@@ -261,6 +280,11 @@ export function parseCellLatex(latex: string): MathJson | undefined {
   const statements = latexToStatementStrings(latex);
   if (statements.length === 0) return undefined;
   const parsed = statements.map((s) => {
+    // A notation definition registers its macro and emits a marker node
+    // instead of an expression — codegen skips it with a note.
+    const def = parseNotationDef(s);
+    if (def) return ['Notation', def.name, def.body] as MathJson;
+    const ex = expandLatex(s);
     let j: MathJson;
     try {
       // `form: 'raw'` skips CE canonicalization so the user's term order
@@ -268,11 +292,11 @@ export function parseCellLatex(latex: string): MathJson | undefined {
       // \antid/\iint (MathQuill's boundless insertion aliases for \int)
       // already read as \int here — outputLatex canonicalizes them in
       // latexToStatementStrings, so CE sees an ordinary Integrate node.
-      j = ce().parse(s, { form: 'raw' }).json as MathJson;
+      j = ce().parse(ex, { form: 'raw' }).json as MathJson;
     } catch {
       return ['Error', `'parse-failed'`] as MathJson;
     }
-    return intervalBind(s, TEXT_FOR.test(s) ? forToComprehension(j) : j);
+    return intervalBind(ex, TEXT_FOR.test(ex) ? forToComprehension(j) : j);
   });
   // A single statement can itself parse to a Block (`x² \text{ where }
   // x>0` — CE parks the condition first). Tag those so real `\\` rows
@@ -325,6 +349,8 @@ const KNOWN_HEADS = new Set([
   'Difference',
   // statement-level IR
   'Assign', 'Def', 'Declare', 'Block', 'WhereBlock', 'Function',
+  // user-notation definition — codegen skips it with a note
+  'Notation',
   // structural helpers
   'Limits', 'Tuple', 'List', 'Subscript', 'Delimiters', 'Error',
   // 'Set' reaches codegen directly (FiniteSet / ConditionSet / ImageSet

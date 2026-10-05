@@ -1234,3 +1234,81 @@ LatexCmds.def = () =>
     'def',
     'def'
   );
+
+//======================================================================
+//  User notation — runtime-registered \name{arg}… macros
+//======================================================================
+
+// The app defines a macro (name + arity); LatexCommandInput and the
+// latex parser then resolve `\name` like any builtin. A usage renders
+// the macro's name followed by its argument blocks in parens — `\vv{u}`
+// shows as `vv(u)` — while the app expands the call to the macro's body
+// latex at compile time, so the field keeps the shorthand visible and
+// the compiler sees the meaning. `.mq-usermacro-name` styling lives in
+// the app's index.css.
+class UserMacro extends MathCommand {
+  constructor(name: string, arity: number) {
+    super();
+    // Zero-arity serializes with a trailing space — `\halfx` would
+    // read back as a different command name.
+    this.ctrlSeq = arity === 0 ? '\\' + name + ' ' : '\\' + name;
+    this.domView = new DOMView(arity, (blocks) => {
+      const kids: ChildNode[] = [
+        h('var', { class: 'mq-usermacro-name' }, [
+          h.text(name),
+        ]) as HTMLElement,
+      ];
+      if (arity > 0) {
+        kids.push(h.text('('));
+        blocks.forEach((b, i) => {
+          if (i > 0) kids.push(h.text(','));
+          kids.push(h.block('span', { class: 'mq-usermacro-arg' }, b));
+        });
+        kids.push(h.text(')'));
+      }
+      return h('span', { class: 'mq-usermacro' }, kids) as HTMLElement;
+    });
+    this.textTemplate = arity === 0 ? [name] : [name + '('].concat(
+      Array(arity - 1)
+        .fill(',')
+        .concat(')')
+    );
+  }
+}
+const userMacroNames = new Set<string>();
+const mcWindow = window as unknown as {
+  __mcUserMacro?: (name: string, arity: number) => boolean;
+  __mcUserMacroRemove?: (name: string) => void;
+};
+// App-side registration (restored macros, live definitions). Builtins
+// always win — a builtin name can't be taken over.
+mcWindow.__mcUserMacro = (name, arity) => {
+  if (LatexCmds[name] && !userMacroNames.has(name)) return false;
+  userMacroNames.add(name);
+  LatexCmds[name] = () => new UserMacro(name, arity);
+  return true;
+};
+mcWindow.__mcUserMacroRemove = (name) => {
+  if (!userMacroNames.delete(name)) return;
+  delete LatexCmds[name];
+};
+
+//======================================================================
+//  \notation — insertion alias for \text{notation}
+//======================================================================
+
+// Same shape as \def: typing `\notation` inserts a `\text{notation} `
+// marker the compiler reads as a user-macro definition statement
+// (`vv(x) := \mathbf{x}` after it registers `\vv`).
+class NotationAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{notation}\\ ');
+  }
+}
+LatexCmds.notation = () =>
+  new NotationAlias(
+    '\\text{notation}',
+    h('span', { class: 'mq-text-mode' }, [h.text('notation')]) as HTMLElement,
+    'notation',
+    'notation'
+  );
