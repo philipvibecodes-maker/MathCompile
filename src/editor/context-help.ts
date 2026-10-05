@@ -56,10 +56,7 @@ export const HELP_ENTRIES: Record<HelpContext, { key: string; does: string }[]> 
     'inside-matrix': [
       { key: 'Enter', does: 'add a row below' },
       { key: 'Shift+Space', does: 'add a column right' },
-      {
-        key: 'Backspace',
-        does: 'on an empty cell deletes it — its row/column too when empty',
-      },
+      { key: 'Backspace', does: 'on an empty cell deletes it (+row/col)' },
     ],
     'left-of-matrix': [
       { key: 'det', does: 'determinant' },

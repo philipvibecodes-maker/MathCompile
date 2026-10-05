@@ -366,6 +366,9 @@ body {
 
 .caret-help-item {
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .caret-help kbd {
