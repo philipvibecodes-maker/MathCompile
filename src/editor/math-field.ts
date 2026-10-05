@@ -2,6 +2,16 @@ import { mq3, type MQ, type MQConfig } from './mathquill';
 
 export type MoveDirection = 'upward' | 'downward' | 'forward' | 'backward';
 
+// True when a DOM event originated in MathQuill's hidden textarea —
+// overlay inputs appended to the field (the symbol picker's search box)
+// also live inside the host, and their keystrokes must not be treated
+// as math typing by field-level keydown handlers.
+export function isMqKeyTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement && target.closest('.mq-textarea') !== null
+  );
+}
+
 export interface MoveOutDetail {
   direction: MoveDirection;
   /** true when the out-of-field move came from a selection extension. */
@@ -122,6 +132,7 @@ export class MathFieldElement extends HTMLElement {
     this.addEventListener(
       'keydown',
       (e) => {
+        if (!isMqKeyTarget(e.target)) return;
         if (
           e.key === 'Enter' &&
           e.shiftKey &&

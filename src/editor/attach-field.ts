@@ -1,7 +1,10 @@
-import type {
-  MathFieldElement,
-  MoveOutDetail,
+import {
+  isMqKeyTarget,
+  type MathFieldElement,
+  type MoveOutDetail,
 } from './math-field';
+import { attachAutocompleteMenu } from './ac-menu';
+import { attachSymbolPicker } from './ac-picker';
 
 export interface FieldCallbacks {
   onChange: (latex: string) => void;
@@ -59,6 +62,7 @@ export function attachField(
   // Backspace/Delete on a blank cell deletes the cell — intercept before
   // MQ's hidden textarea so MQ never munges the keypress.
   const handleKeydown = (e: KeyboardEvent) => {
+    if (!isMqKeyTarget(e.target)) return;
     if (
       (e.key === 'Backspace' || e.key === 'Delete') &&
       !e.ctrlKey &&
@@ -76,6 +80,9 @@ export function attachField(
   el.addEventListener('move-out', handleMoveOut);
   el.addEventListener('new-cell', handleNewCell);
   el.addEventListener('keydown', handleKeydown, true);
+
+  const detachAutocomplete = attachAutocompleteMenu(el);
+  const detachPicker = attachSymbolPicker(el);
 
   return {
     focus: (edge) => el.focus({ edge }),
@@ -124,6 +131,8 @@ export function attachField(
       el.removeEventListener('move-out', handleMoveOut);
       el.removeEventListener('new-cell', handleNewCell);
       el.removeEventListener('keydown', handleKeydown, true);
+      detachAutocomplete();
+      detachPicker();
     },
   };
 }

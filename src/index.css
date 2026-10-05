@@ -223,6 +223,8 @@ body {
   flex: 1;
   min-width: 0;
   display: block;
+  /* Offset parent for the autocomplete dropdown and symbol picker. */
+  position: relative;
   font-size: 18px;
   background: var(--panel-bg);
   border: 1px solid var(--border);
@@ -280,6 +282,126 @@ body {
   font-size: 15px;
   color: var(--faint);
   pointer-events: none;
+}
+
+/* Autocomplete dropdown anchored under the caret/command input. */
+.mc-ac {
+  position: absolute;
+  z-index: 30;
+  min-width: 180px;
+  max-width: 320px;
+  max-height: 15em;
+  overflow-y: auto;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px var(--shadow);
+  font-size: 13px;
+  padding: 3px;
+}
+
+.mc-ac-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.mc-ac-item.sel {
+  background: var(--selected-bg);
+}
+
+.mc-ac-name {
+  font-family: ui-monospace, monospace;
+  color: var(--accent-text);
+  min-width: 72px;
+}
+
+.mc-ac-name::before {
+  content: '\\';
+}
+
+.mc-ac-prev {
+  flex: 0 0 auto;
+  color: var(--text);
+}
+
+.mc-ac-hint {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* On-demand symbol picker (Ctrl+Space), anchored under the caret. */
+.mc-pick {
+  position: absolute;
+  z-index: 30;
+  width: 340px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 22px var(--shadow);
+  padding: 6px;
+}
+
+.mc-pick-q {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  margin-bottom: 6px;
+  outline: none;
+}
+
+.mc-pick-q:focus {
+  border-color: var(--accent);
+}
+
+.mc-pick-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.mc-pick-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 5px 2px 3px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.mc-pick-card.sel,
+.mc-pick-card:hover {
+  background: var(--selected-bg);
+}
+
+.mc-pick-prev {
+  font-size: 15px;
+  min-height: 1.3em;
+}
+
+.mc-pick-name {
+  font-size: 10px;
+  color: var(--muted);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Calculator-style LaTeX output beside each cell (target = latex). */

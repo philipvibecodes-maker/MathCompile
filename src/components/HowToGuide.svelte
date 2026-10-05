@@ -14,6 +14,7 @@
     { goal: 'Matrix', how: '\\pmatrix ⏎ — Enter adds a row or Shift+Space a column' },
     { goal: 'Greek letters', smart: 'pi or theta or infty', plain: '\\alpha … \\omega ⏎' },
     { goal: 'New line', how: 'Enter or Shift+Enter for a new cell' },
+    { goal: 'Autocomplete', how: 'type \\… or a word — Ctrl+Space for the symbol picker' },
     { goal: 'Text', how: '\\text ⏎' },
   ];
 </script>
