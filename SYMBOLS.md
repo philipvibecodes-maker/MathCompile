@@ -182,6 +182,32 @@ operator — its `_{x\to a}` bound types and renders *below* the "lim"
 text (like `\sum`), not as a side subscript, and typed `/` after it
 stops the numerator at the limit atom.
 
+## Statistics
+
+`\text{<name>}(…)` (also `\mathrm`/`\operatorname`) lowers to the
+stdlib `statistics` module:
+
+```
+mean fmean geometric_mean harmonic_mean median median_low median_high
+median_grouped mode multimode quantiles stdev pstdev variance pvariance
+covariance correlation linear_regression
+```
+
+Data can be variadic (`\text{mean}(1, 2, 3)`), a list
+(`\text{mean}([1,2,3])`), a set (`\text{median}(\{1,2,3\})`), or a name
+bound to one (`L = [1,2,3]` then `\text{mean}(L)`; `\{…\}`-bound names
+emit `map(float, S)`). `\text{correlation}(X,Y)`, `covariance`, and
+`linear_regression` take two datasets; `\text{quantiles}(L, k)` sets
+`n=k`. Exact rationals stay exact (Fraction); `\pi`/`\sqrt{2}` coerce
+through `float()`.
+
+Only `mode`/`multimode` accept symbolic data — the numeric functions
+flag a compile error (`statistics.* is numeric — symbolic data raises
+TypeError`). Sample functions (`stdev`, `variance`, `quantiles`, and
+the paired ones) flag when given fewer than 2 points. A 2-element
+`L = [a,b]` binds an interval, not data — it flags "isn't enumerable";
+write `[a,b,…]` (3+) or `\{a,b\}`.
+
 ## Function definitions
 
 `f(x)` reads as `f * x` — parentheses are a factor, not a call or a

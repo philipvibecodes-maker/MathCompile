@@ -1339,6 +1339,123 @@ const FIXTURES: {
       'sp.Lambda(sp.Symbol("x"), f(g(sp.Symbol("x"))))',
     ],
   },
+  {
+    // `\text{mean}`/`\text{median}`/… lower to the stdlib statistics
+    // module; variadic args become one data list.
+    latex: '\\text{mean}(1, 2, 3)',
+    expectedPython: ['import statistics', 'statistics.mean([1, 2, 3])'],
+  },
+  {
+    latex: '\\text{median}(\\{1,2,3,4\\})',
+    expectedPython: ['import statistics', 'statistics.median([1, 2, 3, 4])'],
+  },
+  {
+    // Rational data literals emit as Fraction so the module's own
+    // exact-ratio arithmetic stays exact.
+    latex: '\\text{mean}\\left(\\frac{1}{2}, \\frac{1}{3}\\right)',
+    expectedPython: [
+      'import statistics',
+      'from fractions import Fraction',
+      'statistics.mean([Fraction(1, 2), Fraction(1, 3)])',
+    ],
+  },
+  {
+    // A name bound to a list passes through bare; a finite sympy set
+    // iterates via map(float, …) — singleton members (S.Half, S.One)
+    // break the module's ratio coercion on plain Float/singletons.
+    latex: '\\displaylines{L = [1,2,3] \\\\ \\text{mean}(L) \\\\ \\text{stdev}(L)}',
+    expectedPython: [
+      'import statistics',
+      'L = [1, 2, 3]',
+      'statistics.mean(L)',
+      'statistics.stdev(L)',
+    ],
+  },
+  {
+    latex: '\\displaylines{S = \\{1,2,3\\} \\\\ \\text{median}(S)}',
+    expectedPython: [
+      'import statistics',
+      'S = sp.FiniteSet(1, 2, 3)',
+      'statistics.median(map(float, S))',
+    ],
+  },
+  {
+    // mode/multimode count by hash — symbolic data still works.
+    latex: '\\text{mode}(x,y,y)',
+    expectedPython: [
+      'import statistics',
+      "x, y = sp.symbols('x y')",
+      'statistics.mode([x, y, y])',
+    ],
+  },
+  {
+    // \operatorname- and \mathrm-cased spellings route the same.
+    latex: '\\operatorname{median}(1,2,3)',
+    expectedPython: ['import statistics', 'statistics.median([1, 2, 3])'],
+  },
+  {
+    latex: '\\mathrm{mean}(1,2,3)',
+    expectedPython: ['import statistics', 'statistics.mean([1, 2, 3])'],
+  },
+  {
+    latex: '\\text{correlation}([1,2,3],[4,5,6])',
+    expectedPython: [
+      'import statistics',
+      'statistics.correlation([1, 2, 3], [4, 5, 6])',
+    ],
+  },
+  {
+    // quantiles' cut count is a keyword-only arg — a second operand
+    // becomes n=.
+    latex: '\\text{quantiles}([1,2,3,4], 10)',
+    expectedPython: [
+      'import statistics',
+      'statistics.quantiles([1, 2, 3, 4], n=10)',
+    ],
+  },
+  {
+    // Closed sympy values coerce through float() — \pi / \sqrt{2}
+    // can't reach the module's ratio arithmetic.
+    latex: '\\text{mean}(\\sqrt{2}, 1, \\pi)',
+    expectedPython: [
+      'import statistics',
+      'statistics.mean([float(sp.sqrt(2)), 1, float(sp.pi)])',
+    ],
+  },
+  {
+    // Single-arg Mean stays the \bar/conjugate head — the statistics
+    // reroute only fires on multi-arg operatorname calls.
+    latex: '\\overline{x}',
+    expectedPython: ['x = sp.Symbol("x")', 'sp.conjugate(x)'],
+  },
+  {
+    // Symbolic data flags at compile time — mean/median raise TypeError
+    // at eval on unbound symbols.
+    latex: '\\displaylines{L = [x,y,z] \\\\ \\text{mean}(L)}',
+    expectedPython: [
+      'import statistics',
+      "x, y, z = sp.symbols('x y z')",
+      'L = [x, y, z]',
+    ],
+    issues: ['statistics.mean is numeric — symbolic data'],
+  },
+  {
+    // A 2-element bracket list binds an Interval — not enumerable data.
+    latex: '\\displaylines{I = [0,1] \\\\ \\text{mean}(I)}',
+    expectedPython: ['import statistics', 'I = sp.Interval(0, 1)'],
+    issues: ["statistics.mean needs finite data — I isn't enumerable"],
+  },
+  {
+    // Sample statistics need ≥2 points — provable at compile time.
+    latex: '\\text{stdev}([1])',
+    expectedPython: ['import statistics'],
+    issues: ['statistics.stdev needs at least 2 data points'],
+  },
+  {
+    latex: '\\text{mean}(5)',
+    expectedPython: ['import statistics'],
+    issues: ['statistics.mean needs a data list'],
+  },
 ];
 
 describe('worksheet matrix tracking', () => {

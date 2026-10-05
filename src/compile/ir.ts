@@ -730,6 +730,21 @@ const CALL_RENAMED = new Set([
   ).split(' '),
 ]);
 
+// The stdlib statistics names codegen lowers to `statistics.*` calls —
+// `\text{mean}(…)` arrives quoted ('mean'), `\operatorname{median}(…)`
+// capitalized (Median). Neither spelling is an unknown head.
+const STATS_CALL_NAMES = new Set(
+  (
+    'mean fmean geometric_mean harmonic_mean median median_low ' +
+    'median_high median_grouped mode multimode quantiles stdev pstdev ' +
+    'variance pvariance covariance correlation linear_regression'
+  ).split(' '),
+);
+const statsCallName = (h: string): boolean => {
+  const unquoted = TEXT_LITERAL.exec(h)?.[1] ?? h;
+  return STATS_CALL_NAMES.has(unquoted.toLowerCase());
+};
+
 // CE constant names — `i` beside one of these (or a number) is the
 // imaginary unit, not a symbol (`e^{i\pi}`, `\pi i`); `xi` stays a symbol.
 const CE_CONSTANTS = new Set([
@@ -1211,6 +1226,26 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
     if (h === 'UnderBrace' || h === 'OverBrace' || h === 'Annotated') {
       return normalize(node[1], false);
     }
+
+    // `\operatorname{mean}(…)`/`\mathrm{mean}` mints the same 'Mean'
+    // head as \bar — but a multi-arg Mean can't be an accent, and a
+    // list/set operand can't either (`\overline{[1,2,3]}` would mangle
+    // to a `?_bar` symbol). Reroute those to the statistics call; a
+    // single bare name stays \bar.
+    if (
+      h === 'Mean' &&
+      (node.length > 2 ||
+        (node.length === 2 &&
+          isArray(node[1]) &&
+          (node[1][0] === 'List' ||
+            node[1][0] === 'Set' ||
+            node[1][0] === 'Tuple')))
+    )
+      return [
+        'call',
+        "'mean'",
+        ...node.slice(1).map((n) => normalize(n, false)),
+      ];
 
     // Accent marks that denote distinct variables — \hat{x}, \vec{v},
     // \bar{z} (CE 'Mean'), \tilde{t} ('OverTilde') — become suffixed
@@ -1746,7 +1781,7 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       // about a stub that never reaches the output. A worksheet-declared
       // name isn't unknown either — `f(3)` after `f(x) = …` calls the
       // def the cell already made.
-      if (!CALL_RENAMED.has(h) && !declaredFns.has(h))
+      if (!CALL_RENAMED.has(h) && !declaredFns.has(h) && !statsCallName(h))
         pushIssue('note', `unknown head "${h}" — emitted as ${h}(...)`);
       return ['call', h, ...node.slice(1).map((n) => normalize(n, false))];
     }

@@ -207,6 +207,37 @@ const SP_FUNC_MIN_ARGS: Record<string, number> = {
   Max: 1,
 };
 
+// `\text{mean}(…)`/`\operatorname{median}(…)`-style calls lowered to the
+// stdlib statistics module. These functions are numeric-only: order
+// statistics sort their data and the rest coerce each entry through
+// Fraction/float, so symbolic data raises TypeError at eval (flagged at
+// compile time when it's provable). mode/multimode are the exception —
+// Counter only needs hashing, so symbolic entries still work.
+const STATS_SINGLE = new Set(
+  (
+    'mean fmean geometric_mean harmonic_mean median median_low ' +
+    'median_high median_grouped mode multimode quantiles stdev pstdev ' +
+    'variance pvariance'
+  ).split(' '),
+);
+const STATS_PAIRED = new Set([
+  'covariance',
+  'correlation',
+  'linear_regression',
+]);
+// Hash-only reductions — no numeric coercion, so symbolic data works.
+const STATS_HASHABLE = new Set(['mode', 'multimode']);
+// Sample statistics and paired reductions need at least two points —
+// literal data shorter than this is a provable StatisticsError.
+const STATS_MIN_POINTS: Record<string, number> = {
+  stdev: 2,
+  variance: 2,
+  quantiles: 2,
+  covariance: 2,
+  correlation: 2,
+  linear_regression: 2,
+};
+
 // Nodes that provably emit a SymPy Set — used to gate Element/Union/
 // Complement emission (those raise TypeError on plain Symbols).
 const SETISH_SYMBOLS = new Set([
@@ -342,6 +373,16 @@ interface Scope {
    * `List` IR node, not a sympy Set) — set ops must splat it
    * (`sp.FiniteSet(*B)`); `FiniteSet(B)` raises TypeError. */
   listNames: Set<string>;
+  /** Assigned names whose list/finite-set value contains unbound
+   * symbols — statistics coercions raise TypeError on it, so calls flag
+   * at compile time rather than emitting a crashing lookup. */
+  symbolicData: Set<string>;
+  /** The cell emitted a `statistics.*` call — its import block gains
+   * `import statistics`. */
+  usesStatistics: boolean;
+  /** The cell emitted a `Fraction` data literal — gains
+   * `from fractions import Fraction`. */
+  usesFractions: boolean;
   /** Free symbol name -> emitted python identifier, insertion-ordered.
    * A def line is emitted in the cell where the name is first needed. */
   symbols: Map<string, string>;
@@ -842,6 +883,159 @@ class Emitter {
     if (isHead(n, 'List') || (isStr(n) && this.scope.listNames.has(n)))
       return `${this.sp}FiniteSet(*${this.emit(n)})`;
     return `${this.sp}FiniteSet(${this.emit(n)})`;
+  }
+
+  /** Symbolic names found while emitting the current statistics call —
+   * collected per element, reported as one flag on emitStats exit. */
+  private statsUnbound: string[] = [];
+
+  /** Emit a `\text{<fn>}(…)`/`\operatorname{<fn>}(…)` statistics call —
+   * sets usesStatistics so the stdlib import lands in the program. */
+  private emitStats(fn: string, args: MathJson[]): [string, number] {
+    this.scope.usesStatistics = true;
+    const saved = this.statsUnbound;
+    this.statsUnbound = [];
+    const flush = (): void => {
+      if (this.statsUnbound.length > 0)
+        this.scope.flag(
+          'error',
+          `statistics.${fn} is numeric — symbolic data (${[...new Set(this.statsUnbound)].join(', ')}) raises TypeError`,
+        );
+    };
+    try {
+      if (STATS_PAIRED.has(fn)) {
+        if (args.length !== 2)
+          this.scope.flag(
+            'error',
+            `statistics.${fn} takes two data lists`,
+          );
+        else {
+          const out: [string, number] = [
+            `statistics.${fn}(${this.statsData(args[0], fn)}, ${this.statsData(args[1], fn)})`,
+            PREC_ATOM,
+          ];
+          flush();
+          return out;
+        }
+      } else if (args.length === 0) {
+        this.scope.flag('error', `statistics.${fn} needs data`);
+      } else if (fn === 'quantiles' && args.length === 2) {
+        // `quantiles(data, n=…)` — n is keyword-only, so a second arg
+        // is the cut count; a symbolic n crashes the call at eval.
+        if (
+          freeNames(args[1]).some(
+            (n) => !this.scope.defined.has(n) && !this.scope.bound.has(n),
+          )
+        )
+          this.scope.flag('error', 'quantiles n must be a plain integer');
+        else {
+          const out: [string, number] = [
+            `statistics.quantiles(${this.statsData(args[0], fn)}, n=${this.emit(args[1])})`,
+            PREC_ATOM,
+          ];
+          flush();
+          return out;
+        }
+      } else {
+        const data =
+          args.length === 1
+            ? this.statsData(args[0], fn)
+            : `[${args.map((a) => this.statsDatum(a, fn)).join(', ')}]`;
+        const out: [string, number] = [
+          `statistics.${fn}(${data})`,
+          PREC_ATOM,
+        ];
+        flush();
+        return out;
+      }
+      flush();
+      return [
+        `statistics.${fn}(${args.map((a) => this.emit(a)).join(', ')})`,
+        PREC_ATOM,
+      ];
+    } finally {
+      this.statsUnbound = saved;
+    }
+  }
+
+  /** One dataset operand for a statistics call: a list/set literal, a
+   * name bound to one, or a flagged error for anything else. */
+  private statsData(node: MathJson, fn: string): string {
+    const min = STATS_MIN_POINTS[fn] ?? 1;
+    if (isHead(node, 'List') || isHead(node, 'Set')) {
+      const items = node.slice(1);
+      if (items.length < min)
+        this.scope.flag(
+          'error',
+          `statistics.${fn} needs at least ${min} data point${min > 1 ? 's' : ''}`,
+        );
+      return `[${items.map((a) => this.statsDatum(a, fn)).join(', ')}]`;
+    }
+    if (isStr(node)) {
+      if (this.scope.symbolicData.has(node) && !STATS_HASHABLE.has(fn))
+        this.statsUnbound.push(node);
+      else if (this.scope.listNames.has(node)) return this.emit(node);
+      else if (this.scope.finiteNames.has(node))
+        // Set members arrive sympified — a float() per entry keeps
+        // statistics' ratio coercion from choking on S.One/S.Half.
+        // (mode/multimode don't coerce — plain iteration works.)
+        return STATS_HASHABLE.has(fn)
+          ? this.emit(node)
+          : `map(float, ${this.emit(node)})`;
+      else if (this.scope.setNames.has(node))
+        this.scope.flag(
+          'error',
+          `statistics.${fn} needs finite data — ${node} isn't enumerable`,
+        );
+      else
+        this.scope.flag(
+          'error',
+          `statistics.${fn} needs a data list — ${node} isn't one`,
+        );
+      return this.emit(node);
+    }
+    this.scope.flag('error', `statistics.${fn} needs a data list`);
+    return this.emit(node);
+  }
+
+  /** One data entry for a statistics call: numeric literals stay exact
+   * (Fraction keeps the module's own exact-ratio arithmetic), closed
+   * sympy values go through float(), and symbolic entries flag — the
+   * module raises TypeError on them at eval. mode/multimode skip all of
+   * this: a Counter works on any hashable. */
+  private statsDatum(node: MathJson, fn: string): string {
+    if (STATS_HASHABLE.has(fn)) return this.emit(node);
+    if (isNum(node)) return numText(node);
+    const frac = (n: MathJson): string | null => {
+      if (
+        (isHead(n, 'Divide') || isHead(n, 'Rational')) &&
+        isIntExpr(n[1]) &&
+        isIntExpr(n[2])
+      ) {
+        this.scope.usesFractions = true;
+        return `Fraction(${this.emit(n[1])}, ${this.emit(n[2])})`;
+      }
+      return null;
+    };
+    if (isArr(node)) {
+      const f = frac(node);
+      if (f !== null) return f;
+      if (isHead(node, 'Negate')) {
+        if (isNum(node[1])) return `-${numText(node[1])}`;
+        if (isArr(node[1])) {
+          const g = frac(node[1]);
+          if (g !== null) return `-${g}`;
+        }
+      }
+    }
+    const unbound = freeNames(node).filter(
+      (n) => !this.scope.defined.has(n) && !this.scope.bound.has(n),
+    );
+    if (unbound.length > 0) {
+      this.statsUnbound.push(...unbound);
+      return this.emit(node);
+    }
+    return `float(${this.emit(node)})`;
   }
 
   /** Comparison chains. `x < y < z` arrives flat as `Less(x, y, z)`
@@ -2174,6 +2368,19 @@ class Emitter {
         // 'mean' — unwrap it so pyIdent doesn't mangle to primemean_prime.
         const rawName = isStr(args[0]) ? args[0] : 'unknown';
         const name = /^'(.+)'$/.exec(rawName)?.[1] ?? rawName;
+        // `\text{mean}`/`\operatorname{median}`-style statistics calls
+        // lower to the stdlib statistics module. An unquoted 'Mean' is
+        // the \bar/conjugate head (multi-arg Mean is rerouted upstream);
+        // quoted 'Mean' and \operatorname-cased names all spell stats.
+        const statName =
+          name === 'Mean' && rawName === 'Mean'
+            ? undefined
+            : name.toLowerCase();
+        if (
+          statName !== undefined &&
+          (STATS_SINGLE.has(statName) || STATS_PAIRED.has(statName))
+        )
+          return this.emitStats(statName, args.slice(1));
         // `\varphi(n)` parses as GoldenRatio applied to n — sympy's
         // GoldenRatio isn't callable and the textbook reading is
         // Euler's totient.
@@ -2253,8 +2460,24 @@ class Emitter {
         }
         // \bar{x} — the complex-conjugate convention (as \overline{x});
         // SymPy's mean lives in stats and takes a random variable.
-        if (name === 'Mean' && args.length === 2)
-          return [`${this.sp}conjugate(${this.emit(args[1])})`, PREC_ATOM];
+        if (name === 'Mean' && args.length === 2) {
+          // …but `\operatorname{mean}(L)` mints the same head. When the
+          // operand is data (a list/set literal or a name bound to one)
+          // the statistics read wins — conjugate on a container can't
+          // evaluate anyway.
+          const a = args[1];
+          if (
+            isHead(a, 'List') ||
+            isHead(a, 'Set') ||
+            (isStr(a) &&
+              (this.scope.listNames.has(a) ||
+                this.scope.finiteNames.has(a) ||
+                this.scope.setNames.has(a) ||
+                this.scope.symbolicData.has(a)))
+          )
+            return this.emitStats('mean', [a]);
+          return [`${this.sp}conjugate(${this.emit(a)})`, PREC_ATOM];
+        }
         // `expr \text{ for } x \in S` — the image of expr over the set,
         // sp.imageset(Lambda(x, expr), S). `for x = 2` parses as a
         // Comprehension with swapped arg order, and `\text{for}`-style
@@ -2711,6 +2934,13 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   return { defs, parts, newNames };
 }
 
+// The stdlib imports a cell's emitted program needs — statistics for
+// `\text{mean}`-style calls, Fraction for exact rational data literals.
+const statsImports = (scope: Scope): string[] => [
+  ...(scope.usesStatistics ? ['import statistics'] : []),
+  ...(scope.usesFractions ? ['from fractions import Fraction'] : []),
+];
+
 function cellStatements(ir: MathJson | undefined, scope: Scope): string[] {
   if (ir === undefined) return [];
   const { defs, parts, newNames } = cellBody(ir, scope);
@@ -2720,7 +2950,7 @@ function cellStatements(ir: MathJson | undefined, scope: Scope): string[] {
   const stmts = parts.flatMap(({ stmt, out }) =>
     isStr(stmt) && newNames.has(stmt) ? [] : out.lines,
   );
-  return [...defs, ...stmts];
+  return [...statsImports(scope), ...defs, ...stmts];
 }
 
 // Emit a single expression statement, dropping it when emission flagged
@@ -2798,6 +3028,16 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       else emitter.scope.finiteNames.delete(name);
       if (listRhs) emitter.scope.listNames.add(name);
       else emitter.scope.listNames.delete(name);
+      // A data container holding unbound symbols — statistics calls
+      // flag it (Counter-based mode/multimode still take it).
+      if (
+        (listRhs || finiteRhs) &&
+        freeNames(node[2]).some(
+          (n) => !emitter.scope.defined.has(n) && !emitter.scope.bound.has(n),
+        )
+      )
+        emitter.scope.symbolicData.add(name);
+      else emitter.scope.symbolicData.delete(name);
       // A rebound name is a value now, not the earlier Function —
       // later references emit `x`, not `x(t)`. The `functions` entry
       // stays: it carries the pending `x = sp.Function` def line for
@@ -3128,6 +3368,9 @@ function buildScope(
     setNames: new Set(),
     finiteNames: new Set(),
     listNames: new Set(),
+    symbolicData: new Set(),
+    usesStatistics: false,
+    usesFractions: false,
     symbols: new Map(),
     functions: new Map(),
     fnArgs: new Map(),
@@ -3274,7 +3517,12 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
     // The CALC_RUNTIME_PY block defines the mc_* helpers the statements
     // call — it execs as part of the program (self-contained) and shows
     // once in the first row's code block, like the import line.
-    prelude: ['import sympy as sp', CALC_RUNTIME_PY, ...defs],
+    prelude: [
+      'import sympy as sp',
+      ...statsImports(scope),
+      CALC_RUNTIME_PY,
+      ...defs,
+    ],
     statements,
     issues: issues
       .filter((i) => !consumed.has(i))

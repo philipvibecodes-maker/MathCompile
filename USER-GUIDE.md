@@ -378,6 +378,35 @@ matching SymPy calls. Other number-theory words work like `totient`
 via `\mathrm{name}` — `mobius`, `nextprime`, `factorint` — as long
 as the name is a plain word.
 
+### Statistics
+
+| You want | Type | Renders |
+| --- | --- | --- |
+| Mean of a list | `\text{mean}(1, 2, 3)` | \(\text{mean}(1, 2, 3)\) — `statistics.mean([1, 2, 3])` |
+| Median of a set | `\text{median}(\{1,2,3,4\})` | \(\text{median}(\{1,2,3,4\})\) — `statistics.median([1, 2, 3, 4])` |
+| Mode | `\text{mode}(x, y, y)` | \(\text{mode}(x, y, y)\) — works on symbols too |
+| Std. dev / variance | `\text{stdev}(1,2,3,4)`, `\text{pvariance}(L)` | `statistics.stdev`, `statistics.pvariance` |
+| Named data | `L = [1,2,3]` then `\text{mean}(L)` | `statistics.mean(L)` |
+| Quantiles | `\text{quantiles}(L, 10)` | `statistics.quantiles(L, n=10)` |
+| Two datasets | `\text{correlation}(X, Y)` | `statistics.correlation(X, Y)` |
+
+The names are the Python `statistics` module's: `mean`, `fmean`,
+`geometric_mean`, `harmonic_mean`, `median`, `median_low`,
+`median_high`, `median_grouped`, `mode`, `multimode`, `quantiles`,
+`stdev`, `pstdev`, `variance`, `pvariance`, `covariance`,
+`correlation`, `linear_regression`. Write them in `\text{...}` (or
+`\mathrm{...}`) with the data inside the parens.
+
+What works and what doesn't: these functions compute on *numeric*
+data — exact fractions stay exact, `\pi` and `\sqrt{2}` evaluate to
+floats. Symbolic data (`\text{mean}(x, y)`) can't be averaged, so it
+flags an error rather than producing a crashing program — only
+`mode`/`multimode`, which count entries, work on symbolic data.
+`stdev`, `variance`, `quantiles`, and the paired functions need at
+least 2 points. One spelling trap: `L = [1,2]` binds a closed
+interval, not a two-point list — use three or more elements or write
+`L = \{1,2\}` for a two-element set.
+
 ## Output targets
 
 Pick a target from the **Output** menu in the header.
