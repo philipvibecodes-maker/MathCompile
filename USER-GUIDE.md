@@ -430,6 +430,28 @@ cell already bound (`d = [1,2,3]` then `\mathrm{ttest}(d,0)`).
 | One-sample t-test | `\mathrm{ttest}(d,0)` | \(\mathrm{ttest}(d,0)\) → `st.ttest_1samp(list(d), 0)` |
 | Conf. interval of mean | `\mathrm{meanconf}(d)` / `(d,0.99)` | \(\mathrm{meanconf}(d)\) → `mc_mean_ci(d, 0.95)` |
 
+#### Comparing samples and hypothesis tests
+
+Two-sample tests take two data operands; the multi-sample tests take
+two or more (`friedman` needs at least three). Everything prints as a
+`(statistic, p-value)` tuple unless noted.
+
+| You want | Type | Renders |
+| --- | --- | --- |
+| Independent-samples t-test | `\mathrm{ttestind}(d,e)` | \(\mathrm{ttestind}(d,e)\) → `st.ttest_ind(list(d), list(e))` |
+| Paired t-test | `\mathrm{ttestrel}(d,e)` | \(\mathrm{ttestrel}(d,e)\) → `st.ttest_rel(list(d), list(e))` |
+| Mann-Whitney U | `\mathrm{mannwhitneyu}(d,e)` | \(\mathrm{mannwhitneyu}(d,e)\) → `st.mannwhitneyu(list(d), list(e))` |
+| Wilcoxon signed-rank | `\mathrm{wilcoxon}(d,e)` | \(\mathrm{wilcoxon}(d,e)\) → `st.wilcoxon(list(d), list(e))` |
+| Two-sample KS | `\mathrm{ks2samp}(d,e)` | \(\mathrm{ks2samp}(d,e)\) → `st.ks_2samp(list(d), list(e))` |
+| Correlations | `\mathrm{pearsonr}` / `\mathrm{spearmanr}` / `\mathrm{kendalltau}` `(x,y)` | \(\mathrm{pearsonr}(x,y)\) → `st.pearsonr(list(x), list(y))` |
+| Equal-variance tests | `\mathrm{levene}` / `\mathrm{bartlett}` / `\mathrm{fligner}` `(d,e)` | \(\mathrm{levene}(d,e)\) → `st.levene(list(d), list(e))` |
+| One-way ANOVA | `\mathrm{foneway}(d,e,...)` | \(\mathrm{foneway}(d,e)\) → `st.f_oneway(list(d), list(e))` |
+| Friedman test | `\mathrm{friedman}(d,e,f)` | \(\mathrm{friedman}(d,e,f)\) → `st.friedmanchisquare(...)` |
+| Normality tests | `\mathrm{shapiro}` / `\mathrm{normaltest}` / `\mathrm{jarquebera}` / `\mathrm{skewtest}` / `\mathrm{kurtosistest}` `(d)` | \(\mathrm{shapiro}(d)\) → `st.shapiro(list(d))` |
+| Fit against a distribution | `\mathrm{kstest}(d)` / `\mathrm{anderson}(d)` | \(\mathrm{kstest}(d)\) → `st.kstest(list(d), 'norm')` |
+| Chi-square goodness of fit | `\mathrm{chisquare}(obs,exp?)` | \(\mathrm{chisquare}(obs)\) → `st.chisquare(list(obs))` |
+| Binomial test | `\mathrm{binomtest}(k,n,p?)` | \(\mathrm{binomtest}(3,10,0.5)\) → `st.binomtest(3, 10, 0.5)` |
+
 Worth knowing:
 
 - `\mathrm{smean}` rather than `\mathrm{mean}` — `mean(x)` already
@@ -440,6 +462,21 @@ Worth knowing:
 - `fit` exists only for the continuous distributions.
 - `\mathrm{meanconf}` emits a small `mc_mean_ci` helper into the
   generating code — it wraps `st.t.interval` around the sample mean.
+- `\mathrm{ttestind}` (independent) vs `\mathrm{ttestrel}` (paired)
+  mirror scipy's `ttest_ind`/`ttest_rel`; `\mathrm{ttest}` stays the
+  one-sample test.
+- `\mathrm{kstest}`/`\mathrm{anderson}` test against `'norm'` by
+  default; a second arg names another scipy distribution —
+  `\mathrm{kstest}(d,\mathrm{expon})`.
+- `\mathrm{chisquare}`'s expected counts must sum to the observed
+  total (scipy rescales nothing).
+- `\mathrm{anderson}` and `\mathrm{binomtest}` print their full
+  result objects rather than a plain tuple.
+- `\mathrm{bartlett}` float-coerces its samples in the emitted code —
+  scipy raises on integer-typed data.
+- Results are scipy result objects — the `statistic`/`pvalue` fields
+  print as a pair; a `NaN` pair from a too-small sample is scipy's
+  own answer, not a compile error.
 
 ## Output targets
 

@@ -216,6 +216,20 @@ smean smedian median svar var sstd std smin smax
 sem skew kurtosis iqr gmean hmean describe zscore ttest meanconf
 ```
 
+Two-sample and correlation tests take two data lists; the multi-sample
+tests take two or more (`friedman` ≥3). `kstest`/`anderson` take an
+optional second arg — a scipy distribution name (default `'norm'`).
+`chisquare` takes observed plus optional expected counts; `binomtest`
+takes scalar `k, n, p?`.
+
+```
+ttestind ttestrel mannwhitneyu wilcoxon ks2samp
+pearsonr spearmanr kendalltau
+levene bartlett fligner foneway friedman
+shapiro normaltest jarquebera skewtest kurtosistest
+kstest anderson chisquare binomtest
+```
+
 Using any of them adds the `import scipy.stats as st` /
 `import numpy as np` lines to the emitted program and makes the worker
 lazy-load the scipy wheels.
