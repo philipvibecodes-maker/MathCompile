@@ -1086,6 +1086,33 @@ const FIXTURES: {
     expectedPython: ['(sp.Matrix([[1, 2], [3, 4]])).rank()'],
   },
   {
+    // A matrix-valued expression is still a matrix argument — det on a
+    // sum of literals evaluates, not "the argument isn't one".
+    latex:
+      '\\det\\left(\\begin{pmatrix}0&0\\\\0&0\\end{pmatrix}+\\begin{pmatrix}9&9\\\\9&9\\end{pmatrix}\\right)',
+    expectedPython: [
+      '(sp.Matrix([[0, 0], [0, 0]]) + sp.Matrix([[9, 9], [9, 9]])).det()',
+    ],
+  },
+  {
+    // det/trace/inverse/transpose exist on sympy MatrixExpr, so they
+    // emit on symbolic matrix expressions too; rank needs every matrix
+    // leaf literal — flag + stub on declared names.
+    latex:
+      'A = \\begin{pmatrix} 1 & 0 \\\\ 0 & 1 \\end{pmatrix} \\\\ B = \\begin{pmatrix} 2 & 0 \\\\ 0 & 2 \\end{pmatrix} \\\\ \\det(A+B) \\\\ \\mathrm{tr}(A+B) \\\\ \\mathrm{inverse}(A+B) \\\\ \\mathrm{transpose}(A+B) \\\\ \\mathrm{rank}(A+B)',
+    expectedPython: [
+      'rank = sp.Function("rank")',
+      'A = sp.Matrix([[1, 0], [0, 1]])',
+      'B = sp.Matrix([[2, 0], [0, 2]])',
+      '(A + B).det()',
+      'sp.Trace((A + B))',
+      '(A + B).inv()',
+      '(A + B).T',
+      'rank(A + B)',
+    ],
+    issues: ['rank needs a concrete matrix'],
+  },
+  {
     // The \tr alias stores \mathrm{tr} — same lowering as \mathrm{trace}.
     latex: '\\mathrm{tr}(\\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix})',
     expectedPython: ['(sp.Matrix([[1, 2], [3, 4]])).trace()'],

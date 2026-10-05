@@ -485,6 +485,55 @@ class Emitter {
     );
   }
 
+  /** Is this node matrix-valued? A `Matrix` literal, a declared matrix
+   * name, or a composition that stays a matrix: a sum/negation of
+   * matrix terms, a product/quotient/power with a matrix factor, or a
+   * matrix-returning op (transpose/adjoint/inverse). */
+  private matrixValued(node: MathJson | undefined): boolean {
+    if (isHead(node, 'Matrix') || this.matrixRef(node)) return true;
+    if (!isArr(node)) return false;
+    const operands = node.slice(1) as MathJson[];
+    switch (headOf(node)) {
+      case 'Add':
+        return operands.every((a) => this.matrixValued(a));
+      case 'Negate':
+      case 'Transpose':
+      case 'ConjugateTranspose':
+      case 'Inverse':
+        return this.matrixValued(node[1]);
+      case 'Multiply':
+      case 'Divide':
+      case 'Power':
+        return operands.some((a) => this.matrixValued(a));
+      default:
+        return false;
+    }
+  }
+
+  /** matrixValued AND every matrix leaf is a `Matrix` literal — the
+   * concrete-Matrix methods (`.rank()`, `.norm()`, `.eigenvals()`…)
+   * exist there but not on sympy MatrixExpr. */
+  private concreteMatrix(node: MathJson | undefined): boolean {
+    if (isHead(node, 'Matrix')) return true;
+    if (!isArr(node)) return false;
+    const operands = node.slice(1) as MathJson[];
+    switch (headOf(node)) {
+      case 'Add':
+        return operands.every((a) => this.concreteMatrix(a));
+      case 'Negate':
+      case 'Transpose':
+      case 'ConjugateTranspose':
+      case 'Inverse':
+        return this.concreteMatrix(node[1]);
+      case 'Multiply':
+      case 'Divide':
+      case 'Power':
+        return operands.some((a) => this.concreteMatrix(a));
+      default:
+        return false;
+    }
+  }
+
   /** A matrix body's `m, n` dims (as MatrixSymbol args) — literal
    * `Matrix` nodes read them statically; declared `A \in R^{mxn}` names
    * carry them in matrixDims; cell-assigned matrices fall back to
@@ -2063,13 +2112,17 @@ class Emitter {
             `${this.sp}Determinant(${this.matrixArg(args[0], '\\det') ?? 'None'})`,
             PREC_ATOM,
           ];
-        if (!isHead(args[0], 'Matrix'))
-          this.scope.flag(
-            'note',
-            "determinant needs a matrix — the argument isn't one",
-          );
         if (isHead(args[0], 'Matrix'))
           return [`${this.emit(args[0], PREC_ATOM)}.det()`, PREC_ATOM];
+        // A matrix-valued expression (`\det(A + B)`, `2A`, `A^2`):
+        // `.det()` exists on MatrixExpr too (Determinant stays
+        // unevaluated there) — a concrete argument still evaluates.
+        if (this.matrixValued(args[0]))
+          return [`(${this.emit(args[0])}).det()`, PREC_ATOM];
+        this.scope.flag(
+          'note',
+          "determinant needs a matrix — the argument isn't one",
+        );
         // sp.Determinant(non-matrix) raises TypeError at eval — a
         // Function stub displays the intended form and still runs.
         return [
@@ -2429,12 +2482,36 @@ class Emitter {
         // `\mathrm{trace|rank|inverse|transpose|norm|eigenvals|
         // eigenvects|tr}(A)`: sympy exposes these as Matrix methods,
         // so a literal or worksheet-declared matrix argument emits the
-        // method call; on anything else the bare `sp.<word>` either
-        // doesn't exist or raises TypeError — flag + honest stub.
+        // method call; a matrix-valued expression (`A + B`, `2A`)
+        // emits it too where the method exists on MatrixExpr
+        // (trace/inverse/transpose) or every matrix leaf is a literal.
+        // On anything else the bare `sp.<word>` either doesn't exist or
+        // raises TypeError — flag + honest stub.
         const mm = MATRIX_METHODS[name];
         if (mm !== undefined && args.length === 2) {
           if (isHead(args[1], 'Matrix') || this.matrixRef(args[1]))
             return [`(${this.emit(args[1])}).${mm}`, PREC_ATOM];
+          if (this.matrixValued(args[1])) {
+            // A matrix-valued expression (`\mathrm{tr}(A + B)`): only
+            // trace/inverse/transpose exist on sympy MatrixExpr — the
+            // rest need every matrix leaf to be a literal.
+            if (name === 'trace' || name === 'Trace' || name === 'tr')
+              return [
+                `${this.sp}Trace(${this.emit(args[1])})`,
+                PREC_ATOM,
+              ];
+            if (
+              name === 'inverse' ||
+              name === 'transpose' ||
+              this.concreteMatrix(args[1])
+            )
+              return [`(${this.emit(args[1])}).${mm}`, PREC_ATOM];
+            this.scope.flag(
+              'note',
+              `${name} needs a concrete matrix — the argument is a symbolic matrix expression`,
+            );
+            return [`${this.fn(name)}(${this.emit(args[1])})`, PREC_ATOM];
+          }
           this.scope.flag(
             'note',
             `${name === 'Trace' || name === 'tr' ? 'trace' : name} needs a matrix — the argument isn't one`,
