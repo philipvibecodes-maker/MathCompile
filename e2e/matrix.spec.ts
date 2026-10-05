@@ -105,14 +105,14 @@ test('arrows move between matrix cells without leaving the field', async ({
   );
 });
 
-test('Ctrl+Enter inside a matrix cell deletes the current row', async ({
+test('Ctrl+Shift+Backspace inside a matrix cell deletes the current row', async ({
   page,
 }) => {
   const mf = cell(page);
   await setValue(mf, '\\begin{matrix}a&b\\\\x&y\\\\c&d\\end{matrix}');
   await page.keyboard.press('Control+Home');
   await page.keyboard.press('ArrowRight'); // step into cell a (row 0)
-  await page.keyboard.press('Control+Enter');
+  await page.keyboard.press('Control+Shift+Backspace');
   expect(await cellValue(mf)).toBe('\\begin{matrix}x&y\\\\c&d\\end{matrix}');
   await expect(mf.locator('.mq-editable-field .mq-matrix tr')).toHaveCount(2);
   // the caret stays live on the cell that slid into the deleted row
@@ -122,14 +122,14 @@ test('Ctrl+Enter inside a matrix cell deletes the current row', async ({
   );
 });
 
-test('Ctrl+Shift+Spacebar inside a matrix cell deletes the current column', async ({
+test('Ctrl+Shift+Delete inside a matrix cell deletes the current column', async ({
   page,
 }) => {
   const mf = cell(page);
   await setValue(mf, '\\begin{matrix}a&b\\\\c&d\\end{matrix}');
   await page.keyboard.press('Control+End');
   await page.keyboard.press('ArrowLeft'); // step into cell d (col 1)
-  await page.keyboard.press('Control+Shift+Space');
+  await page.keyboard.press('Control+Shift+Delete');
   expect(await cellValue(mf)).toBe('\\begin{matrix}a\\\\c\\end{matrix}');
   await expect(mf.locator('.mq-editable-field .mq-matrix td')).toHaveCount(2);
 });
@@ -141,22 +141,35 @@ test('delete shortcuts refuse to take the last row or column', async ({
   await setValue(mf, '\\begin{matrix}a&b\\end{matrix}');
   await page.keyboard.press('Control+Home');
   await page.keyboard.press('ArrowRight');
-  await page.keyboard.press('Control+Enter'); // one row: no-op
+  await page.keyboard.press('Control+Shift+Backspace'); // one row: no-op
   expect(await cellValue(mf)).toBe('\\begin{matrix}a&b\\end{matrix}');
-  await page.keyboard.press('Control+Shift+Space'); // -> single column
+  await page.keyboard.press('Control+Shift+Delete'); // -> single column
   expect(await cellValue(mf)).toBe('\\begin{matrix}b\\end{matrix}');
-  await page.keyboard.press('Control+Shift+Space'); // one column: no-op
+  await page.keyboard.press('Control+Shift+Delete'); // one column: no-op
   expect(await cellValue(mf)).toBe('\\begin{matrix}b\\end{matrix}');
 });
 
-test('Ctrl+Enter in a multi-line cell deletes the current line', async ({
+test('delete shortcuts are matrices-only: unchanged in multi-line cells', async ({
   page,
 }) => {
   const mf = cell(page);
   await setValue(mf, '\\displaylines{a\\\\b\\\\c}');
   await page.keyboard.press('Control+End'); // last line
-  await page.keyboard.press('Control+Enter');
-  expect(await cellValue(mf)).toBe('\\displaylines{a\\\\ b}');
-  await page.keyboard.type('z');
-  expect(await cellValue(mf)).toBe('\\displaylines{a\\\\ bz}');
+  // clears the current line's content — does NOT delete the line
+  await page.keyboard.press('Control+Shift+Backspace');
+  expect(await cellValue(mf)).toBe('\\displaylines{a\\\\ b\\\\ }');
+});
+
+test('delete shortcuts outside a grid still clear the block', async ({
+  page,
+}) => {
+  const mf = cell(page);
+  await setValue(mf, 'foo');
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('Control+Shift+Backspace');
+  expect(await cellValue(mf)).toBe('');
+  await setValue(mf, 'bar');
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('Control+Shift+Delete');
+  expect(await cellValue(mf)).toBe('');
 });

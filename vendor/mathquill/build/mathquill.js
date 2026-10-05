@@ -13593,14 +13593,18 @@ var __assign = (this && this.__assign) || function () {
                         return;
                     e === null || e === void 0 ? void 0 : e.preventDefault();
                     return this.parent.insert('addColumn', this, ctrlr);
-                case 'Ctrl-Enter':
-                    // Mirror of Enter (add row): delete the current row outright,
-                    // content and all. Also works in \displaylines \u2014 a "row" there
-                    // is a line of the cell.
+                case 'Ctrl-Shift-Backspace':
+                    // Word-delete's key, rebound inside matrices: delete the
+                    // current row outright, content and all. In \displaylines and
+                    // outside a grid this falls through to word-delete as usual.
+                    if (this.parent instanceof DisplayLines)
+                        break;
                     e === null || e === void 0 ? void 0 : e.preventDefault();
                     return this.parent.deleteRowOrColumn('deleteRow', this, ctrlr);
-                case 'Ctrl-Shift-Spacebar':
-                    // Mirror of Shift+Space (add column): delete the current column.
+                case 'Ctrl-Shift-Del':
+                    // Delete the current column \u2014 same scoping as above.
+                    if (this.parent instanceof DisplayLines)
+                        break;
                     e === null || e === void 0 ? void 0 : e.preventDefault();
                     return this.parent.deleteRowOrColumn('deleteColumn', this, ctrlr);
             }

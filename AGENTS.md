@@ -187,9 +187,10 @@ and empty blocks serialize as `{ }`.
   `\alignedat` — and typed `\begin{<spec-env>}`) first open a pending
   `\begin{name}{arg}` input that applies the arg on `}`/Enter/Tab.
   Inside a matrix cell, Enter adds a row and
-  Shift+Space adds a column; Ctrl+Enter deletes the current row and
-  Ctrl+Shift+Space deletes the current column (each a no-op once only
-  one remains);
+  Shift+Space adds a column; Ctrl+Shift+Backspace deletes the current
+  row and Ctrl+Shift+Delete deletes the current column (each a no-op
+  once only one remains) — those keys keep their usual word-delete
+  everywhere else, including \displaylines cells;
   arrows move cell-to-cell without leaving
   the field.
 - Serializations to pin in tests: empty blocks are `{ }` (with a space);

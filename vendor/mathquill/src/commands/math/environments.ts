@@ -757,18 +757,20 @@ class MatrixCell extends MathBlock {
         if (this.parent instanceof DisplayLines) return;
         e?.preventDefault();
         return (this.parent as CellGrid).insert('addColumn', this, ctrlr);
-      case 'Ctrl-Enter':
-        // Mirror of Enter (add row): delete the current row outright,
-        // content and all. Also works in \displaylines — a "row" there
-        // is a line of the cell.
+      case 'Ctrl-Shift-Backspace':
+        // Word-delete's key, rebound inside matrices: delete the
+        // current row outright, content and all. In \displaylines and
+        // outside a grid this falls through to word-delete as usual.
+        if (this.parent instanceof DisplayLines) break;
         e?.preventDefault();
         return (this.parent as CellGrid).deleteRowOrColumn(
           'deleteRow',
           this,
           ctrlr
         );
-      case 'Ctrl-Shift-Spacebar':
-        // Mirror of Shift+Space (add column): delete the current column.
+      case 'Ctrl-Shift-Del':
+        // Delete the current column — same scoping as above.
+        if (this.parent instanceof DisplayLines) break;
         e?.preventDefault();
         return (this.parent as CellGrid).deleteRowOrColumn(
           'deleteColumn',

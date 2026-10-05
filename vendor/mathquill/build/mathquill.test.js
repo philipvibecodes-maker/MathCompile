@@ -13602,14 +13602,18 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                         return;
                     e === null || e === void 0 ? void 0 : e.preventDefault();
                     return this.parent.insert('addColumn', this, ctrlr);
-                case 'Ctrl-Enter':
-                    // Mirror of Enter (add row): delete the current row outright,
-                    // content and all. Also works in \displaylines — a "row" there
-                    // is a line of the cell.
+                case 'Ctrl-Shift-Backspace':
+                    // Word-delete's key, rebound inside matrices: delete the
+                    // current row outright, content and all. In \displaylines and
+                    // outside a grid this falls through to word-delete as usual.
+                    if (this.parent instanceof DisplayLines)
+                        break;
                     e === null || e === void 0 ? void 0 : e.preventDefault();
                     return this.parent.deleteRowOrColumn('deleteRow', this, ctrlr);
-                case 'Ctrl-Shift-Spacebar':
-                    // Mirror of Shift+Space (add column): delete the current column.
+                case 'Ctrl-Shift-Del':
+                    // Delete the current column — same scoping as above.
+                    if (this.parent instanceof DisplayLines)
+                        break;
                     e === null || e === void 0 ? void 0 : e.preventDefault();
                     return this.parent.deleteRowOrColumn('deleteColumn', this, ctrlr);
             }
@@ -17192,43 +17196,58 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     .querySelector(':scope > table')
                     .querySelectorAll(':scope > tr').length;
             };
-            test('Ctrl-Enter deletes the current row, content and all', function () {
+            test('Ctrl-Shift-Backspace deletes the current row, content and all', function () {
                 mq.latex('\\begin{matrix}a&b\\\\x&y\\\\c&d\\end{matrix}');
                 mq.moveToLeftEnd().keystroke('Right'); // cell a (row 0)
-                mq.keystroke('Ctrl-Enter');
+                mq.keystroke('Ctrl-Shift-Backspace');
                 assert.equal(mq.latex(), '\\begin{matrix}x&y\\\\c&d\\end{matrix}');
                 assert.equal(ownRows(rootEl().querySelector('.mq-matrix')), 2);
                 // caret lands live on the cell that slid up into the deleted row
                 mq.typedText('z');
                 assert.equal(mq.latex(), '\\begin{matrix}xz&y\\\\c&d\\end{matrix}');
             });
-            test('Ctrl-Shift-Spacebar deletes the current column', function () {
+            test('Ctrl-Shift-Del deletes the current column', function () {
                 mq.latex('\\begin{matrix}a&b\\\\c&d\\end{matrix}');
                 mq.moveToLeftEnd().keystroke('Right'); // cell a (col 0)
-                mq.keystroke('Ctrl-Shift-Spacebar');
+                mq.keystroke('Ctrl-Shift-Del');
                 assert.equal(mq.latex(), '\\begin{matrix}b\\\\d\\end{matrix}');
                 assert.equal(rootEl().querySelector('.mq-matrix').querySelectorAll('td').length, 2);
                 mq.typedText('z');
                 assert.equal(mq.latex(), '\\begin{matrix}bz\\\\d\\end{matrix}');
             });
-            test('Ctrl-Enter/Ctrl-Shift-Spacebar refuse on the last row or column', function () {
+            test('Ctrl-Shift-Backspace/Ctrl-Shift-Del refuse on the last row or column', function () {
                 mq.latex('\\begin{matrix}a&b\\end{matrix}');
                 mq.moveToLeftEnd().keystroke('Right');
-                mq.keystroke('Ctrl-Enter'); // one row: no-op
+                mq.keystroke('Ctrl-Shift-Backspace'); // one row: no-op
                 assert.equal(mq.latex(), '\\begin{matrix}a&b\\end{matrix}');
-                mq.keystroke('Ctrl-Shift-Spacebar'); // delete col 0 -> single column
+                mq.keystroke('Ctrl-Shift-Del'); // delete col 0 -> single column
                 assert.equal(mq.latex(), '\\begin{matrix}b\\end{matrix}');
-                mq.keystroke('Ctrl-Shift-Spacebar'); // one column: no-op
+                mq.keystroke('Ctrl-Shift-Del'); // one column: no-op
                 assert.equal(mq.latex(), '\\begin{matrix}b\\end{matrix}');
             });
-            test('Ctrl-Enter inside \\displaylines deletes the current line', function () {
+            test('inside \\displaylines the delete shortcuts keep word-delete', function () {
+                // \displaylines is a grid internally, but the rebinding is
+                // matrices-only: the keys still clear the current line's content.
                 mq.latex('\\displaylines{a\\\\b\\\\c}');
                 mq.moveToRightEnd(); // last line (fillsRootEdge descends)
-                mq.keystroke('Ctrl-Enter');
+                mq.keystroke('Ctrl-Shift-Backspace');
+                assert.equal(mq.latex(), '\\displaylines{a\\\\ b\\\\ }');
+                // forward-delete on the now-empty line removes it — the usual
+                // empty-cell delete, not the matrix rebinding
+                mq.keystroke('Ctrl-Shift-Del');
                 assert.equal(mq.latex(), '\\displaylines{a\\\\ b}');
-                // single-column grid: Ctrl-Shift-Spacebar is a no-op
-                mq.keystroke('Ctrl-Shift-Spacebar');
-                assert.equal(mq.latex(), '\\displaylines{a\\\\ b}');
+            });
+            test('outside a grid the delete shortcuts still clear the block', function () {
+                // ctrlDeleteDir removes the rest of the current block in that
+                // direction — the rebinding must not change that outside a grid.
+                mq.latex('foo');
+                mq.moveToRightEnd();
+                mq.keystroke('Ctrl-Shift-Backspace');
+                assert.equal(mq.latex(), '');
+                mq.latex('bar');
+                mq.moveToLeftEnd();
+                mq.keystroke('Ctrl-Shift-Del');
+                assert.equal(mq.latex(), '');
             });
         });
         suite('env shortcuts', function () {
