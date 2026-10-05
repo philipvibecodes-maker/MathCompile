@@ -39,6 +39,11 @@ import {
   SP_FUNCS,
   SP_FUNC_MIN_ARGS,
 } from './notation';
+import {
+  emitStatsCall,
+  statsPreludeLines,
+  type StatsUsage,
+} from './stats';
 
 export interface CellInput {
   json?: MathJson;
@@ -85,6 +90,12 @@ const RESERVED_IDENTS = new Set([
   'mc_order',
   'mc_answers',
   'clean_and_simplify',
+  // scipy/numpy module aliases + helper from stats.ts — only emitted
+  // when a cell uses the stats builtins, but a user `st`/`np` must
+  // never shadow them when it is.
+  'st',
+  'np',
+  'mc_mean_ci',
 ]);
 
 // CE tags font-styled letters with a per-piece suffix: `\mathrm{a}` ->
@@ -288,6 +299,12 @@ class Scope {
   /** Errors flagged during this cell's emission — a statement that bumps
    * it is dropped instead of emitting `sp.Error(...)`/`None` fragments. */
   errorCount = 0;
+  /** Emitted code uses scipy.stats (`st.`) / numpy (`np.`) / the
+   * mc_mean_ci helper — the program prelude picks up the matching
+   * import lines (see stats.ts). */
+  usesScipy = false;
+  usesNumpy = false;
+  usesMeanCi = false;
 
   /** Which target a `\text{plot}` statement lowers for — 'calc' emits
    * the worker's `_mc_plot` marker call, 'python' emits the matching
@@ -3515,6 +3532,23 @@ class Emitter {
             ] as [string, number];
           });
         }
+        // `\mathrm{normcdf}(x,\mu,\sigma)`, `\mathrm{ttest}(d,\mu)` —
+        // scipy.stats/numpy builtins (stats.ts); the worker lazy-loads
+        // scipy on first use. A worksheet-declared name shadows them.
+        if (!this.scope.decls.declared.has(name)) {
+          const stats = emitStatsCall(name, args.slice(1), {
+            emit: (a) => this.emit(a as MathJson),
+            stub: (n) =>
+              `${this.fn(n)}(${args
+                .slice(1)
+                .map((a) => this.emit(a))
+                .join(', ')})`,
+            flag: (s, m) => this.scope.flag(s, m),
+            sp: this.sp,
+            usage: this.scope,
+          });
+          if (stats !== undefined) return [stats, PREC_ATOM];
+        }
         // `\mathrm{trace|rank|inverse|transpose|norm|eigenvals|
         // eigenvects|tr}(A)`: sympy exposes these as Matrix methods,
         // so a literal or worksheet-declared matrix argument emits the
@@ -4987,8 +5021,12 @@ export function compileWorksheet(
       message: `cell ${n.cell + 1}: ${n.message}`,
     });
   }
+  const cellScopes: (Scope | undefined)[] = [];
   const cellBodies = perCell.map((r, i) => {
-    if (r.ir === undefined) return { lines: [] as string[], pySrc: [] as string[] };
+    if (r.ir === undefined) {
+      cellScopes.push(undefined);
+      return { lines: [] as string[], pySrc: [] as string[] };
+    }
     const matrixNames = new Set<string>();
     collectMatrices(r.ir, matrixNames);
     // `declaredFns` is worksheet-wide, but cells are independent
@@ -5009,6 +5047,7 @@ export function compileWorksheet(
       pyRegistry.fns,
     );
     scope.cellIdx = i;
+    cellScopes.push(scope);
     const lines = cellStatements(r.ir, scope);
     // The standalone cell script inlines every python def it calls —
     // `relu(x)` emits the real call, so the script needs the source.
@@ -5018,15 +5057,30 @@ export function compileWorksheet(
       .map((s) => s.code);
     return { lines, pySrc };
   });
-  const cellLines = cellBodies.map(({ lines, pySrc }) =>
-    lines.length === 0 ? [] : [importLine, ...pySrc, ...lines],
+  // Cells that emitted scipy.stats/numpy calls carry the import lines
+  // in their standalone view too, so a single cell stays runnable.
+  const cellLines = cellBodies.map(({ lines, pySrc }, i) =>
+    lines.length === 0
+      ? []
+      : [
+          importLine,
+          ...statsPreludeLines(cellScopes[i]!),
+          ...pySrc,
+          ...lines,
+        ],
   );
 
   // The one-script copy is the concatenation of the per-cell outputs
-  // with the import emitted once at the top. Python cells' source emits
-  // in place — the program stays sequential, so a call must sit below
-  // its def (the registry notes flag it otherwise).
-  const lines: string[] = [importLine];
+  // with the import emitted once at the top — scipy/numpy imports
+  // likewise, when any cell used the stats builtins. Python cells'
+  // source emits in place — the program stays sequential, so a call
+  // must sit below its def (the registry notes flag it otherwise).
+  const sheetUsage: StatsUsage = {
+    usesScipy: cellScopes.some((s) => s?.usesScipy),
+    usesNumpy: cellScopes.some((s) => s?.usesNumpy),
+    usesMeanCi: cellScopes.some((s) => s?.usesMeanCi),
+  };
+  const lines: string[] = [importLine, ...statsPreludeLines(sheetUsage)];
   cellBodies.forEach(({ lines: stmts }, i) => {
     if (stmts.length === 0) return;
     lines.push('', `# cell ${i + 1}`, ...stmts);
@@ -5323,32 +5377,39 @@ export function compileCellsForCalc(
     'calc',
     pyRegistry.fns,
   );
+  const compiled = cells.map((cell, i) => {
+    scope.cellIdx = i;
+    // The shared declaredFns set both seeds this cell's normalize
+    // (a `g(4)` below a `\def g` is a call, not juxtaposition) and
+    // collects the names this cell declares for the cells below it.
+    const { ir, issues } = normalizeIR(cell.json, scope.decls.declaredFns, {
+      ...opts,
+      pyFns: pyNames,
+    });
+    // Registry notes on this cell (its own python defs) surface here.
+    issues.push(
+      ...pyRegistry.notes
+        .filter((n) => n.cell === i)
+        .map(({ severity, message }) => ({ severity, message }) as Issue),
+    );
+    if (ir === undefined)
+      return { defs: [], statements: [], issues, statementLines: [] };
+    return compileCellInScope(ir, issues, scope);
+  });
   return {
     // The CALC_RUNTIME_PY block defines the mc_* helpers the statements
     // call — it execs as part of the program (self-contained) and shows
     // once in the code block, like the import line. The helper source
     // is written `sp.`-qualified; the import-* mode strips the prefix
     // so the shown program stays self-contained under a star import.
-    prelude: [calcImportLine(qualified), calcRuntimePy(qualified)],
-    cells: cells.map((cell, i) => {
-      scope.cellIdx = i;
-      // The shared declaredFns set both seeds this cell's normalize
-      // (a `g(4)` below a `\def g` is a call, not juxtaposition) and
-      // collects the names this cell declares for the cells below it.
-      const { ir, issues } = normalizeIR(cell.json, scope.decls.declaredFns, {
-        ...opts,
-        pyFns: pyNames,
-      });
-      // Registry notes on this cell (its own python defs) surface here.
-      issues.push(
-        ...pyRegistry.notes
-          .filter((n) => n.cell === i)
-          .map(({ severity, message }) => ({ severity, message }) as Issue),
-      );
-      if (ir === undefined)
-        return { defs: [], statements: [], issues, statementLines: [] };
-      return compileCellInScope(ir, issues, scope);
-    }),
+    // scipy/numpy import lines follow when any cell used the stats
+    // builtins (stats.ts).
+    prelude: [
+      calcImportLine(qualified),
+      calcRuntimePy(qualified),
+      ...statsPreludeLines(scope),
+    ],
+    cells: compiled,
   };
 }
 
@@ -5381,7 +5442,12 @@ export function compileCellForCalc(
   scope.cellIdx = 0;
   const c = compileCellInScope(ir, issues, scope);
   return {
-    prelude: [calcImportLine(qualified), calcRuntimePy(qualified), ...c.defs],
+    prelude: [
+      calcImportLine(qualified),
+      calcRuntimePy(qualified),
+      ...statsPreludeLines(scope),
+      ...c.defs,
+    ],
     ...c,
   };
 }

@@ -150,6 +150,10 @@ and empty blocks serialize as `{ }`.
   `src/plot/` and CALCULATOR-ENGINES.md. ℝ²→ℝ² (`kind: '2x2'`) is one
   figure with a `field`/`image` updatemenu — quiver arrows vs the
   image of the domain's grid lines.
+- `src/compile/stats.ts` holds the scipy.stats/numpy builtins
+  (`\mathrm{normcdf}(x)` → `st.norm.cdf(x)`): codegen resolves the
+  flat `<dist><method>` names before the generic call tier and marks
+  the prelude; the worker lazy-loads the wheels on first stats use.
 - The worksheet prefix compiles via `compileCellsForCalc` — the shared
   pipeline, not a second parser — so the worker only exec/evals Python.
   Cells share one namespace in order (a `def g` or `a = 5` above is in

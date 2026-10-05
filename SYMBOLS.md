@@ -229,3 +229,21 @@ order) or declared by a `u(x,t)` spec — every bare mention and every
 consistently, `y'`/`y''` rewrite to `D` nodes, `u_x`/`u_{xx}`/`u_{xt}`
 subscripts are partial derivatives, and `f(0)=1`/`f'(0)=0` items are
 initial conditions (`ics={…}`).
+
+## Statistics (calculator target)
+
+`\mathrm{<dist><method>}(args)` resolves to scipy.stats calls —
+`src/compile/stats.ts`. Dists: `norm t chi2 expon uniform beta gamma
+lognorm cauchy f` (continuous) and `binom nbinom poisson geom
+hypergeom` (discrete, `pmf` not `pdf`). Methods: `pdf pmf cdf ppf sf
+isf mean var std median stats moment interval rvs fit` (`fit`
+continuous only). One-sample functions take a data list:
+
+```
+smean smedian median svar var sstd std smin smax
+sem skew kurtosis iqr gmean hmean describe zscore ttest meanconf
+```
+
+Using any of them adds the `import scipy.stats as st` /
+`import numpy as np` lines to the emitted program and makes the worker
+lazy-load the scipy wheels.
