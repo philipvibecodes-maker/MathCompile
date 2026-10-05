@@ -625,12 +625,17 @@ body {
   }
 }
 
+/* Hidden keyed-unit state: the panel stays mounted so a keyed swap can
+   outro it, but paints nothing while it has no visible issues. */
+.cell-issues.issues-off {
+  display: none;
+}
+
 .cell-issues li,
 .calc-issues li {
   display: flex;
   align-items: center;
   gap: 4px;
-  animation: issue-in var(--fade-ms, 150ms) ease-out;
 }
 
 /* Settings menu (animations tab) — popover under the output header. */

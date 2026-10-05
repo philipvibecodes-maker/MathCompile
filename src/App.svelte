@@ -4,7 +4,7 @@
   import MathField from './components/MathField.svelte';
   import CalcOutput from './components/CalcOutput.svelte';
   import CalcIssues from './components/CalcIssues.svelte';
-  import SlideSwap from './components/SlideSwap.svelte';
+  import { slideFly } from './components/slide-fly';
   import { TARGETS } from './compile/targets';
   import type { TargetId } from './compile/targets';
   import CommandPalette from './components/CommandPalette.svelte';
@@ -560,38 +560,52 @@
                     >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
                   >
                 </div>
-                {#if (shownIssues(i).length > 0 || hasParseError(i)) && issuesVisible[cell.id]}
+                <!-- The whole panel — background, icons, messages — is
+                     one keyed unit whose identity is what it displays:
+                     any change (message swap, appear, clear) is a keyed
+                     swap, so the old panel flies out and the replacement
+                     flies in at the same absolute position. Visibility
+                     rides in the key + a hidden class rather than an
+                     {#if} — an {#if}-driven teardown would drop the
+                     transition. -->
+                {#key shownIssues(i)
+                    .map((s) => `${s.severity}:${s.message}`)
+                    .join('|') +
+                  (hasParseError(i) ? '#parse' : '') +
+                  (issuesVisible[cell.id] ? '#vis' : '')}
+                  {@const panelOn =
+                    (shownIssues(i).length > 0 || hasParseError(i)) &&
+                    issuesVisible[cell.id]}
                   <ul
                     class="cell-issues"
-                    in:fade={{ duration: appStore.fadeInMs }}
-                    out:fade={{ duration: appStore.fadeOutMs }}
+                    class:issues-off={!panelOn}
+                    in:slideFly={{ y: 8, duration: appStore.fadeInMs }}
+                    out:slideFly={{ y: -8, duration: appStore.fadeOutMs }}
                   >
-                    {#each shownIssues(i) as iss, j (j)}
-                      <li class="issue-{iss.severity}">
-                        {#if iss.severity === 'error' || (j === 0 && hasParseError(i))}
+                    {#if panelOn}
+                      {#each shownIssues(i) as iss, j (j)}
+                        <li class="issue-{iss.severity}">
+                          {#if iss.severity === 'error' || (j === 0 && hasParseError(i))}
+                            <span
+                              class="parse-error-icon"
+                              title={j === 0 && hasParseError(i)
+                                ? UNPARSEABLE_MSG
+                                : iss.message}>!</span
+                            >
+                          {/if}{iss.message}
+                        </li>
+                      {/each}
+                      {#if hasParseError(i) && shownIssues(i).length === 0}
+                        <li class="issue-error">
                           <span
                             class="parse-error-icon"
-                            title={j === 0 && hasParseError(i)
-                              ? UNPARSEABLE_MSG
-                              : iss.message}>!</span
+                            title={UNPARSEABLE_MSG}>!</span
                           >
-                        {/if}<SlideSwap
-                          text={iss.message}
-                          inMs={appStore.fadeInMs}
-                          outMs={appStore.fadeOutMs}
-                        />
-                      </li>
-                    {/each}
-                    {#if hasParseError(i) && shownIssues(i).length === 0}
-                      <li class="issue-error">
-                        <span
-                          class="parse-error-icon"
-                          title={UNPARSEABLE_MSG}>!</span
-                        >
-                      </li>
+                        </li>
+                      {/if}
                     {/if}
                   </ul>
-                {/if}
+                {/key}
               </div>
             {/if}
             <button

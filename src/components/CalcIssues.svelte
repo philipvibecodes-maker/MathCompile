@@ -2,7 +2,7 @@
   import { fade } from 'svelte/transition';
   import { cellIssues } from '../calc/calculator.svelte.ts';
   import { appStore, type Cell } from '../state/store.svelte';
-  import SlideSwap from './SlideSwap.svelte';
+  import { slideFly } from './slide-fly.ts';
 
   // This cell's issue messages in the input column: once typing has
   // paused for debounceMs, each message mounts as a chip pinned
@@ -23,8 +23,14 @@
     // the chips wait on.
     const armed = cell.latex;
     if (issues.length === 0) {
+      // Linger fadeOutMs past the last issue so a transient clean state
+      // (mid-edit) keeps the layer mounted — each-removal then runs the
+      // chips' outro instead of an instant unmount dropping it.
       clearTimeout(issueTimer);
-      issuesVisible = false;
+      issueTimer = setTimeout(
+        () => (issuesVisible = false),
+        appStore.fadeOutMs,
+      );
       return;
     }
     if (issuesVisible) return;
@@ -75,21 +81,28 @@
           }
           return [...byLine.entries()]
             .sort((a, b) => a[0] - b[0])
-            .map(([row, list]) => ({ row, a: anchors[row], list }));
+            .map(([row, list]) => ({
+              row,
+              a: anchors[row],
+              list,
+              sig: list.map((i) => `${i.severity}:${i.message}`).join('\n'),
+            }));
         })(),
   );
 </script>
 
-{#if issues.length > 0}
-  {#if issuesVisible}
-    {#if anchors.length > 0}
+{#if issuesVisible}
+  {#if anchors.length > 0}
       <ul
         class="calc-issues calc-issues-inline"
         bind:this={overlayEl}
         in:fade={{ duration: appStore.fadeInMs }}
         out:fade={{ duration: appStore.fadeOutMs }}
       >
-        {#each chips as chip (chip.row)}
+        <!-- Each chip is keyed on its message set: a change flies the
+             whole chip (background, icon, text) out and the replacement
+             in, overlapping at the same anchored position. -->
+        {#each chips as chip (chip.row + '|' + chip.sig)}
           {@const a = chip.a}
           <li
             class="issue-{chip.list.some((i) => i.severity === 'error')
@@ -97,18 +110,15 @@
               : 'note'}"
             style="top: {a.top + a.height / 2}px; left: {a.right +
               6}px; max-width: {Math.max(overlayW - a.right - 12, 120)}px"
+            in:slideFly={{ y: 8, duration: appStore.fadeInMs }}
+            out:slideFly={{ y: -8, duration: appStore.fadeOutMs }}
           >
             <div class="chip-msgs">
               {#each chip.list as iss, k (k)}
                 <span class="chip-msg" title={iss.message}
                   >{#if iss.severity === 'error'}<span
                       class="parse-error-icon">!</span
-                    >{/if}<span class="chip-text"
-                      ><SlideSwap
-                        text={iss.message}
-                        inMs={appStore.fadeInMs}
-                        outMs={appStore.fadeOutMs}
-                      /></span
+                    >{/if}<span class="chip-text">{iss.message}</span
                     ></span
                 >
               {/each}
@@ -117,24 +127,23 @@
         {/each}
       </ul>
     {:else}
-      <ul
-        class="calc-issues"
-        in:fade={{ duration: appStore.fadeInMs }}
-        out:fade={{ duration: appStore.fadeOutMs }}
-      >
-        {#each issues as iss, j (j)}
-          <li class="issue-{iss.severity}">
-            {#if iss.severity === 'error'}<span
-                class="parse-error-icon"
-                title={iss.message}>!</span
-              >{/if}<SlideSwap
-                text={iss.message}
-                inMs={appStore.fadeInMs}
-                outMs={appStore.fadeOutMs}
-              />
-          </li>
-        {/each}
-      </ul>
-    {/if}
+    {#key issues.map((i) => `${i.severity}:${i.message}`).join('|')}
+      {#if issues.length > 0}
+        <ul
+          class="calc-issues"
+          in:slideFly={{ y: 8, duration: appStore.fadeInMs }}
+          out:slideFly={{ y: -8, duration: appStore.fadeOutMs }}
+        >
+          {#each issues as iss, j (j)}
+            <li class="issue-{iss.severity}">
+              {#if iss.severity === 'error'}<span
+                  class="parse-error-icon"
+                  title={iss.message}>!</span
+                >{/if}{iss.message}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    {/key}
   {/if}
 {/if}
