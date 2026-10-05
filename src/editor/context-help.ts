@@ -54,9 +54,10 @@ export function readHelpContext(field: HTMLElement): HelpContext | null {
 export const HELP_ENTRIES: Record<HelpContext, { key: string; does: string }[]> =
   {
     'inside-matrix': [
-      { key: 'Enter', does: 'add a row below' },
-      { key: 'Shift+Space', does: 'add a column right' },
-      { key: 'Backspace', does: 'on an empty cell deletes it (+row/col)' },
+      { key: 'Enter', does: 'add row below' },
+      { key: 'Shift+Space', does: 'add column right' },
+      { key: 'Ctrl+Shift+Backspace', does: 'delete row' },
+      { key: 'Ctrl+Shift+Delete', does: 'delete column' },
     ],
     'left-of-matrix': [
       { key: 'det', does: 'determinant' },
