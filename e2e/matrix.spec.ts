@@ -47,7 +47,9 @@ test('typed \\cases opens a cases environment', async ({ page }) => {
   const mf = cell(page);
   await page.keyboard.type('\\cases');
   await page.keyboard.press('Enter');
-  await expect(mf.locator('.mq-matrix tr')).toHaveCount(2);
+  // The autocomplete preview renders a real .mq-matrix inside the field
+  // too; scope to the editable mount so only the real env counts.
+  await expect(mf.locator('.mq-editable-field .mq-matrix tr')).toHaveCount(2);
   expect(await cellValue(mf)).toBe('\\begin{cases}&\\\\&\\end{cases}');
 });
 
