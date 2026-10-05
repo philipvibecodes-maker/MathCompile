@@ -1409,6 +1409,18 @@ body {
   font-size: 14px;
 }
 
+.howto-pdf {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 0 12px 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.howto-pdf:hover {
+  color: var(--accent-text);
+}
+
 /* ── Dark mode: vendored MathQuill overrides ────────── */
 
 /* mathquill.css hardcodes `border-color: black` on every math element

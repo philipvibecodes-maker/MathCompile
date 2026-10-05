@@ -1,6 +1,8 @@
 <script lang="ts">
   import { appStore } from '../state/store.svelte';
 
+  const referencePdf = `${import.meta.env.BASE_URL}input-reference.pdf`;
+
   // `smart` shows when smart mode is on, `plain` when off; `how` is shared.
   const entries: { goal: string; how?: string; smart?: string; plain?: string }[] = [
     { goal: 'Fraction', how: 'type 1/2 or \\frac ⏎' },
@@ -29,4 +31,7 @@
       </div>
     {/each}
   </dl>
+  <a class="howto-pdf" href={referencePdf} target="_blank" rel="noreferrer">
+    Full input reference (PDF)
+  </a>
 </details>
