@@ -9,7 +9,7 @@ dev app (`npm run dev`, port 5573) with synthetic keyboard input — ~800
 probes — and recording the serialized LaTeX the cell produces. Worked
 examples are taken from three Harvard undergraduate theses: Buller (knot
 theory), Fogelson (bifurcation theory/ODEs), Salkinder (knot theory /
-low-dimensional topology). Verified against `main` @ `4f65954`.
+low-dimensional topology). Verified against `main` @ `6e4bf04`.
 
 **Notation used here:** `\frac`+Enter means "type the word after a
 backslash, press Enter to accept it". `Right`/`Tab`/`Up`/`Down` are arrow
@@ -20,7 +20,12 @@ and tab keys. Quoted strings are typed literally.
 1. **`\` opens the command input.** Type `\` then a word, accept with
    **Enter** (or Space, or any non-letter). Accepting inserts the symbol
    or command. Space after a command word also accepts it
-   (`\alpha ` → `\alpha` + space).
+   (`\alpha ` → `\alpha` + space). An **autocomplete dropdown** now
+   appears as you type — ↑↓ picks a suggestion, Enter accepts the
+   *highlighted* one (top suggestion by default: watch it, `\not`+Enter
+   completes to `\notin`), **Esc dismisses** (and drops the pending
+   input). Typing 2+ plain letters suggests word completions too, and
+   **Ctrl+Space** opens a symbol picker.
 2. **Blocks stay open — this is the #1 gotcha.** The caret stays *inside*
    a subscript, superscript, fraction half, root, operator bound, accent,
    matrix cell, or `\text` argument until you press **Right** or **Tab**.
@@ -52,8 +57,8 @@ and tab keys. Quoted strings are typed literally.
    Enter snaps the caret out to the atom first, then breaks the line.
 5. **Smart mode** (the default toggle in the header) adds two things on
    top of plain mode: `autoCommands` — the words
-   `int iint antid sum sqrt prod pi infty theta derivative` work with no
-   backslash — and `autoSubscriptNumerals` (`x2` → `x_{2}`). Upright
+   `int iint antid sum sqrt prod pi infty theta derivative def` work
+   with no backslash — and `autoSubscriptNumerals` (`x2` → `x_{2}`). Upright
    operator names (`sin`, `lim`, `det`, …) and unicode symbol typing are
    on in **both** modes.
 6. **Unicode input works.** Typing `α β π θ ∞ ≤ ≥ ≠ ≈ → ↦ ° √ ∫ ∬ ∑ ∏ ∀ ∃
@@ -253,15 +258,20 @@ AMS relations now work: `\approxeq \lesssim \gtrsim \leqslant
 Definitional equals `:=`: type `:=` literally, or `\assign` /
 `\coloneqq` / `\colonequals` (all serialize `\coloneqq`). For
 \(\overset{def}{=}\) use `\overset`+Enter `def` Tab `=` or
-`\stackrel`+Enter.
+`\stackrel`+Enter. **Function definitions** get their own marker:
+`\def`+Enter inserts `\text{def} ` — `\def`+Enter `g(x)=2x` →
+`\text{def}\ g\left(x\right)=2x`, which the compiler reads as a
+definition (`def g(x): …` in the Python target); a bare `f(x)` is
+multiplication, not a signature. `def` is also a smart-mode word.
 
-**Negations — `\not` is a no-op prefix.** Typing `\not`+Enter before
-`=`, `\in`, `\sim`, `\mid`, `\subset` inserts *nothing* (`x\not=` →
-`x=y`). Use the dedicated `\n…` commands, which serialize as
-`\not\X`: `\nless \ngtr \nleq \ngeq \nsim \ncong \nparallel \nsub \nsube
+**Negations — type the dedicated `\n…` commands.** Typing `\not`+Enter
+now *autocompletes to `\notin`* (the dropdown's top suggestion wins),
+and Esc drops the pending input entirely — a bare `\not` can't be
+entered anymore, which is just as well since it was a silent no-op.
+Use: `\nless \ngtr \nleq \ngeq \nsim \ncong \nparallel \nsub \nsube
 \nsubset \nsubsete \nsubseteq \nsup \nsupe \nsupset \nsupsete \nsupseteq
 \nmid \nprec \nsucc \nvDash \notin (\notni \niton \notcontains
-\doesnotcontain for \ni) \nexists`.
+\doesnotcontain for \ni) \nexists` (all serialize `\not\X`).
 
 Still missing: `\pitchfork`, `\varpropto`, `\eqdef`, `\questeq`,
 `\hateq`, `\veeeq` — see MISSING-INPUT-FEATURES.md.
@@ -332,7 +342,8 @@ Typing `*` gives `\cdot`. Aliases: `\land`/`\and`→`\wedge`,
 \therefore (\therefor) \because (\cuz) \top \bot \models \vdash \dashv
 \vDash \Vdash \Vvdash` — all standard. `p\land`+Enter `q\lor`+Enter `r`
 → `p\wedge q\vee r` (the `\land`/`\lor` aliases serialize to
-`\wedge`/`\vee`). `\not`+Enter inserts nothing — use `\nexists`/`\ne`
+`\wedge`/`\vee`). `\not`+Enter completes to `\notin` (autocomplete wins)
+— type `\nexists`/`\ne` directly
 etc. (see Relations).
 
 ## Accents and decorations
@@ -376,24 +387,27 @@ strong tt sf uppercase lowercase` are registered.
 
 ## Matrices, piecewise, environments
 
-`\begin{env}` typed literally now works — type the whole `\begin{pmatrix}`
-then Enter. A blank grid is inserted (2 cols × 3 rows) with the caret in
-**row 2, col 1** — press **Up** to reach row 1. The bare words
-`\pmatrix \bmatrix \Bmatrix \vmatrix \Vmatrix \matrix` still work and
-insert a 2×2 with the caret in row 1 (prefer these for small matrices).
+Every environment can be opened two ways: **`\name` shortcuts**
+(`\pmatrix \bmatrix \Bmatrix \vmatrix \Vmatrix \matrix \cases \aligned
+\align \gathered \smallmatrix \split \equation \gather \multline
+\flalign \substack`, Enter to accept) or the literal **`\begin{name}`**
+form (the `{` ends the command input; autocomplete suggests as you
+type). Both insert a blank grid — with one caret difference worth
+knowing: the `\name` shortcut lands in **row 1**; the `\begin{env}`
+form lands in **row 2** (press **Up** once to reach row 1).
 
 | Want | Type | Get |
 |---|---|---|
 | 2×2 parens matrix | `\pmatrix`+Enter `a` Tab `b` Enter `c` Tab `d` | `\begin{pmatrix}a&b\\c&d\end{pmatrix}` (after filling) |
 | same, literal env | `\begin{pmatrix}`+Enter Up `a` Tab `b` … | works — caret starts row 2, Up reaches row 1 |
 | det matrix | `det` `\vmatrix`+Enter … | `\det\begin{vmatrix}…` — `\vmatrix` = det bars, `\Vmatrix` = double bars, `\bmatrix` = `[]`, `\Bmatrix` = `{}`, `\matrix` = bare |
-| piecewise \(f(x)=\begin{cases}…\) | `f(x)=` `\begin{cases}`+Enter `x^2` Right Tab `x>0` Enter `0` Tab `x<0` | `\begin{cases}x^{2}&x>0\\0&x<0\end{cases}` — col 2 is the condition; Right exits the sup block *then* Tab moves to it |
-| \(\begin{smallmatrix}\) | `\begin{smallmatrix}`+Enter | works (bare `\smallmatrix` word does not) |
-| \(\begin{array}\) | `\begin{array}`+Enter | works, but the `{cc}` colspec can't be typed — typing it mangles (`\begin{array}{}cc…`). Leave the spec empty |
-| `\begin{subarray}` | same pattern | works |
-| aligned work | `\begin{aligned}`+Enter `x` Tab `=1` Enter … | `\begin{aligned}x&=1\\…` — col1 = left side, col2 = `=rhs`. **Enter adds a row keeping the column** — arrow Left back to col 1 to start each row. `&` types literal `\&`, never a column break |
-| gathered lines | `\begin{gathered}`+Enter `x=1` Enter `y=2` | `\begin{gathered}x=1\\y=2\end{gathered}` — also `\begin{gather}` `\begin{equation}` `\begin{multline}` `\begin{flalign}` (all serialize as `gathered`) |
-| more aligned aliases | `\begin{split}` `\begin{align}` `\begin{eqnarray}` `\begin{alignat}` | serialize as `\begin{aligned}` |
+| piecewise \(f(x)=\begin{cases}…\) | `f(x)=` `\cases`+Enter `x^2` Right Tab `x>0` Enter `0` Tab `x<0` | `\begin{cases}x^{2}&x>0\\0&x<0\end{cases}` — col 2 is the condition; Right exits the sup block *then* Tab moves to it |
+| \(\begin{smallmatrix}\) | `\smallmatrix`+Enter | works (the bare word now opens the env too) |
+| \(\begin{array}{cc}\) | `\begin{array}{cc}`+Enter | works — after `\begin{array}`, `{…}` opens a **live spec input**; type `cc` then `}`/Enter/Tab applies it |
+| `\begin{subarray}` | same pattern (spec env) | works |
+| aligned work | `\align`+Enter `x` Tab `=1` Enter … | `\begin{aligned}x&=1\\…` — col1 = left side, col2 = `=rhs`. **Enter adds a row keeping the column** — arrow Left back to col 1 to start each row. `&` types literal `\&`, never a column break |
+| gathered lines | `\gathered`+Enter `x=1` Enter `y=2` | `\begin{gathered}x=1\\y=2\end{gathered}` — also `\begin{gather}` `\begin{equation}` `\begin{multline}` `\begin{flalign}` (all serialize as `gathered`) |
+| more aligned aliases | `\split` `\begin{align}` `\begin{eqnarray}` `\begin{alignat}` | serialize as `\begin{aligned}` |
 
 - **Tab/Right move to the next cell**; arrows move cell-to-cell;
   **Enter inserts a row below** keeping the column; **Shift+Space adds a
@@ -402,7 +416,7 @@ insert a 2×2 with the caret in row 1 (prefer these for small matrices).
   baseline after the env) — Right at the last cell stays inside, Down on
   the last row stays inside.
 - Typing `\pmatrix{a&b\\c&d}` inline mangles — the `&`/brace chars are
-  not cell syntax while typing.
+  not cell syntax while typing; use `\pmatrix`+Enter and fill the grid.
 
 ## Multi-line work
 

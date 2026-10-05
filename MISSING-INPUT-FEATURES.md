@@ -2,7 +2,7 @@
 
 Constructs an undergraduate would reach for that **cannot be typed** (or
 serialize wrong / corrupt the cell) in the vendored MathQuill, verified
-against `main` @ `4f65954`. Everything below was verified by driving a
+against `main` @ `6e4bf04`. Everything below was verified by driving a
 real cell with synthetic keystrokes and recording the latex.
 "→ `\text{…}`" means the word lands as literal italic-ish text with no
 semantics.
@@ -16,9 +16,7 @@ Salkinder (knots/topology).
 |---|---|---|---|
 | `\rangle` typed to close a `⟨…⟩` pair | typing `\rangle`+Enter at the auto-pair's close swaps it to `\right\langle` — renders the wrong glyph, and the serialized latex **fails to re-parse on reload (cell renders blank)** | `\langle`+Enter inserts the complete `\left\langle…\right\rangle` pair — don't type `\rangle`, exit with Right/Ctrl+End. Or type unicode `⟨⟩` (stays literal, round-trips fine) | Salkinder: `⟨x,y \mid x^p=y^q⟩`, `D_{2n}=⟨s,t\mid…⟩` |
 | `\rVert` typed to close `‖x‖` | same swap: `\right\lVert` — invisible (‖ is symmetric) but the latex still won't re-parse | `\lVert`+Enter and don't type `\rVert`; or unicode `‖x‖` | — |
-| `\not` prefix (`x\not= y`, `\not\equiv`, `\not\sim`, `\not\in`, `\not\mid`) | `\not`+Enter silently inserts nothing → `x=y` | dedicated `\n…` commands: `\ne \notin \nmid \nsubseteq \nexists \nprec \nsucc \nvDash` (serialize `\not\X`) | — |
 | bare `infty` inside an operator bound | `\inf ty` — `inf` matches as the auto-operator first | `\infty`+Enter inside the bound | sums to ∞ everywhere |
-| `array`/`aligned` colspec `{cc}` | typing `\begin{array}{cc}` mangles the spec into the body (`\begin{array}{}cc…`) | `\begin{array}`+Enter with empty spec; grid is `&`-cell based anyway | — |
 
 ## Fonts and operator names
 
@@ -57,7 +55,6 @@ Salkinder (knots/topology).
 | Wanted | What happens instead | Workaround | Thesis example |
 |---|---|---|---|
 | `\blacksquare` | `\text{blacksquare}` | `\square` works (open box); `\Box` is also `\text{…}` | QED tombstone |
-| `\smallmatrix` bare word | `\text{smallmatrix}ab` | `\begin{smallmatrix}`+Enter works | — |
 | `\bigl`/`\Big`/`\bigg`/`\Bigg` delimiter sizing | flaky — `\bigl (x)` → `\left(x\right)` sometimes drops the delimiter | `\left…\right` is reliable | — |
 
 ## Registered-but-wrong (aliases that serialize to the wrong symbol)
@@ -78,13 +75,16 @@ Not missing words — they accept but emit the wrong latex:
   `v_{1,v_{2}}`, `x^2 y` → `x^{2\ y}`. Right/Tab required. This applies
   inside matrix/env cells and accent args too (`\dot x+1` needs Right
   before the `+`).
-- **`\begin{env}` caret lands in row 2** — the inserted grid is 2 cols ×
-  3 rows with the caret on the *middle* row; press Up to reach row 1.
-  Bare `\pmatrix`/`\matrix` words start at row 1 correctly.
+- **`\begin{env}` caret lands in row 2** — the literal env form inserts
+  a 2-col × 3-row grid with the caret on the *middle* row; press Up to
+  reach row 1. The `\name` shortcuts (`\pmatrix`, `\cases`, `\align`, …)
+  land in row 1 correctly — prefer them.
 - **`aligned`/`cases` Enter keeps the column** — after `x` Tab `=1`
   Enter lands you in the next row's *second* column; arrow Left back to
   column 1 to start the next row.
-- **`\not`+relation inserts nothing** — see table above.
+- **`\not`+Enter completes to `\notin`** — the autocomplete's top
+  suggestion wins; a bare `\not` can't be entered (was a no-op anyway).
+  Type `\nX` directly.
 - **`sin`/`lim`/etc. fire mid-word**: `crossings` → `cros\sin gs`
   (Buller's `c∈crossings`), `info` → `\inf o`. Use `\text{…}`.
 - **`a|b` is absolute-value pairing**, not divides: `a\left|b\right|`.
