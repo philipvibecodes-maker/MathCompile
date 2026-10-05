@@ -220,7 +220,6 @@ suite('environments', function () {
         '\\displaylines{z\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}'
       );
     });
-||||||| de97691
     test('Ctrl-Shift-Backspace deletes the current row, content and all', function () {
       mq.latex('\\begin{matrix}a&b\\\\x&y\\\\c&d\\end{matrix}');
       mq.moveToLeftEnd().keystroke('Right'); // cell a (row 0)
