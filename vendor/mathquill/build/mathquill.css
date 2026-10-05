@@ -391,10 +391,10 @@
 .mq-math-mode .mq-supsub {
   text-align: left;
   font-size: 90%;
-  vertical-align: -0.5em;
+  vertical-align: -0.65em;
 }
 .mq-math-mode .mq-supsub.mq-sup-only {
-  vertical-align: 0.5em;
+  vertical-align: 0.65em;
 }
 .mq-math-mode .mq-supsub.mq-sup-only > .mq-sup {
   display: inline-block;
@@ -402,6 +402,7 @@
 }
 .mq-math-mode .mq-supsub .mq-sup {
   display: block;
+  margin-bottom: 0.15em;
 }
 .mq-math-mode .mq-supsub .mq-sub {
   display: block;

@@ -394,10 +394,10 @@
   .mq-supsub {
     text-align: left;
     font-size: 90%;
-    vertical-align: -0.5em;
+    vertical-align: -0.65em;
 
     &.mq-sup-only {
-      vertical-align: 0.5em;
+      vertical-align: 0.65em;
 
       & > .mq-sup {
         display: inline-block;
@@ -407,6 +407,8 @@
 
     .mq-sup {
       display: block;
+      // spread the pair: lift the sup off the sub
+      margin-bottom: 0.15em;
     }
 
     .mq-sub {
