@@ -220,6 +220,67 @@ suite('environments', function () {
         '\\displaylines{z\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}'
       );
     });
+||||||| de97691
+    test('Ctrl-Shift-Backspace deletes the current row, content and all', function () {
+      mq.latex('\\begin{matrix}a&b\\\\x&y\\\\c&d\\end{matrix}');
+      mq.moveToLeftEnd().keystroke('Right'); // cell a (row 0)
+      mq.keystroke('Ctrl-Shift-Backspace');
+      assert.equal(mq.latex(), '\\begin{matrix}x&y\\\\c&d\\end{matrix}');
+      assert.equal(ownRows(rootEl().querySelector('.mq-matrix')), 2);
+      // caret lands live on the cell that slid up into the deleted row
+      mq.typedText('z');
+      assert.equal(mq.latex(), '\\begin{matrix}xz&y\\\\c&d\\end{matrix}');
+    });
+
+    test('Ctrl-Shift-Del deletes the current column', function () {
+      mq.latex('\\begin{matrix}a&b\\\\c&d\\end{matrix}');
+      mq.moveToLeftEnd().keystroke('Right'); // cell a (col 0)
+      mq.keystroke('Ctrl-Shift-Del');
+      assert.equal(mq.latex(), '\\begin{matrix}b\\\\d\\end{matrix}');
+      assert.equal(
+        rootEl().querySelector('.mq-matrix').querySelectorAll('td').length,
+        2
+      );
+      mq.typedText('z');
+      assert.equal(mq.latex(), '\\begin{matrix}bz\\\\d\\end{matrix}');
+    });
+
+    test('Ctrl-Shift-Backspace/Ctrl-Shift-Del refuse on the last row or column', function () {
+      mq.latex('\\begin{matrix}a&b\\end{matrix}');
+      mq.moveToLeftEnd().keystroke('Right');
+      mq.keystroke('Ctrl-Shift-Backspace'); // one row: no-op
+      assert.equal(mq.latex(), '\\begin{matrix}a&b\\end{matrix}');
+      mq.keystroke('Ctrl-Shift-Del'); // delete col 0 -> single column
+      assert.equal(mq.latex(), '\\begin{matrix}b\\end{matrix}');
+      mq.keystroke('Ctrl-Shift-Del'); // one column: no-op
+      assert.equal(mq.latex(), '\\begin{matrix}b\\end{matrix}');
+    });
+
+    test('inside \\displaylines the delete shortcuts keep word-delete', function () {
+      // \displaylines is a grid internally, but the rebinding is
+      // matrices-only: the keys still clear the current line's content.
+      mq.latex('\\displaylines{a\\\\b\\\\c}');
+      mq.moveToRightEnd(); // last line (fillsRootEdge descends)
+      mq.keystroke('Ctrl-Shift-Backspace');
+      assert.equal(mq.latex(), '\\displaylines{a\\\\ b\\\\ }');
+      // forward-delete on the now-empty line removes it — the usual
+      // empty-cell delete, not the matrix rebinding
+      mq.keystroke('Ctrl-Shift-Del');
+      assert.equal(mq.latex(), '\\displaylines{a\\\\ b}');
+    });
+
+    test('outside a grid the delete shortcuts still clear the block', function () {
+      // ctrlDeleteDir removes the rest of the current block in that
+      // direction — the rebinding must not change that outside a grid.
+      mq.latex('foo');
+      mq.moveToRightEnd();
+      mq.keystroke('Ctrl-Shift-Backspace');
+      assert.equal(mq.latex(), '');
+      mq.latex('bar');
+      mq.moveToLeftEnd();
+      mq.keystroke('Ctrl-Shift-Del');
+      assert.equal(mq.latex(), '');
+    });
   });
 
   suite('env shortcuts', function () {

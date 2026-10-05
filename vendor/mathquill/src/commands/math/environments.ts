@@ -520,6 +520,86 @@ class CellGrid extends MathCommand {
     this.finalizeTree();
   }
 
+  // Cells laid out row-major, as an array of rows.
+  cellRows(): MatrixCell[][] {
+    var rows: MatrixCell[][] = [];
+    this.eachChild(function (child) {
+      const cell = child as MatrixCell;
+      rows[cell.row] = rows[cell.row] || [];
+      rows[cell.row].push(cell);
+      return undefined;
+    });
+    return rows;
+  }
+
+  // Force-delete the row containing `cell`, discarding its content —
+  // unlike deleteCell, which only removes a fully-empty row. A grid
+  // keeps at least one row. Returns the cell to focus, or undefined.
+  deleteRow(currentCell: MatrixCell): MatrixCell | undefined {
+    var rows = this.cellRows(),
+      blocks = this.cells,
+      row = -1;
+    for (var i = 0; i < rows.length; i += 1) {
+      if (rows[i] && rows[i].indexOf(currentCell) > -1) row = i;
+    }
+    if (row === -1 || rows.length <= 1) return undefined;
+
+    const column = rows[row].indexOf(currentCell),
+      focusRow = rows[row + 1] || rows[row - 1],
+      focus = focusRow?.[Math.min(column, focusRow.length - 1)],
+      tr = rows[row][0].domFrag().oneElement().closest('tr');
+
+    for (i = 0; i < rows[row].length; i += 1) {
+      const cell = rows[row][i];
+      if (blocks.indexOf(cell) > -1) {
+        cell.remove();
+        blocks.splice(blocks.indexOf(cell), 1);
+      }
+    }
+    tr?.remove();
+
+    // Decrease all following row numbers
+    this.eachChild(function (child) {
+      const cell = child as MatrixCell;
+      if (cell.row > row) cell.row -= 1;
+      return undefined;
+    });
+    return focus || blocks[0];
+  }
+
+  // Force-delete the column containing `cell`, discarding its content.
+  // A grid keeps at least one column. Returns the cell to focus, or
+  // undefined.
+  deleteColumn(currentCell: MatrixCell): MatrixCell | undefined {
+    var rows = this.cellRows(),
+      blocks = this.cells,
+      row = -1,
+      column = -1,
+      columns = 0;
+    for (var i = 0; i < rows.length; i += 1) {
+      if (!rows[i]) continue;
+      columns = Math.max(columns, rows[i].length);
+      const at = rows[i].indexOf(currentCell);
+      if (at > -1) {
+        row = i;
+        column = at;
+      }
+    }
+    if (column === -1 || columns <= 1) return undefined;
+
+    // cell.remove() detaches the <td> itself; no <tr> bookkeeping.
+    const focus = rows[row][column + 1] || rows[row][column - 1];
+    for (i = 0; i < rows.length; i += 1) {
+      if (!rows[i]) continue;
+      const cell = rows[i][column];
+      if (cell && blocks.indexOf(cell) > -1) {
+        cell.remove();
+        blocks.splice(blocks.indexOf(cell), 1);
+      }
+    }
+    return focus || blocks[0];
+  }
+
   addRow(afterCell: MatrixCell) {
     var previous: MatrixCell[] = [],
       newCells: MatrixCell[] = [],
@@ -610,6 +690,21 @@ class CellGrid extends MathCommand {
     ctrlr.cursor.insAtRightEnd(cellToFocus);
   }
 
+  deleteRowOrColumn(
+    method: 'deleteRow' | 'deleteColumn',
+    cell: MatrixCell,
+    ctrlr: Controller
+  ) {
+    var cellToFocus = this[method](cell);
+    if (!cellToFocus) return;
+    this.finalizeTree();
+    this.bubble(function (node) {
+      node.reflow();
+      return undefined;
+    });
+    ctrlr.cursor.insAtRightEnd(cellToFocus);
+  }
+
   backspace(
     cell: MatrixCell,
     dir: Direction,
@@ -676,6 +771,26 @@ class MatrixCell extends MathBlock {
         if (this.parent instanceof DisplayLines) return;
         e?.preventDefault();
         return (this.parent as CellGrid).insert('addColumn', this, ctrlr);
+      case 'Ctrl-Shift-Backspace':
+        // Word-delete's key, rebound inside matrices: delete the
+        // current row outright, content and all. In \displaylines and
+        // outside a grid this falls through to word-delete as usual.
+        if (this.parent instanceof DisplayLines) break;
+        e?.preventDefault();
+        return (this.parent as CellGrid).deleteRowOrColumn(
+          'deleteRow',
+          this,
+          ctrlr
+        );
+      case 'Ctrl-Shift-Del':
+        // Delete the current column — same scoping as above.
+        if (this.parent instanceof DisplayLines) break;
+        e?.preventDefault();
+        return (this.parent as CellGrid).deleteRowOrColumn(
+          'deleteColumn',
+          this,
+          ctrlr
+        );
     }
     return super.keystroke(key, e, ctrlr);
   }
