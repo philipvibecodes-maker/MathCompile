@@ -1389,6 +1389,18 @@ body {
   border-radius: 6px;
 }
 
+.howto-pdf {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 0 12px 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.howto-pdf:hover {
+  color: var(--accent-text);
+}
+
 .howto-item {
   display: contents;
 }
