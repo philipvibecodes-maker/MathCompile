@@ -1,6 +1,7 @@
 // scipy.stats-backed builtins: `\mathrm{normcdf}(x,\mu,\sigma)`-style
-// distribution methods and `\mathrm{ttest}(d,\mu)`-style one-sample
-// statistics emit scipy.stats/numpy calls. scipy isn't in the base
+// distribution methods and `\mathrm{ttest}(d,\mu)`-style sample statistics
+// (one-sample, two-sample, and hypothesis tests) emit scipy.stats/numpy
+// calls. scipy isn't in the base
 // engine payload — calculator.worker.ts lazy-loads it the first time a
 // program's prelude carries the import line emitted for these cells.
 //
@@ -126,11 +127,26 @@ interface SampleFunc {
   /** What the emitted call needs imported: 'st' = scipy.stats,
    * 'np' = numpy, 'ci' = the mc_mean_ci helper (implies both). */
   needs: 'st' | 'np' | 'ci';
-  /** Extra args after the data operand: [min, max]. Default none. */
+  /** Extra args after the data operand(s): [min, max]. Default none. */
   rest?: [min: number, max: number];
-  /** The helper wraps its own arg in list() — pass the emitted operand
-   * raw instead of pre-wrapping. */
+  /** How many leading args are data operands (wrapped in list()).
+   * Default 1; 'all' wraps every arg for variadic multi-sample tests. */
+  nData?: number | 'all';
+  /** Minimum data operands — only with nData 'all' (default 2). */
+  minData?: number;
+  /** The helper wraps its own arg — pass the emitted operand(s)
+   * raw instead of pre-wrapping (scalar-arity tests). */
   rawData?: true;
+  /** Coerce data operands to floats — scipy's bartlett raises on
+   * int-typed samples (its NaN-fill path can't write to an int
+   * array on newer versions). */
+  floatData?: true;
+  /** Wrap rest args in list() too (chisquare's f_exp). */
+  listRest?: true;
+  /** Emit rest args as quoted strings (kstest's dist name). */
+  quoteRest?: true;
+  /** What the call wants, for the arity-error message. */
+  want?: string;
   build: (data: string, rest: string[], sp: string) => string;
 }
 
@@ -165,6 +181,69 @@ const SAMPLE_FUNCS: Record<string, SampleFunc> = {
     rest: [0, 1],
     rawData: true,
     build: (d, r) => `mc_mean_ci(${d}, ${r[0] ?? '0.95'})`,
+  },
+  // Two-sample tests — both operands are list()-wrapped.
+  ttestind: { needs: 'st', nData: 2, build: (d) => `st.ttest_ind(${d})` },
+  ttestrel: { needs: 'st', nData: 2, build: (d) => `st.ttest_rel(${d})` },
+  mannwhitneyu: {
+    needs: 'st',
+    nData: 2,
+    build: (d) => `st.mannwhitneyu(${d})`,
+  },
+  wilcoxon: { needs: 'st', nData: 2, build: (d) => `st.wilcoxon(${d})` },
+  ks2samp: { needs: 'st', nData: 2, build: (d) => `st.ks_2samp(${d})` },
+  pearsonr: { needs: 'st', nData: 2, build: (d) => `st.pearsonr(${d})` },
+  spearmanr: { needs: 'st', nData: 2, build: (d) => `st.spearmanr(${d})` },
+  kendalltau: { needs: 'st', nData: 2, build: (d) => `st.kendalltau(${d})` },
+  // Multi-sample tests — variadic, at least two samples (friedman ≥ 3).
+  levene: { needs: 'st', nData: 'all', build: (d) => `st.levene(${d})` },
+  bartlett: {
+    needs: 'st',
+    nData: 'all',
+    floatData: true,
+    build: (d) => `st.bartlett(${d})`,
+  },
+  fligner: { needs: 'st', nData: 'all', build: (d) => `st.fligner(${d})` },
+  foneway: { needs: 'st', nData: 'all', build: (d) => `st.f_oneway(${d})` },
+  friedman: {
+    needs: 'st',
+    nData: 'all',
+    minData: 3,
+    build: (d) => `st.friedmanchisquare(${d})`,
+  },
+  // Normality and goodness-of-fit — one sample.
+  shapiro: { needs: 'st', build: (d) => `st.shapiro(${d})` },
+  normaltest: { needs: 'st', build: (d) => `st.normaltest(${d})` },
+  jarquebera: { needs: 'st', build: (d) => `st.jarque_bera(${d})` },
+  skewtest: { needs: 'st', build: (d) => `st.skewtest(${d})` },
+  kurtosistest: { needs: 'st', build: (d) => `st.kurtosistest(${d})` },
+  kstest: {
+    needs: 'st',
+    rest: [0, 1],
+    quoteRest: true,
+    build: (d, r) => `st.kstest(${d}, ${r[0] ?? "'norm'"})`,
+  },
+  anderson: {
+    needs: 'st',
+    rest: [0, 1],
+    quoteRest: true,
+    build: (d, r) => `st.anderson(${d}, ${r[0] ?? "'norm'"})`,
+  },
+  chisquare: {
+    needs: 'st',
+    rest: [0, 1],
+    listRest: true,
+    build: (d, r) =>
+      `st.chisquare(${d}${r[0] !== undefined ? `, ${r[0]}` : ''})`,
+  },
+  // Scalar-arity test — counts, not data lists.
+  binomtest: {
+    needs: 'st',
+    rawData: true,
+    rest: [1, 2],
+    want: 'k, n, and optionally p',
+    build: (d, r) =>
+      `st.binomtest(${d}, ${r[0]}${r[1] !== undefined ? `, ${r[1]}` : ''})`,
   },
 };
 
@@ -208,21 +287,39 @@ export function emitStatsCall(
   const lower = name.toLowerCase();
   const sample = SAMPLE_FUNCS[lower];
   if (sample !== undefined) {
-    const rest = args.slice(1);
+    const nData = sample.nData === 'all' ? args.length : (sample.nData ?? 1);
+    const minData =
+      sample.nData === 'all' ? (sample.minData ?? 2) : (sample.nData ?? 1);
+    const rest = args.slice(nData);
     const [minRest, maxRest] = sample.rest ?? [0, 0];
-    if (args.length === 0 || rest.length < minRest || rest.length > maxRest) {
-      const want =
-        maxRest > minRest
-          ? `${1 + minRest} or ${1 + maxRest} arguments`
-          : 'a data list';
-      ctx.flag('error', `${name} needs ${want}`);
+    if (
+      args.length < minData ||
+      rest.length < minRest ||
+      rest.length > maxRest
+    ) {
+      ctx.flag(
+        'error',
+        `${name} needs ${sampleWant(sample, minData, minRest, maxRest)}`,
+      );
       return ctx.stub(name);
     }
-    const data = sample.rawData
-      ? ctx.emit(args[0])
-      : `list(${ctx.emit(args[0])})`;
+    const data = args
+      .slice(0, nData)
+      .map((a) =>
+        sample.rawData
+          ? ctx.emit(a)
+          : sample.floatData
+            ? `list(map(float, ${ctx.emit(a)}))`
+            : `list(${ctx.emit(a)})`,
+      )
+      .join(', ');
+    const emittedRest = rest.map((a) => {
+      if (sample.quoteRest) return `'${ctx.emit(a)}'`;
+      if (sample.listRest) return `list(${ctx.emit(a)})`;
+      return ctx.emit(a);
+    });
     markUsage(ctx.usage, sample.needs);
-    return sample.build(data, rest.map((a) => ctx.emit(a)), ctx.sp);
+    return sample.build(data, emittedRest, ctx.sp);
   }
   for (const meth of DIST_METHODS) {
     if (!lower.endsWith(meth.suffix)) continue;
@@ -231,6 +328,26 @@ export function emitStatsCall(
     return emitDistCall(name, dist, meth, args, ctx);
   }
   return undefined;
+}
+
+// The arity-error tail for a sample func — 'a data list', '2 data lists',
+// 'at least N data lists' for the variadic tests, plus a rest-arg clause.
+function sampleWant(
+  f: SampleFunc,
+  minData: number,
+  minRest: number,
+  maxRest: number,
+): string {
+  if (f.want !== undefined) return f.want;
+  if (f.nData === 'all') return `at least ${minData} data lists`;
+  const data = minData > 1 ? `${minData} data lists` : 'a data list';
+  const extra =
+    minRest === maxRest
+      ? minRest > 0
+        ? ` and ${minRest} more argument${minRest > 1 ? 's' : ''}`
+        : ''
+      : ` and ${minRest}–${maxRest} more arguments`;
+  return data + extra;
 }
 
 function markUsage(u: StatsUsage, needs: 'st' | 'np' | 'ci'): void {
