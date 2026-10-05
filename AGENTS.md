@@ -213,6 +213,16 @@ and empty blocks serialize as `{ }`.
   hidden textarea), not `activeElement === el`.
 - The palette stays mounted: assert `.palette` hidden via
   `not.toBeVisible()`, not `toHaveCount(0)`.
+- Test keyboard UX with **Vimium installed**: it captures keys on
+  `window` (capture phase) and its insert-mode `Escape` does
+  `activeElement.blur()` + `stopImmediatePropagation` — the page never
+  sees the keydown, only a pointer-less blur to nowhere
+  (`relatedTarget === null`, no `pointerdown`). `attach-field`'s
+  focusout guard refocuses the cell on that signature; don't break it
+  (`e2e/autocomplete.spec.ts` simulates it with `.blur()`). To test
+  with the real extension, launch headed Chromium with
+  `--load-extension=<vimium checkout>` (see
+  `e2e/autocomplete.spec.ts` comment / `pointerRecentlyDown`).
 - Vendor internals are verified by `e2e/spike.spec.ts` (via
   `/e2e/spike.html`'s `window.spike` handles) and `e2e/vendor.spec.ts`
   (headless mocha suite, includes `test/unit/environments.test.js`).
