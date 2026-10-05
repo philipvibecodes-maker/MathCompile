@@ -180,6 +180,8 @@ and empty blocks serialize as `{ }`.
   `src/compile/ir.ts` reads as the function-definition prefix
   (`\text{def} g(x) = 2x` → `def g(x): return 2*x`); a bare `f(x)` is
   `f * x`, not a call or signature.
+- `\tr` is an insertion alias for `\mathrm{tr}` — the matrix-trace
+  word-op codegen lowers to `(A).trace()` / `sp.Trace(A)`.
 - Matrices: `\begin{matrix|pmatrix|…}` environments + bare
   `\pmatrix{a&b\\c&d}`. Typed `\name` shortcuts (`\cases`, `\aligned`,
   `\gathered`, …) open the same grid `\begin{name}` resolves to;
