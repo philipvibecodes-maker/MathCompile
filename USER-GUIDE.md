@@ -79,7 +79,7 @@ works.
 | Greek letters | `\alpha`, `\beta`, … or `pi`, `theta`, `infty` | \(\alpha\), \(\beta\), \(\pi\) |
 | Text inside math | `\text{…}` | \(\text{rate}\) |
 | Accents | `\dot`, `\ddot`, `\bar`, `\hat`, `\vec`, `\tilde` | \(\dot{x}\), \(\hat{x}\), \(\vec{v}\) |
-| Sets | `\in`, `\notin`, `\subseteq`, `\cup`, `\cap`, `\emptyset`, `\R` | \(x \in A\), \(A \cup B\), \(\varnothing\), \(\mathbb{R}\) |
+| Sets | `\in`, `\notin`, `\subseteq`, `\cup`, `\cap`, `\emptyset`, `\reals` | \(x \in A\), \(A \cup B\), \(\varnothing\), \(\mathbb{R}\) |
 | Relations | `\leq`, `\geq`, `\neq`, `\approx`, `\pm` | \(a \le b\), \(a \neq b\), \(a \pm b\) |
 | Arrows | `\to`, `\Rightarrow`, `\Leftrightarrow` | \(x \to 0\), \(p \Rightarrow q\), \(p \Leftrightarrow q\) |
 | Calculus | `\partial`, `\nabla`, `\infty`, `\prime` | \(\partial\), \(\nabla\), \(\infty\), \(f'\) |
@@ -181,14 +181,22 @@ and press `}`, `Enter`, or `Tab` to apply it.
 
 ### Set theory
 
-The named sets are single-letter commands — `\R`, `\N`, `\Z`, `\Q`,
-`\C`, `\P`, `\H`. Spelling out `\mathbb{R}` doesn't resolve as a
-command; use the letter.
+The named sets have both a letter command and a word command (several
+spellings too — `\reals`/`\Reals`, `\integers`/`\Integers`,
+`\complex`/`\complexes`/`\complexplane`, `\rationals`, `\naturals`,
+`\quaternions`, `\primes`). Spelling out `\mathbb{R}` doesn't resolve
+as a command; use one of these instead.
 
 | You want | Type | Renders |
 | --- | --- | --- |
-| Named number set | `\R` (same pattern for `\N` `\Z` `\Q` `\C` `\P` `\H`) | \(\mathbb{R}\) |
-| Integers mod n | `\Z` then `_n` | \(\mathbb{Z}_{n}\) |
+| Real numbers | `\R` or `\reals` | \(\mathbb{R}\) |
+| Integers | `\Z` or `\integers` | \(\mathbb{Z}\) |
+| Rational numbers | `\Q` or `\rationals` | \(\mathbb{Q}\) |
+| Complex numbers | `\C` or `\complexes` | \(\mathbb{C}\) |
+| Natural numbers | `\N` or `\naturals` | \(\mathbb{N}\) |
+| Quaternions | `\H` or `\quaternions` | \(\mathbb{H}\) |
+| Primes / projective | `\P` or `\primes` | \(\mathbb{P}\) |
+| Integers mod n | `\Z` or `\integers`, then `_n` | \(\mathbb{Z}_{n}\) |
 | Membership | `x` `\in` `A`, `\notin` | \(x \in A\), \(x \notin A\) |
 | Union / intersection / difference | `\cup` `\cap` `\setminus` | \(A \cup B\), \(A \cap B\), \(A \setminus B\) |
 | Subset | `\subset` `\subseteq` `\nsubseteq` | \(A \subset B\), \(A \subseteq B\), \(A \nsubseteq B\) |
@@ -289,7 +297,7 @@ know: `\cong` is read by the compiler as modular congruence
 
 | You want | Type | Renders |
 | --- | --- | --- |
-| Complex numbers | `\C` | \(\mathbb{C}\) |
+| Complex numbers | `\C` or `\complexes` | \(\mathbb{C}\) |
 | Real / imaginary part | `\Re` `\Im` | \(\Re z\), \(\Im z\) |
 | Argument | `\arg` | \(\arg z\) |
 | Conjugate | `\bar{z}` or `\overline{z}` | \(\overline{z}\) |
@@ -305,7 +313,7 @@ know: `\cong` is read by the compiler as modular congruence
 
 | You want | Type | Renders |
 | --- | --- | --- |
-| Integers mod n | `\Z` then `_n` | \(\mathbb{Z}_{n}\) |
+| Integers mod n | `\Z` or `\integers`, then `_n` | \(\mathbb{Z}_{n}\) |
 | Generated subgroup | `\langle a \rangle` | \(\langle a \rangle\) — auto-pairs |
 | Product / direct sum / tensor | `\times` `\oplus` `\otimes` | \(G \times H\), \(G \oplus H\), \(G \otimes H\) |
 | Composition | `\circ` | \(f \circ g\) |
