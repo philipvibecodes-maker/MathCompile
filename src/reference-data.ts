@@ -12,6 +12,11 @@ export interface RefEntry {
 }
 
 export const REFERENCE: RefEntry[] = [
+  // — Editor & workflow —
+  { group: 'Editor & workflow', goal: 'autocomplete', keys: 'type \\… or a bare word — ↑↓ pick · ↵ accepts · Esc dismisses', kw: 'suggest completion dropdown' },
+  { group: 'Editor & workflow', goal: 'symbol picker', keys: 'Ctrl+Space', kw: 'insert symbols menu palette' },
+  { group: 'Editor & workflow', goal: 'command palette', keys: 'Ctrl+K', kw: 'commands settings actions' },
+  { group: 'Editor & workflow', goal: 'function definition', keys: '\\def ↵ g ( x ) = 2 x', smart: 'def g(x)=2x', preview: '\\text{def}\\ g\\left(x\\right)=2x', kw: 'def marker statement' },
   // — Scripts & bounds —
   { group: 'Scripts & bounds', goal: 'subscript', keys: 'x _ 1', preview: 'x_{1}', kw: 'index' },
   { group: 'Scripts & bounds', goal: 'superscript / power', keys: 'x ^ 2', preview: 'x^{2}', kw: 'power exponent square' },
@@ -34,12 +39,13 @@ export const REFERENCE: RefEntry[] = [
   { group: 'Operators', goal: 'partial', keys: '\\partial ↵', preview: '\\partial f', kw: 'del' },
   { group: 'Operators', goal: 'custom operator name', keys: '\\mathop ↵ t r → ( A )', preview: '\\mathop{tr}(A)', kw: 'tr aut hom operatorname' },
   // — Matrices & multi-line —
-  { group: 'Matrices & multi-line', goal: 'matrix (parens)', keys: '\\begin{pmatrix} ↵ (caret: row 2 — Up reaches row 1)', preview: '\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}', kw: 'grid brackets' },
-  { group: 'Matrices & multi-line', goal: 'small 2×2 matrix', keys: '\\pmatrix ↵', preview: '\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}', kw: 'grid' },
+  { group: 'Matrices & multi-line', goal: 'matrix (parens)', keys: '\\pmatrix ↵ or \\begin{pmatrix} ↵ (\\bmatrix \\Bmatrix too)', preview: '\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}', kw: 'grid brackets' },
+  { group: 'Matrices & multi-line', goal: 'small matrix', keys: '\\smallmatrix ↵', preview: '\\begin{smallmatrix}a&b\\\\c&d\\end{smallmatrix}', kw: 'grid inline' },
   { group: 'Matrices & multi-line', goal: 'matrix row / column', keys: 'Enter = new row · Shift+Space = new column · Ctrl+End = exit', kw: 'grid cell move' },
-  { group: 'Matrices & multi-line', goal: 'determinant bars', keys: '\\begin{vmatrix} ↵', preview: '\\begin{vmatrix}a&b\\\\c&d\\end{vmatrix}', kw: 'det matrix' },
-  { group: 'Matrices & multi-line', goal: 'piecewise cases', keys: '\\begin{cases} ↵ expr → Tab condition · Enter = new case', preview: '\\begin{cases}x&x>0\\\\-x&x<0\\end{cases}', kw: 'defined brace' },
-  { group: 'Matrices & multi-line', goal: 'aligned equations', keys: '\\begin{aligned} ↵ col1 → col2 = rhs · Enter = new row', preview: '\\begin{aligned}a&=b\\\\c&=d\\end{aligned}', kw: 'align derivation steps' },
+  { group: 'Matrices & multi-line', goal: 'determinant bars', keys: '\\vmatrix ↵ (\\Vmatrix for ‖·‖)', preview: '\\begin{vmatrix}a&b\\\\c&d\\end{vmatrix}', kw: 'det matrix' },
+  { group: 'Matrices & multi-line', goal: 'array with column spec', keys: '\\begin{array}{cc} ↵ — {…} opens a live spec input', preview: '\\begin{array}{cc}a&b\\\\c&d\\end{array}', kw: 'grid columns tabular' },
+  { group: 'Matrices & multi-line', goal: 'piecewise cases', keys: '\\cases ↵ expr → Tab condition · Enter = new case', preview: '\\begin{cases}x&x>0\\\\-x&x<0\\end{cases}', kw: 'defined brace' },
+  { group: 'Matrices & multi-line', goal: 'aligned equations', keys: '\\align ↵ or \\aligned ↵ · col1 → col2 = rhs · Enter = new row', preview: '\\begin{aligned}a&=b\\\\c&=d\\end{aligned}', kw: 'align derivation steps' },
   { group: 'Matrices & multi-line', goal: 'new line in a cell', keys: 'Enter at the baseline', preview: '\\displaylines{a\\\\b}', kw: 'line break displaylines' },
   { group: 'Matrices & multi-line', goal: 'new cell', keys: 'Shift+Enter', kw: 'expression below' },
   // — Pairs & accents —
@@ -69,14 +75,14 @@ export const REFERENCE: RefEntry[] = [
   { group: 'Relations & logic', goal: 'labeled arrow', keys: '\\xrightarrow ↵ { f }', preview: '\\xrightarrow{f}', kw: 'over label' },
   { group: 'Relations & logic', goal: 'injection / surjection', keys: '\\hookrightarrow ↵ · \\twoheadrightarrow ↵', preview: '\\hookrightarrow\\ \\twoheadrightarrow', kw: 'embed onto' },
   { group: 'Relations & logic', goal: 'defined-as :=', keys: 'x \\coloneqq ↵ y  or  x := y', preview: 'x:=y', kw: 'assign define' },
-  { group: 'Relations & logic', goal: 'negated relations', keys: '\\ne ↵ \\nmid ↵ \\nsubseteq ↵ \\nexists ↵ (not \\not — dead)', preview: 'a\\nmid b', kw: 'not divides' },
+  { group: 'Relations & logic', goal: 'negated relations', keys: '\\ne ↵ \\nmid ↵ \\nsubseteq ↵ \\nexists ↵ (\\not ↵ autocompletes to \\notin)', preview: 'a\\nmid b', kw: 'not divides' },
   // — Traps —
   { group: 'Traps', goal: 'a block keeps swallowing keys', keys: 'x _ 1 + 1 → x_{1+1} — press → or Tab to exit the bound first', preview: 'x_{1}+1', kw: 'trap bound stuck' },
   { group: 'Traps', goal: "don't type \\rangle or \\rVert", keys: '\\langle ↵ already gives the full pair — a typed close corrupts the cell', kw: 'trap corrupt pair' },
-  { group: 'Traps', goal: '\\not + relation does nothing', keys: 'use the dedicated \\nX command: \\ne \\nmid \\nsubseteq \\nexists …', kw: 'trap not' },
+  { group: 'Traps', goal: '\\not ↵ gives \\notin', keys: 'autocomplete wins — type \\nX directly (\\ne \\nmid \\nsubseteq); a bare \\not is still a no-op', kw: 'trap not' },
   { group: 'Traps', goal: 'bare infty → \\inf ty', keys: 'type \\infty ↵ — smart words split mid-word', kw: 'trap inf' },
   { group: 'Traps', goal: 'auto-ops fire mid-word', keys: "crossings → cros\\sin gs · info → \\inf o · minimum → \\min imum (smart mode)", kw: 'trap words' },
-  { group: 'Traps', goal: 'column spec {cc} mangles', keys: '\\begin{array}{} ↵ — leave the spec empty', kw: 'trap array' },
+
   { group: 'Traps', goal: 'dead commands', keys: '\\operatorname (use \\mathop) · \\restriction (use \\vert/↾) · \\textcolor · \\mathbb+↵ · => · |->', kw: 'trap dead broken' },
   { group: 'Traps', goal: '𝔽 unsupported', keys: 'ℝ ℤ ℕ ℚ ℂ work; 𝔽 drops — no \\mathbb{F} workaround', kw: 'trap unicode' },
 ];
