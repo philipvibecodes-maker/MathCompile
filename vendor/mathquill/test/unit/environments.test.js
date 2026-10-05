@@ -119,6 +119,61 @@ suite('environments', function () {
       mq.keystroke('Backspace');
       assert.equal(mq.latex(), '\\begin{matrix}a&b\\end{matrix}');
     });
+
+    var rootEl = function () {
+      return mq.__controller.root.domFrag().oneElement();
+    };
+    // own <tr>s of a grid element (not nested grids')
+    var ownRows = function (gridEl) {
+      return gridEl
+        .querySelector(':scope > table')
+        .querySelectorAll(':scope > tr').length;
+    };
+
+    test('Ctrl-Enter deletes the current row, content and all', function () {
+      mq.latex('\\begin{matrix}a&b\\\\x&y\\\\c&d\\end{matrix}');
+      mq.moveToLeftEnd().keystroke('Right'); // cell a (row 0)
+      mq.keystroke('Ctrl-Enter');
+      assert.equal(mq.latex(), '\\begin{matrix}x&y\\\\c&d\\end{matrix}');
+      assert.equal(ownRows(rootEl().querySelector('.mq-matrix')), 2);
+      // caret lands live on the cell that slid up into the deleted row
+      mq.typedText('z');
+      assert.equal(mq.latex(), '\\begin{matrix}xz&y\\\\c&d\\end{matrix}');
+    });
+
+    test('Ctrl-Shift-Spacebar deletes the current column', function () {
+      mq.latex('\\begin{matrix}a&b\\\\c&d\\end{matrix}');
+      mq.moveToLeftEnd().keystroke('Right'); // cell a (col 0)
+      mq.keystroke('Ctrl-Shift-Spacebar');
+      assert.equal(mq.latex(), '\\begin{matrix}b\\\\d\\end{matrix}');
+      assert.equal(
+        rootEl().querySelector('.mq-matrix').querySelectorAll('td').length,
+        2
+      );
+      mq.typedText('z');
+      assert.equal(mq.latex(), '\\begin{matrix}bz\\\\d\\end{matrix}');
+    });
+
+    test('Ctrl-Enter/Ctrl-Shift-Spacebar refuse on the last row or column', function () {
+      mq.latex('\\begin{matrix}a&b\\end{matrix}');
+      mq.moveToLeftEnd().keystroke('Right');
+      mq.keystroke('Ctrl-Enter'); // one row: no-op
+      assert.equal(mq.latex(), '\\begin{matrix}a&b\\end{matrix}');
+      mq.keystroke('Ctrl-Shift-Spacebar'); // delete col 0 -> single column
+      assert.equal(mq.latex(), '\\begin{matrix}b\\end{matrix}');
+      mq.keystroke('Ctrl-Shift-Spacebar'); // one column: no-op
+      assert.equal(mq.latex(), '\\begin{matrix}b\\end{matrix}');
+    });
+
+    test('Ctrl-Enter inside \\displaylines deletes the current line', function () {
+      mq.latex('\\displaylines{a\\\\b\\\\c}');
+      mq.moveToRightEnd(); // last line (fillsRootEdge descends)
+      mq.keystroke('Ctrl-Enter');
+      assert.equal(mq.latex(), '\\displaylines{a\\\\ b}');
+      // single-column grid: Ctrl-Shift-Spacebar is a no-op
+      mq.keystroke('Ctrl-Shift-Spacebar');
+      assert.equal(mq.latex(), '\\displaylines{a\\\\ b}');
+    });
   });
 
   suite('env shortcuts', function () {

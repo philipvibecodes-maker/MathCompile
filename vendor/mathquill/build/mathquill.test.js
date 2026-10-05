@@ -13396,6 +13396,76 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             }
             this.finalizeTree();
         };
+        // Cells laid out row-major, as an array of rows.
+        CellGrid.prototype.cellRows = function () {
+            var rows = [];
+            this.eachChild(function (child) {
+                var cell = child;
+                rows[cell.row] = rows[cell.row] || [];
+                rows[cell.row].push(cell);
+                return undefined;
+            });
+            return rows;
+        };
+        // Force-delete the row containing `cell`, discarding its content —
+        // unlike deleteCell, which only removes a fully-empty row. A grid
+        // keeps at least one row. Returns the cell to focus, or undefined.
+        CellGrid.prototype.deleteRow = function (currentCell) {
+            var rows = this.cellRows(), blocks = this.cells, row = -1;
+            for (var i = 0; i < rows.length; i += 1) {
+                if (rows[i] && rows[i].indexOf(currentCell) > -1)
+                    row = i;
+            }
+            if (row === -1 || rows.length <= 1)
+                return undefined;
+            var column = rows[row].indexOf(currentCell), focusRow = rows[row + 1] || rows[row - 1], focus = focusRow === null || focusRow === void 0 ? void 0 : focusRow[Math.min(column, focusRow.length - 1)], tr = rows[row][0].domFrag().oneElement().closest('tr');
+            for (i = 0; i < rows[row].length; i += 1) {
+                var cell = rows[row][i];
+                if (blocks.indexOf(cell) > -1) {
+                    cell.remove();
+                    blocks.splice(blocks.indexOf(cell), 1);
+                }
+            }
+            tr === null || tr === void 0 ? void 0 : tr.remove();
+            // Decrease all following row numbers
+            this.eachChild(function (child) {
+                var cell = child;
+                if (cell.row > row)
+                    cell.row -= 1;
+                return undefined;
+            });
+            return focus || blocks[0];
+        };
+        // Force-delete the column containing `cell`, discarding its content.
+        // A grid keeps at least one column. Returns the cell to focus, or
+        // undefined.
+        CellGrid.prototype.deleteColumn = function (currentCell) {
+            var rows = this.cellRows(), blocks = this.cells, row = -1, column = -1, columns = 0;
+            for (var i = 0; i < rows.length; i += 1) {
+                if (!rows[i])
+                    continue;
+                columns = Math.max(columns, rows[i].length);
+                var at = rows[i].indexOf(currentCell);
+                if (at > -1) {
+                    row = i;
+                    column = at;
+                }
+            }
+            if (column === -1 || columns <= 1)
+                return undefined;
+            // cell.remove() detaches the <td> itself; no <tr> bookkeeping.
+            var focus = rows[row][column + 1] || rows[row][column - 1];
+            for (i = 0; i < rows.length; i += 1) {
+                if (!rows[i])
+                    continue;
+                var cell = rows[i][column];
+                if (cell && blocks.indexOf(cell) > -1) {
+                    cell.remove();
+                    blocks.splice(blocks.indexOf(cell), 1);
+                }
+            }
+            return focus || blocks[0];
+        };
         CellGrid.prototype.addRow = function (afterCell) {
             var _c;
             var previous = [], newCells = [], next = [];
@@ -13472,6 +13542,17 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             });
             ctrlr.cursor.insAtRightEnd(cellToFocus);
         };
+        CellGrid.prototype.deleteRowOrColumn = function (method, cell, ctrlr) {
+            var cellToFocus = this[method](cell);
+            if (!cellToFocus)
+                return;
+            this.finalizeTree();
+            this.bubble(function (node) {
+                node.reflow();
+                return undefined;
+            });
+            ctrlr.cursor.insAtRightEnd(cellToFocus);
+        };
         CellGrid.prototype.backspace = function (cell, dir, cursor, finalDeleteCallback) {
             var dirwards = cell[dir];
             if (cell.isEmpty()) {
@@ -13521,6 +13602,16 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                         return;
                     e === null || e === void 0 ? void 0 : e.preventDefault();
                     return this.parent.insert('addColumn', this, ctrlr);
+                case 'Ctrl-Enter':
+                    // Mirror of Enter (add row): delete the current row outright,
+                    // content and all. Also works in \displaylines — a "row" there
+                    // is a line of the cell.
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    return this.parent.deleteRowOrColumn('deleteRow', this, ctrlr);
+                case 'Ctrl-Shift-Spacebar':
+                    // Mirror of Shift+Space (add column): delete the current column.
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    return this.parent.deleteRowOrColumn('deleteColumn', this, ctrlr);
             }
             return _super.prototype.keystroke.call(this, key, e, ctrlr);
         };
@@ -17091,6 +17182,53 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 mq.moveToRightEnd().keystroke('Left'); // last cell (empty, row 1)
                 mq.keystroke('Backspace');
                 assert.equal(mq.latex(), '\\begin{matrix}a&b\\end{matrix}');
+            });
+            var rootEl = function () {
+                return mq.__controller.root.domFrag().oneElement();
+            };
+            // own <tr>s of a grid element (not nested grids')
+            var ownRows = function (gridEl) {
+                return gridEl
+                    .querySelector(':scope > table')
+                    .querySelectorAll(':scope > tr').length;
+            };
+            test('Ctrl-Enter deletes the current row, content and all', function () {
+                mq.latex('\\begin{matrix}a&b\\\\x&y\\\\c&d\\end{matrix}');
+                mq.moveToLeftEnd().keystroke('Right'); // cell a (row 0)
+                mq.keystroke('Ctrl-Enter');
+                assert.equal(mq.latex(), '\\begin{matrix}x&y\\\\c&d\\end{matrix}');
+                assert.equal(ownRows(rootEl().querySelector('.mq-matrix')), 2);
+                // caret lands live on the cell that slid up into the deleted row
+                mq.typedText('z');
+                assert.equal(mq.latex(), '\\begin{matrix}xz&y\\\\c&d\\end{matrix}');
+            });
+            test('Ctrl-Shift-Spacebar deletes the current column', function () {
+                mq.latex('\\begin{matrix}a&b\\\\c&d\\end{matrix}');
+                mq.moveToLeftEnd().keystroke('Right'); // cell a (col 0)
+                mq.keystroke('Ctrl-Shift-Spacebar');
+                assert.equal(mq.latex(), '\\begin{matrix}b\\\\d\\end{matrix}');
+                assert.equal(rootEl().querySelector('.mq-matrix').querySelectorAll('td').length, 2);
+                mq.typedText('z');
+                assert.equal(mq.latex(), '\\begin{matrix}bz\\\\d\\end{matrix}');
+            });
+            test('Ctrl-Enter/Ctrl-Shift-Spacebar refuse on the last row or column', function () {
+                mq.latex('\\begin{matrix}a&b\\end{matrix}');
+                mq.moveToLeftEnd().keystroke('Right');
+                mq.keystroke('Ctrl-Enter'); // one row: no-op
+                assert.equal(mq.latex(), '\\begin{matrix}a&b\\end{matrix}');
+                mq.keystroke('Ctrl-Shift-Spacebar'); // delete col 0 -> single column
+                assert.equal(mq.latex(), '\\begin{matrix}b\\end{matrix}');
+                mq.keystroke('Ctrl-Shift-Spacebar'); // one column: no-op
+                assert.equal(mq.latex(), '\\begin{matrix}b\\end{matrix}');
+            });
+            test('Ctrl-Enter inside \\displaylines deletes the current line', function () {
+                mq.latex('\\displaylines{a\\\\b\\\\c}');
+                mq.moveToRightEnd(); // last line (fillsRootEdge descends)
+                mq.keystroke('Ctrl-Enter');
+                assert.equal(mq.latex(), '\\displaylines{a\\\\ b}');
+                // single-column grid: Ctrl-Shift-Spacebar is a no-op
+                mq.keystroke('Ctrl-Shift-Spacebar');
+                assert.equal(mq.latex(), '\\displaylines{a\\\\ b}');
             });
         });
         suite('env shortcuts', function () {

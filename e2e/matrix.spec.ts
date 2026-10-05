@@ -35,9 +35,9 @@ test.beforeEach(async ({ page }) => {
 test('\\begin{matrix} renders as a table inside the cell', async ({ page }) => {
   const mf = cell(page);
   await setValue(mf, '\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}');
-  await expect(mf.locator('.mq-matrix tr')).toHaveCount(2);
-  await expect(mf.locator('.mq-matrix td')).toHaveCount(4);
-  await expect(mf.locator('.mq-matrix .mq-paren')).toHaveCount(2);
+  await expect(mf.locator('.mq-editable-field .mq-matrix tr')).toHaveCount(2);
+  await expect(mf.locator('.mq-editable-field .mq-matrix td')).toHaveCount(4);
+  await expect(mf.locator('.mq-editable-field .mq-matrix .mq-paren')).toHaveCount(2);
   expect(await cellValue(mf)).toBe(
     '\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}',
   );
@@ -47,7 +47,7 @@ test('typed \\cases opens a cases environment', async ({ page }) => {
   const mf = cell(page);
   await page.keyboard.type('\\cases');
   await page.keyboard.press('Enter');
-  await expect(mf.locator('.mq-matrix tr')).toHaveCount(2);
+  await expect(mf.locator('.mq-editable-field .mq-matrix tr')).toHaveCount(2);
   expect(await cellValue(mf)).toBe('\\begin{cases}&\\\\&\\end{cases}');
 });
 
@@ -70,7 +70,7 @@ test('Enter inside a matrix cell adds a row, not a displaylines wrap', async ({
   const v = await cellValue(mf);
   expect(v).toContain('\\begin{pmatrix}');
   expect(v).not.toContain('displaylines');
-  await expect(mf.locator('.mq-matrix tr')).toHaveCount(3);
+  await expect(mf.locator('.mq-editable-field .mq-matrix tr')).toHaveCount(3);
 });
 
 test('Shift+Spacebar inside a matrix cell adds a column', async ({ page }) => {
@@ -79,7 +79,7 @@ test('Shift+Spacebar inside a matrix cell adds a column', async ({ page }) => {
   await page.keyboard.press('Control+End');
   await page.keyboard.press('ArrowLeft'); // step into the last cell
   await page.keyboard.press('Shift+Space');
-  await expect(mf.locator('.mq-matrix td')).toHaveCount(6);
+  await expect(mf.locator('.mq-editable-field .mq-matrix td')).toHaveCount(6);
 });
 
 test('arrows move between matrix cells without leaving the field', async ({
@@ -103,4 +103,60 @@ test('arrows move between matrix cells without leaving the field', async ({
         .querySelectorAll('math-field')[0]
         ?.contains(document.activeElement),
   );
+});
+
+test('Ctrl+Enter inside a matrix cell deletes the current row', async ({
+  page,
+}) => {
+  const mf = cell(page);
+  await setValue(mf, '\\begin{matrix}a&b\\\\x&y\\\\c&d\\end{matrix}');
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('ArrowRight'); // step into cell a (row 0)
+  await page.keyboard.press('Control+Enter');
+  expect(await cellValue(mf)).toBe('\\begin{matrix}x&y\\\\c&d\\end{matrix}');
+  await expect(mf.locator('.mq-editable-field .mq-matrix tr')).toHaveCount(2);
+  // the caret stays live on the cell that slid into the deleted row
+  await page.keyboard.type('z');
+  expect(await cellValue(mf)).toBe(
+    '\\begin{matrix}xz&y\\\\c&d\\end{matrix}',
+  );
+});
+
+test('Ctrl+Shift+Spacebar inside a matrix cell deletes the current column', async ({
+  page,
+}) => {
+  const mf = cell(page);
+  await setValue(mf, '\\begin{matrix}a&b\\\\c&d\\end{matrix}');
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('ArrowLeft'); // step into cell d (col 1)
+  await page.keyboard.press('Control+Shift+Space');
+  expect(await cellValue(mf)).toBe('\\begin{matrix}a\\\\c\\end{matrix}');
+  await expect(mf.locator('.mq-editable-field .mq-matrix td')).toHaveCount(2);
+});
+
+test('delete shortcuts refuse to take the last row or column', async ({
+  page,
+}) => {
+  const mf = cell(page);
+  await setValue(mf, '\\begin{matrix}a&b\\end{matrix}');
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Control+Enter'); // one row: no-op
+  expect(await cellValue(mf)).toBe('\\begin{matrix}a&b\\end{matrix}');
+  await page.keyboard.press('Control+Shift+Space'); // -> single column
+  expect(await cellValue(mf)).toBe('\\begin{matrix}b\\end{matrix}');
+  await page.keyboard.press('Control+Shift+Space'); // one column: no-op
+  expect(await cellValue(mf)).toBe('\\begin{matrix}b\\end{matrix}');
+});
+
+test('Ctrl+Enter in a multi-line cell deletes the current line', async ({
+  page,
+}) => {
+  const mf = cell(page);
+  await setValue(mf, '\\displaylines{a\\\\b\\\\c}');
+  await page.keyboard.press('Control+End'); // last line
+  await page.keyboard.press('Control+Enter');
+  expect(await cellValue(mf)).toBe('\\displaylines{a\\\\ b}');
+  await page.keyboard.type('z');
+  expect(await cellValue(mf)).toBe('\\displaylines{a\\\\ bz}');
 });
