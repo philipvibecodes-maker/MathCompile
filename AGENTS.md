@@ -194,7 +194,9 @@ and empty blocks serialize as `{ }`.
   once only one remains) — those keys keep their usual word-delete
   everywhere else, including \displaylines cells;
   arrows move cell-to-cell without leaving
-  the field.
+  the field. `I_n` (capital I, whole-number subscript) compiles to
+  `sp.eye(n)` and takes matrix-op paths like a literal; an explicit
+  `I_n = …` binding wins.
 - Serializations to pin in tests: empty blocks are `{ }` (with a space);
   `\int_{ }^{ }` writes sub before sup and lands the caret in the lower
   bound (definite form); `\iint`/`\antid` are boundless leaves —

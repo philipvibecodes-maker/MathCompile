@@ -485,12 +485,26 @@ class Emitter {
     );
   }
 
+  /** `I_<n>` with a whole-number subscript is the n×n identity —
+   * returns the dim or null. An explicit `I_n = …` binding wins
+   * (`defined` covers assign/def targets). */
+  private identityDim(node: MathJson | undefined): string | null {
+    if (!isStr(node) || this.scope.defined.has(node)) return null;
+    const m = /^I_(\d+)$/.exec(node);
+    return m ? m[1] : null;
+  }
+
   /** Is this node matrix-valued? A `Matrix` literal, a declared matrix
    * name, or a composition that stays a matrix: a sum/negation of
    * matrix terms, a product/quotient/power with a matrix factor, or a
    * matrix-returning op (transpose/adjoint/inverse). */
   private matrixValued(node: MathJson | undefined): boolean {
-    if (isHead(node, 'Matrix') || this.matrixRef(node)) return true;
+    if (
+      isHead(node, 'Matrix') ||
+      this.matrixRef(node) ||
+      this.identityDim(node)
+    )
+      return true;
     if (!isArr(node)) return false;
     const operands = node.slice(1) as MathJson[];
     switch (headOf(node)) {
@@ -514,7 +528,7 @@ class Emitter {
    * concrete-Matrix methods (`.rank()`, `.norm()`, `.eigenvals()`…)
    * exist there but not on sympy MatrixExpr. */
   private concreteMatrix(node: MathJson | undefined): boolean {
-    if (isHead(node, 'Matrix')) return true;
+    if (isHead(node, 'Matrix') || this.identityDim(node)) return true;
     if (!isArr(node)) return false;
     const operands = node.slice(1) as MathJson[];
     switch (headOf(node)) {
@@ -620,6 +634,8 @@ class Emitter {
     // MatrixSymbol ident instead of minting `v_2`.
     if (this.scope.matrices.has(name))
       return this.scope.matrices.get(name)!;
+    const idDim = this.identityDim(name);
+    if (idDim) return `${this.sp}eye(${idDim})`;
     return this.alloc(this.scope.symbols, name);
   }
 
@@ -654,6 +670,8 @@ class Emitter {
   // earlier `A = …` assignment) reuse their own ident instead.
   private mat(name: string): string {
     if (this.scope.defined.has(name)) return pyIdent(name);
+    const dim = this.identityDim(name);
+    if (dim) return `${this.sp}eye(${dim})`;
     return this.alloc(this.scope.matrices, name);
   }
 
@@ -2107,13 +2125,13 @@ class Emitter {
         // `\det A` on a bare name — MatrixSymbol via matrixArg; a
         // scalar Symbol would raise 'Symbol' has no 'det' in the worker.
         // Other args (a matrix literal, an assigned matrix) keep .det().
+        if (isHead(args[0], 'Matrix') || this.identityDim(args[0]))
+          return [`${this.emit(args[0], PREC_ATOM)}.det()`, PREC_ATOM];
         if (isStr(args[0]))
           return [
             `${this.sp}Determinant(${this.matrixArg(args[0], '\\det') ?? 'None'})`,
             PREC_ATOM,
           ];
-        if (isHead(args[0], 'Matrix'))
-          return [`${this.emit(args[0], PREC_ATOM)}.det()`, PREC_ATOM];
         // A matrix-valued expression (`\det(A + B)`, `2A`, `A^2`):
         // `.det()` exists on MatrixExpr too (Determinant stays
         // unevaluated there) — a concrete argument still evaluates.
@@ -2132,14 +2150,14 @@ class Emitter {
       case 'Transpose':
         // `A^T` — `.T` on a scalar Symbol is an AttributeError; a bare
         // name reads as a matrix (same convention as \det A).
+        if (isHead(args[0], 'Matrix') || this.identityDim(args[0]))
+          return [`${this.emit(args[0], PREC_ATOM)}.T`, PREC_ATOM];
         if (isStr(args[0]))
           return [
             `${this.sp}Transpose(${this.matrixArg(args[0], '^T') ?? 'None'})`,
             PREC_ATOM,
           ];
-        return isHead(args[0], 'Matrix')
-          ? [`${this.emit(args[0], PREC_ATOM)}.T`, PREC_ATOM]
-          : [`${this.sp}Transpose(${this.emit(args[0])})`, PREC_ATOM];
+        return [`${this.sp}Transpose(${this.emit(args[0])})`, PREC_ATOM];
       case 'ConjugateTranspose':
         // A^{\dagger} — Adjoint evaluates on matrices and scalars; a
         // bare name reads as a matrix (Adjoint on a Symbol raises).
@@ -2192,7 +2210,7 @@ class Emitter {
       case 'Norm':
         // \|v\|: Abs for scalars, .norm() for matrices — including a
         // bare name already declared as a matrix elsewhere.
-        if (isHead(args[0], 'Matrix'))
+        if (isHead(args[0], 'Matrix') || this.identityDim(args[0]))
           return [`(${this.emit(args[0])}).norm()`, PREC_ATOM];
         if (this.matrixRef(args[0]) || (isStr(args[0]) && this.scope.matrices.has(args[0])))
           return [`(${this.emit(args[0])}).norm()`, PREC_ATOM];

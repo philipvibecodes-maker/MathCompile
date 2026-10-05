@@ -1086,6 +1086,34 @@ const FIXTURES: {
     expectedPython: ['(sp.Matrix([[1, 2], [3, 4]])).rank()'],
   },
   {
+    // I_<n> with a whole-number subscript is the n×n identity.
+    latex: 'I_3',
+    expectedPython: ['sp.eye(3)'],
+  },
+  {
+    latex: 'I_{12}',
+    expectedPython: ['sp.eye(12)'],
+  },
+  {
+    // Non-integer/bare-I subscripts keep plain symbols; an explicit
+    // `I_3 = …` binding wins over the identity reading.
+    latex: '\\displaylines{ I_n \\\\ I_3 = 5 \\\\ I_3 + 1 }',
+    expectedPython: ['I_n = sp.Symbol("I_n")', 'I_3 = 5', 'I_3 + 1'],
+  },
+  {
+    // The identity name behaves like a matrix literal for the matrix
+    // ops: .det()/.T evaluate, tr/rank take the matrix paths.
+    latex:
+      'I_3 + \\begin{pmatrix}1&0\\\\0&1\\end{pmatrix} \\\\ \\det(I_3) \\\\ I_3^T \\\\ \\mathrm{tr}(I_3) \\\\ \\det(I_2+I_3)',
+    expectedPython: [
+      'sp.eye(3) + sp.Matrix([[1, 0], [0, 1]])',
+      'sp.eye(3).det()',
+      'sp.eye(3).T',
+      'sp.Trace(sp.eye(3))',
+      '(sp.eye(2) + sp.eye(3)).det()',
+    ],
+  },
+  {
     // A matrix-valued expression is still a matrix argument — det on a
     // sum of literals evaluates, not "the argument isn't one".
     latex:
