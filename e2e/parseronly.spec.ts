@@ -178,7 +178,8 @@ test('\\underset renders the label under the main row', async ({ page }) => {
         '\\underset{x\\to0}{\\lim}f'),
   );
   await expect(mf.locator('.mq-overunderset')).toHaveCount(1);
-  expect(await value(page)).toBe('\\underset{x\\to0}{\\lim}f');
+  // \lim is a real command now — its own underscript block is empty.
+  expect(await value(page)).toBe('\\underset{x\\to0}{\\lim_{ }}f');
 });
 
 test('typed \\underset inserts the two-block command', async ({ page }) => {

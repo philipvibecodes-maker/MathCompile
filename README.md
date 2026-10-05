@@ -61,6 +61,8 @@ vendor/mathquill/       vendored MathQuill + local patches (see its README)
 
 - `AGENTS.md` — architecture notes, invariants, and testing tips
 - `SYMBOLS.md` — every symbol/command typeable in the editor
+- `USER-GUIDE.md` — how to use the app; also served as a PDF in-app
+  (`public/user-guide.pdf`, regenerate with `npm run docs:pdf`)
 - `vendor/README.md` — MathQuill pin, local patch list, rebuild steps
 
 Deployed to GitHub Pages on every push to `main`

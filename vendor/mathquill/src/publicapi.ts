@@ -102,6 +102,8 @@ class Options {
   typingSlashCreatesNewFraction?: boolean;
   charsThatBreakOutOfSupSub: string;
   sumStartsWithNEquals?: boolean;
+  // MATHCOMPILE: \lim underscript pre-populated with `\to` (PR #252 port)
+  limStartsWithArrow?: boolean;
   autoSubscriptNumerals?: boolean;
   supSubsRequireOperand?: boolean;
   spaceBehavesLikeTab?: boolean;

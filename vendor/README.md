@@ -50,7 +50,10 @@ New files:
   …), fractions (`\cfrac` `\tfrac` `\dbinom` `\tbinom` …), accents and
   diacritics, extensible arrows (`\xrightarrow` `\xmapsto` …), cancels,
   delimiters (`\langle` `\bra` `\big` `\middle` `\[` …), line
-  breaks/layout (`\\` `\hline` `\smash` …), and misc large operators.
+  breaks/layout (`\\` `\hline` `\smash` …), misc large operators,
+  and `\lim` — a displaystyle operator whose `_{x\to a}` bound types
+  and renders below the "lim" text (ported from unmerged upstream PR
+  desmosinc/mathquill#252), reachable via `autoCommands` or `\lim`.
   One override also lives here: `LatexCmds.def` (extracted from
   `advancedSymbols.ts`, tagged at the cut site) — an insertion alias
   that expands to a real `\text{def}` TextBlock, which is the
@@ -87,7 +90,8 @@ Inline `// MATHCOMPILE:` edits, by file:
   entity glyphs (upstream `h.text` printed the entity literally);
   `\limits`/`\nolimits` between an operator and its bounds is kept on
   the node and round-trips (`\sum\limits_{i}`); the typed `a\over b`
-  numerator scan stops at a boundless integral like at `\sum`; a pasted
+  numerator scan stops at a boundless integral like at `\sum`, and at
+  `\lim` — `lim` is a real command now, not an operator name; a pasted
   `\over` that can't bind falls back to a visible leaf instead of
   blanking; an accent with no following block degrades to a standalone
   mark (`f\'` still parses); `\left.`/`\right.` null delimiters render
@@ -115,16 +119,22 @@ Inline `// MATHCOMPILE:` edits, by file:
 - `src/commands/math/LatexCommandInput.ts` — an empty input ended by a
   non-letter resolves `\<char>` escapes (`\;` `\{` `\|` …) to their
   atoms instead of writing the raw character.
+- `src/commands/math/basicSymbols.ts` — also: `lim` removed from the
+  default `autoOperatorNames` list — `\lim` is a real command (see
+  extraCommands.ts), so typed `lim` resolves through `autoCommands`.
 - `src/publicapi.ts` + `src/mathquill.d.ts` —
   `EditableField.insertLineBreak()` Enter semantics (matrix row inside
   a matrix cell, `\displaylines` row split, or wrap top-level content
-  in `\displaylines`) and `dIsDerivative` on `v1.Config` typings.
+  in `\displaylines`) and `dIsDerivative`/`limStartsWithArrow` on
+  `v1.Config` typings.
 - `src/css/math.less` — styles for the additions: `.mq-matrix`/
   `.mq-displaylines` (with zero horizontal indent so line 1 doesn't
   shift when a second line is added), display-mode comma spacing
   (`.mq-comma` thin space after), script fonts, boxes/braces/cancels/
-  extensible arrows/delimiters, `\bra`/`\ket`, and the
-  boundless-integral sibling supsub rules.
+  extensible arrows/delimiters, `\bra`/`\ket`, the
+  boundless-integral sibling supsub rules, and `.mq-limit` (the
+  underscript stacks below "lim" via the `\sum`-style
+  float-right/width:100% baseline trick).
 - `src/cursor.ts` — a `\displaylines` that fills the whole root owns
   the field edges: `insDirOf`/`insAtDirEnd` re-descend to the first
   line's start / last line's end instead of leaving the caret beside

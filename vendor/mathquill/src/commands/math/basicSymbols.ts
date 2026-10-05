@@ -703,7 +703,10 @@ function defaultAutoOpNames() {
     _maxLength: 9
   };
   var mostOps = (
-    'arg deg det dim exp gcd hom inf ker lg lim ln log max min sup' +
+    // MATHCOMPILE: 'lim' left out — it's a real command now (displaystyle
+    // bound under the operator, see extraCommands.ts), not an operator
+    // name; typed `lim` resolves through autoCommands instead.
+    'arg deg det dim exp gcd hom inf ker lg ln log max min sup' +
     ' limsup liminf injlim projlim Pr'
   ).split(' ');
   for (var i = 0; i < mostOps.length; i += 1) {

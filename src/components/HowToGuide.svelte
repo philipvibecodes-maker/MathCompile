@@ -1,6 +1,8 @@
 <script lang="ts">
   import { appStore } from '../state/store.svelte';
 
+  const userGuidePdf = `${import.meta.env.BASE_URL}user-guide.pdf`;
+
   // `smart` shows when smart mode is on, `plain` when off; `how` is shared.
   const entries: { goal: string; how?: string; smart?: string; plain?: string }[] = [
     { goal: 'Fraction', how: 'type 1/2 or \\frac ⏎' },
@@ -29,4 +31,7 @@
       </div>
     {/each}
   </dl>
+  <a class="howto-pdf" href={userGuidePdf} target="_blank" rel="noreferrer">
+    User guide (PDF)
+  </a>
 </details>

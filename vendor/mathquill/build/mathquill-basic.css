@@ -614,6 +614,21 @@
   /* take out of normal flow to manipulate baseline */
   width: 100%;
 }
+.mq-math-mode .mq-limit {
+  display: inline-block;
+  padding-right: 0.2em;
+  text-align: center;
+}
+.mq-math-mode .mq-limit .mq-lim,
+.mq-math-mode .mq-limit .mq-approaches {
+  display: block;
+}
+.mq-math-mode .mq-limit .mq-approaches {
+  float: right;
+  /* take out of normal flow to manipulate baseline */
+  width: 100%;
+  font-size: 80%;
+}
 .mq-math-mode,
 .mq-math-mode .mq-editable-field {
   cursor: text;

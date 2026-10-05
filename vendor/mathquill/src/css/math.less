@@ -682,6 +682,24 @@
     }
   }
 
+  // MATHCOMPILE: displaystyle \lim — the underscript stacks below the
+  // operator (same float-right/width:100% baseline trick as .mq-from).
+  .mq-limit {
+    display: inline-block;
+    padding-right: 0.2em;
+    text-align: center;
+
+    .mq-lim,
+    .mq-approaches {
+      display: block;
+    }
+    .mq-approaches {
+      float: right; /* take out of normal flow to manipulate baseline */
+      width: 100%;
+      font-size: 80%;
+    }
+  }
+
   &,
   .mq-editable-field {
     cursor: text;

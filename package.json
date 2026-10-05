@@ -11,13 +11,15 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:perf": "playwright test -c playwright.perf.config.ts"
+    "test:perf": "playwright test -c playwright.perf.config.ts",
+    "docs:pdf": "node scripts/build-reference-pdf.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tsconfig/svelte": "^5.0.8",
     "@types/node": "^24.13.3",
+    "marked": "^18.0.14",
     "oxlint": "^1.81.0",
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",

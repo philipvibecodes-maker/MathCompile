@@ -8949,7 +8949,11 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         var AutoOpNames = {
             _maxLength: 9
         };
-        var mostOps = ('arg deg det dim exp gcd hom inf ker lg lim ln log max min sup' +
+        var mostOps = (
+        // MATHCOMPILE: 'lim' left out — it's a real command now (displaystyle
+        // bound under the operator, see extraCommands.ts), not an operator
+        // name; typed `lim` resolves through autoCommands instead.
+        'arg deg det dim exp gcd hom inf ker lg ln log max min sup' +
             ' limsup liminf injlim projlim Pr').split(' ');
         for (var i = 0; i < mostOps.length; i += 1) {
             BuiltInOpNames[mostOps[i]] = AutoOpNames[mostOps[i]] = 1;
@@ -10764,6 +10768,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                                 leftward instanceof SummationNotation ||
                                 // MATHCOMPILE: stop the numerator scan at a boundless integral like at \sum
                                 leftward instanceof BoundlessIntegral ||
+                                // MATHCOMPILE: same for displaystyle \lim — its bound lives
+                                // inside the node, so the whole atom stays out of the
+                                // numerator (`\lim_{x} f/` -> `\lim_{x} \frac{f}{ }`).
+                                leftward instanceof (LatexCmds.lim || noop) ||
                                 leftward.ctrlSeq === '\\ ' ||
                                 /^[,;:]$/.test(leftward.ctrlSeq)) //lookbehind for operator
                         )
@@ -11048,7 +11056,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds.tilde = function () {
         return new DiacriticAbove('\\tilde', h.text('~'), ['tilde(', ')']);
     };
-    ;
+    // MATHCOMPILE: added accents/arrows/cancels/delimiters/layout commands moved to extraCommands.ts
     var DelimsNode = /** @class */ (function (_super) {
         __extends(DelimsNode, _super);
         function DelimsNode() {
@@ -12800,6 +12808,98 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds.varprojlim = function () {
         return new SummationNotation('\\varprojlim ', 'lim&#8592;', 'inverse limit');
     };
+    //======================================================================
+    //  Displaystyle \lim — bound under the operator (desmosinc/mathquill#252)
+    //======================================================================
+    // Up-arrow escape from the underscript: mirror of insLeftOfMeUnlessAtEnd
+    // (commands.ts) — lands right of the \lim atom unless it's at the very
+    // start of the field, then left.
+    function insRightOfMeUnlessAtEnd(cursor) {
+        var cmd = this.parent;
+        var ancestorCmd = cursor;
+        do {
+            if (ancestorCmd[L])
+                return cursor.insRightOf(cmd);
+            ancestorCmd = ancestorCmd.parent.parent;
+        } while (ancestorCmd !== cmd);
+        cursor.insLeftOf(cmd);
+        return undefined;
+    }
+    // `\lim` is a one-block command whose underscript renders below the
+    // operator (like \sum's .mq-from) instead of as a side subscript — so
+    // `lim` must come through autoCommands/the latex input, not
+    // autoOperatorNames. `limStartsWithArrow` pre-populates the bound with
+    // `\to` and lands the caret before it (parallel to sumStartsWithNEquals).
+    LatexCmds.lim = /** @class */ (function (_super) {
+        __extends(DisplayLimit, _super);
+        function DisplayLimit() {
+            var _this_1 = _super.call(this) || this;
+            _this_1.ctrlSeq = '\\lim';
+            _this_1.ariaLabel = 'limit';
+            var domView = new DOMView(1, function (blocks) {
+                return h('span', { class: 'mq-limit mq-non-leaf' }, [
+                    h('span', { class: 'mq-lim' }, [h.text('lim')]),
+                    h('span', { class: 'mq-approaches' }, [h.block('span', {}, blocks[0])])
+                ]);
+            });
+            MQSymbol.prototype.setCtrlSeqHtmlTextAndMathspeak.call(_this_1, _this_1.ctrlSeq, domView);
+            return _this_1;
+        }
+        DisplayLimit.prototype.createLeftOf = function (cursor) {
+            _super.prototype.createLeftOf.call(this, cursor);
+            if (cursor.options.limStartsWithArrow) {
+                var arrow = new To();
+                arrow.createLeftOf(cursor);
+                cursor.insLeftOf(arrow);
+            }
+        };
+        DisplayLimit.prototype.latexRecursive = function (ctx) {
+            this.checkCursorContextOpen(ctx);
+            ctx.uncleanedLatex += this.ctrlSeq + '_{';
+            var beforeLength = ctx.uncleanedLatex.length;
+            this.getEnd(L).latexRecursive(ctx);
+            var afterLength = ctx.uncleanedLatex.length;
+            if (afterLength === beforeLength) {
+                // nothing was written so we write a space
+                ctx.uncleanedLatex += ' ';
+            }
+            ctx.uncleanedLatex += '}';
+            this.checkCursorContextClose(ctx);
+        };
+        DisplayLimit.prototype.mathspeak = function () {
+            var out = this.ariaLabel + ' as ' + this.getEnd(L).mathspeak();
+            if (this[R])
+                out += ' of ';
+            return out;
+        };
+        DisplayLimit.prototype.parser = function () {
+            var string = Parser.string;
+            var optWhitespace = Parser.optWhitespace;
+            var succeed = Parser.succeed;
+            var block = latexMathParser.block;
+            var self = this, child = new MathBlock();
+            var blocks = [child];
+            self.blocks = blocks;
+            child.adopt(self, 0, 0);
+            return optWhitespace
+                .then(string('_'))
+                .then(function (_sub) {
+                return block.then(function (block) {
+                    block.children().adopt(child, child.getEnd(R), 0);
+                    return succeed(self);
+                });
+            })
+                .many()
+                .result(self);
+        };
+        DisplayLimit.prototype.finalizeTree = function () {
+            var underscript = this.getEnd(L);
+            this.downInto = underscript;
+            underscript.upOutOf = insRightOfMeUnlessAtEnd;
+            underscript.ariaLabel = 'limit underscript';
+        };
+        return DisplayLimit;
+    }(MathCommand));
     //======================================================================
     //  Operator spacing (display-mode relation/punctuation conventions)
     //======================================================================
@@ -17006,6 +17106,67 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 mq.keystroke('Backspace');
                 assert.equal(mq.latex(), '\\begin{matrix}a&b\\end{matrix}');
             });
+            var ownRows = function (gridEl) {
+                return gridEl
+                    .querySelector(':scope > table')
+                    .querySelectorAll(':scope > tr').length;
+            };
+            var rootEl = function () {
+                return mq.__controller.root.domFrag().oneElement();
+            };
+            test('deleting an empty line below a matrix keeps the matrix rows', function () {
+                mq.latex('\\displaylines{\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}\\\\ }');
+                mq.moveToRightEnd(); // into the empty second line
+                mq.keystroke('Backspace');
+                assert.equal(mq.latex(), '\\displaylines{\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}');
+                var root = rootEl();
+                // the displaylines row is gone — and the nested matrix kept both
+                // of its own <tr>s (the flat tr list used to index into them)
+                assert.equal(ownRows(root.querySelector('.mq-displaylines')), 1);
+                assert.equal(ownRows(root.querySelector('.mq-matrix')), 2);
+            });
+            test('adding a row to a matrix with a nested matrix keeps rows apart', function () {
+                mq.latex('\\begin{pmatrix}\\begin{matrix}x&y\\\\z&w\\end{matrix}&b\\\\c&d\\end{pmatrix}');
+                mq.moveToRightEnd().keystroke('Left'); // into outer cell d
+                mq.insertLineBreak();
+                assert.equal(mq.latex(), '\\begin{pmatrix}\\begin{matrix}x&y\\\\z&w\\end{matrix}&b\\\\c&d\\\\&\\end{pmatrix}');
+                var grids = rootEl().querySelectorAll('.mq-matrix');
+                assert.equal(ownRows(grids[0]), 3); // outer gained the row
+                assert.equal(ownRows(grids[1]), 2); // nested kept its own rows
+            });
+            test('adding a column to a matrix with a nested matrix keeps cells apart', function () {
+                mq.latex('\\begin{pmatrix}\\begin{matrix}x&y\\\\z&w\\end{matrix}&b\\\\c&d\\end{pmatrix}');
+                mq.moveToRightEnd().keystroke('Left');
+                mq.keystroke('Shift-Spacebar');
+                assert.equal(mq.latex(), '\\begin{pmatrix}\\begin{matrix}x&y\\\\z&w\\end{matrix}&b&\\\\c&d&\\end{pmatrix}');
+                var grids = rootEl().querySelectorAll('.mq-matrix');
+                assert.equal(grids[0]
+                    .querySelector(':scope > table')
+                    .querySelectorAll(':scope > tr > td').length, 6);
+                assert.equal(grids[1]
+                    .querySelector(':scope > table')
+                    .querySelectorAll(':scope > tr > td').length, 4);
+            });
+            test('deleting an empty first column keeps the other cells rendered', function () {
+                mq.latex('\\begin{matrix}&a\\\\&b\\end{matrix}');
+                mq.moveToLeftEnd(); // first cell (empty, col 0)
+                mq.keystroke('Backspace');
+                assert.equal(mq.latex(), '\\begin{matrix}a\\\\b\\end{matrix}');
+                // the surviving column's <td>s must stay attached — the old code
+                // re-removed tr.children[col] after the cells already detached
+                assert.equal(rootEl().querySelectorAll('.mq-matrix > table > tr > td').length, 2);
+                // and the caret landed on a surviving cell, not a detached td
+                mq.typedText('z');
+                assert.equal(mq.latex(), '\\begin{matrix}za\\\\b\\end{matrix}');
+            });
+            test('deleting the first line keeps the caret alive', function () {
+                mq.latex('\\displaylines{ \\\\ \\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}');
+                mq.moveToLeftEnd(); // first (empty) line
+                mq.keystroke('Backspace');
+                assert.equal(mq.latex(), '\\displaylines{\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}');
+                mq.typedText('z');
+                assert.equal(mq.latex(), '\\displaylines{z\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}');
+            });
         });
         suite('env shortcuts', function () {
             test('\\cases opens the cases grid with the caret in the first cell', function () {
@@ -17807,6 +17968,20 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                         assert.equal(mq.latex(), '\\sum_{ }^{5}');
                         mq.write('x^n');
                         assert.equal(mq.latex(), '\\sum_{ }^{5}x^{n}');
+                    });
+                });
+                suite('\\lim', function () {
+                    test('empty', function () {
+                        mq.latex('\\lim');
+                        assert.equal(mq.latex(), '\\lim_{ }');
+                        mq.keystroke('Left').typedText('x');
+                        assert.equal(mq.latex(), '\\lim_{x}');
+                    });
+                    test('nonempty', function () {
+                        mq.latex('\\lim_x');
+                        assert.equal(mq.latex(), '\\lim_{x}');
+                        mq.keystroke('Left').typedText('y');
+                        assert.equal(mq.latex(), '\\lim_{xy}');
                     });
                 });
                 suite('\\token', function () {
@@ -19810,6 +19985,26 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 assert.equal(mq.latex(), '\\antid_{a}', 'bounds grow on demand');
             });
         });
+        suite('limStartsWithArrow', function () {
+            test('lim defaults to empty lim expression', function () {
+                var mq = MQ.MathField($('<span>').appendTo('#mock')[0]);
+                assert.equal(mq.latex(), '');
+                mq.cmd('\\lim');
+                assert.equal(mq.latex(), '\\lim_{ }');
+                mq.cmd('n');
+                assert.equal(mq.latex(), '\\lim_{n}', 'cursor in limit underscript');
+            });
+            test('limStartsWithArrow', function () {
+                var mq = MQ.MathField($('<span>').appendTo('#mock')[0], {
+                    limStartsWithArrow: true
+                });
+                assert.equal(mq.latex(), '');
+                mq.cmd('\\lim');
+                assert.equal(mq.latex(), '\\lim_{\\to}');
+                mq.cmd('x');
+                assert.equal(mq.latex(), '\\lim_{x\\to}', 'cursor before `\\to`');
+            });
+        });
         suite('substituteTextarea', function () {
             test("doesn't blow up on selection", function () {
                 var mq = MQ.MathField($('<span>').appendTo('#mock')[0], {
@@ -21266,6 +21461,13 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 mq.typedText('1...2/');
                 assertLatex('1...\\frac{2}{ }');
             });
+            test('typed / after \\lim keeps the limit out of the numerator', function () {
+                mq.latex('\\lim_{x\\to0}f');
+                mq.keystroke('End').typedText('/');
+                assertLatex('\\lim_{x\\to0}\\frac{f}{ }');
+                mq.keystroke('Backspace');
+                assertLatex('\\lim_{x\\to0}f');
+            });
         });
         suite('Choose', function () {
             test('full MathQuill', function () {
@@ -22420,11 +22622,11 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         suite('autoCommands', function () {
             var normalConfig = {
                 autoOperatorNames: 'sin pp',
-                autoCommands: 'pi tau phi theta Gamma sum prod sqrt nthroot cbrt percent'
+                autoCommands: 'pi tau phi theta Gamma sum prod lim sqrt nthroot cbrt percent'
             };
             var subscriptConfig = {
                 autoOperatorNames: 'sin pp',
-                autoCommands: 'pi tau phi theta Gamma sum prod sqrt nthroot cbrt percent',
+                autoCommands: 'pi tau phi theta Gamma sum prod lim sqrt nthroot cbrt percent',
                 disableAutoSubstitutionInSubscripts: true
             };
             setup(function () {
@@ -22438,6 +22640,14 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 mq.typedText('prod');
                 mq.typedText('n=0').keystroke('Up').typedText('100').keystroke('Right');
                 assertLatex('\\prod_{n=0}^{100}');
+                mq.keystroke('Ctrl-Backspace');
+                mq.typedText('lim');
+                mq.typedText('x->y').keystroke('Right');
+                assertLatex('\\lim_{x\\to y}');
+                assertMathspeak('limit as "x" to "y"');
+                mq.typedText('x');
+                assertLatex('\\lim_{x\\to y}x');
+                assertMathspeak('limit as "x" to "y" of "x"');
                 mq.keystroke('Ctrl-Backspace');
                 mq.typedText('sqrt');
                 mq.typedText('100').keystroke('Right');
@@ -22521,7 +22731,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 });
             });
             test('command is a built-in operator name', function () {
-                var cmds = ('Pr arg deg det dim exp gcd hom inf ker lg lim ln log max min sup' +
+                var cmds = ('Pr arg deg det dim exp gcd hom inf ker lg ln log max min sup' +
                     ' limsup liminf injlim projlim Pr').split(' ');
                 for (var i = 0; i < cmds.length; i += 1) {
                     assert.throws(function () {
@@ -22532,7 +22742,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             test('built-in operator names even after auto-operator names overridden', function () {
                 MQ.config({ autoOperatorNames: 'sin inf arcosh cosh cos cosec csc' });
                 // ^ happen to be the ones required by autoOperatorNames.test.js
-                var cmds = 'Pr arg deg det exp gcd inf lg lim ln log max min sup'.split(' ');
+                var cmds = 'Pr arg deg det exp gcd inf lg ln log max min sup'.split(' ');
                 for (var i = 0; i < cmds.length; i += 1) {
                     assert.throws(function () {
                         MQ.config({ autoCommands: cmds[i] });

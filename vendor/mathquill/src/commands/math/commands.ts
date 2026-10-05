@@ -1109,6 +1109,10 @@ var LiveFraction =
                 leftward instanceof SummationNotation ||
                 // MATHCOMPILE: stop the numerator scan at a boundless integral like at \sum
                 leftward instanceof BoundlessIntegral ||
+                // MATHCOMPILE: same for displaystyle \lim — its bound lives
+                // inside the node, so the whole atom stays out of the
+                // numerator (`\lim_{x} f/` -> `\lim_{x} \frac{f}{ }`).
+                leftward instanceof (LatexCmds.lim || noop) ||
                 leftward.ctrlSeq === '\\ ' ||
                 /^[,;:]$/.test(leftward.ctrlSeq as string)
               ) //lookbehind for operator
@@ -1399,7 +1403,6 @@ LatexCmds.vec = () =>
 LatexCmds.tilde = () =>
   new DiacriticAbove('\\tilde', h.text('~'), ['tilde(', ')']);
 // MATHCOMPILE: added accents/arrows/cancels/delimiters/layout commands moved to extraCommands.ts
-  );
 
 class DelimsNode extends MathCommand {
   delimFrags: Ends<DOMFragment>;

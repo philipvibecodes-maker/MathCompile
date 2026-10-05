@@ -1103,6 +1103,106 @@ LatexCmds.varprojlim = () =>
   new SummationNotation('\\varprojlim ', 'lim&#8592;', 'inverse limit');
 
 //======================================================================
+//  Displaystyle \lim — bound under the operator (desmosinc/mathquill#252)
+//======================================================================
+
+// Up-arrow escape from the underscript: mirror of insLeftOfMeUnlessAtEnd
+// (commands.ts) — lands right of the \lim atom unless it's at the very
+// start of the field, then left.
+function insRightOfMeUnlessAtEnd(this: MQNode, cursor: Cursor) {
+  var cmd = this.parent;
+  var ancestorCmd: MQNode | Anticursor | Cursor = cursor;
+  do {
+    if (ancestorCmd[L]) return cursor.insRightOf(cmd);
+    ancestorCmd = ancestorCmd.parent.parent;
+  } while (ancestorCmd !== cmd);
+  cursor.insLeftOf(cmd);
+  return undefined;
+}
+
+// `\lim` is a one-block command whose underscript renders below the
+// operator (like \sum's .mq-from) instead of as a side subscript — so
+// `lim` must come through autoCommands/the latex input, not
+// autoOperatorNames. `limStartsWithArrow` pre-populates the bound with
+// `\to` and lands the caret before it (parallel to sumStartsWithNEquals).
+LatexCmds.lim = class DisplayLimit extends MathCommand {
+  ctrlSeq = '\\lim';
+  ariaLabel = 'limit';
+  constructor() {
+    super();
+
+    var domView = new DOMView(1, (blocks) =>
+      h('span', { class: 'mq-limit mq-non-leaf' }, [
+        h('span', { class: 'mq-lim' }, [h.text('lim')]),
+        h('span', { class: 'mq-approaches' }, [h.block('span', {}, blocks[0])])
+      ])
+    );
+
+    MQSymbol.prototype.setCtrlSeqHtmlTextAndMathspeak.call(
+      this,
+      this.ctrlSeq,
+      domView
+    );
+  }
+  createLeftOf(cursor: Cursor) {
+    super.createLeftOf(cursor);
+    if (cursor.options.limStartsWithArrow) {
+      const arrow = new To();
+      arrow.createLeftOf(cursor);
+      cursor.insLeftOf(arrow);
+    }
+  }
+  latexRecursive(ctx: LatexContext) {
+    this.checkCursorContextOpen(ctx);
+
+    ctx.uncleanedLatex += this.ctrlSeq + '_{';
+    let beforeLength = ctx.uncleanedLatex.length;
+    this.getEnd(L).latexRecursive(ctx);
+    let afterLength = ctx.uncleanedLatex.length;
+    if (afterLength === beforeLength) {
+      // nothing was written so we write a space
+      ctx.uncleanedLatex += ' ';
+    }
+    ctx.uncleanedLatex += '}';
+    this.checkCursorContextClose(ctx);
+  }
+  mathspeak() {
+    let out = this.ariaLabel + ' as ' + this.getEnd(L).mathspeak();
+    if (this[R]) out += ' of ';
+    return out;
+  }
+  parser() {
+    var string = Parser.string;
+    var optWhitespace = Parser.optWhitespace;
+    var succeed = Parser.succeed;
+    var block = latexMathParser.block;
+
+    var self = this,
+      child = new MathBlock();
+    var blocks = [child];
+    self.blocks = blocks;
+    child.adopt(self, 0, 0);
+
+    return optWhitespace
+      .then(string('_'))
+      .then(function (_sub) {
+        return block.then(function (block) {
+          block.children().adopt(child, child.getEnd(R), 0);
+          return succeed(self);
+        });
+      })
+      .many()
+      .result(self);
+  }
+  finalizeTree() {
+    var underscript = this.getEnd(L);
+    this.downInto = underscript;
+    underscript.upOutOf = insRightOfMeUnlessAtEnd;
+    underscript.ariaLabel = 'limit underscript';
+  }
+};
+
+//======================================================================
 //  Operator spacing (display-mode relation/punctuation conventions)
 //======================================================================
 
