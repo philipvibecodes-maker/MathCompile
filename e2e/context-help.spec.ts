@@ -66,6 +66,20 @@ test('caret right of a matrix shows transpose/adjoint/pinv hints', async ({
   await expect(help(page)).toContainText('pseudoinverse');
 });
 
+test('a typed matrix still reaches the left-of hints through the input-wrapper residue', async ({
+  page,
+}) => {
+  const mf = cell(page);
+  // Typing \pmatrix + Enter leaves an invisible .mq-latex-command-input-
+  // wrapper between the previous atom and the .mq-matrix; the walk must
+  // see through it (hydration-only coverage would miss this).
+  await page.keyboard.type('x+\\pmatrix');
+  await page.keyboard.press('Enter');
+  await expect(help(page)).toContainText('add a row'); // inside the grid
+  await page.keyboard.press('ArrowLeft'); // out the left edge
+  await expect(help(page)).toContainText('determinant');
+});
+
 test('the strip hides when the caret is in a plain position', async ({
   page,
 }) => {

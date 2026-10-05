@@ -7,6 +7,23 @@ export type HelpContext = 'inside-matrix' | 'left-of-matrix' | 'right-of-matrix'
 const isMatrix = (el: Element | null | undefined): boolean =>
   !!el && el.classList.contains('mq-matrix');
 
+// Accepting a typed `\pmatrix`/`\begin{...}`/autocomplete command leaves
+// an empty, invisible latex-command-input wrapper as a sibling of the
+// new atom — skip it when checking what's really adjacent to the caret.
+const isInputResidue = (el: Element | null | undefined): boolean =>
+  !!el && el.classList.contains('mq-latex-command-input-wrapper');
+
+const atomAfter = (el: Element): Element | null => {
+  let sib = el.nextElementSibling;
+  while (isInputResidue(sib)) sib = sib.nextElementSibling;
+  return sib;
+};
+const atomBefore = (el: Element): Element | null => {
+  let sib = el.previousElementSibling;
+  while (isInputResidue(sib)) sib = sib.previousElementSibling;
+  return sib;
+};
+
 // Read the context off the rendered MathQuill DOM. Presence of
 // .mq-cursor implies the field is focused; a selection removes it.
 export function readHelpContext(field: HTMLElement): HelpContext | null {
@@ -24,8 +41,8 @@ export function readHelpContext(field: HTMLElement): HelpContext | null {
     el && el !== field;
     el = el.parentElement
   ) {
-    if (isMatrix(el.nextElementSibling)) return 'left-of-matrix';
-    if (isMatrix(el.previousElementSibling)) return 'right-of-matrix';
+    if (isMatrix(atomAfter(el))) return 'left-of-matrix';
+    if (isMatrix(atomBefore(el))) return 'right-of-matrix';
   }
   return null;
 }
