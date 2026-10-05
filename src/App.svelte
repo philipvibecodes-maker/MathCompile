@@ -4,6 +4,7 @@
   import MathField from './components/MathField.svelte';
   import CalcOutput from './components/CalcOutput.svelte';
   import CalcIssues from './components/CalcIssues.svelte';
+  import FadeSwap from './components/FadeSwap.svelte';
   import { TARGETS } from './compile/targets';
   import type { TargetId } from './compile/targets';
   import CommandPalette from './components/CommandPalette.svelte';
@@ -574,7 +575,11 @@
                               ? UNPARSEABLE_MSG
                               : iss.message}>!</span
                           >
-                        {/if}{iss.message}
+                        {/if}<FadeSwap
+                          text={iss.message}
+                          inMs={appStore.fadeInMs}
+                          outMs={appStore.fadeOutMs}
+                        />
                       </li>
                     {/each}
                     {#if hasParseError(i) && shownIssues(i).length === 0}
