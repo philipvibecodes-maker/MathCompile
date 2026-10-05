@@ -6,6 +6,7 @@ import {
 } from './math-field';
 import { attachAutocompleteMenu } from './ac-menu';
 import { attachSymbolPicker } from './ac-picker';
+import { readHelpContext, type HelpContext } from './context-help';
 
 export interface FieldCallbacks {
   onChange: (latex: string) => void;
@@ -16,6 +17,9 @@ export interface FieldCallbacks {
   // Backspace/Delete pressed while the field holds only a blank line.
   onDeleteOut?: () => void;
   onFocus?: () => void;
+  // Caret context for the help strip under the cell; null when the
+  // caret sits in no hint-bearing position (or the field blurs).
+  onCaretContext?: (ctx: HelpContext | null) => void;
 }
 
 export interface FieldHandle {
@@ -48,14 +52,23 @@ export function attachField(
   el: MathFieldElement,
   cb: FieldCallbacks,
 ): FieldHandle {
-  const handleInput = () => cb.onChange(el.value);
-  const handleFocusIn = () => cb.onFocus?.();
+  const reportContext = () =>
+    cb.onCaretContext?.(readHelpContext(el));
+  const handleInput = () => {
+    cb.onChange(el.value);
+    reportContext();
+  };
+  const handleFocusIn = () => {
+    cb.onFocus?.();
+    reportContext();
+  };
 
   // A blur to nowhere that no click caused is a programmatic blur —
   // Vimium's insert-mode Escape does exactly this (and eats the
   // keydown, so the field never sees it). Refocus the cell: Escape
   // must always land the user back in the input.
   const handleFocusOut = (e: FocusEvent) => {
+    cb.onCaretContext?.(null);
     if (e.relatedTarget === null && !pointerRecentlyDown())
       el.mq?.focus();
   };
@@ -91,6 +104,10 @@ export function attachField(
   el.addEventListener('move-out', handleMoveOut);
   el.addEventListener('new-cell', handleNewCell);
   el.addEventListener('keydown', handleKeydown, true);
+  // Caret moves that fire no input event: arrow/home/end keys land in
+  // keyup, mouse repositioning in click.
+  el.addEventListener('keyup', reportContext);
+  el.addEventListener('click', reportContext);
 
   const detachAutocomplete = attachAutocompleteMenu(el);
   const detachPicker = attachSymbolPicker(el);
@@ -143,6 +160,8 @@ export function attachField(
       el.removeEventListener('move-out', handleMoveOut);
       el.removeEventListener('new-cell', handleNewCell);
       el.removeEventListener('keydown', handleKeydown, true);
+      el.removeEventListener('keyup', reportContext);
+      el.removeEventListener('click', reportContext);
       detachAutocomplete();
       detachPicker();
     },
