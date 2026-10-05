@@ -1234,3 +1234,26 @@ LatexCmds.def = () =>
     'def',
     'def'
   );
+
+//======================================================================
+//  \tr — insertion alias for \mathrm{tr}
+//======================================================================
+
+// Typing `\tr` expands to \mathrm{tr} — the word-op form the compiler
+// reads for the matrix trace (`\mathrm{tr}(A)` -> `(A).trace()`); `\tr`
+// isn't a real LaTeX command, so stored latex canonicalizes to
+// \mathrm{tr} on the next save — the same insertion-time expansion
+// \def and \derivative use. No trailing space: `\mathrm{tr}\ ` would
+// put a space node between the name and the argument parens.
+class TrAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\mathrm{tr}');
+  }
+}
+LatexCmds.tr = () =>
+  new TrAlias(
+    '\\mathrm{tr}',
+    h('span', { class: 'mq-roman' }, [h.text('tr')]) as HTMLElement,
+    'tr',
+    'tr'
+  );

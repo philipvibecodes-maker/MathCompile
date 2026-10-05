@@ -34,6 +34,8 @@ export const COMPLETIONS: CompletionItem[] = [
   { name: 'pmatrix', hint: 'matrix', preview: '\\pmatrix{a&b\\\\c&d}' },
   { name: 'begin', hint: 'environment (pmatrix, cases, …)' },
   { name: 'def', hint: 'function definition', preview: '\\text{def} ' },
+  // `\tr` is an insertion alias — it expands to `\mathrm{tr}`.
+  { name: 'tr', hint: 'matrix trace', preview: '\\mathrm{tr} A' },
   { name: 'matrix', hint: 'matrix grid', preview: '\\begin{matrix}a&b\\\\c&d\\end{matrix}' },
   { name: 'bmatrix', hint: '[ ] matrix', preview: '\\begin{bmatrix}a&b\\\\c&d\\end{bmatrix}' },
   { name: 'Bmatrix', hint: '{ } matrix', preview: '\\begin{Bmatrix}a&b\\\\c&d\\end{Bmatrix}' },

@@ -52,8 +52,6 @@ test('typed \\cases opens a cases environment', async ({ page }) => {
   await expect(
     mf.locator('.mq-editable-field .mq-matrix tr'),
   ).toHaveCount(2);
-||||||| de97691
-  await expect(mf.locator('.mq-matrix tr')).toHaveCount(2);
   expect(await cellValue(mf)).toBe('\\begin{cases}&\\\\&\\end{cases}');
 });
 

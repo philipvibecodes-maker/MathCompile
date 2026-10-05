@@ -157,6 +157,16 @@ suite('typing with auto-replaces', function () {
       assertLatex('\\text{asdf}');
     });
 
+    test('\\tr expands to \\mathrm{tr}', function () {
+      mq.typedText('\\tr').keystroke('Enter');
+      assertLatex('\\mathrm{tr}');
+      mq.latex('');
+      mq.cmd('\\tr');
+      assertLatex('\\mathrm{tr}');
+      mq.typedText('(A)');
+      assertLatex('\\mathrm{tr}\\left(A\\right)');
+    });
+
     test('nonexistent LaTeX command, then symbol', function () {
       mq.typedText('\\asdf+');
       assertLatex('\\text{asdf}+');

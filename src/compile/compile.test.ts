@@ -1086,6 +1086,11 @@ const FIXTURES: {
     expectedPython: ['(sp.Matrix([[1, 2], [3, 4]])).rank()'],
   },
   {
+    // The \tr alias stores \mathrm{tr} — same lowering as \mathrm{trace}.
+    latex: '\\mathrm{tr}(\\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix})',
+    expectedPython: ['(sp.Matrix([[1, 2], [3, 4]])).trace()'],
+  },
+  {
     latex: '\\mathrm{trace}(M)',
     expectedPython: [
       'M = sp.Symbol("M")',

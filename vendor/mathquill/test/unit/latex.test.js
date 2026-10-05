@@ -462,6 +462,9 @@ suite('latex', function () {
     // not upstream's TeX-macro RawArgCommand — \def\foo{bar} parses as
     // a "def" text block followed by \foo and bar.
     assertParsesLatex('\\def\\foo{bar}', '\\text{def}\\foo bar');
+    // MATHCOMPILE: \tr is the app's insertion alias for \mathrm{tr} —
+    // stored latex canonicalizes to \mathrm{tr}.
+    assertParsesLatex('\\tr(A)', '\\mathrm{tr}(A)');
     assertParsesLatex(
       '\\DeclareMathOperator{\\Tr}{Tr}',
       '\\DeclareMathOperator{\\Tr}{Tr}'

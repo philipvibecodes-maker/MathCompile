@@ -2373,13 +2373,18 @@ class Emitter {
             PREC_LOW,
           ];
         }
-        // `\operatorname{tr}(A)` — sp.Trace exists but rejects a bare
-        // Symbol, the same 'Symbol' has no 'det' crash class.
-        if (name === 'Trace' && args.length === 2)
+        // `\operatorname{tr}`/`\mathrm{tr}` — CE calls them `Trace`; on
+        // a matrix this is the `.trace()` method call like
+        // `\mathrm{trace}` (sp.Trace on a bare Symbol raises, the same
+        // 'Symbol' has no 'det' crash class).
+        if (name === 'Trace' && args.length === 2) {
+          if (isHead(args[1], 'Matrix') || this.matrixRef(args[1]))
+            return [`(${this.emit(args[1])}).trace()`, PREC_ATOM];
           return [
             `${this.sp}Trace(${this.matrixArg(args[1], '\\operatorname{tr}') ?? 'None'})`,
             PREC_ATOM,
           ];
+        }
         // `z^{*}`/`A^{*}` — CE's superscript-star head. A declared
         // matrix reads as the conjugate transpose (Adjoint crashes on
         // scalars); a set operand reads as S∖{0} (`\mathbb{Z}^{*}` —

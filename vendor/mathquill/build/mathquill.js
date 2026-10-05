@@ -12921,6 +12921,28 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.def = function () {
         return new DefAlias('\\text{def}', h('span', { class: 'mq-text-mode' }, [h.text('def')]), 'def', 'def');
     };
+    //======================================================================
+    //  \tr \u2014 insertion alias for \mathrm{tr}
+    //======================================================================
+    // Typing `\tr` expands to \mathrm{tr} \u2014 the word-op form the compiler
+    // reads for the matrix trace (`\mathrm{tr}(A)` -> `(A).trace()`); `\tr`
+    // isn't a real LaTeX command, so stored latex canonicalizes to
+    // \mathrm{tr} on the next save \u2014 the same insertion-time expansion
+    // \def and \derivative use. No trailing space: `\mathrm{tr}\ ` would
+    // put a space node between the name and the argument parens.
+    var TrAlias = /** @class */ (function (_super) {
+        __extends(TrAlias, _super);
+        function TrAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        TrAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\mathrm{tr}');
+        };
+        return TrAlias;
+    }(MQSymbol));
+    LatexCmds.tr = function () {
+        return new TrAlias('\\mathrm{tr}', h('span', { class: 'mq-roman' }, [h.text('tr')]), 'tr', 'tr');
+    };
     /*************************************************
      * LaTeX environments: \begin{matrix} family and
      * \displaylines{...}, plus insertion-time \derivative.

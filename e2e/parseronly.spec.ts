@@ -189,6 +189,17 @@ test('typed \\underset inserts the two-block command', async ({ page }) => {
   expect(await value(page)).toBe('\\underset{ }{ }');
 });
 
+// \tr is an insertion alias — it expands to \mathrm{tr}, the word-op
+// form the compiler lowers to .trace().
+test('typed \\tr expands to \\mathrm{tr}', async ({ page }) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\tr', { delay: 60 });
+  await page.keyboard.press('Enter');
+  expect(await value(page)).toBe('\\mathrm{tr}');
+  await mf.pressSequentially('(A)', { delay: 60 });
+  expect(await value(page)).toBe('\\mathrm{tr}\\left(A\\right)');
+});
+
 // \widehat aliases \hat (wide variant): parses and renders the hat.
 test('\\widehat parses and renders as a hat', async ({ page }) => {
   const mf = page.locator('math-field').first();

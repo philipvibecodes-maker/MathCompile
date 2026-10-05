@@ -12930,6 +12930,28 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds.def = function () {
         return new DefAlias('\\text{def}', h('span', { class: 'mq-text-mode' }, [h.text('def')]), 'def', 'def');
     };
+    //======================================================================
+    //  \tr — insertion alias for \mathrm{tr}
+    //======================================================================
+    // Typing `\tr` expands to \mathrm{tr} — the word-op form the compiler
+    // reads for the matrix trace (`\mathrm{tr}(A)` -> `(A).trace()`); `\tr`
+    // isn't a real LaTeX command, so stored latex canonicalizes to
+    // \mathrm{tr} on the next save — the same insertion-time expansion
+    // \def and \derivative use. No trailing space: `\mathrm{tr}\ ` would
+    // put a space node between the name and the argument parens.
+    var TrAlias = /** @class */ (function (_super) {
+        __extends(TrAlias, _super);
+        function TrAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        TrAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\mathrm{tr}');
+        };
+        return TrAlias;
+    }(MQSymbol));
+    LatexCmds.tr = function () {
+        return new TrAlias('\\mathrm{tr}', h('span', { class: 'mq-roman' }, [h.text('tr')]), 'tr', 'tr');
+    };
     /*************************************************
      * LaTeX environments: \begin{matrix} family and
      * \displaylines{...}, plus insertion-time \derivative.
@@ -17877,6 +17899,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             // not upstream's TeX-macro RawArgCommand — \def\foo{bar} parses as
             // a "def" text block followed by \foo and bar.
             assertParsesLatex('\\def\\foo{bar}', '\\text{def}\\foo bar');
+            // MATHCOMPILE: \tr is the app's insertion alias for \mathrm{tr} —
+            // stored latex canonicalizes to \mathrm{tr}.
+            assertParsesLatex('\\tr(A)', '\\mathrm{tr}(A)');
             assertParsesLatex('\\DeclareMathOperator{\\Tr}{Tr}', '\\DeclareMathOperator{\\Tr}{Tr}');
             assertParsesLatex('\\genfrac(){}{}{x}{y}', '\\genfrac(){}{}{x}{y}');
             assertParsesLatex('\\genfrac(]{0pt}{0}{x}{y}', '\\genfrac(]{0pt}{0}{x}{y}');
@@ -21607,6 +21632,15 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             test('nonexistent LaTeX command', function () {
                 mq.typedText('\\asdf').keystroke('Enter');
                 assertLatex('\\text{asdf}');
+            });
+            test('\\tr expands to \\mathrm{tr}', function () {
+                mq.typedText('\\tr').keystroke('Enter');
+                assertLatex('\\mathrm{tr}');
+                mq.latex('');
+                mq.cmd('\\tr');
+                assertLatex('\\mathrm{tr}');
+                mq.typedText('(A)');
+                assertLatex('\\mathrm{tr}\\left(A\\right)');
             });
             test('nonexistent LaTeX command, then symbol', function () {
                 mq.typedText('\\asdf+');
