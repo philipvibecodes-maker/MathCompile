@@ -41,11 +41,14 @@ export function readCompletionContext(
   if (cursor.closest(BLOCKS_WORD_RUN)) return null;
 
   // Contiguous <var> siblings immediately left of the caret. Variables
-  // render one element per letter (`f` is still a plain <var>).
+  // render one element per letter (`f` is still a plain <var>);
+  // .mq-operator-name vars are rendered commands (\sin), not typing.
   let prefix = '';
   for (
     let sib = cursor.previousElementSibling;
-    sib && sib.tagName === 'VAR';
+    sib &&
+    sib.tagName === 'VAR' &&
+    !sib.classList.contains('mq-operator-name');
     sib = sib.previousElementSibling
   ) {
     prefix = (sib.textContent ?? '') + prefix;
