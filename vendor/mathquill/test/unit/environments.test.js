@@ -119,6 +119,107 @@ suite('environments', function () {
       mq.keystroke('Backspace');
       assert.equal(mq.latex(), '\\begin{matrix}a&b\\end{matrix}');
     });
+
+    var ownRows = function (gridEl) {
+      return gridEl
+        .querySelector(':scope > table')
+        .querySelectorAll(':scope > tr').length;
+    };
+    var rootEl = function () {
+      return mq.__controller.root.domFrag().oneElement();
+    };
+
+    test('deleting an empty line below a matrix keeps the matrix rows', function () {
+      mq.latex(
+        '\\displaylines{\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}\\\\ }'
+      );
+      mq.moveToRightEnd(); // into the empty second line
+      mq.keystroke('Backspace');
+      assert.equal(
+        mq.latex(),
+        '\\displaylines{\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}'
+      );
+      var root = rootEl();
+      // the displaylines row is gone — and the nested matrix kept both
+      // of its own <tr>s (the flat tr list used to index into them)
+      assert.equal(ownRows(root.querySelector('.mq-displaylines')), 1);
+      assert.equal(ownRows(root.querySelector('.mq-matrix')), 2);
+    });
+
+    test('adding a row to a matrix with a nested matrix keeps rows apart', function () {
+      mq.latex(
+        '\\begin{pmatrix}\\begin{matrix}x&y\\\\z&w\\end{matrix}&b\\\\c&d\\end{pmatrix}'
+      );
+      mq.moveToRightEnd().keystroke('Left'); // into outer cell d
+      mq.insertLineBreak();
+      assert.equal(
+        mq.latex(),
+        '\\begin{pmatrix}\\begin{matrix}x&y\\\\z&w\\end{matrix}&b\\\\c&d\\\\&\\end{pmatrix}'
+      );
+      var grids = rootEl().querySelectorAll('.mq-matrix');
+      assert.equal(ownRows(grids[0]), 3); // outer gained the row
+      assert.equal(ownRows(grids[1]), 2); // nested kept its own rows
+    });
+
+    test('adding a column to a matrix with a nested matrix keeps cells apart', function () {
+      mq.latex(
+        '\\begin{pmatrix}\\begin{matrix}x&y\\\\z&w\\end{matrix}&b\\\\c&d\\end{pmatrix}'
+      );
+      mq.moveToRightEnd().keystroke('Left');
+      mq.keystroke('Shift-Spacebar');
+      assert.equal(
+        mq.latex(),
+        '\\begin{pmatrix}\\begin{matrix}x&y\\\\z&w\\end{matrix}&b&\\\\c&d&\\end{pmatrix}'
+      );
+      var grids = rootEl().querySelectorAll('.mq-matrix');
+      assert.equal(
+        grids[0]
+          .querySelector(':scope > table')
+          .querySelectorAll(':scope > tr > td').length,
+        6
+      );
+      assert.equal(
+        grids[1]
+          .querySelector(':scope > table')
+          .querySelectorAll(':scope > tr > td').length,
+        4
+      );
+    });
+
+    test('deleting an empty first column keeps the other cells rendered', function () {
+      mq.latex('\\begin{matrix}&a\\\\&b\\end{matrix}');
+      // moveToLeftEnd stops at the root edge, left of the matrix atom —
+      // one Right steps into the first cell (empty, col 0).
+      mq.moveToLeftEnd().keystroke('Right');
+      mq.keystroke('Backspace');
+      assert.equal(mq.latex(), '\\begin{matrix}a\\\\b\\end{matrix}');
+      // the surviving column's <td>s must stay attached — the old code
+      // re-removed tr.children[col] after the cells already detached
+      assert.equal(
+        rootEl().querySelectorAll('.mq-matrix > table > tr > td').length,
+        2
+      );
+      // and the caret landed on a surviving cell, not a detached td
+      mq.typedText('z');
+      assert.equal(mq.latex(), '\\begin{matrix}za\\\\b\\end{matrix}');
+    });
+
+    test('deleting the first line keeps the caret alive', function () {
+      mq.latex(
+        '\\displaylines{ \\\\ \\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}'
+      );
+      mq.moveToLeftEnd(); // first (empty) line
+      mq.keystroke('Backspace');
+      assert.equal(
+        mq.latex(),
+        '\\displaylines{\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}'
+      );
+      mq.typedText('z');
+      assert.equal(
+        mq.latex(),
+        '\\displaylines{z\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}'
+      );
+    });
   });
 
   suite('env shortcuts', function () {

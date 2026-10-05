@@ -13283,7 +13283,13 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             if (frag.isEmpty())
                 return [];
             var table = frag.oneElement().querySelector('table');
-            return table ? Array.from(table.querySelectorAll('tr')) : [];
+            // Own rows only — a nested grid's <tr>s are also descendants of
+            // this table; indexing the flat list hits the wrong table when a
+            // cell holds a matrix (deleting a line eats a nested row, a new
+            // row lands inside the nested grid).
+            return table
+                ? Array.from(table.querySelectorAll(':scope > tr, :scope > tbody > tr'))
+                : [];
         };
         CellGrid.prototype.renderCell = function (cell) {
             var td = h('td', {
@@ -13386,13 +13392,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 (_c = trs[row]) === null || _c === void 0 ? void 0 : _c.remove();
             }
             if (isEmpty(myColumn) && myRow.length > 1) {
-                var col_1 = columns.indexOf(myColumn);
+                // remove() detaches each cell's <td> itself — indexing
+                // tr.children[col] afterwards would hit the *next* column's td
+                // (the deleted cells already shifted out of the child list).
                 remove(myColumn);
-                // Remove the orphaned <td>s from each row
-                this.tableRows().forEach(function (tr) {
-                    var _c;
-                    (_c = tr.children[col_1]) === null || _c === void 0 ? void 0 : _c.remove();
-                });
             }
             this.finalizeTree();
         };
@@ -13481,8 +13484,19 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     this.cells.indexOf(dirwards) === -1) {
                     dirwards = dirwards[dir];
                 }
+                if (dirwards && this.cells.indexOf(dirwards) === -1) {
+                    // Walked off the end through removed cells.
+                    dirwards = 0;
+                }
                 if (dirwards) {
                     cursor.insAtDirEnd(-dir, dirwards);
+                }
+                else if (this.cells.length) {
+                    // The deleted row/column was on the dir edge (e.g. the first
+                    // row via Backspace) — land the caret on the surviving edge
+                    // cell instead of leaving it inside a detached <td>.
+                    var edge = dir === L ? this.cells[0] : this.cells[this.cells.length - 1];
+                    cursor.insAtDirEnd(dir, edge);
                 }
                 if (this.cells.length === 1 && this.cells[0].isEmpty()) {
                     finalDeleteCallback();
@@ -17091,6 +17105,69 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 mq.moveToRightEnd().keystroke('Left'); // last cell (empty, row 1)
                 mq.keystroke('Backspace');
                 assert.equal(mq.latex(), '\\begin{matrix}a&b\\end{matrix}');
+            });
+            var ownRows = function (gridEl) {
+                return gridEl
+                    .querySelector(':scope > table')
+                    .querySelectorAll(':scope > tr').length;
+            };
+            var rootEl = function () {
+                return mq.__controller.root.domFrag().oneElement();
+            };
+            test('deleting an empty line below a matrix keeps the matrix rows', function () {
+                mq.latex('\\displaylines{\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}\\\\ }');
+                mq.moveToRightEnd(); // into the empty second line
+                mq.keystroke('Backspace');
+                assert.equal(mq.latex(), '\\displaylines{\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}');
+                var root = rootEl();
+                // the displaylines row is gone — and the nested matrix kept both
+                // of its own <tr>s (the flat tr list used to index into them)
+                assert.equal(ownRows(root.querySelector('.mq-displaylines')), 1);
+                assert.equal(ownRows(root.querySelector('.mq-matrix')), 2);
+            });
+            test('adding a row to a matrix with a nested matrix keeps rows apart', function () {
+                mq.latex('\\begin{pmatrix}\\begin{matrix}x&y\\\\z&w\\end{matrix}&b\\\\c&d\\end{pmatrix}');
+                mq.moveToRightEnd().keystroke('Left'); // into outer cell d
+                mq.insertLineBreak();
+                assert.equal(mq.latex(), '\\begin{pmatrix}\\begin{matrix}x&y\\\\z&w\\end{matrix}&b\\\\c&d\\\\&\\end{pmatrix}');
+                var grids = rootEl().querySelectorAll('.mq-matrix');
+                assert.equal(ownRows(grids[0]), 3); // outer gained the row
+                assert.equal(ownRows(grids[1]), 2); // nested kept its own rows
+            });
+            test('adding a column to a matrix with a nested matrix keeps cells apart', function () {
+                mq.latex('\\begin{pmatrix}\\begin{matrix}x&y\\\\z&w\\end{matrix}&b\\\\c&d\\end{pmatrix}');
+                mq.moveToRightEnd().keystroke('Left');
+                mq.keystroke('Shift-Spacebar');
+                assert.equal(mq.latex(), '\\begin{pmatrix}\\begin{matrix}x&y\\\\z&w\\end{matrix}&b&\\\\c&d&\\end{pmatrix}');
+                var grids = rootEl().querySelectorAll('.mq-matrix');
+                assert.equal(grids[0]
+                    .querySelector(':scope > table')
+                    .querySelectorAll(':scope > tr > td').length, 6);
+                assert.equal(grids[1]
+                    .querySelector(':scope > table')
+                    .querySelectorAll(':scope > tr > td').length, 4);
+            });
+            test('deleting an empty first column keeps the other cells rendered', function () {
+                mq.latex('\\begin{matrix}&a\\\\&b\\end{matrix}');
+                // moveToLeftEnd stops at the root edge, left of the matrix atom —
+                // one Right steps into the first cell (empty, col 0).
+                mq.moveToLeftEnd().keystroke('Right');
+                mq.keystroke('Backspace');
+                assert.equal(mq.latex(), '\\begin{matrix}a\\\\b\\end{matrix}');
+                // the surviving column's <td>s must stay attached — the old code
+                // re-removed tr.children[col] after the cells already detached
+                assert.equal(rootEl().querySelectorAll('.mq-matrix > table > tr > td').length, 2);
+                // and the caret landed on a surviving cell, not a detached td
+                mq.typedText('z');
+                assert.equal(mq.latex(), '\\begin{matrix}za\\\\b\\end{matrix}');
+            });
+            test('deleting the first line keeps the caret alive', function () {
+                mq.latex('\\displaylines{ \\\\ \\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}');
+                mq.moveToLeftEnd(); // first (empty) line
+                mq.keystroke('Backspace');
+                assert.equal(mq.latex(), '\\displaylines{\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}');
+                mq.typedText('z');
+                assert.equal(mq.latex(), '\\displaylines{z\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}}');
             });
         });
         suite('env shortcuts', function () {

@@ -390,7 +390,13 @@ class CellGrid extends MathCommand {
     const frag = this.domFrag();
     if (frag.isEmpty()) return [];
     const table = frag.oneElement().querySelector('table');
-    return table ? Array.from(table.querySelectorAll('tr')) : [];
+    // Own rows only — a nested grid's <tr>s are also descendants of
+    // this table; indexing the flat list hits the wrong table when a
+    // cell holds a matrix (deleting a line eats a nested row, a new
+    // row lands inside the nested grid).
+    return table
+      ? Array.from(table.querySelectorAll(':scope > tr, :scope > tbody > tr'))
+      : [];
   }
 
   renderCell(cell: MatrixCell): HTMLElement {
@@ -506,12 +512,10 @@ class CellGrid extends MathCommand {
       trs[row]?.remove();
     }
     if (isEmpty(myColumn) && myRow.length > 1) {
-      const col = columns.indexOf(myColumn);
+      // remove() detaches each cell's <td> itself — indexing
+      // tr.children[col] afterwards would hit the *next* column's td
+      // (the deleted cells already shifted out of the child list).
       remove(myColumn);
-      // Remove the orphaned <td>s from each row
-      this.tableRows().forEach(function (tr) {
-        (tr.children[col] as HTMLElement | undefined)?.remove();
-      });
     }
     this.finalizeTree();
   }
@@ -622,8 +626,18 @@ class CellGrid extends MathCommand {
       ) {
         dirwards = dirwards[dir] as MatrixCell;
       }
+      if (dirwards && this.cells.indexOf(dirwards as MatrixCell) === -1) {
+        // Walked off the end through removed cells.
+        dirwards = 0;
+      }
       if (dirwards) {
         cursor.insAtDirEnd(-dir as Direction, dirwards);
+      } else if (this.cells.length) {
+        // The deleted row/column was on the dir edge (e.g. the first
+        // row via Backspace) — land the caret on the surviving edge
+        // cell instead of leaving it inside a detached <td>.
+        var edge = dir === L ? this.cells[0] : this.cells[this.cells.length - 1];
+        cursor.insAtDirEnd(dir, edge);
       }
       if (this.cells.length === 1 && this.cells[0].isEmpty()) {
         finalDeleteCallback();
