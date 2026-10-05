@@ -441,6 +441,12 @@ const FIXTURES: {
     expectedPython: ["f, x = sp.symbols('f x')", "sp.limit(f, x, 0, dir='+-')"],
   },
   {
+    // The editor serializes \lim with its own empty underscript block —
+    // the rewrite fills it rather than stacking a second bound.
+    latex: '\\underset{x\\to0}{\\lim_{ }} f',
+    expectedPython: ["f, x = sp.symbols('f x')", "sp.limit(f, x, 0, dir='+-')"],
+  },
+  {
     // \Big( ... \Big) sizes are dropped — the parens stay an implicit
     // product, so `a\Big(b\Big)` is a·b.
     latex: 'a\\Big(b\\Big)',

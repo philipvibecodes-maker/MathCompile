@@ -158,7 +158,7 @@ required argument inline — `\array{cc}` — and a typed
 ### autoOperatorNames (on by default — render as upright operators)
 
 ```
-arg deg det dim exp gcd hom inf ker lg lim ln log max min sup limsup
+arg deg det dim exp gcd hom inf ker lg ln log max min sup limsup
 liminf injlim projlim Pr gcf hcf lcm proj span
 sin cos tan arcsin arccos arctan sinh cosh tanh sec csc cot coth
 ```
@@ -172,12 +172,15 @@ plus generated `arc`/`h`/`arh`/`arch` variants of
 `src/editor/attach-field.ts` sets `SMART_AUTO_COMMANDS`:
 
 ```
-int sum sqrt prod pi infty theta derivative def
+int iint antid sum sqrt prod lim pi infty theta derivative def
 ```
 
 These complete to the real command without a backslash when smart mode
 is on (`autoCommands: ''` disables; upstream's processor throws on
-empty strings, the vendored patch allows it).
+empty strings, the vendored patch allows it). `lim` is a displaystyle
+operator — its `_{x\to a}` bound types and renders *below* the "lim"
+text (like `\sum`), not as a side subscript, and typed `/` after it
+stops the numerator at the limit atom.
 
 ## Function definitions
 
