@@ -179,6 +179,197 @@ and press `}`, `Enter`, or `Tab` to apply it.
 | `\alignat{2}` / `\alignedat{2}` | \(\begin{alignedat}{2} x &= y &\;\;& u = v \\ a &= b &\;\;& c = d \end{alignedat}\) |
 | `\substack` | \(\substack{a \\ b}\) |
 
+### Set theory
+
+The named sets are single-letter commands — `\R`, `\N`, `\Z`, `\Q`,
+`\C`, `\P`, `\H`. Spelling out `\mathbb{R}` doesn't resolve as a
+command; use the letter.
+
+| Type | Renders |
+| --- | --- |
+| `\R` (same pattern for `\N` `\Z` `\Q` `\C` `\P` `\H`) | \(\mathbb{R}\) |
+| `\Z` then `_n` | \(\mathbb{Z}_{n}\) |
+| `x` `\in` `A`, `\notin` | \(x \in A\), \(x \notin A\) |
+| `\cup` `\cap` `\setminus` | \(A \cup B\), \(A \cap B\), \(A \setminus B\) |
+| `\subset` `\subseteq` `\nsubseteq` | \(A \subset B\), \(A \subseteq B\), \(A \nsubseteq B\) |
+| `\emptyset` or `\varnothing` | \(\varnothing\) |
+| `\{1,2,3\}` | \(\{1, 2, 3\}\) — braces auto-pair |
+| `\{ x \in \R \mid x > 0 \}` | \(\{x \in \mathbb{R} \mid x > 0\}\) |
+| `\bigcup` `\bigcap`, then `_{i=1}^{n}` | \(\bigcup_{i=1}^{n} A_i\), \(\bigcap_{i=1}^{n} A_i\) |
+| `(a,b)`, `[a,b)`, `[a,b]` | \((a,b)\), \([a,b)\), \([a,b]\) — parens/brackets auto-pair |
+
+These compile to real SymPy sets: `x \in \mathbb{R}` puts `real=True`
+on `x`'s symbol (likewise `\Z` → integer, `\Q` → rational, `\C` →
+complex), `\cup` / `\cap` / `\setminus` become `Union` /
+`Intersection` / `Complement`, `\{1,2,3\}` a `FiniteSet`,
+`\{x \mid p(x)\}` a `ConditionSet`, and
+`\{f(x) \mid x \in D\}` an `ImageSet`. `A \subseteq B` needs concrete
+sets on both sides — SymPy can't name an unknown set, so bare symbols
+get an `!` error note.
+
+### Logic
+
+| Type | Renders |
+| --- | --- |
+| `\land` `\lor` `\neg` | \(p \land q\), \(p \lor q\), \(\neg p\) |
+| `\implies` `\iff` | \(p \implies q\), \(p \iff q\) |
+| `\forall` `\exists` | \(\forall x \in S\), \(\exists x \in S\) |
+| `\vdash` `\models` | \(T \vdash p\), \(M \models p\) |
+| `\top` `\bot` | \(\top\), \(\bot\) |
+| `\therefore` `\because` | \(\therefore\), \(\because\) |
+
+Connectives lower to `And` / `Or` / `Not` / `Implies` / `Equivalent`.
+A quantifier over a concrete set folds elementwise (`\forall x \in
+\{1,2,3\}` becomes an `And` over the elements); SymPy has no general
+quantifiers, so an abstract `\forall` is flagged rather than computed.
+
+### Calculus
+
+`\int`, `\sum`, and `\prod` come with `_`/`^` bound blocks already
+made — type the bound, then `Right` or `Tab` to the next block. A
+typed `_`/`^` inside a bound nests a block instead of moving.
+`\lim` has no pre-made bound: type `_{x \to 0}` yourself.
+
+| Type | Renders |
+| --- | --- |
+| `\int`, bounds `0` then `1`, `x^2` `Right` `dx` | \(\int_{0}^{1} x^2\,dx\) |
+| `\antid` | \(\int f\,dx\) — indefinite (adds \(+C\) in the calculator) |
+| `\iint` `\iiint` | \(\iint\), \(\iiint\) — boundless signs |
+| `\oint` `\oiint` | \(\oint\), \(\oiint\) — closed integrals |
+| `\frac{d}{dx}` or `\derivative` | \(\frac{dy}{dx}\) |
+| `f'`, `f''`, `f^{(n)}` | \(f'(x)\), \(f''(x)\), \(f^{(n)}(x)\) |
+| `\sum` then `k=1` `Right` `n`; `\prod` same | \(\sum_{k=1}^{n} a_k\), \(\prod_{k=1}^{n} a_k\) |
+| `\lim` then `_{x \to 0}`; one-sided `0^{+}` | \(\lim_{x \to 0} f(x)\), \(\lim_{x \to 0^{+}} f(x)\) |
+| `lim`, `limsup`, `liminf` | \(\lim\), \(\limsup\), \(\liminf\) — upright operator names |
+| `\infty` | \(\infty\) |
+
+Integrals, derivatives, sums, products, and limits all compile to the
+real SymPy calls — `integrate`, `diff`, `Sum`/`Product`, `limit`
+(one-sided included).
+
+### Multivariable calculus
+
+| Type | Renders |
+| --- | --- |
+| `\partial` | \(\partial\) |
+| `\frac{\partial u}{\partial t}` | \(\frac{\partial u}{\partial t}\) |
+| `\partial_` `x` then `u` | \(\partial_{x} u\) — reads as the same partial derivative |
+| `\iint`, `\iiint`, then `f` `dx dy` | \(\iint f\,dx\,dy\), \(\iiint f\,dx\,dy\,dz\) |
+| `\oiint` | \(\oiint\) — closed surface integral |
+| `\nabla` | \(\nabla f\), \(\nabla^{2} u\) |
+| `\Delta` | \(\Delta u\) |
+| `\vec{v}` | \(\vec{v}\) |
+
+`\partial_{x}u` compiles to the partial derivative like the `\frac`
+form. `\nabla` and `\Delta` are display notation — the compiler reads
+`\nabla` as an ordinary symbol, so `\nabla f` stays symbolic rather
+than becoming a gradient call.
+
+### Topology
+
+| Type | Renders |
+| --- | --- |
+| `f : X` `\to` `Y` | \(f : X \to Y\) — a continuous map |
+| `\mapsto` | \(x \mapsto x^2\) |
+| `\cong` | \(X \cong Y\) — homeomorphic |
+| `\times` | \(X \times Y\) — product |
+| `\bar{A}` or `\overline{A}` | \(\overline{A}\) — closure |
+| `\partial` `A` | \(\partial A\) — boundary |
+| `A^{\circ}` | \(A^{\circ}\) — interior |
+| `A'` | \(A'\) — complement |
+| `(a,b)`, `[a,b)` | \((a,b)\), \([a,b)\) — open/half-open sets |
+| `\varepsilon` `\delta` | \(\varepsilon\), \(\delta\) |
+
+Topology rows are notation — unions, intersections, closures, and
+maps display but carry no topological semantics. One exception to
+know: `\cong` is read by the compiler as modular congruence
+(`x \cong b \pmod m` → `Eq(Mod(x, m), b)`), not isomorphism.
+
+### Complex analysis
+
+| Type | Renders |
+| --- | --- |
+| `\C` | \(\mathbb{C}\) |
+| `\Re` `\Im` | \(\Re z\), \(\Im z\) |
+| `\arg` | \(\arg z\) |
+| `\bar{z}` or `\overline{z}` | \(\overline{z}\) — conjugate |
+| `\|z\|` | \(\lvert z \rvert\) — modulus; `\|` auto-pairs |
+| `e^{i\theta}` | \(e^{i\theta}\) |
+| `\oint` | \(\oint_{\gamma} f(z)\,dz\) — contour integral |
+| `\wp` `\ell` | \(\wp\), \(\ell\) |
+
+`\Re`, `\Im`, `\arg`, and `\overline{z}` compile to `re`, `im`,
+`arg`, and `conjugate`; `i` is the imaginary unit.
+
+### Abstract algebra
+
+| Type | Renders |
+| --- | --- |
+| `\Z` then `_n` | \(\mathbb{Z}_{n}\) — integers mod n |
+| `\langle a \rangle` | \(\langle a \rangle\) — generated subgroup; auto-pairs |
+| `\times` `\oplus` `\otimes` | \(G \times H\), \(G \oplus H\), \(G \otimes H\) |
+| `\circ` | \(f \circ g\) — composition |
+| `\star` | \(a \ast b\) — generic operation |
+| `\ker` `\phi` | \(\ker \phi\) — kernel of a map |
+| `\|G\|` | \(\lvert G \rvert\) — order |
+| `\trianglelefteq` | \(N \trianglelefteq G\) — normal subgroup |
+| `G/H` | \(G/H\) — quotient |
+| `\mathfrak{g}` | \(\mathfrak{g}\) — Lie algebra |
+| `x \equiv b \pmod{m}` | \(x \equiv b \pmod{m}\) |
+
+The modular form compiles: `x \equiv b \pmod{m}` lowers to
+`Eq(Mod(x, m), b)`. Group notation (`\langle`, `\circ`, `\star`,
+`\trianglelefteq`) is display-level — infix symbols, no algebraic
+structure attached.
+
+### Differential equations
+
+| Type | Renders |
+| --- | --- |
+| `y'`, `y''` | \(y'\), \(y''\) |
+| `\dot{x}` `\ddot{x}` | \(\dot{x}\), \(\ddot{x}\) — time derivatives |
+| `f^{(n)}(x)` | \(f^{(n)}(x)\) — nth derivative |
+| `\frac{dy}{dx}` | \(\frac{dy}{dx}\) |
+| `\text{def} y(t)` | declares `y` a function of `t` |
+| `\mathcal{L}` | \(\mathcal{L}\{f\}\) — Laplace transform notation |
+
+Declaring `\text{def} y(t)` marks `y` as a dependent variable, so
+`y'`, `y''`, and `y^{(n)}` emit real `Derivative`/`diff` calls in
+`t`. Dotted names read as functions of `t` on their own — `\dot{x}`
+is `x(t)` differentiated once. `\mathcal{L}` is notation only.
+
+### Partial differential equations
+
+| Type | Renders |
+| --- | --- |
+| `\frac{\partial u}{\partial t}` | \(\frac{\partial u}{\partial t}\) |
+| `\partial_` `t` then `u` | \(\partial_{t} u\) — same operator, shorter |
+| `\nabla^{2}` `u` or `\Delta` `u` | \(\nabla^{2} u\), \(\Delta u\) — Laplacian |
+| `\nabla` `\cdot` / `\nabla` `\times` | \(\nabla \cdot \vec{F}\), \(\nabla \times \vec{F}\) |
+| `u_t`, `u_{xx}` | \(u_{t}\), \(u_{xx}\) — subscript notation |
+| `\infty` | \(\infty\) — conditions at infinity |
+
+`\partial_{t}u` compiles to the partial derivative, like the `\frac`
+form. The `\nabla`, `\Delta`, divergence, and curl spellings are
+display notation — no vector-calculus semantics behind them.
+
+### Combinatorics
+
+| Type | Renders |
+| --- | --- |
+| `\binom{n}{k}` | \(\binom{n}{k}\) — `binomial(n, k)` |
+| `n!`, `n!!` | \(n!\), \(n!!\) — factorial / double factorial |
+| `\lfloor x \rfloor`, `\lceil x \rceil` | \(\lfloor x \rfloor\), \(\lceil x \rceil\) |
+| `\sum` / `\prod` with bounds | \(\sum_{k=0}^{n}\), \(\prod_{k=1}^{n}\) |
+| `\Gamma(z)` | \(\Gamma(z)\) — `gamma(z)` |
+| `\mathrm{totient}(n)` | \(\mathrm{totient}(n)\) — Euler's totient |
+| `\dots` `\cdots` | \(1, 2, \dots, n\) |
+
+`\binom`, `!`/`!!`, floors, ceilings, and `\Gamma` compile to the
+matching SymPy calls. Other number-theory words work like `totient`
+via `\mathrm{name}` — `mobius`, `nextprime`, `factorint` — as long
+as the name is a plain word.
+
 ## Output targets
 
 Pick a target from the **Output** menu in the header.
