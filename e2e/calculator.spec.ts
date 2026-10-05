@@ -100,6 +100,47 @@ test('a cell evaluates in the context of the cells above it', async ({
   ).toContainText('12', { timeout: 90_000 });
 });
 
+test('prior cells fold by default in the generating-code block', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await setTarget(page, 'calculator');
+
+  const mf0 = cell(page, 0);
+  await mf0.evaluate((el, v) => {
+    (el as { value: string }).value = v;
+  }, '\\text{def} g(x) = 2x');
+  await page.locator('.add-expr').click();
+  const mf1 = cell(page, 1);
+  await mf1.click();
+  await mf1.pressSequentially('g(4)', { delay: 40 });
+
+  const output1 = page.locator('.calc-output').nth(1);
+  await expect(
+    output1.locator('.calc-row').first(),
+  ).toContainText('8', { timeout: 90_000 });
+  await expect(output1.locator('.calc-rows')).not.toHaveClass(/pending/, {
+    timeout: 90_000,
+  });
+  await output1.getByLabel('Show generating code').check();
+  const code = output1.locator('.calc-code');
+
+  // Every prior cell collapses behind its `# cell N` marker; this
+  // cell's section stays expanded.
+  await expect(code).toContainText('# cell 1');
+  await expect(code).not.toContainText('def g(x)');
+  await expect(code).toContainText('# cell 2');
+  await expect(code).toContainText('g(4)');
+
+  // The second fold toggles cell 1's code back in (the first is the
+  // helper block's).
+  await code.locator('.code-fold').nth(1).click();
+  await expect(code).toContainText('def g(x)');
+  await expect(code).toContainText('return 2 * x');
+  await code.locator('.code-fold').nth(1).click();
+  await expect(code).not.toContainText('def g(x)');
+});
+
 // The calculator reports issues like the python target's overlay, but
 // in the input column: the message panel mounts under the math-field —
 // in flow, so it never covers the field's other input lines — while

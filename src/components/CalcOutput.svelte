@@ -156,6 +156,44 @@
     };
   }
 
+  // Split the post-helper program on its `# cell N` markers — one
+  // section per cell. A single-cell program has no markers: the whole
+  // rest is this cell's code (one section with an empty marker).
+  function splitCellSections(
+    code: string,
+  ): { marker: string; body: string }[] {
+    const sections: { marker: string; lines: string[] }[] = [];
+    const lead: string[] = [];
+    for (const l of code.split('\n')) {
+      if (/^# cell \d+$/.test(l)) sections.push({ marker: l, lines: [] });
+      else if (sections.length > 0)
+        sections[sections.length - 1].lines.push(l);
+      else lead.push(l);
+    }
+    if (sections.length === 0) return [{ marker: '', body: code }];
+    sections[sections.length - 1].lines.unshift(...lead);
+    return sections.map(({ marker, lines }) => ({
+      marker,
+      body: lines.join('\n'),
+    }));
+  }
+
+  // The shown program and its folded regions: the helper block and
+  // every prior cell's section start collapsed; this cell's section
+  // always stays expanded.
+  const shownCode = $derived(
+    appStore.showPlumbing && cellDisplayCode !== ''
+      ? cellDisplayCode
+      : cellCode,
+  );
+  const codeSplit = $derived(splitHelperBlock(shownCode));
+  const codeSections = $derived(
+    codeSplit === null ? [] : splitCellSections(codeSplit.rest),
+  );
+  // Index-keyed fold state for prior-cell sections — a fold stays open
+  // across edits; stale indices just settle closed on next render.
+  let openCells = $state<boolean[]>([]);
+
   function staticMath(el: HTMLElement, latex: string) {
     const sm = mountStaticMath(el);
     sm.set(latex);
@@ -232,23 +270,18 @@
         >
       {/if}
       {#if showCode && cellCode !== ''}
-        {@const shown =
-          appStore.showPlumbing && cellDisplayCode !== ''
-            ? cellDisplayCode
-            : cellCode}
-        {@const split = splitHelperBlock(shown)}
-        {#if split}
+        {#if codeSplit}
           <pre class="calc-code has-fold"><button
               type="button"
               class="code-copy"
               title="Copy the code that generates this cell's results"
-              onclick={() => copyGeneratingCode(shown)}
+              onclick={() => copyGeneratingCode(shownCode)}
               >{copied ? 'Copied' : 'Copy generating code'}</button
             ><code
-              >{#each highlightPython(split.head) as tok, j (j)}<span
+              >{#each highlightPython(codeSplit.head) as tok, j (j)}<span
                   class={tok.cls ? `tok-${tok.cls}` : undefined}
                   >{tok.text}</span
-                >{/each}{split.head === '' ? '' : '\n'}<button
+                >{/each}{codeSplit.head === '' ? '' : '\n'}<button
                 type="button"
                 class="code-fold"
                 title="Toggle the clean_and_simplify helper definitions"
@@ -256,33 +289,49 @@
                 onclick={() => (showHelpers = !showHelpers)}
                 >{showHelpers ? '▾' : '▸'}</button
               ><span class="code-helper">{#each highlightPython(
-                  split.sig,
+                  codeSplit.sig,
                 ) as tok, j (j)}<span
                     class={tok.cls ? `tok-${tok.cls}` : undefined}
                     >{tok.text}</span
                   >{/each}</span
               >{#if !showHelpers}<span
                   class="code-elide"> ⋯</span>{/if}{'\n'}{#if showHelpers}{#each highlightPython(
-                    split.body + '\n',
+                    codeSplit.body + '\n',
                   ) as tok, j (j)}<span
                     class={tok.cls ? `tok-${tok.cls}` : undefined}
                     >{tok.text}</span
-                  >{/each}{/if}{#each highlightPython(
-                  split.rest,
-                ) as tok, j (j)}<span
-                  class={tok.cls ? `tok-${tok.cls}` : undefined}
-                  >{tok.text}</span
-                >{/each}</code
+                  >{/each}{/if}{#each codeSections as sec, s (s)}{#if s <
+                    codeSections.length - 1 && sec.body.trim() !== ''}<button
+                    type="button"
+                    class="code-fold"
+                    title="Toggle this cell's code"
+                    aria-expanded={!!openCells[s]}
+                    onclick={() => (openCells[s] = !openCells[s])}
+                    >{openCells[s] ? '▾' : '▸'}</button
+                  >{/if}{#each highlightPython(
+                    sec.marker,
+                  ) as tok, j (j)}<span
+                    class={tok.cls ? `tok-${tok.cls}` : undefined}
+                    >{tok.text}</span
+                  >{/each}{#if s === codeSections.length - 1 || openCells[s]}{#if sec.marker !==
+                      '' && sec.body !== ''}{'\n'}{/if}{#each highlightPython(
+                      sec.body,
+                    ) as tok, j (j)}<span
+                      class={tok.cls ? `tok-${tok.cls}` : undefined}
+                      >{tok.text}</span
+                    >{/each}{:else if sec.body !== ''}<span
+                    class="code-elide"> ⋯</span>{/if}{#if s <
+                  codeSections.length - 1}{'\n'}{/if}{/each}</code
             ></pre>
         {:else}
           <pre class="calc-code"><button
               type="button"
               class="code-copy"
               title="Copy the code that generates this cell's results"
-              onclick={() => copyGeneratingCode(shown)}
+              onclick={() => copyGeneratingCode(shownCode)}
               >{copied ? 'Copied' : 'Copy generating code'}</button
             ><code
-              >{#each highlightPython(shown) as tok, j (j)}<span
+              >{#each highlightPython(shownCode) as tok, j (j)}<span
                   class={tok.cls ? `tok-${tok.cls}` : undefined}
                   >{tok.text}</span
                 >{/each}</code
