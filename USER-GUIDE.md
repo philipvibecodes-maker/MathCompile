@@ -113,7 +113,7 @@ Environments open two ways: type `\name` directly (the shortcut) or
 
 | Environment | What it's for |
 | --- | --- |
-| `matrix`, `pmatrix`, `bmatrix`, `Bmatrix`, `vmatrix`, `Vmatrix` | grids in \( ( ) \), \([\,]\), \(\{\,\}\), \(\|\,\|\), \(\|\!\|\,\|\!\|\) brackets |
+| `matrix`, `pmatrix`, `bmatrix`, `Bmatrix`, `vmatrix`, `Vmatrix` | grids in ( ), [ ], { }, \| \|, ‖ ‖ brackets |
 | `smallmatrix` | inline mini matrix |
 | `cases` | piecewise definitions |
 | `gathered`, `gather`, `equation`, `multline`, `flalign` | centered line groups |
