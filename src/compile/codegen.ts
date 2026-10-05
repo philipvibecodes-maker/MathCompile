@@ -18,6 +18,11 @@
 import type { Issue, MathJson, NormResult } from './ir';
 import { normalizeIR } from './ir';
 import { CALC_RUNTIME_PY } from './calc-runtime';
+import {
+  emitStatsCall,
+  statsPreludeLines,
+  type StatsUsage,
+} from './stats';
 
 export interface CellInput {
   json?: MathJson;
@@ -63,6 +68,12 @@ const RESERVED_IDENTS = new Set([
   'mc_simplify',
   'mc_order',
   'clean_and_simplify',
+  // scipy/numpy module aliases + helper from stats.ts — only emitted
+  // when a cell uses the stats builtins, but a user `st`/`np` must
+  // never shadow them when it is.
+  'st',
+  'np',
+  'mc_mean_ci',
 ]);
 
 // Mangle an arbitrary symbol name (e.g. `a_{n+1}`) into a valid python
@@ -379,6 +390,12 @@ interface Scope {
    * every name the cell uses so `C` (then D, E, …) never collides. Each
    * indefinite integral takes and reserves the next free capital. */
   constNames: Set<string>;
+  /** Emitted code uses scipy.stats (`st.`) / numpy (`np.`) / the
+   * mc_mean_ci helper — the program prelude picks up the matching
+   * import lines (see stats.ts). */
+  usesScipy: boolean;
+  usesNumpy: boolean;
+  usesMeanCi: boolean;
   flag(severity: Issue['severity'], message: string): void;
 }
 
@@ -2417,6 +2434,23 @@ class Emitter {
             this.scope.lambdaBound = savedBound;
           }
         }
+        // `\mathrm{normcdf}(x,\mu,\sigma)`, `\mathrm{ttest}(d,\mu)` —
+        // scipy.stats/numpy builtins (stats.ts); the worker lazy-loads
+        // scipy on first use. A worksheet-declared name shadows them.
+        if (!this.scope.declared.has(name)) {
+          const stats = emitStatsCall(name, args.slice(1), {
+            emit: (a) => this.emit(a as MathJson),
+            stub: (n) =>
+              `${this.fn(n)}(${args
+                .slice(1)
+                .map((a) => this.emit(a))
+                .join(', ')})`,
+            flag: (s, m) => this.scope.flag(s, m),
+            sp: this.sp,
+            usage: this.scope,
+          });
+          if (stats !== undefined) return [stats, PREC_ATOM];
+        }
         const rendered = args
           .slice(1)
           .map((a) => this.callArg(a))
@@ -3002,8 +3036,12 @@ export function compileWorksheet(
   // is a fresh Symbol in cell 2's program, so `\det(A)` there must flag
   // rather than emit `A.det()` on a Symbol (TypeError at exec).
   const genIssues: Issue[][] = cells.map(() => []);
+  const cellScopes: (Scope | undefined)[] = [];
   const cellBodies = perCell.map((r, i) => {
-    if (r.ir === undefined) return [];
+    if (r.ir === undefined) {
+      cellScopes.push(undefined);
+      return [];
+    }
     const matrixNames = new Set<string>();
     collectMatrices(r.ir, matrixNames);
     // `declaredFns` is worksheet-wide, but cells are independent
@@ -3012,26 +3050,35 @@ export function compileWorksheet(
     // Assign-rebind in THIS cell drops a pending Function decl.
     const cellDeclaredFns = new Set<string>();
     collectDeclared(r.ir, new Set(), cellDeclaredFns);
-    return cellStatements(
-      r.ir,
-      buildScope(
-        qualified,
-        declared,
-        cellDeclaredFns,
-        matrixNames,
-        issues,
-        genIssues,
-        i + 1,
-      ),
+    const scope = buildScope(
+      qualified,
+      declared,
+      cellDeclaredFns,
+      matrixNames,
+      issues,
+      genIssues,
+      i + 1,
     );
+    cellScopes.push(scope);
+    return cellStatements(r.ir, scope);
   });
-  const cellLines = cellBodies.map((body) =>
-    body.length === 0 ? [] : [importLine, ...body],
+  // Cells that emitted scipy.stats/numpy calls carry the import lines
+  // in their standalone view too, so a single cell stays runnable.
+  const cellLines = cellBodies.map((body, i) =>
+    body.length === 0
+      ? []
+      : [importLine, ...statsPreludeLines(cellScopes[i]!), ...body],
   );
 
   // The one-script copy is the concatenation of the per-cell outputs
-  // with the import emitted once at the top.
-  const lines: string[] = [importLine];
+  // with the import emitted once at the top — scipy/numpy imports
+  // likewise, when any cell used the stats builtins.
+  const sheetUsage: StatsUsage = {
+    usesScipy: cellScopes.some((s) => s?.usesScipy),
+    usesNumpy: cellScopes.some((s) => s?.usesNumpy),
+    usesMeanCi: cellScopes.some((s) => s?.usesMeanCi),
+  };
+  const lines: string[] = [importLine, ...statsPreludeLines(sheetUsage)];
   cellBodies.forEach((stmts, i) => {
     if (stmts.length === 0) return;
     lines.push('', `# cell ${i + 1}`, ...stmts);
@@ -3138,6 +3185,9 @@ function buildScope(
     cell,
     errorCount: 0,
     constNames: new Set(),
+    usesScipy: false,
+    usesNumpy: false,
+    usesMeanCi: false,
     assumptions: new Map(),
     matrixDims: new Map(),
     flag(severity, message) {
@@ -3274,7 +3324,12 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
     // The CALC_RUNTIME_PY block defines the mc_* helpers the statements
     // call — it execs as part of the program (self-contained) and shows
     // once in the first row's code block, like the import line.
-    prelude: ['import sympy as sp', CALC_RUNTIME_PY, ...defs],
+    prelude: [
+      'import sympy as sp',
+      CALC_RUNTIME_PY,
+      ...statsPreludeLines(scope),
+      ...defs,
+    ],
     statements,
     issues: issues
       .filter((i) => !consumed.has(i))
