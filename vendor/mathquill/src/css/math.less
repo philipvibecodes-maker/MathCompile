@@ -532,6 +532,34 @@
     padding-right: 0.167em;
   }
 
+  // MATHCOMPILE: scripts beside a matrix pin to the tall line's edges —
+  // sup at its top, sub at its bottom. `.mq-matrix` is middle-aligned,
+  // so the generic supsub offsets stack the pair at the matrix's
+  // vertical center instead. `display: contents` lifts the scripts
+  // into the outer line box so vertical-align: top/bottom resolve
+  // against it; a paired sup takes width:0 so the sub anchors at the
+  // same left edge (the pair's width comes from the sub).
+  .mq-matrix + .mq-supsub,
+  .mq-matrix + .mq-cursor + .mq-supsub,
+  .mq-displaylines + .mq-supsub,
+  .mq-bracket-container + .mq-supsub {
+    display: contents;
+
+    > .mq-sup {
+      display: inline-block;
+      vertical-align: top;
+      overflow: visible;
+    }
+    &:not(.mq-sup-only) > .mq-sup {
+      width: 0;
+    }
+    > .mq-sub {
+      display: inline-block;
+      float: none;
+      vertical-align: bottom;
+    }
+  }
+
   .mq-array > span {
     display: block;
   }

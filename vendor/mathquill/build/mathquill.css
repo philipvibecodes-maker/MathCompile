@@ -502,6 +502,34 @@
 .mq-math-mode .mq-comma {
   padding-right: 0.167em;
 }
+.mq-math-mode .mq-matrix + .mq-supsub,
+.mq-math-mode .mq-matrix + .mq-cursor + .mq-supsub,
+.mq-math-mode .mq-displaylines + .mq-supsub,
+.mq-math-mode .mq-bracket-container + .mq-supsub {
+  display: contents;
+}
+.mq-math-mode .mq-matrix + .mq-supsub > .mq-sup,
+.mq-math-mode .mq-matrix + .mq-cursor + .mq-supsub > .mq-sup,
+.mq-math-mode .mq-displaylines + .mq-supsub > .mq-sup,
+.mq-math-mode .mq-bracket-container + .mq-supsub > .mq-sup {
+  display: inline-block;
+  vertical-align: top;
+  overflow: visible;
+}
+.mq-math-mode .mq-matrix + .mq-supsub:not(.mq-sup-only) > .mq-sup,
+.mq-math-mode .mq-matrix + .mq-cursor + .mq-supsub:not(.mq-sup-only) > .mq-sup,
+.mq-math-mode .mq-displaylines + .mq-supsub:not(.mq-sup-only) > .mq-sup,
+.mq-math-mode .mq-bracket-container + .mq-supsub:not(.mq-sup-only) > .mq-sup {
+  width: 0;
+}
+.mq-math-mode .mq-matrix + .mq-supsub > .mq-sub,
+.mq-math-mode .mq-matrix + .mq-cursor + .mq-supsub > .mq-sub,
+.mq-math-mode .mq-displaylines + .mq-supsub > .mq-sub,
+.mq-math-mode .mq-bracket-container + .mq-supsub > .mq-sub {
+  display: inline-block;
+  float: none;
+  vertical-align: bottom;
+}
 .mq-math-mode .mq-array > span {
   display: block;
 }
