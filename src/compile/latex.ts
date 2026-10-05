@@ -44,7 +44,13 @@ function rewriteOverUnder(s: string): string {
     const b = a && readBraceArg(rest, a[1]);
     if (!a || !b) break;
     out += rest.slice(0, m.index);
-    out += m[1] === 'under' ? `${b[0]}_{${a[0]}}` : `${b[0]}^{${a[0]}}`;
+    // Fill an empty bound on the body first — \lim serializes as
+    // \lim_{ } now, and \lim_{ }_{x\to0} is an unparseable double bound.
+    const emptyBound = m[1] === 'under' ? /_\{ \}/ : /\^\{ \}/;
+    const bound = m[1] === 'under' ? `_{${a[0]}}` : `^{${a[0]}}`;
+    out += emptyBound.test(b[0])
+      ? b[0].replace(emptyBound, bound)
+      : `${b[0]}${bound}`;
     rest = rest.slice(b[1]);
   }
   return out + rest;

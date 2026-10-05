@@ -15,16 +15,19 @@ const caretInfo = (mf: Locator): Promise<CaretInfo> =>
     const value = (el as unknown as { value: string }).value;
     const cursor = el.querySelector('.mq-cursor');
     // The bounds-bearing atom: \int renders .mq-int; \sum renders a
-    // .mq-large-operator (over/under limits).
+    // .mq-large-operator (over/under limits); \lim renders .mq-limit.
     const op =
-      el.querySelector('.mq-int') ?? el.querySelector('.mq-large-operator');
+      el.querySelector('.mq-int') ??
+      el.querySelector('.mq-large-operator') ??
+      el.querySelector('.mq-limit');
     if (!cursor || !op) return { value, where: 'none' };
-    // Bounds may be child blocks of the atom (bounded \int / \sum) or an
-    // on-demand sibling .mq-supsub (boundless \iint / \antid): check the
-    // whole field for the bound block that contains the caret.
+    // Bounds may be child blocks of the atom (bounded \int / \sum), the
+    // .mq-approaches underscript of a displaystyle \lim, or an on-demand
+    // sibling .mq-supsub (boundless \iint / \antid): check the whole
+    // field for the bound block that contains the caret.
     const bound =
       el.querySelector('.mq-supsub .mq-sub') ??
-      el.querySelector('.mq-sub, .mq-from');
+      el.querySelector('.mq-sub, .mq-from, .mq-approaches');
     if (bound?.contains(cursor)) return { value, where: 'lower' };
     const upper =
       el.querySelector('.mq-supsub .mq-sup') ??
@@ -238,6 +241,73 @@ test('Backspace at the start of the field hops over a bounds-carrying atom', asy
   // deleting past it. A second Backspace would remove it.
   const info = await caretInfo(mf);
   expect(info.value).toBe('\\int_{a}^{b}');
+});
+
+// `\lim` is a displaystyle operator: the approach bound stacks under the
+// "lim" text like \sum's lower bound instead of subscripting to the
+// right. `lim` completes via autoCommands (smart mode is on by default)
+// and via the latex command input.
+test('lim inserts a displaystyle limit, bound types below the operator', async ({
+  page,
+}) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('lim', { delay: 60 });
+  await settle(page);
+  expect(await caretInfo(mf)).toMatchObject({
+    value: '\\lim_{ }',
+    where: 'lower',
+  });
+  // The bound renders beneath the "lim" text, not to its right.
+  const geo = await mf.evaluate((el) => {
+    const lim = el.querySelector('.mq-lim')!.getBoundingClientRect();
+    const under = el
+      .querySelector('.mq-approaches')!
+      .getBoundingClientRect();
+    return { limBottom: lim.bottom, underTop: under.top };
+  });
+  expect(geo.underTop).toBeGreaterThanOrEqual(geo.limBottom - 1);
+  await mf.pressSequentially('x->0', { delay: 60 });
+  expect((await caretInfo(mf)).value).toBe('\\lim_{x\\to0}');
+  await page.keyboard.press('ArrowRight');
+  await mf.pressSequentially('f', { delay: 60 });
+  expect((await caretInfo(mf)).value).toBe('\\lim_{x\\to0}f');
+});
+
+test('\\lim through the latex command input is displaystyle too', async ({
+  page,
+}) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\lim', { delay: 60 });
+  await page.keyboard.press('Enter');
+  await settle(page);
+  expect(await caretInfo(mf)).toMatchObject({
+    value: '\\lim_{ }',
+    where: 'lower',
+  });
+  await mf.pressSequentially('x->0', { delay: 60 });
+  expect((await caretInfo(mf)).value).toBe('\\lim_{x\\to0}');
+});
+
+test('typed / after \\lim keeps the limit out of the numerator', async ({
+  page,
+}) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('lim', { delay: 60 });
+  await mf.pressSequentially('x->0', { delay: 60 });
+  await page.keyboard.press('ArrowRight');
+  await mf.pressSequentially('f', { delay: 60 });
+  await page.keyboard.press('/');
+  const info = await caretInfo(mf);
+  expect(info.value).toMatch(/^\\lim_\{x\\to0\}\\frac\{f\}/);
+  expect(info.value).not.toMatch(/frac\{[^}]*lim/);
+  // DOM check: the .mq-limit atom is not inside the numerator block.
+  expect(
+    await mf.evaluate(
+      (el) => el.querySelectorAll('.mq-numerator .mq-limit').length,
+    ),
+  ).toBe(0);
+  await mf.pressSequentially('y', { delay: 60 });
+  expect((await caretInfo(mf)).value).toBe('\\lim_{x\\to0}\\frac{f}{y}');
 });
 
 // Regression guard: this used to be pinned expected-fail when the
