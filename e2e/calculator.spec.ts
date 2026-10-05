@@ -68,6 +68,38 @@ test('calculator evaluates each statement row of a multi-line cell', async ({
   await expect(rows.nth(1)).toContainText('5');
 });
 
+// Cells evaluate sequentially in worksheet order: a name bound by a
+// cell is in scope for every cell below it. Cell 2's `def g` makes `g`
+// callable in cell 3, and editing the def re-evaluates the dependents.
+test('a cell evaluates in the context of the cells above it', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await setTarget(page, 'calculator');
+
+  const mf0 = cell(page, 0);
+  await mf0.evaluate((el, v) => {
+    (el as { value: string }).value = v;
+  }, '\\text{def} g(x) = 2x');
+  await page.locator('.add-expr').click();
+  const mf1 = cell(page, 1);
+  await mf1.click();
+  await mf1.pressSequentially('g(4)', { delay: 40 });
+
+  const exprRows = page.locator('.expr-row');
+  await expect(
+    exprRows.nth(1).locator('.calc-row').first(),
+  ).toContainText('8', { timeout: 90_000 });
+
+  // Editing the def above re-evaluates the cell that uses it.
+  await mf0.evaluate((el, v) => {
+    (el as { value: string }).value = v;
+  }, '\\text{def} g(x) = 3x');
+  await expect(
+    exprRows.nth(1).locator('.calc-row').first(),
+  ).toContainText('12', { timeout: 90_000 });
+});
+
 // The calculator reports issues like the python target's overlay, but
 // in the input column: the message panel mounts under the math-field —
 // in flow, so it never covers the field's other input lines — while

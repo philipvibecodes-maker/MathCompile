@@ -1,19 +1,19 @@
 # Using MathCompile
 
-MathCompile is a worksheet of math cells. Type math on the left, and the
-output column on the right gives you the result in the format you pick:
-LaTeX source, computed answers, or SymPy Python code. It runs entirely in
-your browser and saves your worksheet automatically.
+MathCompile is a worksheet of math cells, laid out like a notebook —
+each cell's output stacks directly beneath its input, in the format you
+pick: LaTeX source, computed answers, or SymPy Python code. It runs
+entirely in your browser and saves your worksheet automatically.
 
 ## The worksheet at a glance
 
-- **Cells** are numbered rows. Click a cell to edit it; the up and down
-  arrow keys move between cells when the caret reaches an edge.
-  **+ Add expression** appends a cell, and **×** deletes one. Pressing
-  Backspace in a cell that holds only blank space deletes it too.
-- **The output column** shows whatever the current output target
-  produces for each cell. Drag the divider between the columns to
-  resize it.
+- **Cells** are numbered from the left gutter. Click a cell to edit it;
+  the up and down arrow keys move between cells when the caret reaches
+  an edge. **+ Add expression** appends a cell, and **×** deletes one.
+  Pressing Backspace in a cell that holds only blank space deletes it
+  too.
+- **The output beneath each cell** shows whatever the current output
+  target produces for that cell.
 - **The header** holds Smart mode, the Output target picker, the
   dark-mode toggle, and the Commands button (or press `Ctrl+K` /
   `⌘K`).
@@ -384,8 +384,8 @@ Pick a target from the **Output** menu in the header.
 
 ### LaTeX
 
-The output column shows each cell's serialized LaTeX; **Copy** puts it
-on the clipboard.
+Beneath each cell is its serialized LaTeX; **Copy** puts it on the
+clipboard.
 
 ### Calculator
 
@@ -397,6 +397,9 @@ engine status.
 
 - Each statement in a cell gets a result row; `≈` adds a decimal
   approximation when one exists.
+- Cells share one namespace, in worksheet order: a variable or function
+  defined in a cell is usable in every cell below it, and editing a
+  cell re-evaluates the ones that depend on it.
 - `!` marks a statement that failed, `i` a note; hover for the message.
 - **Show generating code** reveals the exact Python program that
   produced the results, with a copy button.
@@ -405,8 +408,8 @@ engine status.
 
 ### Python
 
-The output column shows the SymPy program MathCompile generates per
-cell, syntax-highlighted. **Copy** grabs one cell's lines; **Copy
+Beneath each cell is the SymPy program MathCompile generates for it,
+syntax-highlighted. **Copy** grabs one cell's lines; **Copy
 script** grabs the whole worksheet as one runnable program. The
 `import *` checkbox controls the import style. Statements the compiler
 can't express appear as `!`/`i` notes under the code.

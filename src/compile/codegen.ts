@@ -3288,35 +3288,47 @@ export interface CalcProgram {
   statementLines: number[];
 }
 
+export interface CalcCellProgram {
+  /** Decl lines (Symbol/Function/MatrixSymbol) first needed by this
+   * cell. The worker execs them right before the cell's statements,
+   * after every earlier cell's program — names bound above are already
+   * in scope, so no shadowing decl is emitted for them. */
+  defs: string[];
+  statements: CalcStatement[];
+  /** Normalization + codegen issues for the cell. */
+  issues: Issue[];
+  errorLine?: number;
+  statementLines: number[];
+}
+
+export interface CalcWorksheetProgram {
+  /** Shared script prefix — `import sympy as sp` plus the
+   * CALC_RUNTIME_PY helper block. The worker execs it once, ahead of
+   * cell 0's defs and statements. */
+  prelude: string[];
+  cells: CalcCellProgram[];
+}
+
 // Wrap an evaluated expression in the worker's result pipeline so the
 // emitted program itself applies doit -> simplify -> degree-order —
 // auditing the shown code explains the shown result.
 const calcEval = (expr: string): string =>
   `clean_and_simplify(${expr})`;
 
-// Compile a single cell for the calculator target: same pipeline as
-// compileWorksheet (always `sp.`-qualified — the worker execs against
-// `import sympy as sp`), but keeps the statement split and display
-// expressions so each top-level statement yields its own result row.
-export function compileCellForCalc(cell: CellInput): CalcProgram {
-  const { ir, issues } = normalizeIR(cell.json);
-  if (ir === undefined)
-    return { prelude: [], statements: [], issues, statementLines: [] };
-
-  const declared = new Set<string>();
-  const declaredFns = new Set<string>();
-  const matrixNames = new Set<string>();
-  collectDeclared(ir, declared, declaredFns);
-  collectMatrices(ir, matrixNames);
-  const scope = buildScope(
-    true,
-    declared,
-    declaredFns,
-    matrixNames,
-    issues,
-    [[]],
-    0,
-  );
+// Compile one cell's normalized IR inside `scope`, which the caller may
+// share with earlier cells — the scope's defined/symbols/functions/declared
+// state then carries downward, and this cell emits decls only for names
+// not already bound above. Also folds the cell's own declared names into
+// the scope so later statements (and later cells) see them.
+function compileCellInScope(
+  ir: MathJson,
+  issues: Issue[],
+  scope: Scope,
+): CalcCellProgram {
+  collectDeclared(ir, scope.declared, scope.declaredFns);
+  collectMatrices(ir, scope.matrixNames);
+  scope.issues = issues;
+  scope.errorCount = 0;
   const { defs, parts } = cellBody(ir, scope);
   // Statements dropped by an emission error carry it in place — the
   // error becomes their row so the cell keeps written order. The
@@ -3371,10 +3383,7 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
   // the program issue list so they aren't also appended at the end.
   const consumed = new Set(parts.flatMap(({ errs }) => errs));
   return {
-    // The CALC_RUNTIME_PY block defines the mc_* helpers the statements
-    // call — it execs as part of the program (self-contained) and shows
-    // once in the first row's code block, like the import line.
-    prelude: ['import sympy as sp', CALC_RUNTIME_PY, ...defs],
+    defs,
     statements,
     issues: issues
       .filter((i) => !consumed.has(i))
@@ -3387,5 +3396,66 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
       ),
     errorLine,
     statementLines,
+  };
+}
+
+// Compile every cell for the calculator target as ONE sequential
+// program — the same pipeline as compileWorksheet (always
+// `sp.`-qualified, since the worker execs against `import sympy as sp`),
+// but the cells share a single emission scope: declared names, symbol/
+// function defs, and assignment/dep-var tracking accumulate down the
+// worksheet. A name bound in an earlier cell is in scope below — a
+// `def g` in cell 2 puts `g` in cell 3's namespace instead of emitting
+// a shadowing `sp.Function("g")` decl there — while names declared only
+// in later cells stay invisible to the cells above them.
+export function compileCellsForCalc(
+  cells: CellInput[],
+): CalcWorksheetProgram {
+  const scope = buildScope(
+    true,
+    new Set<string>(),
+    new Set<string>(),
+    new Set<string>(),
+    [],
+    [],
+    0,
+  );
+  return {
+    // The CALC_RUNTIME_PY block defines the mc_* helpers the statements
+    // call — it execs as part of the program (self-contained) and shows
+    // once in the code block, like the import line.
+    prelude: ['import sympy as sp', CALC_RUNTIME_PY],
+    cells: cells.map((cell) => {
+      // The shared declaredFns set both seeds this cell's normalize
+      // (a `g(4)` below a `\def g` is a call, not juxtaposition) and
+      // collects the names this cell declares for the cells below it.
+      const { ir, issues } = normalizeIR(cell.json, scope.declaredFns);
+      if (ir === undefined)
+        return { defs: [], statements: [], issues, statementLines: [] };
+      return compileCellInScope(ir, issues, scope);
+    }),
+  };
+}
+
+// Compile a single cell for the calculator target — the standalone
+// equivalent of compileCellsForCalc([cell]), with the cell's decls
+// folded into the prelude (a self-contained program).
+export function compileCellForCalc(cell: CellInput): CalcProgram {
+  const { ir, issues } = normalizeIR(cell.json);
+  if (ir === undefined)
+    return { prelude: [], statements: [], issues, statementLines: [] };
+  const scope = buildScope(
+    true,
+    new Set<string>(),
+    new Set<string>(),
+    new Set<string>(),
+    [],
+    [],
+    0,
+  );
+  const c = compileCellInScope(ir, issues, scope);
+  return {
+    prelude: ['import sympy as sp', CALC_RUNTIME_PY, ...c.defs],
+    ...c,
   };
 }

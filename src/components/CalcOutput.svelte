@@ -13,10 +13,11 @@
   import { appStore, type Cell } from '../state/store.svelte';
 
   // Per-cell SymPy output for the calculator target. Edits are debounced,
-  // then the cell evaluates through the codegen pipeline — one result
-  // row per top-level statement; stale responses are dropped via the
-  // seq guard. Mounted only while target === 'calculator'.
-  let { cell }: { cell: Cell } = $props();
+  // then the cell evaluates through the codegen pipeline in the context
+  // of every cell above it — one result row per top-level statement;
+  // stale responses are dropped via the seq guard. Mounted only while
+  // target === 'calculator'.
+  let { cell, index }: { cell: Cell; index: number } = $props();
 
   let rows = $state<CalcRow[]>([]);
   let pending = $state(false);
@@ -75,7 +76,13 @@
 
   let seq = 0;
   $effect(() => {
-    const latex = cell.latex;
+    // This cell evaluates in the context of every cell above it — an
+    // edit anywhere in the prefix re-triggers this cell's eval, so the
+    // subscription covers the whole prefix's latex, not just ours.
+    const prefixLatex = appStore.cells
+      .slice(0, index + 1)
+      .map((c) => c.latex);
+    const latex = prefixLatex[prefixLatex.length - 1] ?? '';
     const mine = ++seq;
     if (latexToStatementStrings(latex).length === 0) {
       rows = [];
@@ -103,7 +110,7 @@
           }
         });
       }
-      evaluate(cell).then(
+      evaluate(appStore.cells.slice(0, index + 1)).then(
         (r) => {
           if (mine !== seq) return;
           rows = r.rows;
@@ -156,35 +163,43 @@
   }
 </script>
 
-<div class="cell-output calc-output">
-  <div class="calc-code-toggle">
-    <label>
-      <input type="checkbox" bind:checked={showCode} />
-      Show generating code
-    </label>
-    <button
-      type="button"
-      class="info-icon"
-      aria-label="About the generating code"
-    >
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        aria-hidden="true"
+<div
+  class="cell-output calc-output"
+  class:empty={rows.length === 0 &&
+    !pending &&
+    failed === '' &&
+    cellCode === ''}
+>
+  {#if cellCode !== ''}
+    <div class="calc-code-toggle">
+      <label>
+        <input type="checkbox" bind:checked={showCode} />
+        Show generating code
+      </label>
+      <button
+        type="button"
+        class="info-icon"
+        aria-label="About the generating code"
       >
-        <circle cx="12" cy="12" r="9" />
-        <line x1="12" y1="11" x2="12" y2="16.5" />
-        <circle cx="12" cy="7.5" r="0.75" fill="currentColor" />
-      </svg>
-      <span class="info-tip" role="tooltip" aria-hidden="true">
-        The Python program MathCompile generated and ran through SymPy to
-        produce this cell's results.
-      </span>
-    </button>
-  </div>
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <line x1="12" y1="11" x2="12" y2="16.5" />
+          <circle cx="12" cy="7.5" r="0.75" fill="currentColor" />
+        </svg>
+        <span class="info-tip" role="tooltip" aria-hidden="true">
+          The Python program MathCompile generated and ran through SymPy
+          to produce this cell's results.
+        </span>
+      </button>
+    </div>
+  {/if}
   {#if failed !== ''}
     <span class="parse-error-icon" title={failed}>!</span>
   {:else if rows.length > 0}

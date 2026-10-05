@@ -25,36 +25,6 @@
   // --fade-ms for CSS mount animations.
   let settingsOpen = $state(false);
 
-  // Output column width (% of the row's flex width) — shared by every
-  // row and the column header; the .col-resize divider drags it.
-  let outputPct = $state(50);
-
-  function startColDrag(e: PointerEvent) {
-    const handle = e.currentTarget as HTMLElement;
-    const row = handle.parentElement;
-    const output = row?.querySelector<HTMLElement>('.cell-output');
-    if (!row || !output) return;
-    e.preventDefault();
-    const startX = e.clientX;
-    const startW = output.getBoundingClientRect().width;
-    const rowW = row.clientWidth;
-    handle.setPointerCapture(e.pointerId);
-    handle.classList.add('dragging');
-    const move = (ev: PointerEvent) => {
-      const pct = ((startW + startX - ev.clientX) / rowW) * 100;
-      outputPct = Math.min(60, Math.max(15, pct));
-    };
-    const done = () => {
-      handle.classList.remove('dragging');
-      handle.removeEventListener('pointermove', move);
-      handle.removeEventListener('pointerup', done);
-      handle.removeEventListener('pointercancel', done);
-    };
-    handle.addEventListener('pointermove', move);
-    handle.addEventListener('pointerup', done);
-    handle.addEventListener('pointercancel', done);
-  }
-
   // The latex target bypasses the compile pipeline (per-cell displayLatex);
   // every codegen target compiles the whole worksheet.
   let compiled = $derived(
@@ -250,7 +220,7 @@
     </button>
   </header>
   <div class="main">
-    <section class="expr-panel" style:--output-w={`${outputPct}%`}>
+    <section class="expr-panel">
       <div class="col-headers">
         <span class="col-index"></span>
         <div class="col-field">
@@ -501,94 +471,89 @@
               }}
               >{i + 1}</span
             >
-            <div
-              class="cell-input"
-              onpointerdown={(e) => {
-                if (!(e.target as HTMLElement).closest('math-field')) {
-                  e.preventDefault();
-                  appStore.focusCell(cell.id);
-                }
-              }}
-            >
-              <MathField {cell} />
-              {#if appStore.target === 'calculator'}
-                <CalcIssues {cell} />
-              {/if}
-            </div>
-            <div
-              class="col-resize"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize output column"
-              onpointerdown={startColDrag}
-            ></div>
-            {#if appStore.target === 'latex'}
-              <div class="cell-output">
-                <code class="cell-latex">{displayLatex(cell.latex)}</code>
-                <button
-                  class="cell-copy"
-                  title="Copy LaTeX"
-                  disabled={cell.latex.trim() === ''}
-                  onclick={() => copyLatex(cell)}
-                  >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
-                >
+            <div class="cell-stack">
+              <div
+                class="cell-input"
+                onpointerdown={(e) => {
+                  if (!(e.target as HTMLElement).closest('math-field')) {
+                    e.preventDefault();
+                    appStore.focusCell(cell.id);
+                  }
+                }}
+              >
+                <MathField {cell} />
+                {#if appStore.target === 'calculator'}
+                  <CalcIssues {cell} />
+                {/if}
               </div>
-            {:else if appStore.target === 'calculator'}
-              <CalcOutput {cell} />
-            {:else if appStore.target === 'python'}
-              <div class="cell-output cell-code">
-                <div class="cell-code-body">
-                  <code class="cell-python"
-                    >{#each highlightPython(compiled?.importLine ?? '') as tok, j (j)}<span
-                        class={tok.cls ? `tok-${tok.cls}` : undefined}
-                        >{tok.text}</span
-                      >{/each}{#each shownLines(cell, i).slice(1) as line, k (k)}<span
-                        class="cell-line"
-                        transition:fade={{ duration: appStore.fadeMs }}
-                        >{'\n'}{#each highlightPython(line) as tok, j (j)}<span
-                            class={tok.cls ? `tok-${tok.cls}` : undefined}
-                            >{tok.text}</span
-                          >{/each}</span
-                      >{/each}</code
-                  >
+              {#if appStore.target === 'latex'}
+                <div class="cell-output">
+                  <code class="cell-latex">{displayLatex(cell.latex)}</code>
                   <button
                     class="cell-copy"
-                    title="Copy code"
-                    disabled={!compiled?.cellLines[i]?.length}
-                    onclick={() => copyCode(cell, i)}
+                    title="Copy LaTeX"
+                    disabled={cell.latex.trim() === ''}
+                    onclick={() => copyLatex(cell)}
                     >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
                   >
                 </div>
-                {#if (shownIssues(i).length > 0 || hasParseError(i)) && issuesVisible[cell.id]}
-                  <ul
-                    class="cell-issues"
-                    in:fade={{ duration: appStore.fadeInMs }}
-                    out:fade={{ duration: appStore.fadeOutMs }}
-                  >
-                    {#each shownIssues(i) as iss, j (j)}
-                      <li class="issue-{iss.severity}">
-                        {#if iss.severity === 'error' || (j === 0 && hasParseError(i))}
+              {:else if appStore.target === 'calculator'}
+                <CalcOutput {cell} index={i} />
+              {:else if appStore.target === 'python'}
+                <div class="cell-output cell-code">
+                  <div class="cell-code-body">
+                    <code class="cell-python"
+                      >{#each highlightPython(compiled?.importLine ?? '') as tok, j (j)}<span
+                          class={tok.cls ? `tok-${tok.cls}` : undefined}
+                          >{tok.text}</span
+                        >{/each}{#each shownLines(cell, i).slice(1) as line, k (k)}<span
+                          class="cell-line"
+                          transition:fade={{ duration: appStore.fadeMs }}
+                          >{'\n'}{#each highlightPython(line) as tok, j (j)}<span
+                              class={tok.cls ? `tok-${tok.cls}` : undefined}
+                              >{tok.text}</span
+                            >{/each}</span
+                        >{/each}</code
+                    >
+                    <button
+                      class="cell-copy"
+                      title="Copy code"
+                      disabled={!compiled?.cellLines[i]?.length}
+                      onclick={() => copyCode(cell, i)}
+                      >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
+                    >
+                  </div>
+                  {#if (shownIssues(i).length > 0 || hasParseError(i)) && issuesVisible[cell.id]}
+                    <ul
+                      class="cell-issues"
+                      in:fade={{ duration: appStore.fadeInMs }}
+                      out:fade={{ duration: appStore.fadeOutMs }}
+                    >
+                      {#each shownIssues(i) as iss, j (j)}
+                        <li class="issue-{iss.severity}">
+                          {#if iss.severity === 'error' || (j === 0 && hasParseError(i))}
+                            <span
+                              class="parse-error-icon"
+                              title={j === 0 && hasParseError(i)
+                                ? UNPARSEABLE_MSG
+                                : iss.message}>!</span
+                            >
+                          {/if}{iss.message}
+                        </li>
+                      {/each}
+                      {#if hasParseError(i) && shownIssues(i).length === 0}
+                        <li class="issue-error">
                           <span
                             class="parse-error-icon"
-                            title={j === 0 && hasParseError(i)
-                              ? UNPARSEABLE_MSG
-                              : iss.message}>!</span
+                            title={UNPARSEABLE_MSG}>!</span
                           >
-                        {/if}{iss.message}
-                      </li>
-                    {/each}
-                    {#if hasParseError(i) && shownIssues(i).length === 0}
-                      <li class="issue-error">
-                        <span
-                          class="parse-error-icon"
-                          title={UNPARSEABLE_MSG}>!</span
-                        >
-                      </li>
-                    {/if}
-                  </ul>
-                {/if}
-              </div>
-            {/if}
+                        </li>
+                      {/if}
+                    </ul>
+                  {/if}
+                </div>
+              {/if}
+            </div>
             <button
               class="expr-delete"
               title="Delete expression"

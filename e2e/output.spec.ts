@@ -2,9 +2,9 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { clearFirstCell } from './helpers';
 
-// The column headers hold the smart mode toggle and the target select.
-// With the latex target (the default), each cell shows its LaTeX and a
-// copy button to the right of the input.
+// The toolbar above the cell list holds the smart mode toggle and the
+// target select. With the latex target (the default), each cell stacks
+// its LaTeX output beneath the input with a copy button.
 
 const cell = (page: Page, i: number) => page.locator('math-field').nth(i);
 
@@ -98,6 +98,29 @@ test('smart mode checkbox drives the math-field autoCommands option', async ({
   expect(await smartModeOn(page)).toBe(false);
   await box.click();
   expect(await smartModeOn(page)).toBe(true);
+});
+
+test('each cell stacks its output directly beneath its input', async ({
+  page,
+}) => {
+  await cell(page, 0).click();
+  await cell(page, 0).pressSequentially('x+1', { delay: 40 });
+  await expect(page.locator('.cell-latex').first()).toHaveText('x+1');
+
+  const input = await page
+    .locator('.expr-row .cell-input')
+    .first()
+    .boundingBox();
+  const output = await page
+    .locator('.expr-row .cell-output')
+    .first()
+    .boundingBox();
+  expect(input && output).toBeTruthy();
+  // The output sits under the input cell at the same left edge, not
+  // beside it in a second column.
+  expect(output!.y).toBeGreaterThanOrEqual(input!.y + input!.height - 1);
+  expect(Math.abs(output!.x - input!.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(output!.width - input!.width)).toBeLessThanOrEqual(2);
 });
 
 test('latex target shows per-cell output with a copy button', async ({

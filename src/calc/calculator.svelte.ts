@@ -1,4 +1,4 @@
-import { compileCellForCalc } from '../compile/codegen';
+import { compileCellsForCalc } from '../compile/codegen';
 import {
   latexToStatementStrings,
   type Issue,
@@ -129,17 +129,18 @@ function ensureWorker(): Worker {
   return w;
 }
 
-// Evaluates a cell through SymPy: the shared codegen pipeline compiles
-// the cell's parsed IR into a standalone program (prelude + one
-// statement per \\ row), then the worker runs it. Cells the compiler
-// already rejects surface as error rows without a worker round-trip.
-export function evaluate(cell: {
-  latex: string;
-  json?: MathJson;
-}): Promise<CalcResult> {
-  let prog: ReturnType<typeof compileCellForCalc>;
+// Evaluates a cell through SymPy in the context of the cells above it:
+// `cells` is the worksheet prefix ending at the requesting cell. The
+// shared codegen pipeline compiles them into one sequential program
+// (names bound earlier stay bound — a `def` in an earlier cell is
+// visible below), then the worker runs it. Cells the compiler already
+// rejects surface as error rows without a worker round-trip.
+export function evaluate(
+  cells: { latex: string; json?: MathJson }[],
+): Promise<CalcResult> {
+  let prog: ReturnType<typeof compileCellsForCalc>;
   try {
-    prog = compileCellForCalc(cell);
+    prog = compileCellsForCalc(cells);
   } catch (e) {
     // The compiler reports issues instead of throwing — a hard throw
     // must still not leave the cell stuck on '…' forever.
@@ -152,9 +153,10 @@ export function evaluate(cell: {
       ],
     });
   }
+  const last = prog.cells[prog.cells.length - 1];
   // Issues not bound to a statement (errors plus advisory notes, like
   // the python overlay's list) become error rows interleaved by line.
-  const issueRows = prog.issues.map(
+  const issueRows = last.issues.map(
     (i) =>
       ({
         ok: false as const,
@@ -162,31 +164,41 @@ export function evaluate(cell: {
         severity: i.severity,
         // Issues anchor at the line that raised them; anything still
         // unbound falls back to the first failed statement's line.
-        line: i.line ?? prog.errorLine,
+        line: i.line ?? last.errorLine,
       }) as CalcRowErr,
   );
-  if (prog.statements.length === 0)
+  if (last.statements.length === 0)
     // Uncompileable cells show their issues; a cell with none at all
     // (empty, or only notes) shows nothing.
     return Promise.resolve({ rows: issueRows });
-  // The emitted program as one block — prelude plus each compilable
-  // statement. The plumbing variant swaps expression statements for
-  // their `e = ...` capture lines and adds `e = <display>` after
-  // assignments/defs, mirroring the worker's exec/eval split.
-  const okStmts = prog.statements.filter(
-    (s) => s.error === undefined && s.code !== '',
-  );
+  // The emitted program as one block — prelude, then each cell's decls
+  // and statements in worksheet order (# cell markers only when the
+  // result ran in real context). The plumbing variant swaps expression
+  // statements for their `e = ...` capture lines and adds
+  // `e = <display>` after assignments/defs, mirroring the worker's
+  // exec/eval split.
+  const okStmts = (c: (typeof prog.cells)[number]) =>
+    c.statements.filter((s) => s.error === undefined && s.code !== '');
+  const marker = (i: number) => (prog.cells.length > 1 ? [`# cell ${i + 1}`] : []);
   const code = [
     ...prog.prelude,
-    ...okStmts.map((s) => s.code),
+    ...prog.cells.flatMap((c, i) => [
+      ...marker(i),
+      ...c.defs,
+      ...okStmts(c).map((s) => s.code),
+    ]),
   ].join('\n');
   const displayCode = [
     ...prog.prelude,
-    ...okStmts.flatMap((s) =>
-      s.display === undefined
-        ? [`e = ${s.code}`]
-        : [s.code, `e = ${s.display}`],
-    ),
+    ...prog.cells.flatMap((c, i) => [
+      ...marker(i),
+      ...c.defs,
+      ...okStmts(c).flatMap((s) =>
+        s.display === undefined
+          ? [`e = ${s.code}`]
+          : [s.code, `e = ${s.display}`],
+      ),
+    ]),
   ].join('\n');
   // A multi-statement cell keeps its good rows when a sibling statement
   // is broken — and issue rows interleave at their own input line, not
@@ -198,7 +210,7 @@ export function evaluate(cell: {
       resolve: (r) => {
         clearTimeout(timer);
         const merged = [
-          ...r.map((row, i) => ({ row, line: prog.statementLines[i] })),
+          ...r.map((row, i) => ({ row, line: last.statementLines[i] })),
           ...issueRows.map((row) => ({ row, line: row.line })),
         ]
           .sort(
@@ -238,7 +250,16 @@ export function evaluate(cell: {
     let timer = armWatchdog();
     w.postMessage({
       id,
-      program: { prelude: prog.prelude, statements: prog.statements },
+      program: {
+        prelude: prog.prelude,
+        cells: prog.cells.map((c) => ({
+          // Content key for the worker's snapshot chain — the first
+          // cell whose program differs is where eval rewinds to.
+          key: JSON.stringify({ defs: c.defs, statements: c.statements }),
+          defs: c.defs,
+          statements: c.statements,
+        })),
+      },
     });
   });
 }

@@ -4,7 +4,7 @@ Desmos-style multi-cell math expression editor: write math, get LaTeX and
 executable code out. Cells are `<math-field>` custom elements backed by a
 vendored Desmos-fork [MathQuill](vendor/mathquill). Each cell's LaTeX is
 compiled through a MathJSON IR (`@cortex-js/compute-engine`) to LaTeX or
-SymPy-flavored Python, shown per cell in the output column.
+SymPy-flavored Python, shown per cell beneath its input.
 
 **Stack:** Svelte 5 (runes) · TypeScript · Vite · Vitest · Playwright · oxlint
 
@@ -35,7 +35,7 @@ labeled runs in `perf-results/`.
 
 ```
 src/
-  App.svelte            worksheet UI: cell list, output column, header
+  App.svelte            worksheet UI: stacked cells, per-cell output, header
   main.ts               mounts App, defines the <math-field> element
   commands.ts           command palette entries
   fuzzy.ts              palette search scoring
