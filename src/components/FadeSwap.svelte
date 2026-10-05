@@ -27,26 +27,23 @@
       anim !== undefined &&
       anim.playState !== 'finished' &&
       anim.playState !== 'idle';
+    // A finished fade-out keeps compositing opacity:0 via fill:forwards
+    // until cancelled — a stale one must never survive under newer fades.
+    const clearAnims = () => el.getAnimations().forEach((a) => a.cancel());
     if (running) {
-      // Interrupted mid-flight: keep the interrupted opacity pinned
-      // across the swap so nothing snaps back to full brightness.
-      anim!.cancel();
-      el.style.opacity = String(cur);
+      // Interrupted mid-flight: swap now and retarget the fade from the
+      // interrupted opacity. The span persists across text swaps, so the
+      // retarget animation starts in the same task — no flash, no style
+      // hold that could go stale if this swap is superseded again.
+      clearAnims();
       shown = text;
-      void tick().then(() => {
-        if (seq !== mySeq) return;
-        anim = el.animate([{ opacity: cur }, { opacity: 1 }], {
-          duration: Math.max(inMs * (1 - cur), 40),
-          easing: 'ease-out',
-        });
-        anim.finished
-          .then(() => {
-            el.style.opacity = '';
-          })
-          .catch(() => {});
+      anim = el.animate([{ opacity: cur }, { opacity: 1 }], {
+        duration: Math.max(inMs * (1 - cur), 40),
+        easing: 'ease-out',
       });
       return;
     }
+    clearAnims();
     const fadeOut = el.animate([{ opacity: cur }, { opacity: 0 }], {
       duration: outMs * cur,
       easing: 'ease-in',
@@ -59,6 +56,7 @@
         shown = text;
         await tick();
         if (seq !== mySeq) return;
+        clearAnims();
         anim = el.animate([{ opacity: 0 }, { opacity: 1 }], {
           duration: inMs,
           easing: 'ease-out',
