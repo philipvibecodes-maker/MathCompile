@@ -49,6 +49,10 @@ test('Escape dismisses the menu until the next keystroke', async ({
   await expect(menu(page)).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(menu(page)).not.toBeVisible();
+  // Focus returns to the field's MathQuill textarea.
+  await expect(
+    cell(page, 0).locator('.mq-editable-field'),
+  ).toHaveClass(/mq-focused/);
 });
 
 test('a plain letter-run offers word completions', async ({ page }) => {
@@ -71,6 +75,33 @@ test('Ctrl+Space opens the picker; typing filters and Enter inserts', async ({
   await page.keyboard.press('Enter');
   await expect(picker(page)).not.toBeVisible();
   await expect.poll(() => cellValue(cell(page, 0))).toContain('\\omega');
+});
+
+test('Escape on the picker closes it and refocuses the field', async ({
+  page,
+}) => {
+  await cell(page, 0).focus();
+  await page.keyboard.press('Control+Space');
+  await expect(picker(page)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(picker(page)).not.toBeVisible();
+  await expect(
+    cell(page, 0).locator('.mq-editable-field'),
+  ).toHaveClass(/mq-focused/);
+});
+
+test('clicking the picker\'s padding keeps focus in its search', async ({
+  page,
+}) => {
+  await cell(page, 0).focus();
+  await page.keyboard.press('Control+Space');
+  await expect(picker(page)).toBeVisible();
+  // Padding between the wrap edge and the search/grid — must not blur
+  // the search input and strand focus on <body>.
+  const box = await picker(page).boundingBox();
+  await page.mouse.click(box!.x + 3, box!.y + 3);
+  await expect(picker(page)).toBeVisible();
+  await expect(picker(page).locator('.mc-pick-q')).toBeFocused();
 });
 
 test('opening the picker while the menu is up leaves the picker usable', async ({

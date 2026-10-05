@@ -116,6 +116,7 @@ export function attachAutocompleteMenu(field: MathFieldElement) {
       e.stopPropagation();
       suppressed = true;
       hide();
+      field.mq?.focus();
     }
   };
 

@@ -28,6 +28,12 @@ export function attachSymbolPicker(field: MathFieldElement) {
   wrap.append(input, grid);
   field.appendChild(wrap);
 
+  // Clicks on the picker's own chrome (padding, grid gaps) keep the
+  // search input focused; only the input takes a real mousedown.
+  wrap.addEventListener('mousedown', (e) => {
+    if (e.target !== input) e.preventDefault();
+  });
+
   const cardCache = new Map<string, HTMLElement>();
   let items: CompletionItem[] = [];
   let sel = 0;
