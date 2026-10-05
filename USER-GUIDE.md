@@ -106,34 +106,56 @@ derivations); **Shift+Enter** starts a whole new cell. While a
 `\command` input is still open, Enter accepts the command instead of
 breaking a line.
 
-### Matrices and environments
+### Matrices (linear algebra)
 
 Environments open two ways: type `\name` directly (the shortcut) or
-`\begin{name}` the long way.
+`\begin{name}` the long way. In the table, each entry shows the
+shortcut and what a `a,b / c,d` grid renders as.
 
-| Environment | What it's for |
+| Type | Renders |
 | --- | --- |
-| `matrix`, `pmatrix`, `bmatrix`, `Bmatrix`, `vmatrix`, `Vmatrix` | grids in ( ), [ ], { }, \| \|, ‖ ‖ brackets |
-| `smallmatrix` | inline mini matrix |
-| `cases` | piecewise definitions |
-| `gathered`, `gather`, `equation`, `multline`, `flalign` | centered line groups |
-| `aligned`, `align`, `split` | alignment at `&` |
-| `array`, `tabular` | grids with a column spec — `\array{cc}` |
-| `subarray` | compact subscript stack — `\subarray{c}` |
-| `alignat`, `alignedat` | aligned with a pair count — `\alignat{2}` |
-| `substack` | multi-line subscripts |
+| `\pmatrix` | \(\begin{pmatrix} a & b \\ c & d \end{pmatrix}\) |
+| `\bmatrix` | \(\begin{bmatrix} a & b \\ c & d \end{bmatrix}\) |
+| `\Bmatrix` | \(\begin{Bmatrix} a & b \\ c & d \end{Bmatrix}\) |
+| `\vmatrix` | \(\begin{vmatrix} a & b \\ c & d \end{vmatrix}\) |
+| `\Vmatrix` | \(\begin{Vmatrix} a & b \\ c & d \end{Vmatrix}\) |
+| `\matrix` | \(\begin{matrix} a & b \\ c & d \end{matrix}\) |
+| `\smallmatrix` | \(\begin{smallmatrix} a & b \\ c & d \end{smallmatrix}\) |
 
-The `array`/`tabular`/`subarray`/`alignat`/`alignedat` environments take
-a required argument; typing `\array` opens a pending `{ }` block for
-it — type the spec (`cc`, `l|r`) and press `}`, `Enter`, or `Tab` to
-apply it. `\begin{…}` also accepts `eqnarray` and `eqalign` (both open
-an aligned grid); those two have no `\name` shortcut.
-`\pmatrix{a&b\\c&d}` and friends also work as bare commands with one
-brace argument.
+Inside a matrix grid: **Enter** adds a row, **Shift+Space** adds a
+column, and the arrow keys walk cell to cell. `&` separates columns
+and `\\` ends a row in the stored LaTeX. The bare forms
+`\pmatrix{a&b\\c&d}` and friends also work — one brace argument, no
+`\begin`.
 
-Inside a matrix or aligned grid: **Enter** adds a row,
-**Shift+Space** adds a column, and the arrow keys walk cell to cell.
-`&` separates columns and `\\` ends a row in the stored LaTeX.
+### Multi-line equations
+
+| Type | Renders |
+| --- | --- |
+| `\gathered` | \(\begin{gathered} x + y = 1 \\ x - y = 3 \end{gathered}\) |
+| `\aligned` | \(\begin{aligned} x &= y \\ a &= b \end{aligned}\) |
+| `\cases` | \(\begin{cases} x^2 & x > 0 \\ 0 & x \le 0 \end{cases}\) |
+
+Aliases open the same grid: `\gather`, `\equation`, `\multline`, and
+`\flalign` all open a centered stack like `\gathered`; `\align` and
+`\split` open an aligned grid. `\begin{…}` additionally accepts
+`eqnarray` and `eqalign` (also aligned grids) — those two have no
+`\name` shortcut. Rows and cells edit like matrices: Enter adds a
+row, `&` separates columns.
+
+### Custom grids
+
+Grids that take a column spec or a count open a pending `{ }` block
+when you type the `\name` — enter the argument (`cc`, `l|r`, `2`)
+and press `}`, `Enter`, or `Tab` to apply it.
+
+| Type | Renders |
+| --- | --- |
+| `\array{lr}` | \(\begin{array}{lr} a & b \\ cc & d \end{array}\) |
+| `\tabular{ll}` | a spec'd grid like `\array`, for text content |
+| `\subarray{c}` | \(\begin{subarray}{c} a \\ b \end{subarray}\) |
+| `\alignat{2}` / `\alignedat{2}` | \(\begin{alignedat}{2} x &= y &\;\;& u = v \\ a &= b &\;\;& c = d \end{alignedat}\) |
+| `\substack` | \(\substack{a \\ b}\) |
 
 ## Output targets
 
