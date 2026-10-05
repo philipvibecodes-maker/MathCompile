@@ -1,5 +1,6 @@
 import {
   isMqKeyTarget,
+  pointerRecentlyDown,
   type MathFieldElement,
   type MoveOutDetail,
 } from './math-field';
@@ -50,6 +51,15 @@ export function attachField(
   const handleInput = () => cb.onChange(el.value);
   const handleFocusIn = () => cb.onFocus?.();
 
+  // A blur to nowhere that no click caused is a programmatic blur —
+  // Vimium's insert-mode Escape does exactly this (and eats the
+  // keydown, so the field never sees it). Refocus the cell: Escape
+  // must always land the user back in the input.
+  const handleFocusOut = (e: FocusEvent) => {
+    if (e.relatedTarget === null && !pointerRecentlyDown())
+      el.mq?.focus();
+  };
+
   // move-out: hop cells on vertical edges; skip selection extensions
   // (shift-arrow dead-ends emit move-out with selecting=true).
   const handleMoveOut = (ev: Event) => {
@@ -77,6 +87,7 @@ export function attachField(
 
   el.addEventListener('input', handleInput);
   el.addEventListener('focusin', handleFocusIn);
+  el.addEventListener('focusout', handleFocusOut);
   el.addEventListener('move-out', handleMoveOut);
   el.addEventListener('new-cell', handleNewCell);
   el.addEventListener('keydown', handleKeydown, true);
@@ -128,6 +139,7 @@ export function attachField(
     dispose() {
       el.removeEventListener('input', handleInput);
       el.removeEventListener('focusin', handleFocusIn);
+      el.removeEventListener('focusout', handleFocusOut);
       el.removeEventListener('move-out', handleMoveOut);
       el.removeEventListener('new-cell', handleNewCell);
       el.removeEventListener('keydown', handleKeydown, true);

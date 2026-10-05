@@ -12,6 +12,25 @@ export function isMqKeyTarget(target: EventTarget | null): boolean {
   );
 }
 
+// ms timestamp of the last real pointer press anywhere on the page.
+// Vimium's insert-mode Escape calls activeElement.blur() and swallows
+// the keydown entirely, so the only signal left is a blur that no
+// pointerdown preceded. Key-driven blurs we must NOT fight (Tab)
+// carry a relatedTarget instead — see attach-field's focusout guard.
+export let lastPointerDownAt = -Infinity;
+if (typeof window !== 'undefined')
+  window.addEventListener(
+    'pointerdown',
+    () => {
+      lastPointerDownAt = Date.now();
+    },
+    true,
+  );
+
+export function pointerRecentlyDown(): boolean {
+  return Date.now() - lastPointerDownAt < 300;
+}
+
 export interface MoveOutDetail {
   direction: MoveDirection;
   /** true when the out-of-field move came from a selection extension. */

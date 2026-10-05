@@ -3,7 +3,10 @@ import {
   type CompletionItem,
 } from './completions';
 import { mountStaticMath } from './static-math';
-import type { MathFieldElement } from './math-field';
+import {
+  pointerRecentlyDown,
+  type MathFieldElement,
+} from './math-field';
 
 // On-demand symbol picker: Ctrl+Space opens a searchable grid anchored
 // under the caret with rendered previews of every candidate command.
@@ -150,10 +153,13 @@ export function attachSymbolPicker(field: MathFieldElement) {
     sel = 0;
     render();
   };
-  const onBlur = () => {
-    // mousedown on a card calls preventDefault, so blur only fires when
-    // the user clicks genuinely outside the picker.
-    close(false);
+  const onBlur = (e: FocusEvent) => {
+    // relatedTarget = a real click-away target; a fresh pointerdown =
+    // a click on non-focusable space — both mean the user aimed
+    // elsewhere, close without stealing focus back. A bare blur with
+    // neither is programmatic (Vimium's Escape blurs the input and
+    // eats the keydown): dismiss and refocus the field.
+    close(e.relatedTarget === null && !pointerRecentlyDown());
   };
   const onWindowChange = () => {
     if (!wrap.hidden) close(false);

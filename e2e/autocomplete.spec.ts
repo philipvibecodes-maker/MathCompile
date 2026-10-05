@@ -119,6 +119,36 @@ test('opening the picker while the menu is up leaves the picker usable', async (
   await expect(picker(page)).not.toBeVisible();
 });
 
+// Vimium's insert-mode Escape calls activeElement.blur() and swallows
+// the keydown (window-capture + stopImmediatePropagation) — the only
+// signal the page sees is a pointer-less blur to nowhere.
+test('a programmatic blur refocuses the cell (Vimium Escape)', async ({
+  page,
+}) => {
+  await cell(page, 0).focus();
+  await cell(page, 0)
+    .locator('.mq-textarea textarea')
+    .evaluate((el: HTMLElement) => el.blur());
+  await expect(
+    cell(page, 0).locator('.mq-editable-field'),
+  ).toHaveClass(/mq-focused/);
+});
+
+test('a programmatic blur on the picker search closes and refocuses', async ({
+  page,
+}) => {
+  await cell(page, 0).focus();
+  await page.keyboard.press('Control+Space');
+  await expect(picker(page)).toBeVisible();
+  await picker(page)
+    .locator('.mc-pick-q')
+    .evaluate((el: HTMLElement) => el.blur());
+  await expect(picker(page)).not.toBeVisible();
+  await expect(
+    cell(page, 0).locator('.mq-editable-field'),
+  ).toHaveClass(/mq-focused/);
+});
+
 test('Backspace in the picker search does not delete an empty cell', async ({
   page,
 }) => {
