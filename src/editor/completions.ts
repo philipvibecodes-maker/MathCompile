@@ -17,7 +17,9 @@ export const COMPLETIONS: CompletionItem[] = [
   { name: 'nthroot', hint: 'nth root', preview: '\\sqrt[n]{x}' },
   { name: 'int', hint: 'definite integral', preview: '\\int_{a}^{b}' },
   { name: 'iint', hint: 'indefinite integral', preview: '\\iint' },
-  { name: 'antid', hint: 'antiderivative', preview: '\\int f(x)\\,dx' },
+  // `\int` always renders bound blocks (empty = grey squares) — the
+  // boundless `\antid` leaf renders the same ∫ glyph without them.
+  { name: 'antid', hint: 'antiderivative', preview: '\\antid f(x)\\,dx' },
   { name: 'iiint', hint: 'triple integral', preview: '\\iiint' },
   { name: 'sum', hint: 'summation', preview: '\\sum_{k=1}^{n}' },
   { name: 'prod', hint: 'product', preview: '\\prod_{k=1}^{n}' },
