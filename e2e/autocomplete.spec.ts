@@ -55,6 +55,24 @@ test('Escape dismisses the menu until the next keystroke', async ({
   ).toHaveClass(/mq-focused/);
 });
 
+test('environment names complete and accept opens the grid', async ({
+  page,
+}) => {
+  await cell(page, 0).focus();
+  await page.keyboard.type('\\ali');
+  await expect(menu(page)).toBeVisible();
+  const names = await menuNames(page);
+  expect(names).toContain('align');
+  expect(names).toContain('aligned');
+  // Exact name + Enter inserts the env shortcut, which resolves to the
+  // aligned grid (latexOpen writes the canonical \begin{aligned}).
+  await page.keyboard.type('gn');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(() => cellValue(cell(page, 0)))
+    .toContain('\\begin{aligned}');
+});
+
 test('a plain letter-run offers word completions', async ({ page }) => {
   await cell(page, 0).focus();
   await page.keyboard.type('sq');
