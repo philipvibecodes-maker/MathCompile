@@ -31,6 +31,12 @@
       rows.some((r) => r.ok && r.displayCode && r.displayCode !== r.code),
   );
 
+  // Nothing evaluated yet and nothing pending: the stacked layout drops
+  // the output band entirely so an empty cell renders as input-only.
+  const empty = $derived(
+    failed === '' && rows.length === 0 && !pending,
+  );
+
   const statusLabel = $derived(
     calcEngine.status === 'loading'
       ? 'Loading SymPy engine…'
@@ -117,7 +123,7 @@
   }
 </script>
 
-<div class="cell-output calc-output">
+<div class="cell-output calc-output" class:empty>
   {#if failed !== ''}
     <span class="calc-error" title={failed}>{failed}</span>
   {:else if rows.length > 0}

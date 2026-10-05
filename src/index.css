@@ -695,6 +695,85 @@ body {
   color: #61afef;
 }
 
+/* ── Stacked calculator layout (target = calculator) ──
+   Each cell is one card: editable input on the first line, outputs in
+   a band below a hairline. Other targets keep the two-column row. */
+.expr-row.calc-stacked {
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.expr-row.calc-stacked:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.expr-row.calc-stacked math-field {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+.expr-row.calc-stacked:focus-within math-field {
+  border: none;
+  box-shadow: none;
+}
+
+.expr-row.calc-stacked .expr-delete {
+  align-self: center;
+}
+
+/* The output band wraps under the input (order pushes it past the
+   delete button onto the second flex line). */
+.expr-row.calc-stacked .cell-output {
+  order: 10;
+  flex: 0 0 100%;
+  padding: 6px 12px 6px 32px;
+  background: var(--bg);
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+
+/* Empty cells collapse to input-only — no hairline band. */
+.expr-row.calc-stacked .cell-output.empty {
+  display: none;
+}
+
+/* Code blocks sit on the band's --bg; keep them on panel-bg. */
+.expr-row.calc-stacked .calc-code {
+  background: var(--panel-bg);
+}
+
+/* '=' lead-in on each stacked result / error line. */
+.calc-result::before {
+  content: '=';
+  flex: 0 0 auto;
+  font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
+  font-size: 13px;
+  color: var(--faint);
+}
+
+.calc-output .calc-error::before {
+  content: '=';
+  margin-right: 6px;
+  color: var(--faint);
+}
+
+/* The output-header controls left-align across the whole row in the
+   stacked layout (there is no output column for them to sit above). */
+.col-headers.stacked .col-field {
+  flex: 0 0 0;
+}
+
+.col-headers.stacked .col-output-head {
+  flex: 1;
+  margin-left: 0;
+}
+
 .expr-delete {
   flex: 0 0 28px;
   margin-left: 4px;

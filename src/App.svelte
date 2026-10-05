@@ -303,7 +303,10 @@
   </header>
   <div class="main">
     <section class="expr-panel" style:--output-w={`${outputPct}%`}>
-      <div class="col-headers">
+      <div
+        class="col-headers"
+        class:stacked={appStore.target === 'calculator'}
+      >
         <span class="col-index"></span>
         <span class="col-field"></span>
         <div class="col-output-head">
@@ -459,16 +462,21 @@
       </div>
       <ol class="expr-list">
         {#each appStore.cells as cell, i (cell.id)}
-          <li class="expr-row">
+          <li
+            class="expr-row"
+            class:calc-stacked={appStore.target === 'calculator'}
+          >
             <span class="expr-index">{i + 1}</span>
             <MathField {cell} />
-            <div
-              class="col-resize"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize output column"
-              onpointerdown={startColDrag}
-            ></div>
+            {#if appStore.target !== 'calculator'}
+              <div
+                class="col-resize"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize output column"
+                onpointerdown={startColDrag}
+              ></div>
+            {/if}
             {#if appStore.target === 'latex'}
               <div class="cell-output">
                 <code class="cell-latex">{displayLatex(cell.latex)}</code>
