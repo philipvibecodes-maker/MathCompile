@@ -31,7 +31,8 @@ through a MathJSON IR to LaTeX or SymPy-flavored Python (`src/compile/`).
 
 ```
 src/
-  App.svelte          worksheet UI: stacked cells, per-cell output, header
+  App.svelte          worksheet UI: stacked cells (the python target
+                      keeps a two-column layout under .two-col), header
   commands.ts         Command type + command list factory
   fuzzy.ts            palette search scoring
   state/

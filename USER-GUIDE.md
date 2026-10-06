@@ -1,9 +1,10 @@
 # Using MathCompile
 
 MathCompile is a worksheet of math cells, laid out like a notebook —
-each cell's output stacks directly beneath its input, in the format you
-pick: LaTeX source, computed answers, or SymPy Python code. It runs
-entirely in your browser and saves your worksheet automatically.
+each cell's output stacks directly beneath its input (the Python
+target's code sits beside the input instead), in the format you pick:
+LaTeX source, computed answers, or SymPy Python code. It runs entirely
+in your browser and saves your worksheet automatically.
 
 ## The worksheet at a glance
 
@@ -12,8 +13,9 @@ entirely in your browser and saves your worksheet automatically.
   an edge. **+ Add expression** appends a cell, and **×** deletes one.
   Pressing Backspace in a cell that holds only blank space deletes it
   too.
-- **The output beneath each cell** shows whatever the current output
-  target produces for that cell.
+- **The output beneath each cell** (or beside it, for the Python
+  target) shows whatever the current output target produces for that
+  cell.
 - **The header** holds Smart mode, the Output target picker, the
   dark-mode toggle, and the Commands button (or press `Ctrl+K` /
   `⌘K`).
@@ -408,7 +410,7 @@ engine status.
 
 ### Python
 
-Beneath each cell is the SymPy program MathCompile generates for it,
+Beside each cell is the SymPy program MathCompile generates for it,
 syntax-highlighted. **Copy** grabs one cell's lines; **Copy
 script** grabs the whole worksheet as one runnable program. The
 `import *` checkbox controls the import style. Statements the compiler
