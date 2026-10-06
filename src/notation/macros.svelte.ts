@@ -110,13 +110,24 @@ export function removeUserMacro(name: string) {
   mqWindow()?.__mcUserMacroRemove?.(name);
 }
 
+const sameDef = (a: MacroDef, b: MacroDef) =>
+  a.name === b.name &&
+  a.arity === b.arity &&
+  a.body === b.body &&
+  a.params.join('') === b.params.join('');
+
 /** Replace the cell-sourced portion of the table — called by the store
- *  on every worksheet mutation so a deleted definition stops working. */
-export function setCellMacros(defs: MacroDef[]) {
+ *  on every worksheet mutation so a deleted definition stops working.
+ *  Returns true when the table changed (callers reparse their cells —
+ *  cached IR holds stale expansions otherwise). */
+export function setCellMacros(defs: MacroDef[]): boolean {
   restore();
   const removed = cellMacros.filter(
     (m) => !defs.some((d) => d.name === m.name),
   );
+  const changed =
+    defs.length !== cellMacros.length ||
+    defs.some((d, i) => !sameDef(d, cellMacros[i]));
   cellMacros.splice(0, cellMacros.length, ...defs);
   for (const def of defs) {
     const hook = mqWindow()?.__mcUserMacro;
@@ -131,6 +142,7 @@ export function setCellMacros(defs: MacroDef[]) {
   for (const m of removed)
     if (!defs.some((d) => d.name === m.name))
       mqWindow()?.__mcUserMacroRemove?.(m.name);
+  return changed;
 }
 
 /** All live macros — cell defs first so an in-cell `\newcommand`
@@ -206,7 +218,21 @@ function substitute(def: MacroDef, args: string[]): string {
 
 // Expand every `\name{arg}…` macro call in a latex string. Unknown
 // commands and calls missing a brace group pass through untouched.
+// Re-runs until fixpoint so nested uses (`\sq{3 + \half}`, a body that
+// invokes another macro) fully expand; capped so a self-referential
+// body can't loop forever — whatever remains unexpanded at the cap
+// flags as an unsupported command downstream.
 export function expandLatex(latex: string): string {
+  let cur = latex;
+  for (let round = 0; round < 8; round++) {
+    const next = expandOnce(cur);
+    if (next === cur) return cur;
+    cur = next;
+  }
+  return cur;
+}
+
+function expandOnce(latex: string): string {
   restore();
   if (cellMacros.length === 0 && userMacros.length === 0) return latex;
   let out = '';
@@ -241,7 +267,7 @@ export function expandLatex(latex: string): string {
         ok = false;
         break;
       }
-      args.push(g.content);
+      args.push(expandLatex(g.content));
       j = g.end;
     }
     if (!ok) {

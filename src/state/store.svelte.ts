@@ -93,8 +93,16 @@ export class AppStore {
   // the one funnel every mutation goes through — so a deleted def
   // unregisters and a new one applies to this parse on the same edit.
   private persist() {
-    syncCellMacros(this.cells.map((c) => c.latex));
+    if (syncCellMacros(this.cells.map((c) => c.latex)))
+      this.reparseAll();
     persistCells(this.cells);
+  }
+
+  // Re-run the parse pass on every cell — needed after the macro table
+  // changes (notation def added/removed anywhere), since each cell's
+  // cached json holds the expansion from its own last parse.
+  reparseAll() {
+    for (const c of this.cells) c.json = parseCellLatex(c.latex);
   }
 
   focusCell(id: number, edge?: Edge) {
@@ -130,9 +138,10 @@ export class AppStore {
     if (c) {
       c.latex = latex;
       // Sync before re-parsing: a notation defined in this very edit
-      // expands in later statements of the same cell.
-      syncCellMacros(this.cells.map((x) => x.latex));
-      c.json = parseCellLatex(latex);
+      // expands in later statements of the same cell. A changed table
+      // reparses every cell — their cached IR is stale too.
+      if (syncCellMacros(this.cells.map((x) => x.latex))) this.reparseAll();
+      else c.json = parseCellLatex(latex);
       this.persist();
     }
   }
