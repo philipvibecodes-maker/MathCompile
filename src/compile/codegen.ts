@@ -2692,18 +2692,26 @@ function allNames(node: MathJson, acc: Set<string>): void {
   if (isArr(node)) for (const child of node) allNames(child, acc);
 }
 
-// The next constant of integration: first capital letter not used by the
-// cell or bound elsewhere in the worksheet (C, else D, E, …). Exhausted
-// alphabet falls back to reusing C — nothing else is left to give.
-function nextConstName(scope: Scope): string {
+// The next constant-of-integration letter: first capital not in `used`
+// (C, else D, E, …). `used` is mutated — the returned letter is claimed.
+// Exhausted alphabet falls back to reusing C — nothing else is left to
+// give. Shared with the interim nerdamer emitter so both engines pick
+// the same letter for the same cell.
+export function firstFreeCapital(used: Set<string>): string {
   for (let code = 'C'.charCodeAt(0); code <= 'Z'.charCodeAt(0); code++) {
     const name = String.fromCharCode(code);
-    if (!scope.constNames.has(name)) {
-      scope.constNames.add(name);
+    if (!used.has(name)) {
+      used.add(name);
       return name;
     }
   }
   return 'C';
+}
+
+// The next constant of integration: first capital letter not used by the
+// cell or bound elsewhere in the worksheet (C, else D, E, …).
+function nextConstName(scope: Scope): string {
+  return firstFreeCapital(scope.constNames);
 }
 
 // Emit one normalized cell IR into defs + per-statement lines. Cells are

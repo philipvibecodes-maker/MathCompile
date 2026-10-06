@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import nerdamer from 'nerdamer/all';
 import { compileCellForCalc, compileCellsForCalc } from '../compile/codegen';
-import { parseCellLatex } from '../compile/ir';
-import { toNerdamerInput } from './nerdamer-latex';
+import { normalizeIR, parseCellLatex } from '../compile/ir';
+import { interimConstNames, irToNerdamer } from './nerdamer-emit';
 import { interimEvaluate } from './calculator.svelte.ts';
 
-const toN = (s: string) => toNerdamerInput(s, nerdamer);
+// latex statement -> nerdamer input through the shared pipeline —
+// '' is a poisoned row, null falls back to nerdamer's latex reader.
+const toN = (s: string) => {
+  const norm = normalizeIR(parseCellLatex(s));
+  return norm.ir === undefined
+    ? null
+    : irToNerdamer(norm.ir, interimConstNames(norm.ir));
+};
 const calc = (latex: string) => compileCellForCalc({ json: parseCellLatex(latex) });
 const calcAll = (...latexs: string[]) =>
   compileCellsForCalc(latexs.map((latex) => ({ json: parseCellLatex(latex) })));
@@ -897,9 +903,9 @@ describe('compileCellsForCalc (worksheet cells share one scope)', () => {
   });
 });
 
-describe('toNerdamerInput (latex → nerdamer calls)', () => {
-  it('passes plain algebra through convertFromLaTeX', () => {
-    expect(toN('x+1')).toBe('1+x');
+describe('irToNerdamer (normalized IR → nerdamer input)', () => {
+  it('emits plain algebra in written order', () => {
+    expect(toN('x+1')).toBe('x+1');
   });
 
   it('maps a definite integral to defint', () => {
@@ -941,12 +947,13 @@ describe('toNerdamerInput (latex → nerdamer calls)', () => {
 
   it("keeps an equation's lhs before a translated command", () => {
     expect(toN('2^{n}=\\sum_{i=0}^{n}\\binom{i}{n}')).toBe(
-      '2^n=sum(factorial(i)/(factorial(n)*factorial(i-n)), i, 0, n)',
+      '2^n = sum(factorial(i)/(factorial(n)*factorial(i-n)), i, 0, n)',
     );
   });
 
   it('keeps a leading operator after a translated command verbatim', () => {
-    // `+m` after the \binom match — rec() would eat the unary +.
+    // `+m` is a top-level Add term — the binomial stays inside its own
+    // Multiply factor.
     expect(toN('n\\binom{n}{k}+m')).toBe(
       'n*factorial(n)/(factorial(k)*factorial(n-k))+m',
     );
@@ -1036,6 +1043,18 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
     const rows = await interimEvaluate('\\frac{d }{d x}x^2');
     expect(rows[0].ok).toBe(true);
     expect((rows[0] as { latex?: string }).latex).toBe('2 \\cdot x');
+  });
+
+  it('evaluates a boundless \\iint as an iterated integrate', async () => {
+    // CE parses \iint natively — the `d v` pairs park on the Integrate
+    // body and the emitter nests an integrate per level, +C each.
+    const rows = await interimEvaluate('\\iint x\\,dx\\,dy');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].ok).toBe(true);
+    const latex = (rows[0] as { latex?: string }).latex ?? '';
+    expect(latex).toContain('x^{2}');
+    expect(latex).toContain('C');
+    expect(latex).toContain('D');
   });
 
   it('keeps the one-row-per-statement shape of the real engine', async () => {
