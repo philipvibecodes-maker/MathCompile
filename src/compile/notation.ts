@@ -142,9 +142,10 @@ export const NOTATION: Notation[] = [
     spellings: ['\\max(a,b)', '\\operatorname{max}(a,b)'],
   },
   // \min_{x} f / \max_{x} f — the underscript forms lower to
-  // sp.minimum/sp.maximum in codegen; nerdamer gets the plain min/max.
-  { name: 'Minimum', heads: ['Minimum'], nerdamer: 'min' },
-  { name: 'Maximum', heads: ['Maximum'], nerdamer: 'max' },
+  // sp.minimum/sp.maximum in codegen. No nerdamer spelling: min/max are
+  // pointwise there and would compare body against bound var.
+  { name: 'Minimum', heads: ['Minimum'] },
+  { name: 'Maximum', heads: ['Maximum'] },
   {
     name: 'Factorial',
     heads: ['Factorial'],

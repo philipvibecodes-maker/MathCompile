@@ -936,8 +936,10 @@ describe('irToNerdamer (normalized IR → nerdamer input)', () => {
   });
 
   it('expands \\binom into factorials', () => {
+    // The factorial expansion self-wraps so it stays atomic under
+    // division/power.
     expect(toN('\\binom{n}{k}')).toBe(
-      'factorial(n)/(factorial(k)*factorial(n-k))',
+      '(factorial(n)/(factorial(k)*factorial(n-k)))',
     );
   });
 
@@ -947,7 +949,7 @@ describe('irToNerdamer (normalized IR → nerdamer input)', () => {
 
   it("keeps an equation's lhs before a translated command", () => {
     expect(toN('2^{n}=\\sum_{i=0}^{n}\\binom{i}{n}')).toBe(
-      '2^n = sum(factorial(i)/(factorial(n)*factorial(i-n)), i, 0, n)',
+      '2^n = sum((factorial(i)/(factorial(n)*factorial(i-n))), i, 0, n)',
     );
   });
 
@@ -955,7 +957,7 @@ describe('irToNerdamer (normalized IR → nerdamer input)', () => {
     // `+m` is a top-level Add term — the binomial stays inside its own
     // Multiply factor.
     expect(toN('n\\binom{n}{k}+m')).toBe(
-      'n*factorial(n)/(factorial(k)*factorial(n-k))+m',
+      'n*(factorial(n)/(factorial(k)*factorial(n-k)))+m',
     );
   });
   it('reads a bare prime as a primed variable name', () => {
@@ -1091,6 +1093,54 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
 
   it('returns [] for empty input', async () => {
     expect(await interimEvaluate('')).toEqual([]);
+  });
+
+  it('groups power bases — (2^3)^2 is 64, -2^2 squares the group', async () => {
+    expect((await interimEvaluate('\\left(2^3\\right)^2'))[0])
+      .toEqual({ ok: true, latex: '64' });
+    expect((await interimEvaluate('\\left(-2\\right)^{2}'))[0])
+      .toEqual({ ok: true, latex: '4' });
+  });
+
+  it('evaluates \\log like codegen — base 10', async () => {
+    // nerdamer spells the base-10 default as the change-of-base
+    // quotient (symbolic — it doesn't simplify it to 2).
+    const latex = (await interimEvaluate('\\log(100)'))[0] as { latex?: string };
+    expect(latex.latex).toBe(
+      '\\frac{\\mathrm{log}\\left(100\\right)}{\\mathrm{log}\\left(10\\right)}',
+    );
+  });
+
+  it('keeps the binomial quotient atomic under division', async () => {
+    // nerdamer flips the reciprocal — (2!·3!)/5! is still 1/10, not
+    // the old 1/1440.
+    const latex = (await interimEvaluate('1/\\binom{5}{2}'))[0] as { latex?: string };
+    expect(latex.latex).toBe('\\frac{2! \\cdot 3!}{5!}');
+  });
+
+  it('shows no interim for extrema over a bound variable', async () => {
+    // min(body, x) would compare the wrong operands — no row is better.
+    expect(await interimEvaluate('\\min_{x}x^2')).toEqual([]);
+    expect(await interimEvaluate('\\max_{x}x^2')).toEqual([]);
+  });
+
+  it('shows no interim for one-sided limits', async () => {
+    // nerdamer has no direction arg; a two-sided guess at a
+    // discontinuity would contradict the real engine.
+    expect(await interimEvaluate('\\lim_{x\\to 0^{-}}\\frac{1}{x}')).toEqual([]);
+    expect(await interimEvaluate('\\lim_{x\\to 0^{+}}\\frac{1}{x}')).toEqual([]);
+  });
+
+  it('reserves declared names from cells above for + C letters', async () => {
+    // With `C = 7` bound above, the real engine picks D for the
+    // constant of integration — interim must match.
+    const rows = await interimEvaluate('\\int x dx', ['C = 7']);
+    const latex = (rows[0] as { latex?: string }).latex ?? '';
+    expect(latex).toContain('D');
+    expect(latex).not.toContain('C');
+    // Unrelated names don't reserve letters.
+    const rows2 = await interimEvaluate('\\int x dx', ['a = 7']);
+    expect((rows2[0] as { latex?: string }).latex ?? '').toContain('C');
   });
 });
 

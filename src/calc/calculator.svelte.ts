@@ -1,4 +1,4 @@
-import { compileCellsForCalc } from '../compile/codegen';
+import { collectDeclared, compileCellsForCalc } from '../compile/codegen';
 import {
   latexToStatementStrings,
   normalizeIR,
@@ -289,7 +289,10 @@ let nerdamerP: Promise<typeof import('nerdamer/all')> | undefined;
 // back to nerdamer's own latex reader (`leaf`); a statement that can't
 // produce a real value produces no row. Dynamically imported so
 // nerdamer's ~440KB never enters the main bundle.
-export async function interimEvaluate(latex: string): Promise<CalcRow[]> {
+export async function interimEvaluate(
+  latex: string,
+  priorLatex: string[] = [],
+): Promise<CalcRow[]> {
   try {
     const nerdamer = (await (nerdamerP ??= import('nerdamer/all'))).default;
     // latexToStatementStrings tracks environment depth — a plain
@@ -297,6 +300,15 @@ export async function interimEvaluate(latex: string): Promise<CalcRow[]> {
     // matrix (its \\ row separators look like statement breaks).
     const stmts = latexToStatementStrings(latex);
     const norm = normalizeIR(parseCellLatex(latex));
+    // The real engine shares one namespace down the worksheet, so a
+    // `C = …` above reserves the letter for constants of integration —
+    // interim picks letters off the same declared-name set.
+    const reserved = new Set<string>();
+    const scratch = new Set<string>();
+    for (const l of priorLatex) {
+      const n = normalizeIR(parseCellLatex(l));
+      if (n.ir !== undefined) collectDeclared(n.ir, reserved, scratch);
+    }
     const nodes =
       norm.ir === undefined
         ? []
@@ -311,7 +323,7 @@ export async function interimEvaluate(latex: string): Promise<CalcRow[]> {
         .filter((i) => i.severity === 'error')
         .map((i) => i.line ?? 0),
     );
-    const takeConst = interimConstNames(norm.ir);
+    const takeConst = interimConstNames(norm.ir, reserved);
     return nodes
       .map((node, i): CalcRow | null => {
         if (poisoned.has(i)) return null;

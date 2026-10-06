@@ -185,14 +185,20 @@ function peelDiffs(body: MathJson): { body: MathJson; vars: string[] } {
 const P_ADD = 10;
 const P_MUL = 20;
 const P_UNARY = 30;
+const P_POW = 40;
 
 // Child-precedence table: what `emit` produces per head, so callers can
 // wrap. Heads not listed are atoms or calls.
 const PREC: Record<string, number> = {
   Add: P_ADD,
+  Subtract: P_ADD,
   Negate: P_UNARY,
   Multiply: P_MUL,
   Divide: P_MUL,
+  // The quotient shapes Rational/Log emit need parens wherever a
+  // quotient's numerator isn't the whole operand.
+  Rational: P_MUL,
+  Log: P_MUL,
   Power: P_UNARY,
 };
 
@@ -245,13 +251,13 @@ function emit(node: MathJson | undefined, ctx: Ctx): string | null {
       return ts === null || ts === '' ? ts : ts.join('+');
     }
     case 'Negate': {
-      const s = child(args[0], P_UNARY);
+      const s = child(args[0], P_POW);
       return s === null || s === '' ? s : `-${s}`;
     }
     case 'Subtract': {
       // Defensive — normalization folds Subtract to Add+Negate.
       const l = child(args[0], P_ADD);
-      const r = child(args[1], P_UNARY);
+      const r = child(args[1], P_POW);
       return l === null || l === '' || r === null || r === ''
         ? l === '' || r === '' ? '' : null
         : `${l}-${r}`;
@@ -273,8 +279,10 @@ function emit(node: MathJson | undefined, ctx: Ctx): string | null {
         : `${l}/${r}`;
     }
     case 'Power': {
-      const b = child(args[0], P_UNARY);
-      const e = child(args[1], P_UNARY);
+      // Base and exponent must read as atoms: bare `2^3^2` and `-2^2`
+      // mean something else under `^`'s precedence.
+      const b = child(args[0], P_POW);
+      const e = child(args[1], P_POW);
       return b === null || b === '' || e === null || e === ''
         ? b === '' || e === '' ? '' : null
         : `${b}^${e}`;
@@ -297,14 +305,17 @@ function emit(node: MathJson | undefined, ctx: Ctx): string | null {
       const ts = subs(args);
       if (ts === null || ts === '') return ts;
       const [a, b] = ts;
-      return `factorial(${a})/(factorial(${b})*factorial(${a}-${b}))`;
+      // The expansion is a quotient — self-parenthesized so it stays
+      // atomic under division/power (`1/\binom{5}{2}` isn't 1/fact/…).
+      return `(factorial(${a})/(factorial(${b})*factorial(${a}-${b})))`;
     }
     case 'Log': {
-      // Log(x) is natural; Log(x, b) lowers to the change-of-base
-      // quotient (nerdamer's log takes no base argument).
+      // codegen defaults \log to base 10 (sp.log(x, 10)) — the interim
+      // spells it as the change-of-base quotient to match (nerdamer's
+      // log takes no base argument).
       if (args.length === 1) {
         const s = sub(args[0]);
-        return s === null || s === '' ? s : `log(${s})`;
+        return s === null || s === '' ? s : `log(${s})/log(10)`;
       }
       if (args.length === 2) {
         const ts = subs(args);
@@ -385,9 +396,11 @@ function emit(node: MathJson | undefined, ctx: Ctx): string | null {
       return `${word}(${f}, ${nameText(i)}, ${lo}, ${hi})`;
     }
     case 'Limit': {
-      // ['Limit', ['Function', body, x], a, dir?] — the dir (±1) has no
-      // nerdamer spelling; the interim row is the two-sided limit.
+      // ['Limit', ['Function', body, x], a, dir?] — a one-sided limit
+      // (dir ±1) has no nerdamer spelling; a two-sided guess at a
+      // discontinuity would contradict the real engine, so no row.
       if (isHead(args[0], 'Function')) {
+        if (args[2] !== undefined) return '';
         const fn = args[0];
         const v = isStr(fn[2]) ? fn[2] : 'x';
         const f = sub(fn[1]);
@@ -396,8 +409,9 @@ function emit(node: MathJson | undefined, ctx: Ctx): string | null {
         if (f === null || a === null) return null;
         return `limit(${f}, ${nameText(v)}, ${a})`;
       }
-      // Defensive flat form: ['Limit', expr, x, a].
+      // Defensive flat form: ['Limit', expr, x, a, dir?].
       if (args.length >= 3 && isStr(args[1])) {
+        if (args[3] !== undefined) return '';
         const f = sub(args[0]);
         const a = sub(args[2]);
         if (f === '' || a === '') return '';
@@ -405,7 +419,7 @@ function emit(node: MathJson | undefined, ctx: Ctx): string | null {
         return `limit(${f}, ${nameText(args[1])}, ${a})`;
       }
       const free = args[0] === undefined ? [] : freeNames(args[0]);
-      if (args.length >= 2 && free.length === 1) {
+      if (args.length === 2 && free.length === 1) {
         const f = sub(args[0]);
         const a = sub(args[1]);
         if (f === '' || a === '') return '';
@@ -470,6 +484,13 @@ function emit(node: MathJson | undefined, ctx: Ctx): string | null {
       }
       return null;
     }
+    case 'Minimum':
+    case 'Maximum':
+      // \min_{x} f is an extremum over the bound var, not pointwise
+      // min(a,b) — nerdamer has no form for it, and `min(body, x)`
+      // would compare the wrong operands. No interim is better than a
+      // wrong one.
+      return '';
     case 'call': {
       // Unknown/word-op heads (\mathrm{tr}, user functions) — nerdamer
       // keeps unknown calls symbolic, so `tr(A)` still displays.
@@ -539,8 +560,11 @@ export function irToNerdamer(
 // reservation allNames makes for codegen) so `+ C` never collides, then
 // hands out the first free capital per integral level via the rule
 // codegen's nextConstName shares.
-export function interimConstNames(ir: MathJson | undefined): () => string {
-  const used = new Set<string>();
+export function interimConstNames(
+  ir: MathJson | undefined,
+  reserved: Set<string> = new Set(),
+): () => string {
+  const used = new Set(reserved);
   const walk = (n: MathJson | undefined): void => {
     if (isStr(n)) used.add(n);
     else if (isArr(n)) for (const c of n) walk(c);

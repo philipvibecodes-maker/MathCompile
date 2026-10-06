@@ -2945,8 +2945,10 @@ export function compileWorksheet(
 
 // Names bound by Assign/Def anywhere in the IR (pre-scan). Distinguishes
 // worksheet-declared calls (`f(x)` when `f` is defined here) from the
-// `sp.<head>` escape hatch.
-function collectDeclared(
+// `sp.<head>` escape hatch. Exported for the interim engine, which
+// reserves the same declared names when allocating constants of
+// integration so its letters match the real program's.
+export function collectDeclared(
   ir: MathJson,
   declared: Set<string>,
   declaredFns: Set<string>,
