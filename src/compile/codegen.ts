@@ -2648,7 +2648,7 @@ interface CellBody {
 // Free symbol names inside an expression — used to infer the variable of
 // an integral written without a differential. Constants, the CE 'Nothing'
 // marker, and callee names (f in f(t), call heads) don't count.
-function freeNames(node: MathJson, acc = new Set<string>()): string[] {
+export function freeNames(node: MathJson, acc = new Set<string>()): string[] {
   if (isStr(node)) {
     if (!CONSTANTS[node] && node !== 'Nothing' && !node.startsWith("'"))
       acc.add(node);

@@ -103,7 +103,10 @@
       // The `pending` guard keeps a late interim from overwriting real
       // rows that already landed.
       if (calcEngine.status !== 'ready') {
-        interimEvaluate(latex).then((r) => {
+        interimEvaluate(
+          latex,
+          appStore.cells.map((c) => c.latex).join('\n'),
+        ).then((r) => {
           if (mine === seq && pending && r.length > 0) {
             rows = r;
             interim = true;

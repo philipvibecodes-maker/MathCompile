@@ -108,9 +108,11 @@ and the Compute Engine interim below.
 ## Compute Engine interim — how it works
 
 `interimEvaluate(latex)` in `calculator.svelte.ts` reuses the compiler's
-own front end: `parseCellLatex` (environment-aware `\\` split + `ce.parse`
-raw-form MathJSON) → per-statement `ce.box(json).evaluate().evaluate().latex`.
-One interim row per `\\` row, matching the real engine's
+own front end: `parseCellLatex` → `normalizeIR` (the same tree codegen
+emits — chained `Equal` flattens, `name = rhs` becomes `Assign`,
+`\text{def}` becomes a `Def` head) → per-statement
+`ce.box(json).evaluate().evaluate().latex`.
+One interim row per statement row the real engine emits, matching its
 row-per-statement shape so results swap in place. CE lives in the main
 bundle already (the compiler needs it), so there is no lazy chunk — the
 interim is effectively synchronous.
@@ -135,16 +137,27 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   assignments.
 - **`+C` per boundless Integrate**: `addConstants` wraps each
   `['Integrate', body, 'v']` (a bare string var slot = indefinite; a
-  `Tuple`/`Limits` slot = definite) in `Add(…, letter)`, letters drawn
-  from the same first-free-capital rule as codegen's `nextConstName`.
-- **`Nothing` handling**: CE fills a missing integration variable with
-  `Nothing`; `repairBounds` substitutes the body's single free name
-  (`\int_0^1 x` → integrates over `x`). A `Nothing` or missing *bound*
-  (`\int_{0}^{ }x`, `\sum_{i=0}^{ }i`) poisons the statement — matching
-  the real engine's error.
+  `Limits` slot = definite) in `Add(…, letter)`, letters drawn
+  from the same first-free-capital rule as codegen's `nextConstName`,
+  seeded from the whole worksheet's latex so a `C = …` in an earlier
+  cell can't collide.
+- **`\text{d}` differentials peel out of the integrand**: CE leaves
+  `\int x²\text{d}x` as `d·x` factor pairs in the body (flat or nested
+  in the last factor's args); `peelDiffs` removes them the way codegen's
+  integral emitter does and uses the names to fill the var slot — extra
+  names (`\iint f dxdy`) become iterated integrals.
+- **`Nothing` handling**: a `Nothing` in the var slot means no
+  differential was written — `repairBounds` fills it from the peeled
+  names or the body's single free name (codegen's `freeNames`, which
+  skips constants like `Pi`). Both bounds `Nothing` = indefinite; one
+  `Nothing` bound (`\int_{0}^{ }x`, `\sum_{i=0}^{ }i`) poisons the
+  statement — matching the real engine's error.
 - **Double evaluate**: CE's first `.evaluate()` only resolves the
   outermost `Integrate` — a second pass reaches nested ones (`∬x dxdy`
   → `y(x²/2 + C) + D`).
+- **`\text{where}` blocks expand like `cellBody`**: `x² \text{ where }
+  x>0` parses `WhereBlock(cond, body)` — the interim emits the body row
+  before its conditions, same order the real engine uses.
 - **Skipped statements stay empty**: `\text{def}` lines, parse `Error`
   nodes, and custom IR heads (`call`, `Declare`, `IntegerRange`, …)
   return no row — never show a guess as a real result. (Real-engine

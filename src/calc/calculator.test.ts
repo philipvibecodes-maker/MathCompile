@@ -1083,5 +1083,65 @@ describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
   it('returns [] for empty input', async () => {
     expect(await interimEvaluate('')).toEqual([]);
   });
+
+  it('treats chained equality as an equation, not an assignment', async () => {
+    // a=b=c normalizes to a multi-arg Equal — the real engine emits
+    // comparisons, so the interim must not bind `a` for the rows below.
+    const rows = await interimEvaluate('a=b=c\\\\ a+1');
+    expect(rows).toEqual([
+      { ok: true, latex: 'a=b=c' },
+      { ok: true, latex: 'a+1' },
+    ]);
+  });
+
+  it('peels \\text{d} differentials out of the integrand', async () => {
+    const rows = await interimEvaluate('\\int x^{2}\\text{d}x');
+    expect(rows[0].ok).toBe(true);
+    const latex = (rows[0] as { latex?: string }).latex ?? '';
+    expect(latex).toContain('x^3');
+    expect(latex).toContain('C');
+  });
+
+  it('peels differentials nested inside the integrand tail', async () => {
+    const rows = await interimEvaluate('\\int \\sin x\\text{d}x');
+    expect(rows[0].ok).toBe(true);
+    expect((rows[0] as { latex?: string }).latex ?? '').toContain('\\cos(x)');
+  });
+
+  it('expands a where-block into body and condition rows', async () => {
+    const rows = await interimEvaluate('x^{2}\\text{ where }x>0');
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => r.ok)).toBe(true);
+  });
+
+  it('infers the integration variable past named constants', async () => {
+    // \int \pi x has one real free variable — Pi is a constant, not a
+    // candidate (codegen's freeNames excludes it).
+    const rows = await interimEvaluate('\\int \\pi x');
+    expect(rows[0].ok).toBe(true);
+    expect((rows[0] as { latex?: string }).latex ?? '').toContain('\\pi');
+  });
+
+  it('seeds constants of integration from worksheet names', async () => {
+    // With C bound in an earlier cell the integral takes D, matching
+    // codegen's worksheet-wide constNames.
+    const rows = await interimEvaluate('\\int x dx', 'C=5\\\\ x');
+    expect(rows[0].ok).toBe(true);
+    expect((rows[0] as { latex?: string }).latex ?? '').toContain('D');
+  });
+
+  it('evaluates a matrix literal row', async () => {
+    const rows = await interimEvaluate(
+      '\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}',
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].ok).toBe(true);
+  });
+
+  it('shows no row for a call on a skipped def', async () => {
+    // \text{def} statements don't bind in the interim, so g(3) can't be
+    // evaluated honestly — no row rather than a wrong one.
+    expect(await interimEvaluate('\\text{def} g(x)=x^{2}\\\\ g(3)')).toEqual([]);
+  });
 });
 
