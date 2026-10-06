@@ -205,6 +205,7 @@ as a command; use one of these instead.
 | Subset | `\subset` `\subseteq` `\nsubseteq` | \(A \subset B\), \(A \subseteq B\), \(A \nsubseteq B\) |
 | Empty set | `\emptyset` or `\varnothing` | \(\varnothing\) |
 | Finite set | `\{1,2,3\}` | \(\{1, 2, 3\}\) — braces auto-pair |
+| Integer range | `\{1,2,\ldots,10\}` | \(\{1, 2, \ldots, 10\}\) — the step comes from the first two entries |
 | Set-builder | `\{ x \in \R \mid x > 0 \}` | \(\{x \in \mathbb{R} \mid x > 0\}\) |
 | Indexed union / intersection | `\bigcup` `\bigcap`, then `_{i=1}^{n}` | \(\bigcup_{i=1}^{n} A_i\), \(\bigcap_{i=1}^{n} A_i\) |
 | Interval | `(a,b)`, `[a,b)`, `[a,b]` | \((a,b)\), \([a,b)\), \([a,b]\) — parens/brackets auto-pair |
@@ -213,6 +214,8 @@ These compile to real SymPy sets: `x \in \mathbb{R}` puts `real=True`
 on `x`'s symbol (likewise `\Z` → integer, `\Q` → rational, `\C` →
 complex), `\cup` / `\cap` / `\setminus` become `Union` /
 `Intersection` / `Complement`, `\{1,2,3\}` a `FiniteSet`,
+`\{1,2,\ldots,10\}` a `Range` (the end is *inclusive* — it emits
+`sp.Range(1, 11)`; `\{2,4,\ldots,20\}` steps by 2 → `sp.Range(2, 21, 2)`),
 `\{x \mid p(x)\}` a `ConditionSet`, and
 `\{f(x) \mid x \in D\}` an `ImageSet`. `A \subseteq B` needs concrete
 sets on both sides — SymPy can't name an unknown set, so bare symbols
@@ -420,6 +423,24 @@ can't express appear as `!`/`i` notes under the code.
 One rule to know: write `\text{def} f(x) = 2x` (type `def` in Smart
 mode) to define a function — the generated code is `def f(x): return
 2*x`. A bare `f(x)` is read as multiplication, `f * x`.
+
+#### Statement blocks
+
+Inside a multi-line cell, `\text{}` keyword rows ending in `:` open a
+block — indent the body one `\quad` per level (type `quad` in Smart
+mode):
+
+| You want | Type | Emits |
+| --- | --- | --- |
+| Multi-line function | `\text{def} f(x):`, then indented rows | `def f(x):` + the body — a bare expression row is the return value, `\text{return}` works too |
+| If / else-if / else | `\text{if} x > 0:` / `\text{elif}` / `\text{else}:` | `if` / `elif` / `else` suites |
+| While loop | `\text{while} x < 10:` | `while` suite — `\text{break}`, `\text{continue}` inside |
+| For over a finite set | `\text{for} i \in \{1,2,\ldots,10\}:` or `\{1,2,3\}` | `for i in sp.Range(...)` / `sp.FiniteSet(...)` |
+
+A condition needs a concrete value at eval time — `x = 0` first, then
+`\text{while} x < 10:` works; `while x < 10` on a symbolic `x` fails
+like any Python symbolic truth test. Headers without the `:` and
+`elif`/`else` rows without a matching `if` get `!` error notes.
 
 ## Keyboard reference
 

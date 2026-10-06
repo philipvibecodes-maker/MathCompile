@@ -1,5 +1,6 @@
 import { collectDeclared, compileCellsForCalc } from '../compile/codegen';
 import {
+  displayLineCount,
   latexToStatementStrings,
   normalizeIR,
   parseCellLatex,
@@ -324,11 +325,19 @@ export async function interimEvaluate(
         .map((i) => i.line ?? 0),
     );
     const takeConst = interimConstNames(norm.ir, reserved);
+    // Nodes map back to displaylines, not their own index — a folded
+    // block header spans several rows, so stmts/poisoned index by the
+    // line the statement started on (issue.line is leaf-stamped).
+    let line = 0;
     return nodes
-      .map((node, i): CalcRow | null => {
-        if (poisoned.has(i)) return null;
+      .map((node): CalcRow | null => {
+        const nodeLine = line;
+        line += displayLineCount(node);
+        if (poisoned.has(nodeLine)) return null;
         try {
-          const input = irToNerdamer(node, takeConst) ?? leaf(stmts[i] ?? '', nerdamer);
+          const input =
+            irToNerdamer(node, takeConst) ??
+            leaf(stmts[nodeLine] ?? '', nerdamer);
           if (input === '') return null;
           const tex = arcTrigNames(
             // MathQuill doesn't need \limits — bounds render under/over

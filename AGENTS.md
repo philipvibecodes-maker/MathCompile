@@ -183,6 +183,19 @@ and empty blocks serialize as `{ }`.
   `src/compile/ir.ts` reads as the function-definition prefix
   (`\text{def} g(x) = 2x` → `def g(x): return 2*x`); a bare `f(x)` is
   `f * x`, not a call or signature.
+- `\text{kw} …:` statement headers — `if`, `elif`/`else if`, `else`,
+  `while`, `for`, `def` — parse as `Colon(lhs, Error('missing'))` with
+  the keyword fused into lhs; `parseCellLatex` recognizes them and folds
+  the deeper-indented displayline rows beneath into suite bodies
+  (`['Block', ...]`). Indentation is leading `\quad` runs on the raw
+  row (`\quad`=1, `\qquad`=2), counted by `latexToStatementRows` and
+  stripped before `ce.parse` (a leading `\quad` otherwise trips CE).
+  `\text{break}`/`\text{continue}`/`\text{return}` parse natively to
+  `Break`/`Continue`/`Return` heads; emission gates them on an
+  in-loop/in-def context (`codegen.emitStatement`'s `StmtCtx`), and a
+  bare expression row in a `def` body is the return value.
+  `\{a,b,\ldots,z\}` is CE's hi-inclusive `Range` — emitted as
+  `sp.Range(lo, hi+1, step)`, not `FiniteSet`.
 - `\tr` is an insertion alias for `\mathrm{tr}` — the matrix-trace
   word-op codegen lowers to `(A).trace()` / `sp.Trace(A)`.
 - Matrices: `\begin{matrix|pmatrix|…}` environments + bare

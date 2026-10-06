@@ -536,6 +536,19 @@ function emit(node: MathJson | undefined, ctx: Ctx): string | null {
         ? emit(args[args.length - 1], ctx)
         : null;
     }
+    // Folded statement heads (`\text{kw}:` rows) aren't expressions —
+    // suppress their rows ('' drops the interim row; null would
+    // leaf-fallback onto the raw `\text{if} …:` latex).
+    case 'Block':
+    case 'If':
+    case 'Elif':
+    case 'Else':
+    case 'While':
+    case 'For':
+    case 'Break':
+    case 'Continue':
+    case 'Return':
+      return '';
     default:
       if (FUNCS[h] !== undefined) {
         const ts = subs(args);

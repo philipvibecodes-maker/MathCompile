@@ -16,7 +16,7 @@
 // targets is future work.
 
 import type { Issue, MathJson, NormResult } from './ir';
-import { isDiffMark, normalizeIR, unquote } from './ir';
+import { isDiffMark, displayLineCount, normalizeIR, unquote } from './ir';
 import { CALC_RUNTIME_PY } from './calc-runtime';
 // The name tables below are derived views over the notation registry —
 // each name lives once in src/compile/notation.ts.
@@ -100,6 +100,9 @@ function pyIdent(name: string): string {
 // Statement-position heads that only lower to Python.
 const STATEMENT_HEADS = new Set([
   'Assign', 'Def', 'Declare', 'Block', 'WhereBlock', 'Which', 'Piecewise',
+  // `\text{kw}:` headers + the control-flow statement heads minted by
+  // parseCellLatex's row folding / CE's \text{break}-style parses.
+  'If', 'Elif', 'Else', 'While', 'For', 'Break', 'Continue', 'Return',
 ]);
 const CMP_NESTABLE_HEADS = new Set([
   'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
@@ -894,6 +897,8 @@ class Emitter {
       }
       return false;
     }
+    // \{a, b, \ldots, z\} — CE's Range emits sp.Range, a real set.
+    if (h === 'Range') return true;
     if (h === 'Interval' || h === 'Set') return true;
     if (h === 'Power')
       return this.isSetish(n[1]) && this.isPosInt(n[2]);
@@ -1386,6 +1391,30 @@ class Emitter {
         const hi = asInt(args[1]);
         return [
           `${this.sp}Range(${this.emit(args[0])}, ${hi !== undefined ? String(hi + 1) : `${this.emit(args[1])} + 1`})`,
+          PREC_ATOM,
+        ];
+      }
+      case 'Range': {
+        // \{a, b, \ldots, z\} — CE's Range is hi-INCLUSIVE while
+        // sp.Range's is exclusive, so the bound shifts by one step. A
+        // negative literal step goes down (\{10, 9, \ldots, 1\}).
+        const [lo, hi] = args;
+        const step = args.length > 2 ? asInt(args[2]) : 1;
+        const hiLit = asInt(hi);
+        const bound =
+          step !== undefined && step < 0
+            ? hiLit !== undefined
+              ? String(hiLit - 1)
+              : `${this.emit(hi)} - 1`
+            : hiLit !== undefined
+              ? String(hiLit + 1)
+              : `${this.emit(hi)} + 1`;
+        const stepArg =
+          args.length > 2 && asInt(args[2]) !== 1
+            ? `, ${this.emit(args[2])}`
+            : '';
+        return [
+          `${this.sp}Range(${this.emit(lo)}, ${bound}${stepArg})`,
           PREC_ATOM,
         ];
       }
@@ -2723,9 +2752,13 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   const isRelation = (n: MathJson): boolean => RELATION_HEADS.has(headOf(n) ?? '');
   const blockNodes = isHead(ir, 'Block') ? ir.slice(1) : [ir];
   // Each node carries the index of the displayline it came from — a
-  // WhereBlock expands one input line into several statements, so the
-  // nodes index alone is not the line number.
-  const nodes = blockNodes.flatMap((n, line) => {
+  // header block spans several written rows and a WhereBlock expands
+  // one input line into several statements, so the node index alone
+  // is not the line number.
+  let lineIdx = 0;
+  const nodes = blockNodes.flatMap((n) => {
+    const line = lineIdx;
+    lineIdx += displayLineCount(n);
     const tag = (stmt: MathJson) => ({ stmt, line });
     if (!isHead(n, 'WhereBlock')) return [tag(n)];
     const kids = n.slice(1);
@@ -2854,7 +2887,49 @@ function assignDisplay(
   return `${sp}Eq(${sp}Symbol(${JSON.stringify(name)}), ${rhs}${uneval})`;
 }
 
-function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
+/** Where the statement sits — `\text{break}`/`\text{continue}` need a loop,
+ * `\text{return}`/bare-expression-returns need a def. */
+interface StmtCtx {
+  inDef?: boolean;
+  inLoop?: boolean;
+}
+
+// Statement heads a suite can contain — everything else in a def body
+// is a bare expression row, which becomes its return value.
+const SUITE_STMT_HEADS = new Set([
+  'Assign', 'Def', 'Declare', 'Block', 'WhereBlock',
+  'If', 'Elif', 'Else', 'While', 'For', 'Break', 'Continue', 'Return',
+]);
+
+const SUITE_INDENT = '    ';
+
+// Emit the body of a `:`-header block (a `['Block', ...]` node or a
+// bare single statement) as indented lines — `pass` when empty.
+function emitSuite(
+  body: MathJson,
+  emitter: Emitter,
+  ctx: StmtCtx,
+): string[] {
+  const kids = isHead(body, 'Block') ? body.slice(1) : [body];
+  const lines: string[] = [];
+  for (const k of kids) {
+    const kh = isArr(k) ? headOf(k) : undefined;
+    const stmt =
+      ctx.inDef && !(kh !== undefined && SUITE_STMT_HEADS.has(kh))
+        ? (['Return', k] as MathJson)
+        : k;
+    lines.push(...emitStatement(stmt, emitter, ctx).lines);
+  }
+  return (lines.length > 0 ? lines : ['pass']).map(
+    (l) => `${SUITE_INDENT}${l}`,
+  );
+}
+
+function emitStatement(
+  node: MathJson,
+  emitter: Emitter,
+  ctx: StmtCtx = {},
+): StatementOut {
   const sp = emitter.scope.qualified ? 'sp.' : '';
   if (!isArr(node)) return emitExprStatement(node, emitter);
   const h = headOf(node);
@@ -2929,14 +3004,34 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     const params =
       isHead(node[2], 'List') ? node[2].slice(1).filter(isStr) : [];
     const before = emitter.scope.errorCount;
-    const body = emitter.scope.withBoundOnly(params, () =>
-      emitter.emit(node[3]),
-    );
+    // `\text{def} f(x):` + indented rows — the body is a Block of
+    // statements; a bare expression row is the return value. Params
+    // shadow like any binding (withBoundOnly) in either body form.
+    const blockBody = isHead(node[3], 'Block');
+    const body = blockBody
+      ? undefined
+      : emitter.scope.withBoundOnly(params, () => emitter.emit(node[3]));
+    const bodyLines = blockBody
+      ? emitter.scope.withBoundOnly(params, () =>
+          emitSuite(node[3], emitter, { inDef: true }))
+      : [];
     // A later bare `f` in operand position emits `f(<params>)` — an
     // unapplied function object raises TypeError as an operand.
     emitter.scope.claimFunction(name, params);
     if (emitter.scope.errorCount > before) return { lines: [] };
     const idents = params.map(pyIdent).join(', ');
+    if (blockBody) {
+      // No single value to display — show the signature like Declare.
+      return {
+        lines: [`def ${pyIdent(name)}(${idents}):`, ...bodyLines],
+        display:
+          params.length === 0
+            ? `${sp}Function(${JSON.stringify(name)})`
+            : `${sp}Function(${JSON.stringify(name)})(${params
+                .map((p) => `${sp}Symbol(${JSON.stringify(p)})`)
+                .join(', ')})`,
+      };
+    }
     // `f(x) = body` rendered via an undefined function — the def'd python
     // function would just evaluate back to body. The lambda binds the
     // param idents to fresh Symbols so the display needs no namespace
@@ -2996,8 +3091,90 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
   }
   if (h === 'Block' || h === 'WhereBlock')
     return {
-      lines: node.slice(1).flatMap((s) => emitStatement(s, emitter).lines),
+      lines: node.slice(1).flatMap((s) => emitStatement(s, emitter, ctx).lines),
     };
+  // `\text{if} c:` / `\text{elif} c:` / `\text{else}:` / `\text{while} c:` /
+  // `\text{for} v \in S:` — the header rows minted by parseCellLatex.
+  // Body rows emit as an indented suite; the context (inDef/inLoop)
+  // propagates so returns and breaks inside them still bind.
+  if (h === 'If') {
+    const before = emitter.scope.errorCount;
+    const lines = [`if ${emitter.emit(node[1])}:`];
+    lines.push(...emitSuite(node[2], emitter, ctx));
+    let tail = node[3];
+    while (isArr(tail)) {
+      const th = headOf(tail);
+      if (th === 'Elif') {
+        lines.push(`elif ${emitter.emit(tail[1])}:`);
+        lines.push(...emitSuite(tail[2], emitter, ctx));
+        tail = tail[3];
+      } else if (th === 'Else') {
+        lines.push('else:');
+        lines.push(...emitSuite(tail[1], emitter, ctx));
+        break;
+      } else break;
+    }
+    if (emitter.scope.errorCount > before) return { lines: [] };
+    return { lines };
+  }
+  if (h === 'While') {
+    const before = emitter.scope.errorCount;
+    const cond = emitter.emit(node[1]);
+    const body = emitSuite(node[2], emitter, { ...ctx, inLoop: true });
+    if (emitter.scope.errorCount > before) return { lines: [] };
+    return { lines: [`while ${cond}:`, ...body] };
+  }
+  if (h === 'For') {
+    const before = emitter.scope.errorCount;
+    const v = node[1];
+    const members = isHead(v, 'List') ? v.slice(1).filter(isStr) : [v];
+    const target = members.map((m) => pyIdent(isStr(m) ? m : '_')).join(', ');
+    const set = emitter.emit(node[2]);
+    if (
+      !emitter.isSetish(node[2]) &&
+      !emitter.isFiniteSet(node[2])
+    )
+      emitter.scope.flag(
+        'note',
+        'for-loop source is not a set — iterating it may fail at eval',
+      );
+    // The loop variable binds like Python — no Symbol decl, and it
+    // stays bound after the loop.
+    for (const m of members)
+      if (isStr(m)) emitter.scope.markDefined(m);
+    const body = emitSuite(node[3], emitter, { ...ctx, inLoop: true });
+    if (emitter.scope.errorCount > before) return { lines: [] };
+    return { lines: [`for ${target} in ${set}:`, ...body] };
+  }
+  if (h === 'Break' || h === 'Continue') {
+    if (!ctx.inLoop) {
+      emitter.scope.flag(
+        'error',
+        `\\text{${h.toLowerCase()}} outside a loop`,
+      );
+      return { lines: [] };
+    }
+    return { lines: [h.toLowerCase()] };
+  }
+  if (h === 'Return') {
+    if (!ctx.inDef) {
+      emitter.scope.flag(
+        'error',
+        '`\\text{return}` outside a function — only valid inside a `\\text{def}` block',
+      );
+      return { lines: [] };
+    }
+    const before = emitter.scope.errorCount;
+    const value = node.length > 1 ? emitter.emit(node[1]) : '';
+    if (emitter.scope.errorCount > before) return { lines: [] };
+    return { lines: [value === '' ? 'return' : `return ${value}`] };
+  }
+  // A stray Elif/Else tail outside its If — only reachable on hand-built
+  // IR (the parser always nests them).
+  if (h === 'Elif' || h === 'Else') {
+    emitter.scope.flag('error', `${h.toLowerCase()} without a matching if`);
+    return { lines: [] };
+  }
   return emitExprStatement(node, emitter);
 }
 
@@ -3171,8 +3348,9 @@ export function collectDeclared(
       declared.add(n[2]);
       declaredFns.add(n[2]);
     }
-    if (h === 'Block' || h === 'WhereBlock')
-      n.slice(1).forEach(collect);
+    // Folded statement bodies carry their own Assign/Def targets —
+    // recurse every child, not just statement-list wrappers.
+    n.slice(1).forEach(collect);
   };
   collect(ir);
 }
@@ -3199,7 +3377,8 @@ function collectMatrices(ir: MathJson, matrixNames: Set<string>): void {
       else matrixNames.delete(n[1]);
       defined.add(n[1]);
     }
-    if (h === 'Block') n.slice(1).forEach(collect);
+    // Statement bodies inside folded headers carry Assigns too.
+    n.slice(1).forEach(collect);
   };
   collect(ir);
 }
