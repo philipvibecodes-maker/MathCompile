@@ -14,6 +14,13 @@
 
 import { firstFreeCapital } from '../compile/codegen';
 import { isDiffMark, unquote, type MathJson } from '../compile/ir';
+// nerdamer spellings come from the same registry codegen reads — the
+// interim can't drift from the real engine's name tables.
+import {
+  NERDAMER_CONSTANTS,
+  NERDAMER_FUNCS,
+  NERDAMER_INVERSE_FUNCS,
+} from '../compile/notation';
 
 export interface NerdamerExpr {
   toString(): string;
@@ -46,54 +53,19 @@ const isHead = (v: MathJson | undefined, h: string): v is MathJson[] =>
 const missing = (n: MathJson | undefined): boolean =>
   n === undefined || n === 'Nothing' || isHead(n, 'Error');
 
-// CE constant names -> nerdamer's spelling. Everything else stays a
-// symbol name (a bare `EulerGamma` interim row beats dropping it).
-const CONSTANTS: Record<string, string> = {
-  Pi: 'pi',
-  ExponentialE: 'e',
-  ImaginaryUnit: 'i',
-  PositiveInfinity: 'Infinity',
-  NegativeInfinity: '-Infinity',
-};
+// CE constant names -> nerdamer's spelling (the registry's `nerdamer`
+// field). Everything else stays a symbol name — a bare `EulerGamma`
+// interim row beats dropping it.
+const CONSTANTS = NERDAMER_CONSTANTS;
 
-// Function heads -> nerdamer function names. Heads not listed fall to
-// `null` (the statement retries via `leaf`).
-const FUNCS: Record<string, string> = {
-  Sqrt: 'sqrt',
-  Abs: 'abs',
-  Sign: 'sign',
-  Floor: 'floor',
-  Ceil: 'ceil',
-  Factorial: 'factorial',
-  Gamma: 'gamma',
-  Min: 'min',
-  Max: 'max',
-  Minimum: 'min',
-  Maximum: 'max',
-  Exp: 'exp',
-  Ln: 'log',
-  GCD: 'gcd',
-  LCM: 'lcm',
-  Mod: 'mod',
-  Sin: 'sin', Cos: 'cos', Tan: 'tan',
-  Sec: 'sec', Csc: 'csc', Cot: 'cot',
-  Sinh: 'sinh', Cosh: 'cosh', Tanh: 'tanh',
-  Coth: 'coth', Sech: 'sech', Csch: 'csch',
-  Arcsin: 'asin', Arccos: 'acos', Arctan: 'atan',
-  Arcsec: 'asec', Arccsc: 'acsc', Arccot: 'acot',
-  Arcsinh: 'asinh', Arccosh: 'acosh', Arctanh: 'atanh',
-  Conjugate: 'conjugate',
-  Re: 'realpart', Im: 'imagpart', Arg: 'arg',
-  Real: 'realpart', Imaginary: 'imagpart', Argument: 'arg',
-};
+// Function heads -> nerdamer function names (registry `nerdamer`
+// field). Heads not listed fall to `null` (the statement retries via
+// `leaf`).
+const FUNCS = NERDAMER_FUNCS;
 
-// \sin^{-1}(x)-style Apply callees — nerdamer's inverse names.
-const INVERSE_FUNCS: Record<string, string> = {
-  Sin: 'asin', Cos: 'acos', Tan: 'atan',
-  Sec: 'asec', Csc: 'acsc', Cot: 'acot',
-  Sinh: 'asinh', Cosh: 'acosh', Tanh: 'atanh',
-  Coth: 'acoth', Sech: 'asech', Csch: 'acsch',
-};
+// \sin^{-1}(x)-style Apply callees — nerdamer's inverse names
+// (registry `nerdamerInverse` field).
+const INVERSE_FUNCS = NERDAMER_INVERSE_FUNCS;
 
 // A symbol name as a nerdamer identifier — prime ticks and subscript
 // braces aren't legal there (x' -> x_prime, x_{n+1} -> x_n_1).

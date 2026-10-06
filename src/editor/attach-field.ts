@@ -8,6 +8,7 @@ import { outputLatex } from '../compile/latex';
 import { attachAutocompleteMenu } from './ac-menu';
 import { attachSymbolPicker } from './ac-picker';
 import { readHelpContext, type HelpContext } from './context-help';
+import { SMART_AUTO_COMMANDS } from './smart-commands';
 
 export interface FieldCallbacks {
   onChange: (latex: string) => void;
@@ -36,9 +37,6 @@ export interface FieldHandle {
   lineAnchors: () => { top: number; height: number; right: number }[];
   dispose: () => void;
 }
-
-const SMART_AUTO_COMMANDS =
-  'int iint antid sum sqrt prod lim pi infty theta derivative def';
 
 // "Only one blank line": an empty field, or a lone \displaylines wrap
 // around nothing (what a single Enter-then-blank line serializes as) —

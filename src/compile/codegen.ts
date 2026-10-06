@@ -18,6 +18,21 @@
 import type { Issue, MathJson, NormResult } from './ir';
 import { isDiffMark, normalizeIR, unquote } from './ir';
 import { CALC_RUNTIME_PY } from './calc-runtime';
+// The name tables below are derived views over the notation registry —
+// each name lives once in src/compile/notation.ts.
+import {
+  CALL_RENAMES,
+  CE_DISPLAY_NAMES,
+  CONSTANTS,
+  INVERSE_FUNCS,
+  LEAF_SETS,
+  MATRIX_METHODS,
+  SET_CONSTRAINTS,
+  SETISH_SYMBOLS,
+  SP_BUILTIN_CALL,
+  SP_FUNCS,
+  SP_FUNC_MIN_ARGS,
+} from './notation';
 
 export interface CellInput {
   json?: MathJson;
@@ -82,83 +97,6 @@ function pyIdent(name: string): string {
   return out;
 }
 
-// CE constants -> SymPy names (unqualified — the `sp.` prefix is applied
-// per-emission via the emitter's `sp` getter so `from sympy import *`
-// mode emits bare names). `True`/`False` are Python builtins and stay
-// unqualified in both modes.
-const CONSTANTS: Record<string, string> = {
-  Pi: 'pi',
-  ExponentialE: 'E',
-  ImaginaryUnit: 'I',
-  PositiveInfinity: 'oo',
-  NegativeInfinity: '-oo',
-  EulerGamma: 'EulerGamma',
-  CatalansConstant: 'Catalan',
-  GoldenRatio: 'GoldenRatio',
-  EmptySet: 'EmptySet',
-  // \mathbb{...} number sets — CE symbol names -> the S.* set objects.
-  // 'Primes' (\mathbb{P}) and 'PositiveNumbers' (\mathbb{R}_+) have no
-  // S.* constant — they're special-cased in `inner` to emit
-  // ConditionSet/Interval.open expressions instead.
-  RealNumbers: 'S.Reals',
-  ComplexNumbers: 'S.Complexes',
-  RationalNumbers: 'S.Rationals',
-  Integers: 'S.Integers',
-  NonNegativeIntegers: 'S.Naturals0',
-  PositiveIntegers: 'S.Naturals',
-  True: 'True',
-  False: 'False',
-};
-
-// \mathbb{S}^{+/-/_+/_-}-style leaf sets CE emits as plain symbol names
-// (CONSTANTS can only hold one-segment S.* names — these are intervals
-// or integer intersections). Templates are functions of the `sp.`
-// qualifier so names can't drift out of qualification.
-const LEAF_SETS: Record<string, (sp: string) => string> = {
-  PositiveNumbers: (sp) => `${sp}Interval.open(0, ${sp}oo)`,
-  NegativeNumbers: (sp) => `${sp}Interval.open(-${sp}oo, 0)`,
-  NonNegativeNumbers: (sp) => `${sp}Interval(0, ${sp}oo)`,
-  NonPositiveNumbers: (sp) => `${sp}Interval(-${sp}oo, 0)`,
-  PositiveIntegers: (sp) => `${sp}S.Naturals`,
-  NonNegativeIntegers: (sp) => `${sp}S.Naturals0`,
-  NegativeIntegers: (sp) =>
-    `${sp}Intersection(${sp}S.Integers, ${sp}Interval.open(-${sp}oo, 0))`,
-  NonPositiveIntegers: (sp) =>
-    `${sp}Intersection(${sp}S.Integers, ${sp}Interval(-${sp}oo, 0))`,
-};
-
-// Known function heads -> the SymPy function name to call.
-const SP_FUNCS: Record<string, string> = {
-  Sqrt: 'sqrt',
-  Root: 'root',
-  Abs: 'Abs',
-  Sign: 'sign',
-  Floor: 'floor',
-  Ceil: 'ceiling',
-  Min: 'Min',
-  Max: 'Max',
-  Factorial: 'factorial',
-  Gamma: 'gamma',
-  Binomial: 'binomial',
-  GCD: 'gcd',
-  LCM: 'lcm',
-  Mod: 'Mod',
-  Exp: 'exp',
-  Ln: 'log',
-  Sin: 'sin', Cos: 'cos', Tan: 'tan',
-  Sec: 'sec', Csc: 'csc', Cot: 'cot',
-  Sinh: 'sinh', Cosh: 'cosh', Tanh: 'tanh',
-  Coth: 'coth', Sech: 'sech', Csch: 'csch',
-  Arcsin: 'asin', Arccos: 'acos', Arctan: 'atan',
-  Arcsec: 'asec', Arccsc: 'acsc', Arccot: 'acot',
-  Arcsinh: 'asinh', Arccosh: 'acosh', Arctanh: 'atanh',
-  Conjugate: 'conjugate', Re: 're', Im: 'im', Arg: 'arg',
-  // `\Re`/`\Im`/`\arg`/`\operatorname{erf}` parse to these CE heads —
-  // `sp.Real`/`sp.Imaginary`/`sp.Argument`/`sp.Erf` don't exist and
-  // each produced a 'has no attribute' error row.
-  Real: 're', Imaginary: 'im', Argument: 'arg', Erf: 'erf',
-};
-
 // Statement-position heads that only lower to Python.
 const STATEMENT_HEADS = new Set([
   'Assign', 'Def', 'Declare', 'Block', 'WhereBlock', 'Which', 'Piecewise',
@@ -168,57 +106,6 @@ const CMP_NESTABLE_HEADS = new Set([
 ]);
 const STATEMENT_CALL_HEADS = new Set(['solve', 'Solve', 'piecewise', 'Piecewise']);
 
-// `call` heads that are real SymPy functions — keep emitting `sp.<name>`
-// for them. Every other applied unknown name (f(x), \operatorname{foo}(x))
-// becomes a worksheet Function def instead: `sp.f(x)` raised
-// AttributeError ('module sympy has no attribute f') at eval time.
-const SP_BUILTIN_CALL = new Set(
-  (
-    'erf erfc erfi erfinv erfcinv Ei expint Si Ci Shi Chi li Li zeta ' +
-    'lerchphi polylog digamma trigamma polygamma loggamma beta betainc ' +
-    'lowergamma uppergamma LambertW besselj bessely besseli besselk ' +
-    'hankel1 hankel2 jn yn airyai airybi airyaiprime airybiprime ' +
-    'marcumq fresnels fresnelc hyper meijerg appellf1 legendre ' +
-    'assoc_legendre hermite hermite_prob chebyshevt chebyshevu ' +
-    'gegenbauer jacobi laguerre assoc_laguerre fibonacci lucas ' +
-    'tribonacci bernoulli euler bell catalan harmonic genocchi ' +
-    'partition primepi mobius totient reduced_totient divisor_sigma ' +
-    'nextprime prevprime prime isprime factorint divisors ' +
-    'divisor_count proper_divisor_count primefactors integer_nthroot ' +
-    'cbrt gcdex ' +
-    'legendre_symbol jacobi_symbol kronecker_symbol rf ff factorial2 ' +
-    'subfactorial Piecewise ' +
-    'sign ceiling conjugate arg re im ' +
-    'gcd lcm binomial sqrt floor factorial ' +
-    'asinh acosh atanh acoth asech acsch ' +
-    'solve solveset linsolve nonlinsolve simplify factor expand cancel ' +
-    'collect apart together trigsimp expand_trig powsimp nsimplify ' +
-    'radsimp ratsimp fraction limit series residue solve_linear ' +
-    'diff integrate summation product '
-  ).split(' '),
-);
-
-// Minimum arity for SP_FUNCS entries — a lone `\gcd(10)` or `a\bmod`
-// otherwise emits a call SymPy raises TypeError on at eval time.
-const SP_FUNC_MIN_ARGS: Record<string, number> = {
-  gcd: 2,
-  lcm: 2,
-  Mod: 2,
-  binomial: 2,
-  root: 1,
-  Min: 1,
-  Max: 1,
-};
-
-// Nodes that provably emit a SymPy Set — used to gate Element/Union/
-// Complement emission (those raise TypeError on plain Symbols).
-const SETISH_SYMBOLS = new Set([
-  'EmptySet', 'RealNumbers', 'ComplexNumbers', 'RationalNumbers',
-  'Integers', 'NonNegativeIntegers', 'NonPositiveIntegers',
-  'PositiveIntegers', 'NegativeIntegers', 'Primes',
-  'PositiveNumbers', 'NegativeNumbers',
-  'NonNegativeNumbers', 'NonPositiveNumbers',
-]);
 // Set-valued operator heads — setish only when every operand is too
 // (Subsets/Supersets are predicates, not sets, so they don't appear here).
 const SETISH_OP_HEADS = new Set([
@@ -235,77 +122,6 @@ const BOOLISH_HEADS = new Set([
   'NotSupersetNotEqual', 'And', 'Or', 'Not', 'Xor', 'Implies',
   'Equivalent',
 ]);
-
-// Domain a leaf membership implies for its symbol: `x \in \mathbb{R}`
-// constructs `x = Symbol('x', real=True)` when x is first defined.
-// `kwargs` go to the Symbol constructor, `preds` are the Q-predicate
-// names for a `with assuming(...)` block (compound sets only — leaf
-// sets don't need one once the Symbol carries the assumption).
-const SET_CONSTRAINTS: Record<string, { kwargs: string[]; preds: string[] }> = {
-  RealNumbers: { kwargs: ['real=True'], preds: ['real'] },
-  ComplexNumbers: { kwargs: ['complex=True'], preds: ['complex'] },
-  RationalNumbers: { kwargs: ['rational=True'], preds: ['rational'] },
-  Integers: { kwargs: ['integer=True'], preds: ['integer'] },
-  NonNegativeIntegers: {
-    kwargs: ['integer=True', 'nonnegative=True'],
-    preds: ['integer', 'nonnegative'],
-  },
-  Primes: { kwargs: ['prime=True'], preds: ['prime'] },
-  PositiveIntegers: {
-    kwargs: ['integer=True', 'positive=True'],
-    preds: ['integer', 'positive'],
-  },
-  PositiveNumbers: {
-    kwargs: ['positive=True'],
-    preds: ['positive'],
-  },
-};
-
-// CE head names that exist in SymPy under a different spelling —
-// `call` resolves these to `sp.<mapped>` rather than a declared
-// worksheet function.
-const CALL_RENAMES: Record<string, string> = {
-  Factorial2: 'factorial2',
-  Set: 'FiniteSet',
-  Erf: 'erf',
-  Erfc: 'erfc',
-  // CE emits these heads that SymPy has lowercase/different spellings
-  // for — \overline{z} (Conjugate), \Re/\Im/\arg (Real/Imaginary/
-  // Argument), x^* (Superstar, the conjugate/adjoint). The lowercase
-  // \operatorname{im} is deliberately NOT renamed: "im" is the image
-  // of a function, not sp.im.
-  Conjugate: 'conjugate',
-  Re: 're',
-  Im: 'im',
-  Arg: 'arg',
-  Real: 're',
-  Imaginary: 'im',
-  Argument: 'arg',
-  Superstar: 'Adjoint',
-  // \operatorname{arsinh} etc. — CE calls these Arsinh/… but sympy's
-  // are a-prefixed; the bare name displays `Arsinh(x)` unevaluated.
-  Arsinh: 'asinh', Arcosh: 'acosh', Artanh: 'atanh',
-  Arcsinh: 'asinh', Arccosh: 'acosh', Arctanh: 'atanh',
-  // Combinatorics/number-theory operator notations with exactly one
-  // reading: \operatorname{nCk}(n,k) = C(n,k), nPr/perm = P(n,k) =
-  // falling factorial, π(n) = the prime-counting function. Bare Greek
-  // letters (σ(x), μ(n)…) stay Function stubs — they can be user-
-  // defined functions, not necessarily the arithmetic functions.
-  nCk: 'binomial',
-  nCr: 'binomial',
-  nPr: 'ff',
-  perm: 'ff',
-  Pi: 'primepi',
-};
-
-// \sin^{-1}(x) etc.: CE wraps the base name as ['InverseFunction', 'Sin'].
-const INVERSE_FUNCS: Record<string, string> = {
-  Sin: 'asin', Cos: 'acos', Tan: 'atan',
-  Sec: 'asec', Csc: 'acsc', Cot: 'acot',
-  Sinh: 'asinh', Cosh: 'acosh', Tanh: 'atanh',
-  Coth: 'acoth', Sech: 'asech', Csch: 'acsch',
-  Exp: 'log', Ln: 'exp', Log: 'exp',
-};
 
 interface Scope {
   /** `import sympy as sp` mode: emit `sp.` qualifiers. With
@@ -386,20 +202,6 @@ interface Scope {
 }
 
 const isArr = (v: MathJson | undefined): v is MathJson[] => Array.isArray(v);
-// Matrix word ops emitted as method calls (`\mathrm{trace}(A)` ->
-// `(A).trace()`); CE may capitalize `tr` -> `Trace`.
-const MATRIX_METHODS: Record<string, string> = {
-  trace: 'trace()',
-  Trace: 'trace()',
-  tr: 'trace()',
-  rank: 'rank()',
-  eigenvals: 'eigenvals()',
-  eigenvects: 'eigenvects()',
-  inverse: 'inv()',
-  transpose: 'T',
-  norm: 'norm()',
-};
-
 const isStr = (v: MathJson | undefined): v is string => typeof v === 'string';
 const headOf = (v: MathJson | undefined): string | undefined =>
   isArr(v) && isStr(v[0]) ? v[0] : undefined;
@@ -472,33 +274,6 @@ const stripZeroSuffix = (s: string): string | undefined =>
     : s.endsWith('_0')
       ? s.slice(0, -2)
       : undefined;
-
-// CE leaf names that don't print like the latex the user typed —
-// `\varepsilon` mints `Symbol("epsilonSymbol")`, showing the word
-// "epsilonSymbol". Map to a latex name the printer renders as the
-// intended glyph.
-const CE_DISPLAY_NAMES: Record<string, string> = {
-  epsilonSymbol: '\\varepsilon',
-  finalSigma: '\\varsigma',
-  piSymbol: '\\varpi',
-  thetaSymbol: '\\vartheta',
-  rhoSymbol: '\\varrho',
-  kappaSymbol: '\\varkappa',
-  digamma: '\\digamma',
-  ell: '\\ell',
-  // `hbar` not `\hbar` — sympy's printer knows the name and emits
-  // `\hbar`; a literal `\hbar` name is accent-split to `\bar{\h}`.
-  hBar: 'hbar',
-  bet: '\\beth',
-  gimel: '\\gimel',
-  daleth: '\\daleth',
-  aleph: '\\aleph',
-  weierstrass: '\\wp',
-  // \Re/\Im alone — as leaves these are set names, not the function
-  // heads re()/im() they spell when called.
-  Real: '\\Re',
-  Imaginary: '\\Im',
-};
 
 // Python precedence levels for parenthesization.
 const PREC_LOW = 0; // expression statements, call args

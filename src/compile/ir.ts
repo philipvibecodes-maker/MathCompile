@@ -19,6 +19,15 @@
 
 import { ComputeEngine } from '@cortex-js/compute-engine';
 import { outputLatex } from './latex';
+// The name tables below are derived views over the notation registry —
+// each name lives once in src/compile/notation.ts.
+import {
+  CALL_RENAMED,
+  CE_CONSTANTS,
+  KNOWN_HEADS,
+  MATRIX_WORD_OPS,
+  SET_LEAF,
+} from './notation';
 
 // MathJSON is untyped JSON: head arrays, bare symbol strings, numbers, and
 // occasional `{num: "..."}` / `{str: "..."}` wrappers.
@@ -286,59 +295,6 @@ export function parseCellLatex(latex: string): MathJson | undefined {
   return tagged.length === 1 ? tagged[0] : (['Block', ...tagged] as MathJson);
 }
 
-// Heads the normalizer understands and passes through (children still get
-// normalized). Anything else becomes `['call', head, ...]` so codegen emits
-// `sp.<head>(...)` — the escape hatch that keeps users unblocked by CE
-// vocabulary gaps.
-const KNOWN_HEADS = new Set([
-  // arithmetic / algebra
-  'Add', 'Multiply', 'Divide', 'Negate', 'Power', 'Sqrt', 'Root',
-  'Rational', 'Complex', 'Abs', 'Sign', 'Floor', 'Ceil', 'Min', 'Max',
-  'Norm', 'Divides',
-  'Exp', 'Ln', 'Log', 'Factorial', 'Gamma', 'Binomial', 'GCD', 'LCM', 'Mod',
-  'Lb', 'Lg',
-  // trigonometric
-  'Sin', 'Cos', 'Tan', 'Sec', 'Csc', 'Cot',
-  'Sinh', 'Cosh', 'Tanh', 'Coth', 'Sech', 'Csch',
-  'Arcsin', 'Arccos', 'Arctan', 'Arcsec', 'Arccsc', 'Arccot',
-  'Arcsinh', 'Arccosh', 'Arctanh',
-  // functions CE emits with different names than the codegen map
-  'Conjugate', 'Real', 'Imaginary', 'Argument', 'Erf', 'Zeta',
-  // calculus
-  'D', 'Derivative', 'Apply', 'Integrate', 'Sum', 'Product', 'Limit',
-  'Prime', 'EvaluateAt', 'InverseFunction',
-  // linear algebra
-  'Matrix', 'Determinant', 'Transpose', 'ConjugateTranspose', 'Inverse',
-  // relations / logic / piecewise
-  'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
-  'NotLess', 'NotGreater', 'NotLessEqual', 'NotGreaterEqual', 'NotDivides',
-  'Implies', 'Equivalent', 'IdenticallyEqual', 'Degrees',
-  'Minimum', 'Maximum', 'Interval', 'Open', 'IntegerRange',
-  // set operators — codegen emits real SymPy when operands are set-like,
-  // and the same flagged Function stub as before otherwise.
-  'Element', 'NotElement', 'Union', 'Intersection', 'SetMinus',
-  'Subset', 'SubsetEqual', 'Superset', 'SupersetEqual',
-  'NotSubset', 'NotSubsetNotEqual', 'NotSuperset', 'NotSupersetNotEqual',
-  'And', 'Or', 'Not', 'Which', 'Piecewise',
-  // sets
-  'Set', 'Condition', 'Congruent',
-  'Complement',
-  'Difference',
-  // statement-level IR
-  'Assign', 'Def', 'Declare', 'Block', 'WhereBlock', 'Function',
-  // structural helpers
-  'Limits', 'Tuple', 'List', 'Subscript', 'Delimiters', 'Error',
-  // 'Set' reaches codegen directly (FiniteSet / ConditionSet / ImageSet
-  // lowering) and 'Condition' is its predicate child. 'call' marks a node
-  // already escaped by this pass — without it a nested g(f(x)) re-wraps
-  // into ['call', 'call', ...].
-  'Set', 'Condition', 'call',
-  // MatrixMethod lowers `trace(A)`-style word applications on a matrix
-  // literal (CE fuses `\mathrm{trace}(M)` into Multiply or an
-  // InvisibleOperator call) to `(<matrix>).trace()` in codegen.
-  'MatrixMethod',
-]);
-
 // CE string literals arrive as "'text'" (e.g. \text{...}); `unquote`
 // returns the inner text, or undefined for non-literals.
 export const unquote = (s: string): string | undefined =>
@@ -347,19 +303,6 @@ export const unquote = (s: string): string | undefined =>
     : undefined;
 const isTextLiteral = (v: MathJson): v is string =>
   isString(v) && unquote(v) !== undefined;
-
-// Words that read as matrix operations when juxtaposed with a matrix
-// literal: `\mathrm{trace}(A)` etc. — codegen lowers them to method
-// calls on the emitted Matrix.
-const MATRIX_WORD_OPS = new Set([
-  'trace',
-  'rank',
-  'eigenvals',
-  'eigenvects',
-  'inverse',
-  'transpose',
-  'norm',
-]);
 
 // CE marks unparseable atoms as the *quoted* symbol 'unexpected-command'
 // (a string literal), e.g. `['Power', "'unexpected-command'", LatexString]
@@ -558,22 +501,6 @@ const REL_CHAIN = new Set([
   'NotEqual',
 ]);
 
-// Set leaf names that Superplus/Superminus may decorate — S^{+}/S^{-}
-// for a standard set maps to the positive/negative half.
-const SET_LEAF = new Set([
-  'RealNumbers',
-  'RationalNumbers',
-  'Integers',
-  'Naturals',
-  'ComplexNumbers',
-  'AlgebraicNumbers',
-  'ImaginaryNumbers',
-  'PositiveNumbers',
-  'PositiveIntegers',
-  'NonNegativeIntegers',
-  'Primes',
-]);
-
 // Linearize a (possibly nested/mixed) relation chain into parallel
 // (ops, operands) lists: ops[i] relates args[i] and args[i+1]. A nested
 // chain operand contributes its own pairs; the op between an operand
@@ -653,98 +580,6 @@ function underVarDomain(under: MathJson): { v: MathJson; domain?: MathJson } {
   }
   return { v: under };
 }
-
-// Unknown-head names codegen's CALL_RENAMES maps onto real SymPy
-// functions — they still become `call` nodes, but without the "unknown
-// head" note (mirrors codegen.ts's table).
-const CALL_RENAMED = new Set([
-  'Factorial2',
-  'Erf',
-  'Erfc',
-  'Conjugate',
-  'Re',
-  'Im',
-  'Arg',
-  'Real',
-  'Imaginary',
-  'Argument',
-  'Superstar',
-  'Congruent',
-  'nCk',
-  'nCr',
-  'nPr',
-  'perm',
-  'Pi',
-  'Trace',
-  'trace',
-  'tr',
-  'rank',
-  'eigenvals',
-  'eigenvects',
-  'inverse',
-  'transpose',
-  'norm',
-  // Codegen's `call`-tier name branches (compositions, quantifier stubs,
-  // set/pseudoinverse superscripts, greek/operator aliases) — all real
-  // emissions or self-flagged degradations, not unknown heads.
-  'Ring',
-  'GoldenRatio',
-  'Mean',
-  'ForAll',
-  'Exists',
-  'Comprehension',
-  'PseudoInverse',
-  'Superminus',
-  'Superplus',
-  'KroneckerDelta',
-  'Arsinh',
-  'Arcosh',
-  'Artanh',
-  'Arcsinh',
-  'Arccosh',
-  'Arctanh',
-  'diff',
-  'integrate',
-  'summation',
-  'product',
-  // The lowercase names codegen's SP_BUILTIN_CALL table maps — mirrors
-  // codegen.ts (kept in sync manually; \operatorname{erf}/solve/... get
-  // here as call heads too).
-  ...(
-    'erf erfc erfi erfinv erfcinv Ei expint Si Ci Shi Chi li Li zeta ' +
-    'lerchphi polylog digamma trigamma polygamma loggamma beta betainc ' +
-    'lowergamma uppergamma LambertW besselj bessely besseli besselk ' +
-    'hankel1 hankel2 jn yn airyai airybi airyaiprime airybiprime ' +
-    'marcumq fresnels fresnelc hyper meijerg appellf1 legendre ' +
-    'assoc_legendre hermite hermite_prob chebyshevt chebyshevu ' +
-    'gegenbauer jacobi laguerre assoc_laguerre fibonacci lucas ' +
-    'tribonacci bernoulli euler bell catalan harmonic genocchi ' +
-    'partition primepi mobius totient reduced_totient divisor_sigma ' +
-    'nextprime prevprime prime isprime factorint divisors ' +
-    'divisor_count proper_divisor_count primefactors integer_nthroot ' +
-    'cbrt gcdex trace ' +
-    'legendre_symbol jacobi_symbol kronecker_symbol rf ff factorial2 ' +
-    'subfactorial Piecewise ' +
-    'sign ceiling conjugate arg re im ' +
-    'gcd lcm binomial sqrt floor factorial ' +
-    'solve solveset linsolve nonlinsolve simplify factor expand cancel ' +
-    'collect apart together trigsimp expand_trig powsimp nsimplify ' +
-    'radsimp ratsimp fraction limit series residue solve_linear'
-  ).split(' '),
-]);
-
-// CE constant names — `i` beside one of these (or a number) is the
-// imaginary unit, not a symbol (`e^{i\pi}`, `\pi i`); `xi` stays a symbol.
-const CE_CONSTANTS = new Set([
-  'Pi',
-  'ExponentialE',
-  'GoldenRatio',
-  'EulerGamma',
-  'CatalansConstant',
-  'PositiveInfinity',
-  'NegativeInfinity',
-  'ImaginaryUnit',
-]);
 
 // a = b = c arrives right-nested as Equal(a, Equal(b, c)); flatten into a
 // multi-arg Equal so codegen sees the chained-relation shape (sp.And of
