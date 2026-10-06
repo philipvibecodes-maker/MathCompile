@@ -50,7 +50,7 @@ src/
                           calcEngine status rune
     calculator.worker.ts  Pyodide + SymPy in a classic worker; exec/evals
                           the emitted program (mc_run)
-    nerdamer-latex.ts     latex -> nerdamer calls (interim engine)
+    nerdamer-emit.ts      normalized IR -> nerdamer input (interim engine)
     python-highlight.ts   tiny tokenizer for the generating-code block
   editor/
     mathquill.ts      imports the vendored build + CSS; exports mq3 + types

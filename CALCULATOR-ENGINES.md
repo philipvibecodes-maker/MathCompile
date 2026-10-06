@@ -11,8 +11,9 @@ cell's results: **SymPy on Pyodide** (authoritative, ~4s cold boot) and
   Pyodide + SymPy; owns `mc_run`.
 - `src/calc/calculator.svelte.ts` — `evaluate()` (real engine),
   `interimEvaluate()` (nerdamer), `prewarm()`, `calcEngine` status rune.
-- `src/calc/nerdamer-latex.ts` — LaTeX → nerdamer-call translator (the
-  piece that makes the interim engine do real calculus).
+- `src/calc/nerdamer-emit.ts` — normalized-IR → nerdamer-input emitter
+  (the piece that makes the interim engine do real calculus; it reads
+  the same normalized IR the SymPy codegen does).
 - `src/components/CalcOutput.svelte` — per-cell output; fires
   `interimEvaluate` while `calcEngine.status !== 'ready'`, `evaluate`
   always; interim rows render dimmed via `.pending` and tagged
@@ -111,7 +112,10 @@ engine is ready. Never in the main bundle.
 `convertFromLaTeX` alone handles arithmetic/algebra/powers/roots/
 fractions (e.g. `x+\sqrt{2}` → `\sqrt{2}+x`). It **throws** on `\int`,
 `\sum`, `\prod`, `\lim`, `\binom`, `\sqrt[n]`, and malformed input —
-those were mapped to nerdamer's real CAS calls in `nerdamer-latex.ts`:
+those go through the shared pipeline instead: each statement parses +
+normalizes like the SymPy path, and `nerdamer-emit.ts` emits nerdamer's
+real CAS calls from the IR (`leaf`, a `convertFromLaTeX` fallback,
+covers only statements the emitter returns null for):
 
 | LaTeX | nerdamer call | interim result |
 |---|---|---|
@@ -137,10 +141,10 @@ row-per-statement shape so results swap in place. First row lands in
   MathQuill renders bounds under/over anyway.
 - **Trailing `=` / `\to` break `convertFromLaTeX`** — leaf fallback
   strips `{}` and returns raw (`2^{n}=…` survives as `2^n=…`).
-- **Splicing bug shape**: a translated command's `after` text must keep
-  a leading operator verbatim — feeding `+\sqrt{2}` to
-  `convertFromLaTeX` eats the unary `+` (`∛x + √2` → `∛x·√2`). The
-  translator's `START_OP`/`END_OP` joiners exist because of this.
+- **No splicing**: a statement the emitter can't cover falls back to
+  `convertFromLaTeX` on its *whole* latex — partial translation never
+  mixes engines, so the old splice-the-`after`-text bug shape (a unary
+  `+` eaten by `convertFromLaTeX`) can't occur.
 - Interim unknowns are silent: any throw → `[]` → cell stays dimmed/
   empty until SymPy lands. That failure mode is intentional — never
   show a guess as a real result. (Real-engine errors *are* shown:

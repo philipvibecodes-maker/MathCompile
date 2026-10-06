@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import nerdamer from 'nerdamer/all';
 import { compileCellForCalc, compileCellsForCalc } from '../compile/codegen';
-import { parseCellLatex } from '../compile/ir';
-import { toNerdamerInput } from './nerdamer-latex';
+import { normalizeIR, parseCellLatex } from '../compile/ir';
+import { interimConstNames, irToNerdamer } from './nerdamer-emit';
 import { interimEvaluate } from './calculator.svelte.ts';
 
-const toN = (s: string) => toNerdamerInput(s, nerdamer);
+// latex statement -> nerdamer input through the shared pipeline —
+// '' is a poisoned row, null falls back to nerdamer's latex reader.
+const toN = (s: string) => {
+  const norm = normalizeIR(parseCellLatex(s));
+  return norm.ir === undefined
+    ? null
+    : irToNerdamer(norm.ir, interimConstNames(norm.ir));
+};
 const calc = (latex: string) => compileCellForCalc({ json: parseCellLatex(latex) });
 const calcAll = (...latexs: string[]) =>
   compileCellsForCalc(latexs.map((latex) => ({ json: parseCellLatex(latex) })));
@@ -897,9 +903,9 @@ describe('compileCellsForCalc (worksheet cells share one scope)', () => {
   });
 });
 
-describe('toNerdamerInput (latex → nerdamer calls)', () => {
-  it('passes plain algebra through convertFromLaTeX', () => {
-    expect(toN('x+1')).toBe('1+x');
+describe('irToNerdamer (normalized IR → nerdamer input)', () => {
+  it('emits plain algebra in written order', () => {
+    expect(toN('x+1')).toBe('x+1');
   });
 
   it('maps a definite integral to defint', () => {
@@ -930,8 +936,10 @@ describe('toNerdamerInput (latex → nerdamer calls)', () => {
   });
 
   it('expands \\binom into factorials', () => {
+    // The factorial expansion self-wraps so it stays atomic under
+    // division/power.
     expect(toN('\\binom{n}{k}')).toBe(
-      'factorial(n)/(factorial(k)*factorial(n-k))',
+      '(factorial(n)/(factorial(k)*factorial(n-k)))',
     );
   });
 
@@ -941,14 +949,15 @@ describe('toNerdamerInput (latex → nerdamer calls)', () => {
 
   it("keeps an equation's lhs before a translated command", () => {
     expect(toN('2^{n}=\\sum_{i=0}^{n}\\binom{i}{n}')).toBe(
-      '2^n=sum(factorial(i)/(factorial(n)*factorial(i-n)), i, 0, n)',
+      '2^n = sum((factorial(i)/(factorial(n)*factorial(i-n))), i, 0, n)',
     );
   });
 
   it('keeps a leading operator after a translated command verbatim', () => {
-    // `+m` after the \binom match — rec() would eat the unary +.
+    // `+m` is a top-level Add term — the binomial stays inside its own
+    // Multiply factor.
     expect(toN('n\\binom{n}{k}+m')).toBe(
-      'n*factorial(n)/(factorial(k)*factorial(n-k))+m',
+      'n*(factorial(n)/(factorial(k)*factorial(n-k)))+m',
     );
   });
   it('reads a bare prime as a primed variable name', () => {
@@ -1038,6 +1047,18 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
     expect((rows[0] as { latex?: string }).latex).toBe('2 \\cdot x');
   });
 
+  it('evaluates a boundless \\iint as an iterated integrate', async () => {
+    // CE parses \iint natively — the `d v` pairs park on the Integrate
+    // body and the emitter nests an integrate per level, +C each.
+    const rows = await interimEvaluate('\\iint x\\,dx\\,dy');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].ok).toBe(true);
+    const latex = (rows[0] as { latex?: string }).latex ?? '';
+    expect(latex).toContain('x^{2}');
+    expect(latex).toContain('C');
+    expect(latex).toContain('D');
+  });
+
   it('keeps the one-row-per-statement shape of the real engine', async () => {
     const rows = await interimEvaluate('1+1\\\\ 2+3');
     expect(rows).toEqual([
@@ -1072,6 +1093,54 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
 
   it('returns [] for empty input', async () => {
     expect(await interimEvaluate('')).toEqual([]);
+  });
+
+  it('groups power bases — (2^3)^2 is 64, -2^2 squares the group', async () => {
+    expect((await interimEvaluate('\\left(2^3\\right)^2'))[0])
+      .toEqual({ ok: true, latex: '64' });
+    expect((await interimEvaluate('\\left(-2\\right)^{2}'))[0])
+      .toEqual({ ok: true, latex: '4' });
+  });
+
+  it('evaluates \\log like codegen — base 10', async () => {
+    // nerdamer spells the base-10 default as the change-of-base
+    // quotient (symbolic — it doesn't simplify it to 2).
+    const latex = (await interimEvaluate('\\log(100)'))[0] as { latex?: string };
+    expect(latex.latex).toBe(
+      '\\frac{\\mathrm{log}\\left(100\\right)}{\\mathrm{log}\\left(10\\right)}',
+    );
+  });
+
+  it('keeps the binomial quotient atomic under division', async () => {
+    // nerdamer flips the reciprocal — (2!·3!)/5! is still 1/10, not
+    // the old 1/1440.
+    const latex = (await interimEvaluate('1/\\binom{5}{2}'))[0] as { latex?: string };
+    expect(latex.latex).toBe('\\frac{2! \\cdot 3!}{5!}');
+  });
+
+  it('shows no interim for extrema over a bound variable', async () => {
+    // min(body, x) would compare the wrong operands — no row is better.
+    expect(await interimEvaluate('\\min_{x}x^2')).toEqual([]);
+    expect(await interimEvaluate('\\max_{x}x^2')).toEqual([]);
+  });
+
+  it('shows no interim for one-sided limits', async () => {
+    // nerdamer has no direction arg; a two-sided guess at a
+    // discontinuity would contradict the real engine.
+    expect(await interimEvaluate('\\lim_{x\\to 0^{-}}\\frac{1}{x}')).toEqual([]);
+    expect(await interimEvaluate('\\lim_{x\\to 0^{+}}\\frac{1}{x}')).toEqual([]);
+  });
+
+  it('reserves declared names from cells above for + C letters', async () => {
+    // With `C = 7` bound above, the real engine picks D for the
+    // constant of integration — interim must match.
+    const rows = await interimEvaluate('\\int x dx', ['C = 7']);
+    const latex = (rows[0] as { latex?: string }).latex ?? '';
+    expect(latex).toContain('D');
+    expect(latex).not.toContain('C');
+    // Unrelated names don't reserve letters.
+    const rows2 = await interimEvaluate('\\int x dx', ['a = 7']);
+    expect((rows2[0] as { latex?: string }).latex ?? '').toContain('C');
   });
 });
 

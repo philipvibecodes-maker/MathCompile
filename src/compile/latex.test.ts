@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { copyableLatex, displayLatex, outputLatex } from './latex';
+import { copyableLatex, displayLatex, LATEX_RULES, outputLatex } from './latex';
 
 describe('outputLatex', () => {
   it('returns single-line latex unchanged', () => {
@@ -89,5 +89,30 @@ describe('displayLatex', () => {
     expect(displayLatex('\\displaylines{\\iint x\\\\ \\antid y}')).toBe(
       '\\iint x\\\\\n\\int y',
     );
+  });
+});
+
+describe('LATEX_RULES', () => {
+  for (const rule of LATEX_RULES) {
+    describe(rule.name, () => {
+      // The why is the contract for deleting the rule — require it so a
+      // name-less, reason-less rule can't slip in.
+      it('documents its decision', () => {
+        expect(rule.why.length).toBeGreaterThan(0);
+      });
+      for (const [input, expected] of rule.tests) {
+        it(`${JSON.stringify(input)}`, () => {
+          expect(rule.rewrite(input)).toBe(expected);
+        });
+      }
+    });
+  }
+
+  it('rules have unique names and non-global applies gates', () => {
+    expect(new Set(LATEX_RULES.map((r) => r.name)).size).toBe(
+      LATEX_RULES.length,
+    );
+    // `.test` on a global regex carries lastIndex across calls.
+    for (const r of LATEX_RULES) expect(r.applies.global).toBe(false);
   });
 });

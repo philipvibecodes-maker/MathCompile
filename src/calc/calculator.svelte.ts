@@ -1,10 +1,16 @@
-import { compileCellsForCalc } from '../compile/codegen';
+import { collectDeclared, compileCellsForCalc } from '../compile/codegen';
 import {
   latexToStatementStrings,
+  normalizeIR,
+  parseCellLatex,
   type Issue,
   type MathJson,
 } from '../compile/ir';
-import { toNerdamerInput } from './nerdamer-latex';
+import {
+  interimConstNames,
+  irToNerdamer,
+  leaf,
+} from './nerdamer-emit';
 import { arcTrigNames } from './result-latex';
 
 export interface CalcRowOk {
@@ -275,22 +281,54 @@ export function prewarm(): void {
 let nerdamerP: Promise<typeof import('nerdamer/all')> | undefined;
 
 // Instant best-effort results while the SymPy engine boots: nerdamer
-// evaluates the translated latex in ~ms, so dimmed answers show
+// evaluates the translated expression in ~ms, so dimmed answers show
 // immediately — including calculus (integrate/defint/diff/sum/product/
-// limit via the nerdamer-latex translator). One interim row per \\ row,
-// matching the real engine's row-per-statement shape. Commands that
-// don't translate stay empty until the real engine lands. Dynamically
-// imported so its ~440KB never enters the main bundle.
-export async function interimEvaluate(latex: string): Promise<CalcRow[]> {
+// limit emitted by nerdamer-emit off the same normalized IR the real
+// engine reads). One interim row per \\ row, matching the real engine's
+// row-per-statement shape. Statements the IR emitter doesn't cover fall
+// back to nerdamer's own latex reader (`leaf`); a statement that can't
+// produce a real value produces no row. Dynamically imported so
+// nerdamer's ~440KB never enters the main bundle.
+export async function interimEvaluate(
+  latex: string,
+  priorLatex: string[] = [],
+): Promise<CalcRow[]> {
   try {
     const nerdamer = (await (nerdamerP ??= import('nerdamer/all'))).default;
     // latexToStatementStrings tracks environment depth — a plain
     // /\\\\/ split would break every interim row for a cell holding a
     // matrix (its \\ row separators look like statement breaks).
-    return latexToStatementStrings(latex)
-      .map((p): CalcRow | null => {
+    const stmts = latexToStatementStrings(latex);
+    const norm = normalizeIR(parseCellLatex(latex));
+    // The real engine shares one namespace down the worksheet, so a
+    // `C = …` above reserves the letter for constants of integration —
+    // interim picks letters off the same declared-name set.
+    const reserved = new Set<string>();
+    const scratch = new Set<string>();
+    for (const l of priorLatex) {
+      const n = normalizeIR(parseCellLatex(l));
+      if (n.ir !== undefined) collectDeclared(n.ir, reserved, scratch);
+    }
+    const nodes =
+      norm.ir === undefined
+        ? []
+        : Array.isArray(norm.ir) && norm.ir[0] === 'Block'
+          ? norm.ir.slice(1)
+          : [norm.ir];
+    // An error the normalizer already flagged poisons that row — the
+    // real engine drops the statement, so a guessed interim would
+    // mislead.
+    const poisoned = new Set(
+      norm.issues
+        .filter((i) => i.severity === 'error')
+        .map((i) => i.line ?? 0),
+    );
+    const takeConst = interimConstNames(norm.ir, reserved);
+    return nodes
+      .map((node, i): CalcRow | null => {
+        if (poisoned.has(i)) return null;
         try {
-          const input = toNerdamerInput(p, nerdamer);
+          const input = irToNerdamer(node, takeConst) ?? leaf(stmts[i] ?? '', nerdamer);
           if (input === '') return null;
           const tex = arcTrigNames(
             // MathQuill doesn't need \limits — bounds render under/over

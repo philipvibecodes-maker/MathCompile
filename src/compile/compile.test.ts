@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { parseCellLatex, normalizeIR, latexToStatementStrings } from './ir';
+import {
+  parseCellLatex,
+  normalizeIR,
+  latexToStatementStrings,
+  NORMALIZE_RULES,
+} from './ir';
 import { compileWorksheet } from './codegen';
 
 // Fixture triples per the IR spec: latex -> normalized IR -> generated
@@ -1540,6 +1545,44 @@ describe('normalizeIR', () => {
     const { ok, issues } = normalizeIR(parseCellLatex('\\int x^2 dx'));
     expect(ok).toBe(true);
     expect(issues).toHaveLength(0);
+  });
+});
+
+describe('NORMALIZE_RULES', () => {
+  it('rule names are unique', () => {
+    const names = NORMALIZE_RULES.map((r) => r.name);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  // Coverage probe: wrap every rule's `when` to record which folds fire
+  // across the fixture corpus, then warn on rules that never fire. A
+  // dormant rule is worth a look — dead folds should be deleted, not
+  // carried (warning only: a rule can also legitimately be e2e-only).
+  it('warns on rules that never fire across the fixture corpus', () => {
+    const fired = new Set<string>();
+    const unwrapped = NORMALIZE_RULES.map((r) => r.when);
+    NORMALIZE_RULES.forEach((r, i) => {
+      r.when = (h, n, c) => {
+        const hit = unwrapped[i](h, n, c);
+        if (hit) fired.add(r.name);
+        return hit;
+      };
+    });
+    try {
+      for (const fx of FIXTURES) normalizeIR(parseCellLatex(fx.latex));
+    } finally {
+      NORMALIZE_RULES.forEach((r, i) => {
+        r.when = unwrapped[i];
+      });
+    }
+    const dormant = NORMALIZE_RULES.filter((r) => !fired.has(r.name)).map(
+      (r) => r.name,
+    );
+    if (dormant.length > 0)
+      console.warn(
+        `normalize rules that never fire across FIXTURES: ${dormant.join(', ')}`,
+      );
+    expect(fired.size).toBeGreaterThan(0);
   });
 });
 
