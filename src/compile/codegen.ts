@@ -2980,9 +2980,14 @@ export function compileWorksheet(
   const importLine = qualified
     ? 'import sympy as sp'
     : 'from sympy import *';
-  const perCell = cells.map((c) =>
-    normalizeIR(c.json, opts.extraCodeNames),
-  );
+  // `\name{...}` call sites resolve to UI defs (extraCodeNames) plus any
+  // `\py`-bound name in the worksheet — `\clen{27}` calls the lambda a
+  // `\py` statement binds, same as a `\py`-line call.
+  const codeNames = new Set(opts.extraCodeNames);
+  for (const c of cells)
+    for (const n of collectPyLines(c.json).flatMap((l) => pyBoundNames(l)))
+      codeNames.add(n);
+  const perCell = cells.map((c) => normalizeIR(c.json, codeNames));
   const issues: Issue[] = perCell.flatMap((r, i) =>
     r.issues.map((iss) => ({
       ...iss,
@@ -3261,7 +3266,10 @@ export function compileCellForCalc(
   otherPyLines: string[] = [],
   extraCodeNames?: ReadonlySet<string>,
 ): CalcProgram {
-  const { ir, issues } = normalizeIR(cell.json, extraCodeNames);
+  const codeNames = new Set(extraCodeNames);
+  for (const n of otherPyLines.flatMap((l) => pyBoundNames(l)))
+    codeNames.add(n);
+  const { ir, issues } = normalizeIR(cell.json, codeNames);
   if (ir === undefined)
     return { prelude: [], statements: [], issues, statementLines: [] };
 

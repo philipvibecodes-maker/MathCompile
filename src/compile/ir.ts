@@ -268,7 +268,7 @@ export function parseCellLatex(latex: string): MathJson | undefined {
     const py = /^\\py\{([\s\S]*)\}$/.exec(s);
     if (py) {
       const src = py[1].replace(/\}\s*\\py\{/g, '\n');
-      return ['Py', unescapePy(src)] as MathJson;
+      return ['Py', unescapePy(src).trimStart()] as MathJson;
     }
     let j: MathJson;
     try {
@@ -886,8 +886,9 @@ function normalizeStatementEqual(
 }
 
 // `extraCodeNames` — notation names declared outside the latex (UI
-// function defs). A `\name{...}` call site rewrites to a `call` when
-// the name is in this set so codegen emits the user's binding.
+// function defs) or bound by `\py` statements anywhere in the worksheet.
+// A `\name{...}` call site rewrites to a `call` when the name is in
+// this set so codegen emits the user's binding.
 export function normalizeIR(
   json: MathJson | undefined,
   extraCodeNames?: ReadonlySet<string>,
@@ -898,6 +899,13 @@ export function normalizeIR(
   };
   if (json === undefined) return { ok: true, ir: undefined, issues };
   const codeCallNames = new Set<string>(extraCodeNames);
+  {
+    const kids =
+      isArray(json) && head(json) === 'Block' ? json.slice(1) : [json];
+    for (const k of kids)
+      if (isArray(k) && head(k) === 'Py' && isString(k[1]))
+        for (const n of pyBoundNames(k[1])) codeCallNames.add(n);
+  }
   // Tracks whether the current Block is the outermost (\displaylines)
   // one — only its children count as input lines.
   let blockDepth = 0;
