@@ -1,4 +1,5 @@
 import { defineUserMacro } from '../notation/macros.svelte';
+import { appStore } from '../state/store.svelte';
 import { readCompletionContext } from './caret-context';
 import { mountStaticMath } from './static-math';
 import type { MathFieldElement } from './math-field';
@@ -53,6 +54,9 @@ export function openDefinePopover(
     if (body === '') return cancel();
     if (!defineUserMacro({ name, arity: 0, params: [], body }))
       return cancel();
+    // Defining \name makes earlier `\name` uses in other cells expand —
+    // their cached parse is stale now.
+    appStore.reparseAll();
     remove();
     const mq = field.mq;
     mq?.focus();
