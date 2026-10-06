@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>PR59 evidence compare</title>
+<style>
+body{font-family:system-ui;background:#111;color:#eee;margin:16px}
+h2{margin:14px 0 4px}
+.row{display:flex;gap:12px;align-items:flex-start}
+.row figure{margin:0}
+figcaption{font-size:12px;color:#aaa;text-align:center;padding:4px}
+img{border:1px solid #444;max-width:47vw;image-rendering:auto}
+.bad{outline:2px solid #c33}
+.good{outline:2px solid #3a3}
+</style></head>
+<body>
+<h1>PR #59 — matrix assign Eq display (left: BEFORE/main, right: AFTER/branch)</h1>
+<h2>a = I_2</h2>
+<div class="row">
+<figure><img class="bad" src="before-cell1.png"><figcaption>main — false</figcaption></figure>
+<figure><img class="good" src="after-cell1.png"><figcaption>branch — a = [[1,0],[0,1]]</figcaption></figure>
+</div>
+<h2>C = I_2^{T}</h2>
+<div class="row">
+<figure><img class="bad" src="before-cell2.png"><figcaption>main — false</figcaption></figure>
+<figure><img class="good" src="after-cell2.png"><figcaption>branch — C = [[1,0],[0,1]]</figcaption></figure>
+</div>
+<h2>a = 5 (regression)</h2>
+<div class="row">
+<figure><img src="before-cell3.png"><figcaption>main — a = 5</figcaption></figure>
+<figure><img src="after-cell3.png"><figcaption>branch — a = 5</figcaption></figure>
+</div>
+<h2>\det a after a = I_2 (branch)</h2>
+<div class="row">
+<figure><img class="good" src="after-det-det-a.png"><figcaption>branch — rows: a=[matrix], det=1</figcaption></figure>
+</div>
+</body>
+</html>
