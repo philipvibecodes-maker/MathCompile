@@ -363,7 +363,12 @@ export function collectCodeDecls(
 // The command name an 'unexpected-command' Error node carries, e.g.
 // `\fib` in `['Error', "'unexpected-command'", ['LatexString', "'\\fib'"]]`.
 export function unexpectedCommandName(node: MathJson): string | undefined {
-  if (!isArray(node) || head(node) !== 'Error') return undefined;
+  if (
+    !isArray(node) ||
+    head(node) !== 'Error' ||
+    node[1] !== "'unexpected-command'"
+  )
+    return undefined;
   for (const arg of node.slice(1)) {
     if (isArray(arg) && head(arg) === 'LatexString' && isString(arg[1])) {
       const m = /^'(.*)'$/s.exec(arg[1]);
