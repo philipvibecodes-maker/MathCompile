@@ -2897,6 +2897,23 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
   const sp = emitter.scope.qualified ? 'sp.' : '';
   if (!isArr(node)) return emitExprStatement(node, emitter);
   const h = headOf(node);
+  // A `\newcommand` definition — the macro is already registered; the
+  // statement emits nothing, only a note confirming it (or an error
+  // when the name collided with a builtin and the def has no effect).
+  if (h === 'Notation') {
+    const name = isStr(node[1]) ? node[1] : '?';
+    if (node[3] === 'builtin')
+      emitter.scope.flag(
+        'error',
+        `\\${name} is a built-in command — user notation can't take its name`,
+      );
+    else
+      emitter.scope.flag(
+        'note',
+        `\\${name} → ${isStr(node[2]) ? node[2] : ''}`,
+      );
+    return { lines: [] };
+  }
   if (h === 'Assign') {
     // RHS emits first so `x = x + 1` collects x as a symbol; the Assign
     // then marks `x` bound for later statements/cells.

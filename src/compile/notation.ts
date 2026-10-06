@@ -883,9 +883,11 @@ const STRUCTURAL_HEADS = [
   'And', 'Or', 'Not', 'Which', 'Piecewise',
   // 'Condition' is a Set literal's predicate child
   'Condition', 'Complement', 'Difference',
-  // statement-level IR
-  'Assign', 'Declare', 'Block', 'WhereBlock', 'Function',
-  // verbatim \python{...} source — codegen emits it uninterpreted
+  // statement-level IR — 'Notation' marks a \newcommand definition
+  // (codegen skips it with a note, or an error on a builtin collision);
+  // 'PythonSource' is verbatim \python{...} source — codegen emits it
+  // uninterpreted
+  'Assign', 'Declare', 'Block', 'WhereBlock', 'Function', 'Notation',
   'PythonSource',
   // structural helpers — 'call' marks a node already escaped by the
   // normalizer; without it a nested g(f(x)) re-wraps into

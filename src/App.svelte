@@ -93,20 +93,23 @@
     });
   });
 
-  // Freeze a cell's code lines while it has issues — the overlay
+  // Freeze a cell's code lines while it has errors — the overlay
   // explains the error, so churning (invalid) code underneath is just
-  // noise. The cache refreshes whenever the cell compiles clean.
+  // noise. Notes don't freeze: they annotate emitted code that should
+  // still update (a \newcommand line carries a permanent note). The
+  // cache refreshes whenever the cell compiles without errors.
+  const hasCellError = (i: number) =>
+    (compiled?.cellIssues[i] ?? []).some((iss) => iss.severity === 'error');
   let frozenLines = $state<Record<number, string[]>>({});
   $effect.pre(() => {
     appStore.cells.forEach((c, i) => {
-      if ((compiled?.cellIssues[i]?.length ?? 0) === 0) {
+      if (!hasCellError(i)) {
         frozenLines[c.id] = compiled?.cellLines[i] ?? [];
       }
     });
   });
   const shownLines = (cell: { id: number }, i: number) => {
-    if ((compiled?.cellIssues[i]?.length ?? 0) === 0)
-      return compiled?.cellLines[i] ?? [];
+    if (!hasCellError(i)) return compiled?.cellLines[i] ?? [];
     return frozenLines[cell.id] ?? compiled?.cellLines[i] ?? [];
   };
 

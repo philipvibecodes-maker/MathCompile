@@ -381,6 +381,37 @@ matching SymPy calls. Other number-theory words work like `totient`
 via `\mathrm{name}` — `mobius`, `nextprime`, `factorint` — as long
 as the name is a plain word.
 
+## Custom notation
+
+Define your own command with `\newcommand` on its own line — type it as
+a statement (Enter starts the next line in the cell):
+
+```
+\newcommand{\vv}[1]{\mathbf{#1}}
+```
+
+After the definition, `\vv{u}` in any later statement — in the same
+cell or another — renders as `vv(u)` with a dotted underline and
+expands to the body before compiling, so the Python output shows
+`\mathbf{u}`'s code, not `\vv`. The definition line itself emits no
+code; it shows a note (`\vv → \mathbf{#1}`) instead.
+
+- The `[n]` arity is optional — omit it for a zero-argument command
+  (`\newcommand{\RR}{\mathbb{R}}`). Without it the arity is inferred
+  from the highest `#k` in the body.
+- `\renewcommand` and `\providecommand` work the same way.
+- Macros can call earlier macros (`\newcommand{\vv}[1]{\mathbf{#1}}`
+  then `\newcommand{\norm}[1]{\left\|\vv{#1}\right\|}`).
+- Deleting the definition line un-registers the command everywhere —
+  every cell re-parses, so a leftover `\vv{u}` flags
+  `incomplete or unsupported command "\vv"` (re-typed after the
+  delete it parses as ordinary `\text{vv}` instead).
+- Builtin commands can't be redefined — a `\newcommand{\sin}{…}` line
+  flags an error and `\sin` keeps its built-in meaning.
+- Definitions persist with the worksheet (they're just cell LaTeX),
+  and your commands show up in the `\…` autocomplete menu with a
+  "your notation" hint.
+
 ## Output targets
 
 Pick a target from the **Output** menu in the header.

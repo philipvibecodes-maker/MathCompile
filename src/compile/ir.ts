@@ -19,6 +19,12 @@
 
 import { ComputeEngine } from '@cortex-js/compute-engine';
 import { applyLatexRules, outputLatex, PRE_PARSE_RULES } from './latex';
+import {
+  expandLatex,
+  macroRejected,
+  parseNotationDef,
+  setCellMacros,
+} from './macros';
 // The name tables below are derived views over the notation registry —
 // each name lives once in src/compile/notation.ts.
 import {
@@ -308,6 +314,21 @@ const intervalBind = (s: string, j: MathJson): MathJson => {
   return [head(j), j[1], ['Interval', lo, hi]] as MathJson;
 };
 
+// Rescan the worksheet's `\newcommand` statements into the macro
+// table — the store calls this on every cell mutation so a deleted
+// definition stops expanding and unregisters its `\name` command.
+// Returns true when the table changed, meaning every cached parse is
+// stale.
+export function syncCellMacros(latexList: string[]): boolean {
+  const defs = [];
+  for (const l of latexList)
+    for (const s of latexToStatementStrings(l)) {
+      const d = parseNotationDef(s);
+      if (d) defs.push(d);
+    }
+  return setCellMacros(defs);
+}
+
 // Parse a cell's LaTeX into raw MathJSON. Multiple statements become a
 // `["Block", ...]` node so downstream code sees one tree per cell. Parse
 // failures degrade to an Error node — the pipeline reports, never throws.
@@ -327,19 +348,34 @@ export function parseCellLatex(latex: string): MathJson | undefined {
           ? undefined
           : (['PythonSource', code] as MathJson);
       }
+      // A `\newcommand` definition registers its macro and emits a
+      // marker node instead of an expression — codegen skips it with a
+      // note (or flags the def when registration rejected the name as
+      // a builtin).
+      const def = parseNotationDef(s);
+      if (def)
+        return (
+          macroRejected(def.name)
+            ? ['Notation', def.name, def.body, 'builtin']
+            : ['Notation', def.name, def.body]
+        ) as MathJson;
+      // User-defined macro calls expand to their body latex before CE
+      // sees the statement.
+      const ex = expandLatex(s);
       let j: MathJson;
-    try {
-      // `form: 'raw'` skips CE canonicalization so the user's term order
-      // survives to codegen (a * 2 stays Multiply(a, 2), not sorted).
-      // \antid (MathQuill's boundless insertion alias for \int)
-      // already reads as \int here — outputLatex canonicalizes it in
-      // latexToStatementStrings, so CE sees an ordinary Integrate node.
-      // \iint is not aliased — CE parses it natively to Integrate.
-      j = ce().parse(s, { form: 'raw' }).json as MathJson;
-    } catch {
-      return ['Error', `'parse-failed'`] as MathJson;
-    }
-    return intervalBind(s, TEXT_FOR.test(s) ? forToComprehension(j) : j);
+      try {
+        // `form: 'raw'` skips CE canonicalization so the user's term
+        // order survives to codegen (a * 2 stays Multiply(a, 2), not
+        // sorted). \antid (MathQuill's boundless insertion alias for
+        // \int) already reads as \int here — outputLatex canonicalizes
+        // it in latexToStatementStrings, so CE sees an ordinary
+        // Integrate node. \iint is not aliased — CE parses it natively
+        // to Integrate.
+        j = ce().parse(ex, { form: 'raw' }).json as MathJson;
+      } catch {
+        return ['Error', `'parse-failed'`] as MathJson;
+      }
+      return intervalBind(ex, TEXT_FOR.test(ex) ? forToComprehension(j) : j);
     })
     .filter((n): n is MathJson => n !== undefined);
   if (parsed.length === 0) return undefined;

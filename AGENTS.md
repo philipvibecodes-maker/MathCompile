@@ -185,6 +185,18 @@ and empty blocks serialize as `{ }`.
   `f * x`, not a call or signature.
 - `\tr` is an insertion alias for `\mathrm{tr}` — the matrix-trace
   word-op codegen lowers to `(A).trace()` / `sp.Trace(A)`.
+- `\newcommand{\name}[n]{body}` (or renew/provide) is user notation —
+  `src/compile/macros.ts` parses the def statement, registers `\name`
+  as a `UserMacro` atom via the vendored `__mcUserMacro` hooks
+  (builtins always win; a collision flags an error on the def line),
+  and `expandLatex` substitutes `#k` args textually before `ce.parse`.
+  The def itself lowers to a `['Notation', name, body]` IR node that
+  codegen turns into a note. Both def serializations parse: pasted
+  verbatim braces and the typed `\left\{…\right\}`/`\left[…\right]`
+  form. The macro table is worksheet state — `store.setLatex`/`persist`
+  resync it on every mutation and reparse every cell when it changes,
+  so a deleted def unregisters and leftover uses flag
+  `incomplete or unsupported command`.
 - Matrices: `\begin{matrix|pmatrix|…}` environments + bare
   `\pmatrix{a&b\\c&d}`. Typed `\name` shortcuts (`\cases`, `\aligned`,
   `\gathered`, …) open the same grid `\begin{name}` resolves to;
