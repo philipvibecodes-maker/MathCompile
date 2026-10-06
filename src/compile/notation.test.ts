@@ -6,6 +6,8 @@
 
 import { describe, expect, it } from 'vitest';
 import { SMART_AUTO_COMMANDS } from '../editor/smart-commands';
+import { compileWorksheet } from './codegen';
+import { normalizeIR, parseCellLatex, unquote } from './ir';
 import {
   CALL_RENAMED,
   CALL_RENAMES,
@@ -286,6 +288,49 @@ describe('derived ir.ts views equal the replaced literals', () => {
       'acsch', 'Set'])
       expect(CALL_RENAMED.has(name)).toBe(true);
   });
+});
+
+describe('spelling matrix', () => {
+  for (const n of NOTATION.filter((x) => x.spellings !== undefined)) {
+    it(`${n.name}: every declared spelling normalizes to the entry`, () => {
+      const leaves: string[] = [];
+      for (const s of n.spellings ?? []) {
+        const { ir, ok } = normalizeIR(parseCellLatex(s));
+        expect(ok, `${s} should normalize cleanly`).toBe(true);
+        if (Array.isArray(ir)) {
+          if (ir[0] === 'call') {
+            // a call spelling is the entry's when its name is the
+            // entry's canonical name or a declared call name
+            const callNames = [n.name, ...(n.callNames ?? [])];
+            const callName = unquote(ir[1] as string) ?? ir[1];
+            expect(callNames, `${s} -> call ${ir[1]}`).toContain(callName);
+          } else {
+            expect(n.heads ?? [], `${s} -> ${ir[0]}`).toContain(ir[0]);
+          }
+        } else {
+          leaves.push(String(ir));
+        }
+      }
+      // Spellings that normalize to a leaf (x\prime -> x') must agree
+      // with each other — they mint the same symbol.
+      for (const l of leaves) expect(l).toBe(leaves[0]);
+    });
+  }
+});
+
+describe('registry probes', () => {
+  for (const n of NOTATION.filter((x) => x.probes !== undefined)) {
+    for (const p of n.probes ?? []) {
+      it(`${n.name}: ${p.latex}`, () => {
+        const out = compileWorksheet(
+          [{ json: parseCellLatex(p.latex) }],
+          'python',
+          { importAll: false },
+        );
+        expect(out.cellLines[0].join('\n')).toContain(p.expect);
+      });
+    }
+  }
 });
 
 describe('registry hygiene', () => {
