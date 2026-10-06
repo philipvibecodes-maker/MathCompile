@@ -3,9 +3,10 @@ import {
   parseCellLatex,
   normalizeIR,
   latexToStatementStrings,
+  extractPythonBlocks,
   NORMALIZE_RULES,
 } from './ir';
-import { compileWorksheet } from './codegen';
+import { compileWorksheet, compileCellForCalc } from './codegen';
 
 // Fixture triples per the IR spec: latex -> normalized IR -> generated
 // SymPy. `expectedPython` is the *cell's* def + statement lines in the
@@ -1959,5 +1960,82 @@ describe('target gating', () => {
     );
     expect(out.ok).toBe(false);
     expect(out.issues.some((i) => i.message.includes('Piecewise'))).toBe(true);
+  });
+});
+
+describe('\\python{...} source blocks', () => {
+  it('lifts the body out before latex rules and the \\\\ splitter', () => {
+    // \\, braces and newlines inside a \python body are code, not
+    // row separators — the statements around it still split normally.
+    expect(
+      latexToStatementStrings(
+        'a = 1 \\\\ \\python{d = {"k": 1}\nprint(d)} \\\\ b = 2',
+      ),
+    ).toEqual(['a = 1', '\\mcpsnippet{0}', 'b = 2']);
+  });
+
+  it('unescapes \\{ \\} \\\\ in the body and preserves everything else', () => {
+    // body in latex: s = "a\}b" \\n" — the \} escape keeps the close-brace
+    // inside, \\ decodes to one backslash
+    const { latex, snippets } = extractPythonBlocks(
+      '\\python{s = "a\\}b" \\\\n"}',
+    );
+    expect(latex).toBe('\\mcpsnippet{0}');
+    expect(snippets).toEqual(['s = "a}b" \\n"']);
+  });
+
+  it('extracts each block in document order', () => {
+    const { latex, snippets } = extractPythonBlocks(
+      '\\python{x = 1} + \\python{y = 2}',
+    );
+    expect(latex).toBe('\\mcpsnippet{0} + \\mcpsnippet{1}');
+    expect(snippets).toEqual(['x = 1', 'y = 2']);
+  });
+
+  it('parseCellLatex emits a PythonSource node carrying the code', () => {
+    const j = parseCellLatex('\\python{x = 1}');
+    expect(j).toEqual(['PythonSource', 'x = 1']);
+    // normalization leaves the statement alone (structural head)
+    const { ir } = normalizeIR(j);
+    expect(ir).toEqual(['PythonSource', 'x = 1']);
+  });
+
+  it('a python statement among math statements stays in order', () => {
+    const j = parseCellLatex('a = 1 \\\\ \\python{print(a)}');
+    expect(Array.isArray(j) && j[0]).toBe('Block');
+    expect((j as unknown[])[2]).toEqual(['PythonSource', 'print(a)']);
+  });
+
+  it('compileWorksheet emits the source verbatim', () => {
+    const out = compileWorksheet(
+      [{ json: parseCellLatex('\\python{x = 1\nprint(x)}') }],
+      'python',
+      { importAll: false },
+    );
+    expect(out.cellLines[0]).toEqual([
+      'import sympy as sp',
+      'x = 1\nprint(x)',
+    ]);
+    expect(out.issues).toEqual([]);
+  });
+
+  it('compileCellForCalc execs the source and echoes it as the row', () => {
+    const out = compileCellForCalc({
+      json: parseCellLatex('\\python{x = 1\nprint(x)}'),
+    });
+    expect(out.statements).toEqual([
+      {
+        code: 'x = 1\nprint(x)',
+        // evals to the source string — the row shows the code that ran
+        display: `clean_and_simplify(${JSON.stringify('x = 1\nprint(x)')})`,
+      },
+    ]);
+  });
+
+  it('an empty \\python{} parses to no statement at all', () => {
+    expect(parseCellLatex('\\python{}')).toBeUndefined();
+    const out = compileCellForCalc({ json: parseCellLatex('\\python{}') });
+    expect(out.statements).toEqual([]);
+    expect(out.issues).toEqual([]);
   });
 });

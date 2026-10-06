@@ -73,6 +73,10 @@ CharCmds['\\'] = class LatexCommandInput extends MathCommand {
         var cmd = input.renderCommand(cursor);
         // TODO needs tests
         cursor.controller.aria.queue(cmd.mathspeak({ createdLeftOf: cursor }));
+        // MATHCOMPILE: the `{` that opens a \python block is its visible
+        // delimiter, not source text — swallow it instead of writing it
+        // into the code.
+        if (cmd instanceof PythonBlock && ch === '{') return;
         if (ch !== '\\' || !this.isEmpty()) cursor.parent.write(cursor, ch);
         else cursor.controller.aria.alert();
       }

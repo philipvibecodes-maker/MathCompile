@@ -92,6 +92,21 @@
   overflow-x: auto;
   overflow-y: hidden;
 }
+::highlight(mq-py-kw) {
+  color: #a626a4;
+}
+::highlight(mq-py-str) {
+  color: #50a14f;
+}
+::highlight(mq-py-comment) {
+  color: #8a8a8a;
+}
+::highlight(mq-py-num) {
+  color: #986801;
+}
+::highlight(mq-py-call) {
+  color: #4078f2;
+}
 .mq-root-block,
 .mq-math-mode .mq-root-block {
   display: -moz-inline-box;
@@ -216,6 +231,26 @@
   padding: 0 0.1em;
   margin: 0 -0.1em;
   min-width: 1ex;
+}
+.mq-math-mode .mq-python {
+  font-family: monospace, Symbola, serif;
+  white-space: pre-wrap;
+}
+.mq-math-mode .mq-python:before {
+  content: '\\python{';
+  color: #8a8a8a;
+}
+.mq-math-mode .mq-python:after {
+  content: '}';
+  color: #8a8a8a;
+}
+.mq-math-mode .mq-python.mq-empty:before {
+  visibility: visible;
+  content: '\\python{';
+}
+.mq-math-mode .mq-python.mq-empty:after {
+  visibility: visible;
+  content: '}';
 }
 .mq-math-mode .mq-font {
   font: 1em 'Times New Roman', Symbola, serif;

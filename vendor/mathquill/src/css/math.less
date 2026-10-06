@@ -152,6 +152,31 @@
     min-width: 1ex;
   }
 
+  // MATHCOMPILE: \python{...} — the delimiters are pseudo content so the
+  // code stays one plain editable text node; mq-empty overrides are needed
+  // because .mq-empty:after would otherwise blank the closing brace.
+  .mq-python {
+    font-family: monospace, Symbola, serif;
+    white-space: pre-wrap;
+
+    &:before {
+      content: '\\python{';
+      color: #8a8a8a;
+    }
+    &:after {
+      content: '}';
+      color: #8a8a8a;
+    }
+    &.mq-empty:before {
+      visibility: visible;
+      content: '\\python{';
+    }
+    &.mq-empty:after {
+      visibility: visible;
+      content: '}';
+    }
+  }
+
   .mq-font {
     font: 1em @times;
 

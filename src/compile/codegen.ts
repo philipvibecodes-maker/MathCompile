@@ -100,6 +100,7 @@ function pyIdent(name: string): string {
 // Statement-position heads that only lower to Python.
 const STATEMENT_HEADS = new Set([
   'Assign', 'Def', 'Declare', 'Block', 'WhereBlock', 'Which', 'Piecewise',
+  'PythonSource',
 ]);
 const CMP_NESTABLE_HEADS = new Set([
   'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
@@ -2993,6 +2994,14 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       lines: [`${pyIdent(name)} = ${rhs}`],
       display: assignDisplay(sp, name, rhs),
     };
+  }
+  // `\python{ ... }` — verbatim user source. It execs in the python
+  // target's program or the calculator's shared namespace; the row's
+  // display is the source itself.
+  if (h === 'PythonSource') {
+    const code = isStr(node[1]) ? node[1] : '';
+    if (code.trim() === '') return { lines: [] };
+    return { lines: [code], display: JSON.stringify(code) };
   }
   if (h === 'Block' || h === 'WhereBlock')
     return {

@@ -1144,6 +1144,24 @@ body {
   color: #61afef;
 }
 
+/* \python{...} input block — CSS Highlight palette matching the .tok-*
+   dark theme above (light defaults live in vendored mathquill.css). */
+:root[data-theme='dark'] ::highlight(mq-py-kw) {
+  color: #c678dd;
+}
+:root[data-theme='dark'] ::highlight(mq-py-str) {
+  color: #98c379;
+}
+:root[data-theme='dark'] ::highlight(mq-py-comment) {
+  color: #6b7a8c;
+}
+:root[data-theme='dark'] ::highlight(mq-py-num) {
+  color: #d19a66;
+}
+:root[data-theme='dark'] ::highlight(mq-py-call) {
+  color: #61afef;
+}
+
 .expr-delete {
   flex: 0 0 28px;
   align-self: flex-start;

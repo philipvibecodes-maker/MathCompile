@@ -46,6 +46,7 @@ export const COMPLETIONS: CompletionItem[] = [
   { name: 'pmatrix', hint: 'matrix', preview: '\\pmatrix{a&b\\\\c&d}' },
   { name: 'begin', hint: 'environment (pmatrix, cases, …)' },
   { name: 'def', hint: 'function definition', preview: '\\text{def} ' },
+  { name: 'python', hint: 'inline Python code', preview: '\\python{x = 1}' },
   // `\tr` is an insertion alias — it expands to `\mathrm{tr}`; the item
   // comes from the trace registry entry.
   fromRegistry('tr'),
