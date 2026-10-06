@@ -786,9 +786,10 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // placeholder — redundant with the normalizer's real diagnostic,
     // which rides the issue list (the python overlay also never shows
     // the placeholder as text, only as a ! icon).
-    const prog = calc(
-      '\\displaylines{\\foo\\left(1\\right)\\\\ x+1}',
-    );
+    // (A bare unknown \foo is still a hard error — `\name{args}`
+    // becomes a Python call, but a lone unknown command has no call to
+    // emit.)
+    const prog = calc('\\displaylines{\\foo \\\\ x+1}');
     expect(prog.statements).toEqual([
       { code: F('x + 1'), display: undefined, error: undefined },
     ]);

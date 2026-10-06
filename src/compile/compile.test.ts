@@ -1910,3 +1910,46 @@ describe('verbatim Python (\\py)', () => {
     expect(out.program).toContain("r = 'a\\b'");
   });
 });
+
+describe('implicit \\name{...} -> Python call', () => {
+  it('an unknown \\name{a}{b} emits name(a, b) — builtins resolve', () => {
+    const cells = [{ json: parseCellLatex('\\fibonacci{10}') }];
+    const out = compileWorksheet(cells, 'python', { importAll: false });
+    expect(out.cellLines[0]).toEqual([
+      'import sympy as sp',
+      'sp.fibonacci(10)',
+    ]);
+    // The unknown-command note says a Python call was emitted.
+    expect(
+      out.normalized[0].issues.some((i) =>
+        i.message.includes('call to Python fibonacci'),
+      ),
+    ).toBe(true);
+  });
+
+  it('multi-arg brace calls emit all args', () => {
+    const cells = [{ json: parseCellLatex('\\g{10}{20}') }];
+    const out = compileWorksheet(cells, 'python', { importAll: false });
+    expect(out.cellLines[0]).toContain('g(10, 20)');
+  });
+
+  it('a \\py binding in another cell is what \\name calls', () => {
+    const cells = [
+      { json: parseCellLatex('\\py{clen = lambda n: n}') },
+      { json: parseCellLatex('\\clen{27}') },
+    ];
+    const out = compileWorksheet(cells, 'python', { importAll: false });
+    // pyBound emits the bare call — no `clen = sp.Function('clen')`.
+    expect(out.cellLines[1]).toEqual([
+      'import sympy as sp',
+      'clen = lambda n: n',
+      'clen(27)',
+    ]);
+  });
+
+  it('leading factors juxtapose: x \\fib{10} -> x * fib(10)', () => {
+    const cells = [{ json: parseCellLatex('x \\fib{10}') }];
+    const out = compileWorksheet(cells, 'python', { importAll: false });
+    expect(out.cellLines[0]).toContain('x * fib(10)');
+  });
+});

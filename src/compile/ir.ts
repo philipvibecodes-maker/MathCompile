@@ -316,6 +316,26 @@ export function collectPyLines(ir: MathJson | undefined): string[] {
   return out;
 }
 
+// The command name an 'unexpected-command' Error node carries, e.g.
+// `\fib` in `['Error', "'unexpected-command'", ['LatexString', "'\\fib'"]]`.
+export function unexpectedCommandName(node: MathJson): string | undefined {
+  if (
+    !isArray(node) ||
+    head(node) !== 'Error' ||
+    node[1] !== "'unexpected-command'"
+  )
+    return undefined;
+  for (const arg of node.slice(1)) {
+    if (isArray(arg) && head(arg) === 'LatexString' && isString(arg[1])) {
+      const m = /^'(.*)'$/s.exec(arg[1]);
+      const src = (m ? m[1] : arg[1]).trim();
+      const cmd = /^\\([a-zA-Z]+)/.exec(src);
+      if (cmd) return cmd[1];
+    }
+  }
+  return undefined;
+}
+
 // Names a `\py` source line binds — `x = …`, `def f(…)`, `import numpy`
 // — so `call`/`fn` emit the bound name directly instead of minting a
 // Symbol/Function decl that would shadow it.
@@ -1322,6 +1342,33 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       if (atStatement && isDefMark(items[0])) {
         const def = defMarkedShape(['InvisibleOperator', ...items]);
         if (def) return ['Declare', def.name, ['List', ...def.params]];
+      }
+      // `\name{a}{b}` with an unknown `\name`: CE parks the command as
+      // an 'unexpected-command' Error and the brace args as operands.
+      // Rewrite to a `call` — the name resolves downstream to a \py
+      // binding, a declared function, or an sp.<builtin>; anything
+      // before the Error stays a juxtaposed factor (`x \fib{10}` ->
+      // `x * fib(10)`).
+      const errIdx = items.findIndex(
+        (n) => unexpectedCommandName(n) !== undefined,
+      );
+      if (errIdx >= 0) {
+        const name = unexpectedCommandName(items[errIdx])!;
+        pushIssue(
+          'note',
+          `\\${name} is not a known command — emitted as a call to Python ${name}(…)`,
+        );
+        const call: MathJson = [
+          'call',
+          name,
+          ...items.slice(errIdx + 1).map((n) => normalize(n, false)),
+        ];
+        if (errIdx === 0) return call;
+        return [
+          'Multiply',
+          ...items.slice(0, errIdx).map((n) => normalize(n, false)),
+          call,
+        ];
       }
       const last = items[items.length - 1];
       // firstNorm caches normalize(items[0]) for the callee check so a
