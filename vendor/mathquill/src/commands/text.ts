@@ -547,6 +547,12 @@ LatexCmds.lowercase = makeTextBlock('\\lowercase', 'Lowercase', 'span', {
 LatexCmds.py = makeTextBlock('\\py', 'Python', 'span', {
   class: 'mq-py mq-monospace mq-text-mode'
 });
+// MATHCOMPILE: \code{name(params) := template} — declares notation for
+// Python: calls `\name{args}` emit the template with the params
+// substituted. Contents are raw text like \py.
+LatexCmds.code = makeTextBlock('\\code', 'Code notation', 'span', {
+  class: 'mq-py mq-monospace mq-text-mode'
+});
 
 class RootMathCommand extends MathCommand {
   cursor: Cursor;

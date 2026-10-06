@@ -1910,3 +1910,57 @@ describe('verbatim Python (\\py)', () => {
     expect(out.program).toContain("r = 'a\\b'");
   });
 });
+
+describe('\\code notation decls', () => {
+  it('a declared \\name{...} call emits the template', () => {
+    const cells = [
+      { json: parseCellLatex('\\code{collatz(n) := clen(n, 0)}') },
+      { json: parseCellLatex('\\collatz{27}') },
+    ];
+    const out = compileWorksheet(cells, 'python', { importAll: false });
+    expect(out.cellLines[1]).toEqual([
+      'import sympy as sp',
+      '(clen(27, 0))',
+    ]);
+  });
+
+  it('the decl cell itself emits no program lines for \\code', () => {
+    const cells = [
+      { json: parseCellLatex('\\code{collatz(n) := clen(n, 0)}') },
+    ];
+    const out = compileWorksheet(cells, 'python', { importAll: false });
+    expect(out.cellLines[0]).toEqual([]);
+  });
+
+  it('\\name(a, b) paren form substitutes too', () => {
+    const cells = [
+      { json: parseCellLatex('\\code{addtwo(a, b) := a + b}') },
+      { json: parseCellLatex('\\addtwo{1}{2}') },
+    ];
+    const out = compileWorksheet(cells, 'python', { importAll: false });
+    expect(out.program).toContain('(1 + 2)');
+  });
+
+  it('a py line and a \\code decl compose — call resolves the binding', () => {
+    const cells = [
+      { json: parseCellLatex('\\py{clen = lambda n, k=0: k if n == 1 else clen(3*n+1 if n%2 else n//2, k+1)}') },
+      { json: parseCellLatex('\\code{collatz(n) := clen(n)}') },
+      { json: parseCellLatex('\\collatz{27}') },
+    ];
+    const out = compileWorksheet(cells, 'python', { importAll: false });
+    expect(out.cellLines[2]).toEqual([
+      'import sympy as sp',
+      'clen = lambda n, k=0: k if n == 1 else clen(3*n+1 if n%2 else n//2, k+1)',
+      '(clen(27))',
+    ]);
+  });
+
+  it('arity mismatch flags an error', () => {
+    const cells = [
+      { json: parseCellLatex('\\code{collatz(n) := clen(n)}') },
+      { json: parseCellLatex('\\collatz{1}{2}') },
+    ];
+    const out = compileWorksheet(cells, 'python', { importAll: false });
+    expect(out.ok).toBe(false);
+  });
+});

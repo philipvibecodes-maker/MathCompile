@@ -8,6 +8,7 @@
     type CalcRowErr,
   } from '../calc/calculator.svelte.ts';
   import {
+    collectCodeDecls,
     collectPyLines,
     latexToStatementStrings,
     type Issue,
@@ -86,7 +87,20 @@
       .filter((c) => c.id !== cell.id)
       .flatMap((c) => collectPyLines(c.json)),
   );
-  const otherPySig = $derived(otherPy.join('\n'));
+  // Other cells' \code decls rewrite `\name{...}` calls here too.
+  const otherDecls = $derived(
+    new Map(
+      appStore.cells
+        .filter((c) => c.id !== cell.id)
+        .flatMap((c) => [...collectCodeDecls(c.json)]),
+    ),
+  );
+  const otherPySig = $derived(
+    otherPy.join('\n') +
+      [...otherDecls]
+        .map(([n, d]) => `${n}(${d.params}):=${d.template}`)
+        .join('\n'),
+  );
 
   let seq = 0;
   $effect(() => {
@@ -121,7 +135,7 @@
           }
         });
       }
-      evaluate(cell, otherPy).then(
+      evaluate(cell, otherPy, otherDecls).then(
         (r) => {
           if (mine !== seq) return;
           rows = r.rows;

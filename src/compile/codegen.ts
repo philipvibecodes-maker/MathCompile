@@ -15,8 +15,13 @@
 // error diagnostic instead of code. The expression subset for those
 // targets is future work.
 
-import type { Issue, MathJson, NormResult } from './ir';
-import { collectPyLines, normalizeIR, pyBoundNames } from './ir';
+import type { CodeDecl, Issue, MathJson, NormResult } from './ir';
+import {
+  collectCodeDecls,
+  collectPyLines,
+  normalizeIR,
+  pyBoundNames,
+} from './ir';
 import { CALC_RUNTIME_PY } from './calc-runtime';
 
 export interface CellInput {
@@ -350,6 +355,9 @@ interface Scope {
    * operands emit them bare, with no Symbol/Function decl that would
    * shadow the Python binding. */
   pyBound: Set<string>;
+  /** `\code{name(params) := template}` decls — a call to `name` emits
+   * the template with its params substituted, worksheet-wide. */
+  codeTemplates: Map<string, CodeDecl>;
   /** Free symbol name -> emitted python identifier, insertion-ordered.
    * A def line is emitted in the cell where the name is first needed. */
   symbols: Map<string, string>;
@@ -2187,6 +2195,35 @@ class Emitter {
         // 'mean' — unwrap it so pyIdent doesn't mangle to primemean_prime.
         const rawName = isStr(args[0]) ? args[0] : 'unknown';
         const name = /^'(.+)'$/.exec(rawName)?.[1] ?? rawName;
+        // A `\code` decl rewrites the call to its Python template —
+        // params substituted for the emitted args. Checked first so a
+        // declaration can shadow even a builtin (e.g. a custom `fib`).
+        const tpl = this.scope.codeTemplates.get(name);
+        if (tpl !== undefined) {
+          if (args.length - 1 !== tpl.params.length) {
+            this.scope.flag(
+              'error',
+              `\\${name} takes ${tpl.params.length} argument(s) — got ${args.length - 1}`,
+            );
+            return ['', PREC_ATOM];
+          }
+          // Args parenthesize themselves when non-atomic so the
+          // substitution can't regroup (`n + 1` -> `(n + 1)`).
+          const rendered = args.slice(1).map((a) => this.emit(a, PREC_ATOM));
+          let body = tpl.template;
+          tpl.params.forEach((p, i) => {
+            body = body.replace(
+              new RegExp(
+                `\\b${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`,
+                'g',
+              ),
+              rendered[i],
+            );
+          });
+          // Templates are arbitrary expressions — parenthesize the
+          // substitution so `x * \name{...}` keeps the right grouping.
+          return [`(${body})`, PREC_ATOM];
+        }
         // `\varphi(n)` parses as GoldenRatio applied to n — sympy's
         // GoldenRatio isn't callable and the textbook reading is
         // Euler's totient.
@@ -2929,6 +2966,11 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       display: assignDisplay(sp, name, rhs),
     };
   }
+  if (h === 'CodeDecl')
+    // `\code{...}` is a compile-time binding — the decl registers its
+    // template in scope.codeTemplates (collected before emission), so
+    // the statement itself produces no program lines.
+    return { lines: [] };
   if (h === 'Py') {
     // `\py{...}` — verbatim Python. Its line also runs in every cell's
     // prelude (scope.pyLines covers the OTHER cells), so bound names
@@ -2973,7 +3015,14 @@ export function compileWorksheet(
   const importLine = qualified
     ? 'import sympy as sp'
     : 'from sympy import *';
-  const perCell = cells.map((c) => normalizeIR(c.json));
+  // `\code{name(...) := template}` decls are worksheet-wide: every cell
+  // normalizes `\name{...}` call sites against the full name set and
+  // emits the shared templates.
+  const codeTemplates = new Map<string, CodeDecl>();
+  for (const c of cells)
+    collectCodeDecls(c.json).forEach((d, n) => codeTemplates.set(n, d));
+  const codeNames = new Set(codeTemplates.keys());
+  const perCell = cells.map((c) => normalizeIR(c.json, codeNames));
   const issues: Issue[] = perCell.flatMap((r, i) =>
     r.issues.map((iss) => ({
       ...iss,
@@ -3061,6 +3110,7 @@ export function compileWorksheet(
         i + 1,
         cellPyLines.filter((_, j) => j !== i).flat(),
         pyBound,
+        codeTemplates,
       ),
     );
   });
@@ -3156,6 +3206,7 @@ function buildScope(
   cell: number,
   pyLines: string[] = [],
   pyBound: Set<string> = new Set(),
+  codeTemplates: Map<string, CodeDecl> = new Map(),
 ): Scope {
   return {
     qualified,
@@ -3164,6 +3215,7 @@ function buildScope(
     matrixNames,
     pyLines,
     pyBound,
+    codeTemplates,
     defined: new Set(),
     bound: new Set(),
     lambdaBound: new Set(),
@@ -3243,11 +3295,19 @@ const calcEval = (expr: string): string =>
 // expressions so each top-level statement yields its own result row.
 // `otherPyLines` are the worksheet's OTHER cells' `\py{...}` sources —
 // they exec in the prelude so their bound names resolve here.
+// `otherCodeDecls` are the OTHER cells' `\code{...}` notation decls —
+// merged with this cell's own so `\name{...}` calls resolve here too.
 export function compileCellForCalc(
   cell: CellInput,
   otherPyLines: string[] = [],
+  otherCodeDecls: ReadonlyMap<string, CodeDecl> = new Map(),
 ): CalcProgram {
-  const { ir, issues } = normalizeIR(cell.json);
+  const codeTemplates = new Map(otherCodeDecls);
+  collectCodeDecls(cell.json).forEach((d, n) => codeTemplates.set(n, d));
+  const { ir, issues } = normalizeIR(
+    cell.json,
+    new Set(codeTemplates.keys()),
+  );
   if (ir === undefined)
     return { prelude: [], statements: [], issues, statementLines: [] };
 
@@ -3271,6 +3331,7 @@ export function compileCellForCalc(
     0,
     [],
     pyBound,
+    codeTemplates,
   );
   const { defs, parts } = cellBody(ir, scope);
   // Statements dropped by an emission error carry it in place — the

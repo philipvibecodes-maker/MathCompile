@@ -270,6 +270,18 @@ export function parseCellLatex(latex: string): MathJson | undefined {
       const src = py[1].replace(/\}\s*\\py\{/g, '\n');
       return ['Py', unescapePy(src)] as MathJson;
     }
+    // `\code{name(params) := template}` — declares notation for Python:
+    // calls `\name{a}{b}`/`\name(a,b)` emit the template with params
+    // substituted (see codegen's `call` tier). Params are stored joined
+    // (`'n, k'`) so children stay plain strings through normalizeIR.
+    const code = /^\\code\{([\s\S]*)\}$/.exec(s);
+    if (code) {
+      const decl = /^\s*([A-Za-z_]\w*)\s*\(([^)]*)\)\s*(?::=|=)\s*([\s\S]+)$/.exec(
+        code[1],
+      );
+      if (!decl) return ['Error', `'malformed-code-decl'`] as MathJson;
+      return ['CodeDecl', decl[1], decl[2].trim(), decl[3].trim()] as MathJson;
+    }
     let j: MathJson;
     try {
       // `form: 'raw'` skips CE canonicalization so the user's term order
@@ -314,6 +326,53 @@ export function collectPyLines(ir: MathJson | undefined): string[] {
   for (const k of kids)
     if (isArray(k) && head(k) === 'Py' && isString(k[1])) out.push(k[1]);
   return out;
+}
+
+export interface CodeDecl {
+  params: string[];
+  template: string;
+}
+
+// A cell's top-level `\code{name(params) := template}` decls — the map
+// from notation name to its python template. Worksheet-wide like
+// collectPyLines: a decl in one cell rewrites calls in every cell.
+export function collectCodeDecls(
+  ir: MathJson | undefined,
+): Map<string, CodeDecl> {
+  const out = new Map<string, CodeDecl>();
+  if (ir === undefined || !isArray(ir)) return out;
+  const kids = head(ir) === 'Block' ? ir.slice(1) : [ir];
+  for (const k of kids)
+    if (
+      isArray(k) &&
+      head(k) === 'CodeDecl' &&
+      isString(k[1]) &&
+      isString(k[3])
+    ) {
+      const params = isString(k[2])
+        ? k[2]
+            .split(',')
+            .map((p) => p.trim())
+            .filter((p) => p !== '')
+        : [];
+      out.set(k[1], { params, template: k[3] });
+    }
+  return out;
+}
+
+// The command name an 'unexpected-command' Error node carries, e.g.
+// `\fib` in `['Error', "'unexpected-command'", ['LatexString', "'\\fib'"]]`.
+export function unexpectedCommandName(node: MathJson): string | undefined {
+  if (!isArray(node) || head(node) !== 'Error') return undefined;
+  for (const arg of node.slice(1)) {
+    if (isArray(arg) && head(arg) === 'LatexString' && isString(arg[1])) {
+      const m = /^'(.*)'$/s.exec(arg[1]);
+      const src = (m ? m[1] : arg[1]).trim();
+      const cmd = /^\\([a-zA-Z]+)/.exec(src);
+      if (cmd) return cmd[1];
+    }
+  }
+  return undefined;
 }
 
 // Names a `\py` source line binds — `x = …`, `def f(…)`, `import numpy`
@@ -386,6 +445,9 @@ const KNOWN_HEADS = new Set([
   // `\py{...}` — verbatim Python statement lines (parseCellLatex mints
   // these before ce.parse; codegen emits them into the prelude).
   'Py',
+  // `\code{name(params) := template}` — notation-to-template decls
+  // (parseCellLatex mints these; codegen stores the template map).
+  'CodeDecl',
 ]);
 
 // CE string literals arrive as "'text'" (e.g. \text{...}); unwrap to the
@@ -865,12 +927,28 @@ function normalizeStatementEqual(
   return ['Equal', ...node.slice(1).map(normalizeExpr)];
 }
 
-export function normalizeIR(json: MathJson | undefined): NormResult {
+// `extraCodeNames` — notation names declared `\code`-style anywhere in
+// the worksheet (the caller unions every cell's collectCodeDecls);
+// this cell's own decls are added below.
+export function normalizeIR(
+  json: MathJson | undefined,
+  extraCodeNames?: ReadonlySet<string>,
+): NormResult {
   const issues: Issue[] = [];
   const pushIssue = (severity: Issue['severity'], message: string) => {
     issues.push(issue(severity, message));
   };
   if (json === undefined) return { ok: true, ir: undefined, issues };
+
+  // Commands a `\name{...}` call site may resolve to: declared `\code`
+  // notation, this cell's own plus the worksheet-wide set.
+  const codeCallNames = new Set<string>(extraCodeNames);
+  {
+    const kids = head(json) === 'Block' ? json.slice(1) : [json];
+    for (const k of kids)
+      if (isArray(k) && head(k) === 'CodeDecl' && isString(k[1]))
+        codeCallNames.add(k[1]);
+  }
   // Tracks whether the current Block is the outermost (\displaylines)
   // one — only its children count as input lines.
   let blockDepth = 0;
@@ -1323,6 +1401,17 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
         const def = defMarkedShape(['InvisibleOperator', ...items]);
         if (def) return ['Declare', def.name, ['List', ...def.params]];
       }
+      // `\name{a}{b}` — a declared `\code` notation call: CE marks the
+      // unknown \name an 'unexpected-command' Error in first position,
+      // with the brace args as plain operands. Rewrite to a `call` so
+      // codegen emits the declared template.
+      const codeCmd = unexpectedCommandName(items[0]);
+      if (codeCmd !== undefined && codeCallNames.has(codeCmd))
+        return [
+          'call',
+          codeCmd,
+          ...items.slice(1).map((n) => normalize(n, false)),
+        ];
       const last = items[items.length - 1];
       // firstNorm caches normalize(items[0]) for the callee check so a
       // flagging first factor (e.g. a broken \foo) isn't reported twice.
@@ -1795,8 +1884,13 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       // sp.factorial2, ...) aren't "unknown" — flagging them would warn
       // about a stub that never reaches the output. A worksheet-declared
       // name isn't unknown either — `f(3)` after `f(x) = …` calls the
-      // def the cell already made.
-      if (!CALL_RENAMED.has(h) && !declaredFns.has(h))
+      // def the cell already made — and a \code-declared name emits its
+      // template, not a stub.
+      if (
+        !CALL_RENAMED.has(h) &&
+        !declaredFns.has(h) &&
+        !codeCallNames.has(h.replace(/^'|'$/g, ''))
+      )
         pushIssue('note', `unknown head "${h}" — emitted as ${h}(...)`);
       return ['call', h, ...node.slice(1).map((n) => normalize(n, false))];
     }

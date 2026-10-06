@@ -1,6 +1,7 @@
 import { compileCellForCalc } from '../compile/codegen';
 import {
   latexToStatementStrings,
+  type CodeDecl,
   type Issue,
   type MathJson,
 } from '../compile/ir';
@@ -133,19 +134,21 @@ function ensureWorker(): Worker {
 // the cell's parsed IR into a standalone program (prelude + one
 // statement per \\ row), then the worker runs it. Cells the compiler
 // already rejects surface as error rows without a worker round-trip.
-// `otherPyLines`: the worksheet's OTHER cells' `\py{...}` sources,
-// exec'd in this cell's prelude so their bindings resolve worksheet-
-// wide (a cell's own \py statements stay inline).
+// `otherPyLines`/`otherCodeDecls`: the worksheet's OTHER cells'
+// `\py{...}` sources / `\code{...}` decls — \py execs in the prelude
+// so its bindings resolve worksheet-wide (a cell's own \py stays
+// inline), and \code decls rewrite `\name{...}` calls in this cell.
 export function evaluate(
   cell: {
     latex: string;
     json?: MathJson;
   },
   otherPyLines: string[] = [],
+  otherCodeDecls: ReadonlyMap<string, CodeDecl> = new Map(),
 ): Promise<CalcResult> {
   let prog: ReturnType<typeof compileCellForCalc>;
   try {
-    prog = compileCellForCalc(cell, otherPyLines);
+    prog = compileCellForCalc(cell, otherPyLines, otherCodeDecls);
   } catch (e) {
     // The compiler reports issues instead of throwing — a hard throw
     // must still not leave the cell stuck on '…' forever.
