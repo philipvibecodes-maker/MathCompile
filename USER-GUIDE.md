@@ -391,7 +391,7 @@ a statement (Enter starts the next line in the cell):
 ```
 
 After the definition, `\vv{u}` in any later statement — in the same
-cell or another — renders as `vv(u)` with a dotted underline and
+cell or another — renders as `vv{u}` with a dotted underline and
 expands to the body before compiling, so the Python output shows
 `\mathbf{u}`'s code, not `\vv`. The definition line itself emits no
 code; it shows a note (`\vv → \mathbf{#1}`) instead.
@@ -404,7 +404,7 @@ code; it shows a note (`\vv → \mathbf{#1}`) instead.
   then `\newcommand{\norm}[1]{\left\|\vv{#1}\right\|}`).
 - Deleting the definition line un-registers the command everywhere —
   every cell re-parses, so a leftover `\vv{u}` keeps its spelling
-  (rendered as literal `\vv(u)` text, muted) and flags
+  (rendered as literal `\vv{u}` text, muted) and flags
   `incomplete or unsupported command "\vv"` on the compile.
 - Builtin commands can't be redefined — a `\newcommand{\sin}{…}` line
   flags an error and `\sin` keeps its built-in meaning.

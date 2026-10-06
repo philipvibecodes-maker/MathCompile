@@ -460,7 +460,7 @@ body {
   color: var(--accent-text);
 }
 
-/* User-defined notation (`\vv{u}` renders `vv(u)`) — the name stays
+/* User-defined notation (`\vv{u}` renders `vv{u}`) — the name stays
    upright with a dotted underline so a macro reads as a defined thing,
    not an ordinary symbol run. */
 .mq-usermacro-name {
@@ -470,7 +470,7 @@ body {
 }
 
 /* A macro call whose \newcommand def is gone renders as literal
-   `\vv(u)` text — backslash shown, muted, no underline. */
+   `\vv{u}` text — backslash shown, muted, no underline. */
 .mq-deadmacro-name {
   font-family: inherit;
   color: var(--muted);

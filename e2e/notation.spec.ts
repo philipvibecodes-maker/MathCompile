@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test';
 import { clearFirstCell } from './helpers';
 
 // \newcommand user notation: a def statement on its own line registers
-// a macro `\name` that renders as `name(args)` (the UserMacro atom),
+// a macro `\name` that renders as `name{args}` (the UserMacro atom),
 // expands textually before compiling, and carries a note on the def
 // line. Deleting the def un-registers the command. Specs pin the DOM
 // contract only.
@@ -34,7 +34,7 @@ test.beforeEach(async ({ page }) => {
   await clearFirstCell(page);
 });
 
-test('a \\newcommand def registers a macro that renders name(args)', async ({
+test('a \\newcommand def registers a macro that renders name{args}', async ({
   page,
 }) => {
   await typeDef(page);
@@ -42,6 +42,8 @@ test('a \\newcommand def registers a macro that renders name(args)', async ({
   await page.keyboard.type('\\vv{u} + 1', { delay: 10 });
 
   await expect(page.locator('.mq-usermacro-name')).toHaveText('vv');
+  // LaTeX-style call site: the arg sits in braces, not parens.
+  await expect(page.locator('.mq-usermacro')).toHaveText('vv{u}');
   // The cell keeps the macro spelling — the expansion lives in the
   // compile pass, not the stored latex.
   expect(await cellValue(page, 0)).toContain('\\vv{u}');
@@ -92,7 +94,7 @@ test('deleting the def un-registers the command', async ({ page }) => {
   await cell(page, 0).click();
   await page.keyboard.type('\\vv{u}', { delay: 10 });
   await expect(page.locator('.mq-usermacro-name')).toHaveCount(0);
-  // The dead stub renders the call as literal `\vv(u)` text — the
+  // The dead stub renders the call as literal `\vv{u}` text — the
   // spelling round-trips, it just doesn't mean the macro anymore.
   await expect(page.locator('.mq-deadmacro-name')).toHaveText('\\vv');
   expect(await cellValue(page, 0)).toContain('\\vv{u}');

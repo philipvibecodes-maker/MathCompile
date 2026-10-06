@@ -12949,16 +12949,16 @@ var __assign = (this && this.__assign) || function () {
     // A `\newcommand{\name}[n]{body}` statement in a cell registers a macro
     // app-side; LatexCommandInput and the latex parser then resolve `\name`
     // like any builtin. A usage renders the macro's name followed by its
-    // argument blocks in parens \u2014 `\vv{u}` shows as `vv(u)` \u2014 while the app
+    // argument blocks in braces \u2014 `\vv{u}` shows as `vv{u}` \u2014 while the app
     // expands the call to the macro's body latex at compile time, so the
     // field keeps the shorthand visible and the compiler sees the meaning.
     // `.mq-usermacro-name` styling lives in the app's index.css.
     var UserMacro = /** @class */ (function (_super) {
         __extends(UserMacro, _super);
         // dead: the \newcommand def is gone but stored latex still carries
-        // `\name{\u2026}` \u2014 render it as literal `\name(args)` text (backslash
+        // `\name{\u2026}` \u2014 render it as literal `\name{args}` text (backslash
         // shown, no dotted underline) so the call reads as dead while its
-        // spelling round-trips losslessly. A live call shows `name(args)`
+        // spelling round-trips losslessly. A live call shows `name{args}`
         // underlined instead.
         function UserMacro(name, arity, dead) {
             if (dead === void 0) { dead = false; }
@@ -12974,17 +12974,13 @@ var __assign = (this && this.__assign) || function () {
                         h.text(dead ? '\\' + name : name),
                     ]),
                 ];
-                if (arity > 0) {
-                    kids.push(h.text('('));
-                    blocks.forEach(function (b, i) {
-                        if (i > 0)
-                            kids.push(h.text(','));
-                        kids.push(h.block('span', {
-                            class: dead ? 'mq-deadmacro-arg' : 'mq-usermacro-arg',
-                        }, b));
-                    });
-                    kids.push(h.text(')'));
-                }
+                blocks.forEach(function (b) {
+                    kids.push(h.text('{'));
+                    kids.push(h.block('span', {
+                        class: dead ? 'mq-deadmacro-arg' : 'mq-usermacro-arg',
+                    }, b));
+                    kids.push(h.text('}'));
+                });
                 return h('span', {
                     class: dead ? 'mq-deadmacro' : 'mq-usermacro',
                 }, kids);
@@ -12992,7 +12988,7 @@ var __assign = (this && this.__assign) || function () {
             _this_1.textTemplate =
                 arity === 0
                     ? [(dead ? '\\' : '') + name]
-                    : [(dead ? '\\' : '') + name + '('].concat(Array(arity - 1).fill(',').concat(')'));
+                    : [(dead ? '\\' : '') + name + '{'].concat(Array(arity - 1).fill('}{').concat('}'));
             return _this_1;
         }
         return UserMacro;

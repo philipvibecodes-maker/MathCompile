@@ -1265,15 +1265,15 @@ LatexCmds.tr = () =>
 // A `\newcommand{\name}[n]{body}` statement in a cell registers a macro
 // app-side; LatexCommandInput and the latex parser then resolve `\name`
 // like any builtin. A usage renders the macro's name followed by its
-// argument blocks in parens — `\vv{u}` shows as `vv(u)` — while the app
+// argument blocks in braces — `\vv{u}` shows as `vv{u}` — while the app
 // expands the call to the macro's body latex at compile time, so the
 // field keeps the shorthand visible and the compiler sees the meaning.
 // `.mq-usermacro-name` styling lives in the app's index.css.
 class UserMacro extends MathCommand {
   // dead: the \newcommand def is gone but stored latex still carries
-  // `\name{…}` — render it as literal `\name(args)` text (backslash
+  // `\name{…}` — render it as literal `\name{args}` text (backslash
   // shown, no dotted underline) so the call reads as dead while its
-  // spelling round-trips losslessly. A live call shows `name(args)`
+  // spelling round-trips losslessly. A live call shows `name{args}`
   // underlined instead.
   constructor(name: string, arity: number, dead = false) {
     super();
@@ -1288,18 +1288,15 @@ class UserMacro extends MathCommand {
           h.text(dead ? '\\' + name : name),
         ]) as HTMLElement,
       ];
-      if (arity > 0) {
-        kids.push(h.text('('));
-        blocks.forEach((b, i) => {
-          if (i > 0) kids.push(h.text(','));
-          kids.push(
-            h.block('span', {
-              class: dead ? 'mq-deadmacro-arg' : 'mq-usermacro-arg',
-            }, b),
-          );
-        });
-        kids.push(h.text(')'));
-      }
+      blocks.forEach((b) => {
+        kids.push(h.text('{'));
+        kids.push(
+          h.block('span', {
+            class: dead ? 'mq-deadmacro-arg' : 'mq-usermacro-arg',
+          }, b),
+        );
+        kids.push(h.text('}'));
+      });
       return h('span', {
         class: dead ? 'mq-deadmacro' : 'mq-usermacro',
       }, kids) as HTMLElement;
@@ -1307,8 +1304,8 @@ class UserMacro extends MathCommand {
     this.textTemplate =
       arity === 0
         ? [(dead ? '\\' : '') + name]
-        : [(dead ? '\\' : '') + name + '('].concat(
-            Array(arity - 1).fill(',').concat(')'),
+        : [(dead ? '\\' : '') + name + '{'].concat(
+            Array(arity - 1).fill('}{').concat('}'),
           );
   }
 }
