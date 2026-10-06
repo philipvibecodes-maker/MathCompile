@@ -18,7 +18,7 @@
 // unflattened — which this pass folds back into the canonical vocabulary.
 
 import { ComputeEngine } from '@cortex-js/compute-engine';
-import { outputLatex } from './latex';
+import { applyLatexRules, outputLatex, PRE_PARSE_RULES } from './latex';
 // The name tables below are derived views over the notation registry —
 // each name lives once in src/compile/notation.ts.
 import {
@@ -162,24 +162,9 @@ const foldDQuotient = (args: MathJson[]): MathJson[] | null => {
 // environment is a matrix/cases row separator, not a statement break, so
 // environment depth is tracked alongside brace depth.
 export function latexToStatementStrings(latex: string): string[] {
-  // \limits/\nolimits/\displaylimits are display hints, not semantics —
-  // CE chokes on `\sum\limits_{i=1}^{n}` while `\sum_{i=1}^{n}` parses
-  // fine, so they are stripped before parsing.
-  const inner = outputLatex(latex)
-    .replace(/\\(?:limits|nolimits|displaylimits)(?![a-zA-Z])/g, '')
-    // Thin spaces (\, \; \: \!) are layout hints — CE wraps them as an
-    // InvisibleOperator call which then looks like a function
-    // application (`\int x\,dx` → integrate(InvisibleOperator(x), x)).
-    .replace(/\\[,;:!]|(?<!\\)\\ /g, ' ')
-    // `\partial_{x}` is the partial operator applied as a subscript —
-    // CE glues it to the next factor (`\partial_{x}x^{2}` → x**x*2).
-    // The \frac{\partial}{\partial x} form routes through D() cleanly
-    // for every operand.
-    .replace(
-      /\\partial_(?:\{([^}]*)\}|([a-zA-Z]))(?!\s*\^)/g,
-      (_m, braced: string | undefined, bare: string | undefined) =>
-        `\\frac{\\partial}{\\partial ${braced ?? bare}}`,
-    );
+  // The pre-parse surgery lives in latex.ts as named rules — composed
+  // by name here (limits-hints, thin-space, partial-subscript).
+  const inner = applyLatexRules(outputLatex(latex), PRE_PARSE_RULES);
   const statements: string[] = [];
   let depth = 0;
   let envDepth = 0;
