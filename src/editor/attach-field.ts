@@ -4,6 +4,7 @@ import {
   type MathFieldElement,
   type MoveOutDetail,
 } from './math-field';
+import { outputLatex } from '../compile/latex';
 import { attachAutocompleteMenu } from './ac-menu';
 import { attachSymbolPicker } from './ac-picker';
 import { readHelpContext, type HelpContext } from './context-help';
@@ -40,8 +41,9 @@ const SMART_AUTO_COMMANDS =
   'int iint antid sum sqrt prod lim pi infty theta derivative def';
 
 // "Only one blank line": an empty field, or a lone \displaylines wrap
-// around nothing (what a single Enter-then-blank line serializes as).
-const BLANK_LATEX = /^\s*$|^\\displaylines\{\s*\}$/;
+// around nothing (what a single Enter-then-blank line serializes as) —
+// outputLatex is the sanctioned unwrap of both forms.
+const isBlank = (latex: string) => outputLatex(latex).trim() === '';
 
 // Attach the app's editing behavior to a <math-field>: translates the
 // element's DOM events into FieldCallbacks and returns the FieldHandle
@@ -91,7 +93,7 @@ export function attachField(
       !e.ctrlKey &&
       !e.metaKey &&
       !e.altKey &&
-      BLANK_LATEX.test(el.value.trim())
+      isBlank(el.value)
     ) {
       e.preventDefault();
       cb.onDeleteOut?.();

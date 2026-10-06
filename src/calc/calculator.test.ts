@@ -800,6 +800,21 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(calc('2^{-1}').statements[0].code).toBe(F('sp.Pow(2, -1)'));
   });
 
+  it('keeps a zero-padded negative exponent python-legal', () => {
+    // `sp.Pow(x, -007)` is invalid Python — the integer value is emitted.
+    expect(calc('x^{-007}').statements[0].code).toBe(F('sp.Pow(x, -7)'));
+    expect(
+      compileCellForCalc({
+        json: ['Power', 'x', ['Negate', { num: '007' }]],
+      }).statements[0].code,
+    ).toBe(F('sp.Pow(x, -7)'));
+  });
+
+  it('folds a negative literal into subtraction', () => {
+    expect(calc('x + -2').statements[0].code).toBe(F('x - 2'));
+    expect(calc('x - 2').statements[0].code).toBe(F('x - 2'));
+  });
+
   it('reports an unparseable statement via the issue list, not a row', () => {
     // `emit` flags a dropped Error node with a "statement skipped"
     // placeholder — redundant with the normalizer's real diagnostic,
@@ -927,6 +942,13 @@ describe('toNerdamerInput (latex → nerdamer calls)', () => {
   it("keeps an equation's lhs before a translated command", () => {
     expect(toN('2^{n}=\\sum_{i=0}^{n}\\binom{i}{n}')).toBe(
       '2^n=sum(factorial(i)/(factorial(n)*factorial(i-n)), i, 0, n)',
+    );
+  });
+
+  it('keeps a leading operator after a translated command verbatim', () => {
+    // `+m` after the \binom match — rec() would eat the unary +.
+    expect(toN('n\\binom{n}{k}+m')).toBe(
+      'n*factorial(n)/(factorial(k)*factorial(n-k))+m',
     );
   });
   it('reads a bare prime as a primed variable name', () => {

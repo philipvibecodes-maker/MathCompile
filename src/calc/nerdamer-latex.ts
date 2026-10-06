@@ -235,8 +235,11 @@ function leaf(src: string, nerdamer: Nerdamer): string {
   }
 }
 
-const START_OP = /^[=+\-*/^),:;,]/;
-const END_OP = /[=+\-*/^(,:;]$/;
+// Leading/trailing single chars that count as an operator boundary —
+// a fragment ending in END_OPS joins the next without an inserted `*`,
+// and a fragment starting with START_OPS keeps its first char verbatim.
+const START_OPS = new Set('=+-*/^),:;'.split(''));
+const END_OPS = new Set('=+-*/^(,:;'.split(''));
 
 export function toNerdamerInput(src: string, nerdamer: Nerdamer): string {
   const rec = (s: string) => toNerdamerInput(s, nerdamer);
@@ -252,13 +255,13 @@ export function toNerdamerInput(src: string, nerdamer: Nerdamer): string {
   const after = src.slice(best.end).trim();
   if (before !== '') {
     out += leaf(before, nerdamer);
-    if (!END_OP.test(out)) out += '*';
+    if (!END_OPS.has(out[out.length - 1])) out += '*';
   }
   out += best.out;
   if (after !== '') {
     // Keep a leading operator verbatim — rec() would feed '+\sqrt{2}'
     // to convertFromLaTeX, which eats the unary + (a+b → a*b).
-    if (START_OP.test(after)) {
+    if (START_OPS.has(after[0])) {
       out += after[0];
       out += rec(after.slice(1));
     } else {
