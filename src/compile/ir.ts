@@ -54,7 +54,7 @@ const head = (v: MathJson | undefined): string | undefined =>
 // Differential marks: plain `d`/`d_upright` symbols and the quoted
 // `'d'` string literal that `\text{d}` produces.
 const DIFF_MARKS = new Set(['d', 'd_upright', "'d'", "'d_upright'"]);
-const isDiffMark = (v: MathJson | undefined): boolean =>
+export const isDiffMark = (v: MathJson | undefined): boolean =>
   v !== undefined && isString(v) && DIFF_MARKS.has(v);
 
 // A `d`-power: `d`, `d^2`, or the same inside a Power node.
@@ -236,7 +236,7 @@ const intervalBind = (s: string, j: MathJson): MathJson => {
     // `Delimiter(Sequence(a,b), '(,)')` — the IR itself records the
     // brackets for paren-delimited pairs.
     [e1, e2] = [seq[1], seq[2]];
-    const d = rhs[2].replace(/['\s]/g, '');
+    const d = rhs[2].replaceAll("'", '').replaceAll(' ', '');
     [lb, rb] = [d[0] ?? '', d[d.length - 1] ?? ''];
   } else if (head(rhs) === 'List' && rhs.length === 3) {
     // `[a,b]` arrives as a bare List — the brackets live in the latex.
@@ -338,9 +338,14 @@ const KNOWN_HEADS = new Set([
   'MatrixMethod',
 ]);
 
-// CE string literals arrive as "'text'" (e.g. \text{...}); unwrap to the
-// inner name so it can be treated as a symbol with a note.
-const TEXT_LITERAL = /^'(.*)'$/;
+// CE string literals arrive as "'text'" (e.g. \text{...}); `unquote`
+// returns the inner text, or undefined for non-literals.
+export const unquote = (s: string): string | undefined =>
+  s.length >= 2 && s.startsWith("'") && s.endsWith("'")
+    ? s.slice(1, -1)
+    : undefined;
+const isTextLiteral = (v: MathJson): v is string =>
+  isString(v) && unquote(v) !== undefined;
 
 // Words that read as matrix operations when juxtaposed with a matrix
 // literal: `\mathrm{trace}(A)` etc. — codegen lowers them to method
@@ -358,9 +363,8 @@ const MATRIX_WORD_OPS = new Set([
 // CE marks unparseable atoms as the *quoted* symbol 'unexpected-command'
 // (a string literal), e.g. `['Power', "'unexpected-command'", LatexString]
 // for a bare `\int_{ }^{ }`.
-const UNEXPECTED_COMMAND = /^'unexpected-command'$/;
 const isUnexpectedCommand = (v: MathJson): boolean =>
-  isString(v) && UNEXPECTED_COMMAND.test(v);
+  v === "'unexpected-command'";
 
 function issue(severity: Issue['severity'], message: string): Issue {
   return { severity, message };
@@ -371,11 +375,12 @@ function issue(severity: Issue['severity'], message: string): Issue {
 // fragment when CE carried one. `parse-failed` is our own catch-all for a
 // thrown parse.
 function describeError(node: MathJson[]): string {
-  const code = (isString(node[1]) ? node[1] : 'error').replace(/^'|'$/g, '');
+  const codeStr = isString(node[1]) ? node[1] : 'error';
+  const code = unquote(codeStr) ?? codeStr;
   let src = '';
   for (const arg of node.slice(2)) {
     if (isArray(arg) && head(arg) === 'LatexString' && isString(arg[1])) {
-      src = arg[1].replace(/^'(.*)'$/s, '$1').trim();
+      src = (unquote(arg[1]) ?? arg[1]).trim();
       break;
     }
   }
@@ -433,7 +438,7 @@ function flattenSubscript(node: MathJson): string {
     if (h === 'Sequence' || h === 'Delimiter')
       return node
         .slice(1)
-        .filter((c) => !(isString(c) && TEXT_LITERAL.test(c)))
+        .filter((c) => !isTextLiteral(c))
         .map(flattenSubscript)
         .join(',');
   }
@@ -449,17 +454,14 @@ const isSymbolString = (v: MathJson): v is string =>
 // without emitting a literal note; undefined for anything else.
 const paramName = (v: MathJson): string | undefined => {
   if (isSymbolString(v)) return v;
-  const m = isString(v) ? TEXT_LITERAL.exec(v) : null;
-  return m ? m[1] : undefined;
+  return isString(v) ? unquote(v) : undefined;
 };
 
 // A Delimiter node's argument list: Delimiter(x) -> [x],
 // Delimiter(Sequence(a, b), '(,)') -> [a, b] (the '(,)' marker is dropped).
 function delimiterArgs(delim: MathJson): MathJson[] {
   if (!isArray(delim)) return [delim];
-  const inner = delim
-    .slice(1)
-    .filter((a) => !(isString(a) && TEXT_LITERAL.test(a)));
+  const inner = delim.slice(1).filter((a) => !isTextLiteral(a));
   if (inner.length === 1 && isArray(inner[0]) && head(inner[0]) === 'Sequence')
     return inner[0].slice(1);
   return inner;
@@ -523,8 +525,8 @@ function functionDefShape(
 // marker that asks for a function def. `f(x)` alone now reads as f·x, so
 // the sig shape only binds when the marker prefixes it.
 const isDefMark = (v: MathJson): boolean => {
-  const m = isString(v) ? TEXT_LITERAL.exec(v) : null;
-  return m !== null && m[1].trim() === 'def';
+  const t = isString(v) ? unquote(v) : undefined;
+  return t !== undefined && t.trim() === 'def';
 };
 
 // Statement `\text{def} f(x)…`: the marker lands as the first factor of
@@ -847,17 +849,17 @@ export function normalizeIR(
       // (assignment targets, def params, integral variables) rather than a
       // value — no constant or literal mapping applies there.
       if (asName) return node;
-      if (UNEXPECTED_COMMAND.test(node)) {
+      if (isUnexpectedCommand(node)) {
         // Bare marker outside a Power/Subscript pair (the quoted source is
         // recovered there) — flag generically and keep it an Error node so
         // codegen drops the statement.
         pushIssue('error', 'incomplete or unsupported command');
         return ['Error', "'unexpected-command'"];
       }
-      const text = TEXT_LITERAL.exec(node);
-      if (text) {
-        pushIssue('note', `text literal "${text[1]}" treated as a symbol`);
-        return text[1];
+      const text = isString(node) ? unquote(node) : undefined;
+      if (text !== undefined) {
+        pushIssue('note', `text literal "${text}" treated as a symbol`);
+        return text;
       }
       if (node === 'Nothing') {
         // 'Nothing' is CE's empty-argument marker. Inside Limits bounds it
@@ -917,7 +919,7 @@ export function normalizeIR(
     if (node.length >= 3 && isUnexpectedCommand(node[1])) {
       const src =
         isArray(node[2]) && head(node[2]) === 'LatexString' && isString(node[2][1])
-          ? node[2][1].replace(/^'(.*)'$/s, '$1').trim()
+          ? (unquote(node[2][1]) ?? node[2][1]).trim()
           : '';
       pushIssue(
         'error',
@@ -1738,7 +1740,7 @@ export function normalizeIR(
         'Matrix',
         ...node
           .slice(1)
-          .filter((a) => !(isString(a) && TEXT_LITERAL.test(a)))
+          .filter((a) => !isTextLiteral(a))
           .map((n) => normalize(n, false)),
       ];
     }

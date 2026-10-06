@@ -19,6 +19,12 @@ describe('outputLatex', () => {
     );
   });
 
+  it('unwraps a blank displaylines cell to whitespace', () => {
+    // attach-field's blank-cell check is outputLatex(latex).trim() === ''.
+    expect(outputLatex('')).toBe('');
+    expect(outputLatex('\\displaylines{ }').trim()).toBe('');
+  });
+
   it('leaves a non-wrapping displaylines prefix alone', () => {
     expect(outputLatex('\\displaylines{x} + y')).toBe('\\displaylines{x} + y');
   });

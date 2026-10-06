@@ -146,7 +146,7 @@
     );
     if (i < 0) return null;
     let j = i + 1;
-    while (j < lines.length && (lines[j] === '' || /^\s/.test(lines[j])))
+    while (j < lines.length && (lines[j] === '' || lines[j].startsWith(' ')))
       j++;
     return {
       head: lines.slice(0, i).join('\n'),

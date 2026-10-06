@@ -16,7 +16,7 @@
 // targets is future work.
 
 import type { Issue, MathJson, NormResult } from './ir';
-import { normalizeIR } from './ir';
+import { isDiffMark, normalizeIR, unquote } from './ir';
 import { CALC_RUNTIME_PY } from './calc-runtime';
 
 export interface CellInput {
@@ -73,7 +73,7 @@ function pyIdent(name: string): string {
   // Prime ticks are meaningful (x' is a distinct variable, not x) —
   // translate them to _prime before the generic strip eats them.
   let out = name
-    .replace(/'/g, '_prime')
+    .replaceAll("'", '_prime')
     .replace(/[^A-Za-z0-9_]+/g, '_')
     .replace(/^_+|_+$/g, '');
   if (out === '') out = 'sym';
@@ -112,16 +112,19 @@ const CONSTANTS: Record<string, string> = {
 
 // \mathbb{S}^{+/-/_+/_-}-style leaf sets CE emits as plain symbol names
 // (CONSTANTS can only hold one-segment S.* names — these are intervals
-// or integer intersections).
-const LEAF_SETS: Record<string, string> = {
-  PositiveNumbers: 'Interval.open(0, oo)',
-  NegativeNumbers: 'Interval.open(-oo, 0)',
-  NonNegativeNumbers: 'Interval(0, oo)',
-  NonPositiveNumbers: 'Interval(-oo, 0)',
-  PositiveIntegers: 'S.Naturals',
-  NonNegativeIntegers: 'S.Naturals0',
-  NegativeIntegers: 'Intersection(S.Integers, Interval.open(-oo, 0))',
-  NonPositiveIntegers: 'Intersection(S.Integers, Interval(-oo, 0))',
+// or integer intersections). Templates are functions of the `sp.`
+// qualifier so names can't drift out of qualification.
+const LEAF_SETS: Record<string, (sp: string) => string> = {
+  PositiveNumbers: (sp) => `${sp}Interval.open(0, ${sp}oo)`,
+  NegativeNumbers: (sp) => `${sp}Interval.open(-${sp}oo, 0)`,
+  NonNegativeNumbers: (sp) => `${sp}Interval(0, ${sp}oo)`,
+  NonPositiveNumbers: (sp) => `${sp}Interval(-${sp}oo, 0)`,
+  PositiveIntegers: (sp) => `${sp}S.Naturals`,
+  NonNegativeIntegers: (sp) => `${sp}S.Naturals0`,
+  NegativeIntegers: (sp) =>
+    `${sp}Intersection(${sp}S.Integers, ${sp}Interval.open(-${sp}oo, 0))`,
+  NonPositiveIntegers: (sp) =>
+    `${sp}Intersection(${sp}S.Integers, ${sp}Interval(-${sp}oo, 0))`,
 };
 
 // Known function heads -> the SymPy function name to call.
@@ -460,6 +463,15 @@ const asInt = (v: MathJson | undefined): number | undefined => {
         : NaN;
   return Number.isInteger(n) ? n : undefined;
 };
+
+// `RealNumbers_{0}`-style names: a `_0`/`_{0}` subscript marks the ±0
+// variant of a number set. Returns the base name, else undefined.
+const stripZeroSuffix = (s: string): string | undefined =>
+  s.endsWith('_{0}')
+    ? s.slice(0, -4)
+    : s.endsWith('_0')
+      ? s.slice(0, -2)
+      : undefined;
 
 // CE leaf names that don't print like the latex the user typed —
 // `\varepsilon` mints `Symbol("epsilonSymbol")`, showing the word
@@ -867,14 +879,15 @@ class Emitter {
         n[1] === 'Superminus' ||
         n[1] === 'Superplus' ||
         n[1] === 'PseudoInverse'
-      )
+      ) {
+        const base = isStr(n[2]) ? stripZeroSuffix(n[2]) : undefined;
         return (
           isStr(n[2]) &&
           (n[2] === 'RealNumbers' ||
             n[2] === 'Integers' ||
-            (SETISH_SYMBOLS.has(n[2].replace(/_\{?0\}?$/, '')) &&
-              /_\{?0\}?$/.test(n[2])))
+            (base !== undefined && SETISH_SYMBOLS.has(base)))
         );
+      }
       return false;
     }
     if (h === 'Interval' || h === 'Set') return true;
@@ -1046,13 +1059,8 @@ class Emitter {
       // \mathbb{R}^+ / \mathbb{R}^- / \mathbb{R}_+ / \mathbb{R}_- — CE
       // emits these as leaf symbol names; bare symbols named
       // "PositiveNumbers" are meaningless, so emit the interval set.
-      if (LEAF_SETS[node] !== undefined) {
-        const expr = LEAF_SETS[node].replace(
-          /\b(oo|S|Interval|Intersection|FiniteSet|Union|Complement|Contains)\b/g,
-          (m) => `${this.sp}${m}`,
-        );
-        return [expr, PREC_ATOM];
-      }
+      if (LEAF_SETS[node] !== undefined)
+        return [LEAF_SETS[node](this.sp), PREC_ATOM];
       if (node === 'Nothing') {
         this.scope.flag('error', 'missing argument cannot be emitted');
         return ['None', PREC_ATOM];
@@ -1087,7 +1095,7 @@ class Emitter {
           const body = neg
             ? isHead(a, 'Negate')
               ? this.emit(a[1], PREC_ADD)
-              : numText(a).replace(/^-/, '')
+              : numText(a).slice(1)
             : this.emit(a, PREC_ADD);
           return { neg, body };
         });
@@ -1174,17 +1182,13 @@ class Emitter {
         // `3^{-1}` — Python `**` on int operands yields a float before
         // sympy sees it (`Rational(3**-1, 2)` -> a binary fraction);
         // `sp.Pow` keeps the exact reciprocal.
+        // `asInt` normalizes zero-padded text (`-007`) to a legal literal.
         const negIntExp = (e: MathJson | undefined): string | null => {
-          if (e === undefined) return null;
-          if (isNum(e)) {
-            const t = numText(e);
-            return /^-\d+$/.test(t) ? t : null;
-          }
-          const inner =
-            isArr(e) && headOf(e) === 'Negate' ? e[1] : undefined;
-          if (inner === undefined || !isNum(inner)) return null;
-          const t = numText(inner);
-          return /^\d+$/.test(t) ? `-${t}` : null;
+          const inner = isHead(e, 'Negate') ? e[1] : e;
+          const n = asInt(inner);
+          if (n === undefined) return null;
+          const neg = isHead(e, 'Negate') ? n > 0 : n < 0;
+          return neg ? `-${Math.abs(n)}` : null;
         };
         const negExp = negIntExp(args[1]);
         if (negExp !== null)
@@ -1860,10 +1864,7 @@ class Emitter {
           while (
             factors.length >= 2 &&
             isStr(factors[factors.length - 1]) &&
-            isStr(factors[factors.length - 2]) &&
-            /^(d|d_upright|'d'|'d_upright')$/.test(
-              factors[factors.length - 2] as string,
-            )
+            isDiffMark(factors[factors.length - 2])
           ) {
             const name = factors.pop() as string;
             factors.pop();
@@ -2044,10 +2045,7 @@ class Emitter {
           body.length >= 3 &&
           isStr(body[body.length - 2]) &&
           isStr(body[body.length - 1]) &&
-          (body[body.length - 2] === 'd' ||
-            body[body.length - 2] === 'd_upright' ||
-            body[body.length - 2] === "'d'" ||
-            body[body.length - 2] === "'d_upright'")
+          isDiffMark(body[body.length - 2])
         ) {
           this.scope.flag(
             'error',
@@ -2262,7 +2260,7 @@ class Emitter {
         // `\text{mean}(…)` reaches here with the name still quoted as
         // 'mean' — unwrap it so pyIdent doesn't mangle to primemean_prime.
         const rawName = isStr(args[0]) ? args[0] : 'unknown';
-        const name = /^'(.+)'$/.exec(rawName)?.[1] ?? rawName;
+        const name = unquote(rawName) ?? rawName;
         // `\varphi(n)` parses as GoldenRatio applied to n — sympy's
         // GoldenRatio isn't callable and the textbook reading is
         // Euler's totient.
@@ -2283,16 +2281,13 @@ class Emitter {
           const a = args[1];
           // `RealNumbers_{0}`-style names — `_0`/`_{0}` subscript on a
           // number set marks the ±0 variant.
+          const zeroedBase = isStr(a) ? stripZeroSuffix(a) : undefined;
           const zeroed =
-            isStr(a) &&
-            SETISH_SYMBOLS.has(a.replace(/_\{?0\}?$/, '')) &&
-            /_\{?0\}?$/.test(a);
+            zeroedBase !== undefined && SETISH_SYMBOLS.has(zeroedBase);
           // The S ∩ (0,±∞) reading only holds on ℝ/ℤ — `A^{+}` on any
           // other operand is the pseudoinverse (handled below).
           if ((isStr(a) && (a === 'RealNumbers' || a === 'Integers')) || zeroed) {
-            const base = zeroed
-              ? this.emit(a.replace(/_\{?0\}?$/, '') as MathJson)
-              : this.emit(a);
+            const base = zeroed ? this.emit(zeroedBase) : this.emit(a);
             const halfOpen = name === 'Superminus';
             const range =
               name === 'PseudoInverse' ||
@@ -2678,7 +2673,7 @@ function freeNames(node: MathJson, acc = new Set<string>()): string[] {
 // powers of them — `10^6/3` must emit `Rational(10**6, 3)`
 // so it stays exact instead of a float.
 function isIntExpr(v: MathJson | undefined): boolean {
-  if (isNum(v)) return /^-?\d+$/.test(numText(v as MathJson));
+  if (isNum(v)) return asInt(v) !== undefined;
   if (!isArr(v)) return false;
   const h = headOf(v);
   if (h === 'Negate') return isIntExpr(v[1]);

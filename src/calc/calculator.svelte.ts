@@ -298,7 +298,7 @@ export async function interimEvaluate(latex: string): Promise<CalcRow[]> {
             // which MathQuill renders "a tan"; arcTrigNames maps to arc-.
             nerdamer(input)
               .toTeX()
-              .replace(/\\limits/g, ''),
+              .replaceAll('\\limits', ''),
           );
           return tex === '' ? null : ({ ok: true as const, latex: tex });
         } catch {
