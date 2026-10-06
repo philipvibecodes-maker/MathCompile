@@ -1270,47 +1270,78 @@ LatexCmds.tr = () =>
 // field keeps the shorthand visible and the compiler sees the meaning.
 // `.mq-usermacro-name` styling lives in the app's index.css.
 class UserMacro extends MathCommand {
-  constructor(name: string, arity: number) {
+  // dead: the \newcommand def is gone but stored latex still carries
+  // `\name{…}` — render it as literal `\name(args)` text (backslash
+  // shown, no dotted underline) so the call reads as dead while its
+  // spelling round-trips losslessly. A live call shows `name(args)`
+  // underlined instead.
+  constructor(name: string, arity: number, dead = false) {
     super();
     // Zero-arity serializes with a trailing space — `\halfx` would
     // read back as a different command name.
     this.ctrlSeq = arity === 0 ? '\\' + name + ' ' : '\\' + name;
     this.domView = new DOMView(arity, (blocks) => {
       const kids: ChildNode[] = [
-        h('var', { class: 'mq-usermacro-name' }, [
-          h.text(name),
+        h(dead ? 'span' : 'var', {
+          class: dead ? 'mq-deadmacro-name' : 'mq-usermacro-name',
+        }, [
+          h.text(dead ? '\\' + name : name),
         ]) as HTMLElement,
       ];
       if (arity > 0) {
         kids.push(h.text('('));
         blocks.forEach((b, i) => {
           if (i > 0) kids.push(h.text(','));
-          kids.push(h.block('span', { class: 'mq-usermacro-arg' }, b));
+          kids.push(
+            h.block('span', {
+              class: dead ? 'mq-deadmacro-arg' : 'mq-usermacro-arg',
+            }, b),
+          );
         });
         kids.push(h.text(')'));
       }
-      return h('span', { class: 'mq-usermacro' }, kids) as HTMLElement;
+      return h('span', {
+        class: dead ? 'mq-deadmacro' : 'mq-usermacro',
+      }, kids) as HTMLElement;
     });
     this.textTemplate =
       arity === 0
-        ? [name]
-        : [name + '('].concat(Array(arity - 1).fill(',').concat(')'));
+        ? [(dead ? '\\' : '') + name]
+        : [(dead ? '\\' : '') + name + '('].concat(
+            Array(arity - 1).fill(',').concat(')'),
+          );
   }
 }
 const userMacroNames = new Set<string>();
+// Arity per name so a removed macro's stub can still parse its stored
+// `\name{…}` uses.
+const userMacroArities = new Map<string, number>();
+// Names whose def was deleted: LatexCmds keeps a dead stub (see
+// UserMacro's `dead` flag) so a re-typeset doesn't mangle `\vv{u}`.
+const deadMacroNames = new Set<string>();
 const mcWindow = window as unknown as {
   __mcUserMacro?: (name: string, arity: number) => boolean;
   __mcUserMacroRemove?: (name: string) => void;
 };
 // App-side registration. Builtins always win — a builtin name can't be
-// taken over by a \newcommand def.
+// taken over by a \newcommand def. A dead stub never blocks
+// re-registering the same name.
 mcWindow.__mcUserMacro = (name, arity) => {
-  if (LatexCmds[name] && !userMacroNames.has(name)) return false;
+  if (
+    LatexCmds[name] &&
+    !userMacroNames.has(name) &&
+    !deadMacroNames.has(name)
+  )
+    return false;
   userMacroNames.add(name);
+  deadMacroNames.delete(name);
+  userMacroArities.set(name, arity);
   LatexCmds[name] = () => new UserMacro(name, arity);
   return true;
 };
 mcWindow.__mcUserMacroRemove = (name) => {
   if (!userMacroNames.delete(name)) return;
-  delete LatexCmds[name];
+  deadMacroNames.add(name);
+  LatexCmds[name] = () =>
+    new UserMacro(name, userMacroArities.get(name) ?? 0, true);
 };

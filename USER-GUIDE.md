@@ -403,9 +403,9 @@ code; it shows a note (`\vv → \mathbf{#1}`) instead.
 - Macros can call earlier macros (`\newcommand{\vv}[1]{\mathbf{#1}}`
   then `\newcommand{\norm}[1]{\left\|\vv{#1}\right\|}`).
 - Deleting the definition line un-registers the command everywhere —
-  every cell re-parses, so a leftover `\vv{u}` flags
-  `incomplete or unsupported command "\vv"` (re-typed after the
-  delete it parses as ordinary `\text{vv}` instead).
+  every cell re-parses, so a leftover `\vv{u}` keeps its spelling
+  (rendered as literal `\vv(u)` text, muted) and flags
+  `incomplete or unsupported command "\vv"` on the compile.
 - Builtin commands can't be redefined — a `\newcommand{\sin}{…}` line
   flags an error and `\sin` keeps its built-in meaning.
 - Definitions persist with the worksheet (they're just cell LaTeX),

@@ -469,6 +469,13 @@ body {
   border-bottom: 1px dotted var(--accent-text);
 }
 
+/* A macro call whose \newcommand def is gone renders as literal
+   `\vv(u)` text — backslash shown, muted, no underline. */
+.mq-deadmacro-name {
+  font-family: inherit;
+  color: var(--muted);
+}
+
 /* On-demand symbol picker (Ctrl+Space), anchored under the caret. */
 .mc-pick {
   position: absolute;

@@ -88,13 +88,19 @@ test('deleting the def un-registers the command', async ({ page }) => {
   await cell(page, 0).evaluate((el) => {
     (el as unknown as { value: string }).value = '';
   });
+  await setTarget(page, 'python');
   await cell(page, 0).click();
   await page.keyboard.type('\\vv{u}', { delay: 10 });
   await expect(page.locator('.mq-usermacro-name')).toHaveCount(0);
+  // The dead stub renders the call as literal `\vv(u)` text — the
+  // spelling round-trips, it just doesn't mean the macro anymore.
+  await expect(page.locator('.mq-deadmacro-name')).toHaveText('\\vv');
+  expect(await cellValue(page, 0)).toContain('\\vv{u}');
 
-  // And the reparse treats `\vv` as plain text, not the macro.
-  await setTarget(page, 'python');
-  await expect(page.locator('.cell-python')).toContainText('When(vv, u)');
+  // And the reparse flags the dead call instead of expanding it.
+  await expect(page.locator('.cell-issues')).toContainText(
+    'incomplete or unsupported command "\\vv"',
+  );
 });
 
 test('defined macros appear in the autocomplete menu', async ({ page }) => {
@@ -107,4 +113,24 @@ test('defined macros appear in the autocomplete menu', async ({ page }) => {
     .filter({ hasText: 'your notation' });
   await expect(item).toHaveCount(1);
   await expect(item).toContainText('vv');
+});
+
+test('defs and macro atoms persist across reload', async ({ page }) => {
+  await typeDef(page);
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('\\vv{u}', { delay: 10 });
+  await expect(page.locator('.mq-usermacro-name')).toHaveCount(1);
+
+  // The debounced worksheet write must land before the reload.
+  await page.waitForFunction(() =>
+    localStorage.getItem('mathcompile-cells')?.includes('\\vv'),
+  );
+  await page.reload();
+  await page.waitForSelector('math-field');
+
+  // Macros register during hydration, before the cells parse — the
+  // atom and its expansion both survive.
+  await expect(page.locator('.mq-usermacro-name')).toHaveText('vv');
+  await setTarget(page, 'python');
+  await expect(page.locator('.cell-python')).toContainText('u_bold');
 });

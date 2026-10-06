@@ -12955,15 +12955,23 @@ var __assign = (this && this.__assign) || function () {
     // `.mq-usermacro-name` styling lives in the app's index.css.
     var UserMacro = /** @class */ (function (_super) {
         __extends(UserMacro, _super);
-        function UserMacro(name, arity) {
+        // dead: the \newcommand def is gone but stored latex still carries
+        // `\name{\u2026}` \u2014 render it as literal `\name(args)` text (backslash
+        // shown, no dotted underline) so the call reads as dead while its
+        // spelling round-trips losslessly. A live call shows `name(args)`
+        // underlined instead.
+        function UserMacro(name, arity, dead) {
+            if (dead === void 0) { dead = false; }
             var _this_1 = _super.call(this) || this;
             // Zero-arity serializes with a trailing space \u2014 `\halfx` would
             // read back as a different command name.
             _this_1.ctrlSeq = arity === 0 ? '\\' + name + ' ' : '\\' + name;
             _this_1.domView = new DOMView(arity, function (blocks) {
                 var kids = [
-                    h('var', { class: 'mq-usermacro-name' }, [
-                        h.text(name),
+                    h(dead ? 'span' : 'var', {
+                        class: dead ? 'mq-deadmacro-name' : 'mq-usermacro-name',
+                    }, [
+                        h.text(dead ? '\\' + name : name),
                     ]),
                 ];
                 if (arity > 0) {
@@ -12971,35 +12979,51 @@ var __assign = (this && this.__assign) || function () {
                     blocks.forEach(function (b, i) {
                         if (i > 0)
                             kids.push(h.text(','));
-                        kids.push(h.block('span', { class: 'mq-usermacro-arg' }, b));
+                        kids.push(h.block('span', {
+                            class: dead ? 'mq-deadmacro-arg' : 'mq-usermacro-arg',
+                        }, b));
                     });
                     kids.push(h.text(')'));
                 }
-                return h('span', { class: 'mq-usermacro' }, kids);
+                return h('span', {
+                    class: dead ? 'mq-deadmacro' : 'mq-usermacro',
+                }, kids);
             });
             _this_1.textTemplate =
                 arity === 0
-                    ? [name]
-                    : [name + '('].concat(Array(arity - 1).fill(',').concat(')'));
+                    ? [(dead ? '\\' : '') + name]
+                    : [(dead ? '\\' : '') + name + '('].concat(Array(arity - 1).fill(',').concat(')'));
             return _this_1;
         }
         return UserMacro;
     }(MathCommand));
     var userMacroNames = new Set();
+    // Arity per name so a removed macro's stub can still parse its stored
+    // `\name{\u2026}` uses.
+    var userMacroArities = new Map();
+    // Names whose def was deleted: LatexCmds keeps a dead stub (see
+    // UserMacro's `dead` flag) so a re-typeset doesn't mangle `\vv{u}`.
+    var deadMacroNames = new Set();
     var mcWindow = window;
     // App-side registration. Builtins always win \u2014 a builtin name can't be
-    // taken over by a \newcommand def.
+    // taken over by a \newcommand def. A dead stub never blocks
+    // re-registering the same name.
     mcWindow.__mcUserMacro = function (name, arity) {
-        if (LatexCmds[name] && !userMacroNames.has(name))
+        if (LatexCmds[name] &&
+            !userMacroNames.has(name) &&
+            !deadMacroNames.has(name))
             return false;
         userMacroNames.add(name);
+        deadMacroNames.delete(name);
+        userMacroArities.set(name, arity);
         LatexCmds[name] = function () { return new UserMacro(name, arity); };
         return true;
     };
     mcWindow.__mcUserMacroRemove = function (name) {
         if (!userMacroNames.delete(name))
             return;
-        delete LatexCmds[name];
+        deadMacroNames.add(name);
+        LatexCmds[name] = function () { var _c; return new UserMacro(name, (_c = userMacroArities.get(name)) !== null && _c !== void 0 ? _c : 0, true); };
     };
     /*************************************************
      * LaTeX environments: \begin{matrix} family and
