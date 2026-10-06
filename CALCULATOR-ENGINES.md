@@ -17,10 +17,12 @@ cell's results: **SymPy on Pyodide** (authoritative, ~4s cold boot) and
   `interimEvaluate` while `calcEngine.status !== 'ready'`, `evaluate`
   always; interim rows render dimmed via `.pending` and tagged
   `.calc-interim` until real rows land.
-- `App.svelte` — shows a `.engine-status` banner in the output column
-  header while `calcEngine.status` is `loading`/`error`.
-- `src/compile/codegen.ts` — `compileCellForCalc()`: the shared
-  LaTeX → IR → SymPy pipeline, split into an evaluable program.
+- `App.svelte` — shows a `.engine-status` banner in the toolbar while
+  `calcEngine.status` is `loading`/`error`.
+- `src/compile/codegen.ts` — `compileCellsForCalc()`: the shared
+  LaTeX → IR → SymPy pipeline over the whole worksheet prefix (cells
+  share one scope, so names bound above stay bound below);
+  `compileCellForCalc()` is the standalone one-cell equivalent.
 - `public/pyodide-sw.js` — cache-first service worker for the CDN assets.
 
 ## Input → SymPy: the codegen path (not parse_latex)
@@ -36,14 +38,24 @@ SymPy emitter) now does the input→SymPy translation in TypeScript, so:
   emitted Python. Boot is `importScripts` pyodide → wasm+stdlib →
   `loadPackage(['sympy'])` → `mc_run` def; runtime network is jsDelivr
   only.
-- `compileCellForCalc(cell)` returns `{ prelude, statements, issues }`:
-  `prelude` = `import sympy as sp` + the cell's `x = sp.Symbol("x")` /
-  `f = sp.Function("f")` def lines; `statements` = one
-  `{ code, display? }` per top-level statement (per `\\` row).
-- Per-statement protocol in the worker (`mc_run`): a fresh
-  `ns = {'sp': sp}` per request; exec prelude; per statement —
-  `display === undefined` → `eval(code)`, else `exec(code)` then
-  `eval(display)`.
+- `compileCellsForCalc(cells)` returns `{ prelude, cells }`: `prelude` =
+  `import sympy as sp` + the `mc_*` runtime block; each cell program is
+  `{ defs, statements, issues, errorLine?, statementLines }` where
+  `defs` holds the `x = sp.Symbol("x")` / `f = sp.Function("f")` decl
+  lines first needed by that cell and `statements` is one
+  `{ code, display?, error? }` per top-level statement (per `\\` row).
+- The worksheet is one sequential namespace: cells compile into a shared
+  scope, so a name bound by an earlier cell (`a = 5`, `def g`) is in
+  scope below — no shadowing decl is emitted for it — while names
+  declared only below stay invisible to the cells above.
+- Worker protocol (`mc_run`): each request is the worksheet prefix
+  ending at the requesting cell (`{ prelude, cells }`, each cell keyed
+  by a content hash). `_ns` is the shared exec namespace and `_snaps[i]`
+  caches the namespace + rows after cell i; a changed cell rewinds to
+  the snapshot before it and re-runs just the tail, so earlier cells
+  aren't re-evaled. Per statement — `display === undefined` →
+  `eval(code)`, else `exec(code)` then `eval(display)`; a `defs` line
+  execs before the cell's statements.
 - **Rows are per statement, not folded**: multi-line cells show one
   result per line (Desmos-style), replacing the old `sp.Tuple` fallback
   (`(2, 5)` for a two-line cell — that existed only because parse_latex

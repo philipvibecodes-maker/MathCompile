@@ -25,8 +25,8 @@
   // --fade-ms for CSS mount animations.
   let settingsOpen = $state(false);
 
-  // Output column width (% of the row's flex width) — shared by every
-  // row and the column header; the .col-resize divider drags it.
+  // Output column width (% of the row's flex width) — only the python
+  // target's two-column layout uses it; its .col-resize divider drags it.
   let outputPct = $state(50);
 
   function startColDrag(e: PointerEvent) {
@@ -250,7 +250,11 @@
     </button>
   </header>
   <div class="main">
-    <section class="expr-panel" style:--output-w={`${outputPct}%`}>
+    <section
+      class="expr-panel"
+      class:two-col={appStore.target !== 'calculator'}
+      style:--output-w={`${outputPct}%`}
+    >
       <div class="col-headers">
         <span class="col-index"></span>
         <div class="col-field">
@@ -502,26 +506,36 @@
               >{i + 1}</span
             >
             <div
-              class="cell-input"
-              onpointerdown={(e) => {
-                if (!(e.target as HTMLElement).closest('math-field')) {
-                  e.preventDefault();
-                  appStore.focusCell(cell.id);
-                }
-              }}
+              class="cell-stack"
+              class:flat={appStore.target !== 'calculator'}
             >
-              <MathField {cell} />
+              <div
+                class="cell-input"
+                onpointerdown={(e) => {
+                  if (!(e.target as HTMLElement).closest('math-field')) {
+                    e.preventDefault();
+                    appStore.focusCell(cell.id);
+                  }
+                }}
+              >
+                <MathField {cell} />
+                {#if appStore.target === 'calculator'}
+                  <CalcIssues {cell} />
+                {/if}
+              </div>
               {#if appStore.target === 'calculator'}
-                <CalcIssues {cell} />
+                <CalcOutput {cell} index={i} />
               {/if}
             </div>
-            <div
-              class="col-resize"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize output column"
-              onpointerdown={startColDrag}
-            ></div>
+            {#if appStore.target !== 'calculator'}
+              <div
+                class="col-resize"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize output column"
+                onpointerdown={startColDrag}
+              ></div>
+            {/if}
             {#if appStore.target === 'latex'}
               <div class="cell-output">
                 <code class="cell-latex">{displayLatex(cell.latex)}</code>
@@ -533,8 +547,6 @@
                   >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
                 >
               </div>
-            {:else if appStore.target === 'calculator'}
-              <CalcOutput {cell} />
             {:else if appStore.target === 'python'}
               <div class="cell-output cell-code">
                 <div class="cell-code-body">

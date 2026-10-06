@@ -815,7 +815,10 @@ function normalizeStatementEqual(
   return ['Equal', ...node.slice(1).map(normalizeExpr)];
 }
 
-export function normalizeIR(json: MathJson | undefined): NormResult {
+export function normalizeIR(
+  json: MathJson | undefined,
+  declaredFns?: Set<string>,
+): NormResult {
   const issues: Issue[] = [];
   const pushIssue = (severity: Issue['severity'], message: string) => {
     issues.push(issue(severity, message));
@@ -829,8 +832,9 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
   // `f(x) = …`, `f(x) := …`, `f: x \mapsto …`, `g: (x,y) \mapsto …`.
   // Calls to one of these aren't "unknown head" (the flag at the tail
   // consults this), and a forward reference still flags because the
-  // declaration hasn't been scanned yet.
-  const declaredFns = new Set<string>();
+  // declaration hasn't been scanned yet. A worksheet compile passes the
+  // accumulating set so names declared by earlier cells apply here.
+  declaredFns ??= new Set<string>();
 
   const normalize = (
     node: MathJson,

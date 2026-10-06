@@ -114,8 +114,9 @@ body {
   background: var(--bg);
 }
 
-/* Column header row: spacers mirror .expr-row's columns so the Output
-   select sits directly above the .cell-output column. */
+/* Toolbar row above the stacked cells: spacers mirror .expr-row's
+   gutters (index left, delete right) so the controls bracket the cell
+   stack the same way the rows do. */
 .col-headers {
   display: flex;
   align-items: center;
@@ -134,11 +135,12 @@ body {
 }
 
 .col-output-head {
-  flex: 0 0 var(--output-w, 34%);
-  margin-left: 6px;
+  flex: 0 1 auto;
+  margin-left: auto;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 4px 8px;
   min-width: 0;
   position: relative;
@@ -189,11 +191,14 @@ body {
   border-color: var(--faint);
 }
 
+/* Jupyter-style gutter: the index pins to the input cell's top edge,
+   not the stacked cell's middle. */
 .expr-index {
   flex: 0 0 32px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
+  padding-top: 11px;
   font-size: 12px;
   color: var(--muted);
   user-select: none;
@@ -204,12 +209,90 @@ body {
   color: var(--accent-text);
 }
 
+/* The stacked cell: input field on top, its output beneath — one
+   notebook-style cell per row. */
+.cell-stack {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Latex and python keep the two-column layout (input | divider |
+   framed output); only the calculator stacks output beneath its input.
+   .cell-stack goes display:contents so its input joins the row's flex
+   directly, and the column-width rules below take over. */
+.cell-stack.flat {
+  display: contents;
+}
+
+.two-col .cell-input {
+  flex: 1;
+}
+
+.two-col .col-output-head {
+  flex: 0 0 var(--output-w, 34%);
+  margin-left: 6px;
+  justify-content: flex-start;
+}
+
+.two-col .expr-index {
+  align-items: center;
+  padding-top: 0;
+}
+
+.two-col .expr-delete {
+  align-self: stretch;
+  margin-top: 0;
+}
+
+/* Draggable divider between the input column and the output column.
+   Occupies the 6px gap the .cell-output margin used to give; its width
+   is shared by every row through --output-w on .expr-panel. */
+.two-col .col-resize {
+  flex: 0 0 6px;
+  position: relative;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.two-col .col-resize::after {
+  content: '';
+  position: absolute;
+  top: 10%;
+  bottom: 10%;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 1px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+
+.two-col .col-resize:hover::after,
+.two-col .col-resize.dragging::after {
+  background: var(--accent);
+}
+
+.two-col .cell-output {
+  flex: 0 0 var(--output-w, 34%);
+  padding: 0 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+/* .cell-code carries its own padding — keep it over the framed-output
+   padding above (same-element rule must win the specificity tie). */
+.two-col .cell-code {
+  padding: 6px 8px;
+}
+
 /* The math-field plus (calculator target) its issue list below it —
    messages sit in the input column next to what was typed, in flow so
    they never cover the field's other lines. The whole column is a
    click-to-focus target (handled onpointerdown in App.svelte). */
 .cell-input {
-  flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -445,45 +528,20 @@ body {
   white-space: nowrap;
 }
 
-/* Calculator-style LaTeX output beside each cell (target = latex). */
-/* Draggable divider between the input column and the output column.
-   Occupies the 6px gap the .cell-output margin used to give; its width
-   is shared by every row through --output-w on .expr-panel. */
-.col-resize {
-  flex: 0 0 6px;
-  position: relative;
-  cursor: col-resize;
-  touch-action: none;
-}
-
-.col-resize::after {
-  content: '';
-  position: absolute;
-  top: 10%;
-  bottom: 10%;
-  left: 50%;
-  width: 2px;
-  transform: translateX(-50%);
-  border-radius: 1px;
-  background: transparent;
-  transition: background 0.12s ease;
-}
-
-.col-resize:hover::after,
-.col-resize.dragging::after {
-  background: var(--accent);
-}
-
+/* Output stacked under its input cell — unframed like a notebook
+   output; the field above is what carries the cell's border. */
 .cell-output {
-  flex: 0 0 var(--output-w, 34%);
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 8px;
+  padding: 4px 6px 8px;
   min-width: 0;
-  background: var(--panel-bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
+}
+
+/* A cell with nothing to show (no rows, no pending eval, no code)
+   keeps zero footprint — stacked cells shouldn't get empty strips. */
+.calc-output.empty {
+  padding: 0;
 }
 
 .cell-latex {
@@ -577,14 +635,18 @@ body {
   white-space: nowrap;
 }
 
-/* Per-cell code output: code row on top, issues below. Issues float in
-   an overlay panel under the cell (out of flow), so mounting them never
-   resizes the row — they paint over the rows beneath instead. */
+/* Per-cell code output: code row on top, issues below. The only framed
+   output — a code block reads better boxed than bare text. Issues float
+   in an overlay panel under the cell (out of flow), so mounting them
+   never resizes the row — they paint over the rows beneath instead. */
 .cell-code {
   flex-direction: column;
   align-items: stretch;
   padding: 6px 8px;
   position: relative;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
 }
 
 .cell-code-body {
@@ -1084,6 +1146,8 @@ body {
 
 .expr-delete {
   flex: 0 0 28px;
+  align-self: flex-start;
+  margin-top: 9px;
   margin-left: 4px;
   border: none;
   background: transparent;

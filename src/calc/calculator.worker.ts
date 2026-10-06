@@ -23,11 +23,26 @@ interface PyodideLike {
 interface CalcStatementMsg {
   code: string;
   display?: string;
+  /** Statements that failed to emit keep their error — the row reports
+   * it in place instead of vanishing. */
+  error?: string;
+}
+
+interface EvalCellMsg {
+  /** Stable content hash of {defs, statements} — the snapshot chain
+   * rewinds to the first cell whose key changed. */
+  key: string;
+  /** Symbol/Function decl lines exec'd before this cell's statements. */
+  defs: string[];
+  statements: CalcStatementMsg[];
 }
 
 interface EvalRequest {
   id: number;
-  program: { prelude: string[]; statements: CalcStatementMsg[] };
+  // The worksheet prefix ending at the requesting cell: shared prelude
+  // plus every cell's program in order. The reply's `rows` are the last
+  // cell's results.
+  program: { prelude: string[]; cells: EvalCellMsg[] };
 }
 
 type WorkerMessage =
@@ -79,20 +94,22 @@ def _mc_row(val):
         pass
     return out
 
-def mc_run(prog_json):
-    # Each cell is a standalone program: prelude (import + Symbol/Function
-    # defs) execs once, then every statement yields one result row.
-    prog = json.loads(prog_json)
-    # The prelude defines clean_and_simplify, the pipeline helper the
-    # statements call (emitted per cell so the program is
-    # self-contained) — exec brings it into the namespace.
-    ns = {'sp': sp}
-    try:
-        exec('\\n'.join(prog['prelude']), ns)
-    except Exception as e:
-        return json.dumps([{'ok': False, 'error': str(e)}])
+# The worksheet namespace plus one snapshot per cell boundary: _snaps[i]
+# is the namespace + result rows captured after cell i last ran. A cell
+# sees every name bound by the cells above it (a def g in cell 2 is
+# visible below), and a request that only changed cell k rewinds to
+# _snaps[k-1] and re-runs just the tail — earlier cells aren't re-evaled.
+_ns = {'sp': sp}
+_snaps = []
+
+def _mc_run_cell(cell, ns):
+    # The cell's decl lines exec first (a no-op when the names were bound
+    # above — compileCellsForCalc only emits decls for new names), then
+    # every statement yields one result row.
+    for d in cell['defs']:
+        exec(d, ns)
     out = []
-    for stmt in prog['statements']:
+    for stmt in cell['statements']:
         try:
             # A statement that failed to compile keeps its row as an
             # in-place error instead of vanishing (rows keep order).
@@ -105,7 +122,45 @@ def mc_run(prog_json):
             out.append(row)
         except Exception as e:
             out.append({'ok': False, 'error': str(e)})
-    return json.dumps(out)
+    return out
+
+def mc_run(prog_json):
+    prog = json.loads(prog_json)
+    cells = prog['cells']
+    # First cell whose program changed since its last run — its snapshot
+    # is stale, so state rewinds to the boundary just before it.
+    div = 0
+    while (
+        div < len(_snaps)
+        and div < len(cells)
+        and _snaps[div]['key'] == cells[div]['key']
+    ):
+        div += 1
+    if div < len(_snaps):
+        del _snaps[div:]
+    _ns.clear()
+    if _snaps:
+        _ns.update(_snaps[-1]['ns'])
+    else:
+        _ns['sp'] = sp
+        # The prelude defines clean_and_simplify, the pipeline helper
+        # the statements call — exec brings it into the namespace.
+        try:
+            exec('\\n'.join(prog['prelude']), _ns)
+        except Exception as e:
+            return json.dumps([{'ok': False, 'error': str(e)}])
+    for cell in cells[div:]:
+        try:
+            rows = _mc_run_cell(cell, _ns)
+        except Exception as e:
+            # A decl line failing is a pipeline bug — surface it like a
+            # prelude failure (one error row, no snapshot taken).
+            return json.dumps([{'ok': False, 'error': str(e)}])
+        _snaps.append({'key': cell['key'], 'ns': dict(_ns), 'rows': rows})
+    last = len(cells) - 1
+    if last < 0 or last >= len(_snaps):
+        return json.dumps([])
+    return json.dumps(_snaps[last]['rows'])
 `;
 
 let boot: Promise<PyodideLike> | undefined;

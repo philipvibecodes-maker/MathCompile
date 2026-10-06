@@ -2,9 +2,9 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { clearFirstCell } from './helpers';
 
-// The column headers hold the smart mode toggle and the target select.
-// With the latex target (the default), each cell shows its LaTeX and a
-// copy button to the right of the input.
+// The toolbar above the cell list holds the smart mode toggle and the
+// target select. With the latex target (the default), each cell stacks
+// its LaTeX output beneath the input with a copy button.
 
 const cell = (page: Page, i: number) => page.locator('math-field').nth(i);
 
@@ -98,6 +98,51 @@ test('smart mode checkbox drives the math-field autoCommands option', async ({
   expect(await smartModeOn(page)).toBe(false);
   await box.click();
   expect(await smartModeOn(page)).toBe(true);
+});
+
+test('calculator output stacks beneath its input; latex and python keep two columns', async ({
+  page,
+}) => {
+  await cell(page, 0).click();
+  await cell(page, 0).pressSequentially('x+1', { delay: 40 });
+  await expect(page.locator('.cell-latex').first()).toHaveText('x+1');
+
+  const input0 = await page
+    .locator('.expr-row .cell-input')
+    .first()
+    .boundingBox();
+  // Latex and python sit in a framed output column right of the input,
+  // separated by the draggable divider.
+  for (const target of ['latex', 'python'] as const) {
+    if (target === 'python') await setTarget(page, 'python');
+    const out = await page
+      .locator('.expr-row .cell-output')
+      .first()
+      .boundingBox();
+    expect(input0 && out).toBeTruthy();
+    expect(out!.x).toBeGreaterThan(input0!.x + input0!.width - 1);
+    await expect(page.locator('.col-resize').first()).toBeVisible();
+  }
+
+  // The calculator's rows stack directly beneath the input cell at the
+  // same left edge — the notebook layout.
+  await setTarget(page, 'calculator');
+  await expect(
+    page.locator('.calc-row .calc-math').first(),
+  ).toContainText('x', { timeout: 90_000 });
+  const input = await page
+    .locator('.expr-row .cell-input')
+    .first()
+    .boundingBox();
+  const output = await page
+    .locator('.expr-row .calc-output')
+    .first()
+    .boundingBox();
+  expect(input && output).toBeTruthy();
+  expect(output!.y).toBeGreaterThanOrEqual(input!.y + input!.height - 1);
+  expect(Math.abs(output!.x - input!.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(output!.width - input!.width)).toBeLessThanOrEqual(2);
+  await expect(page.locator('.col-resize')).toHaveCount(0);
 });
 
 test('latex target shows per-cell output with a copy button', async ({

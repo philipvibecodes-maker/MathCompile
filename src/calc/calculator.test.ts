@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import nerdamer from 'nerdamer/all';
-import { compileCellForCalc } from '../compile/codegen';
+import { compileCellForCalc, compileCellsForCalc } from '../compile/codegen';
 import { parseCellLatex } from '../compile/ir';
 import { toNerdamerInput } from './nerdamer-latex';
 import { interimEvaluate } from './calculator.svelte.ts';
 
 const toN = (s: string) => toNerdamerInput(s, nerdamer);
 const calc = (latex: string) => compileCellForCalc({ json: parseCellLatex(latex) });
+const calcAll = (...latexs: string[]) =>
+  compileCellsForCalc(latexs.map((latex) => ({ json: parseCellLatex(latex) })));
 // The calc pipeline wraps every evaluated expression — expectations
 // spell the inner emitted expression; F() applies the worker's
 // clean_and_simplify wrap.
@@ -799,6 +801,67 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
         line: 0,
       },
     ]);
+  });
+});
+
+describe('compileCellsForCalc (worksheet cells share one scope)', () => {
+  it('emits one shared prelude plus a program per cell', () => {
+    const prog = calcAll('x+1', 'y+2');
+    expect(prog.prelude).toEqual([
+      'import sympy as sp',
+      expect.stringContaining('def clean_and_simplify'),
+    ]);
+    expect(prog.cells).toHaveLength(2);
+    expect(prog.cells[0].defs).toEqual(['x = sp.Symbol("x")']);
+    expect(prog.cells[1].defs).toEqual(['y = sp.Symbol("y")']);
+    expect(prog.cells[0].statements).toEqual([
+      { code: F('x + 1'), display: undefined },
+    ]);
+    expect(prog.cells[1].statements).toEqual([
+      { code: F('y + 2'), display: undefined },
+    ]);
+  });
+
+  it('puts a def from an earlier cell in scope for the cells below', () => {
+    // Cell 2 defines g — cell 3 calls it as a function instead of
+    // juxtaposing g·4 and instead of shadowing it with a Function decl.
+    const prog = calcAll('\\text{def} g(x) = 2x', 'g(4)');
+    expect(prog.cells[0].statements[0].code).toBe('def g(x):\n    return 2 * x');
+    expect(prog.cells[1].defs).toEqual([]);
+    expect(prog.cells[1].statements).toEqual([
+      { code: F('g(4)'), display: undefined },
+    ]);
+  });
+
+  it('lets cells below see an assignment from an earlier cell', () => {
+    const prog = calcAll('a = 5', 'a+1');
+    // No Symbol("a") decl below — a is already bound by cell 1.
+    expect(prog.cells[1].defs).toEqual([]);
+    expect(prog.cells[1].statements[0].code).toBe(F('a + 1'));
+  });
+
+  it('does not leak a later cell\'s declarations upward', () => {
+    // g(4) sits ABOVE the def — there g is unbound, so parens multiply
+    // and g gets its own decl there.
+    const prog = calcAll('g(4)', '\\text{def} g(x) = 2x');
+    expect(prog.cells[0].defs).toEqual(['g = sp.Symbol("g")']);
+    expect(prog.cells[0].statements[0].code).toBe(F('g * 4'));
+  });
+
+  it('declares a name in the first cell that needs it, not twice', () => {
+    const prog = calcAll('x+1', 'x+2');
+    expect(prog.cells[0].defs).toEqual(['x = sp.Symbol("x")']);
+    expect(prog.cells[1].defs).toEqual([]);
+    expect(prog.cells[1].statements[0].code).toBe(F('x + 2'));
+  });
+
+  it('keeps each cell\'s issues and statement lines on its own program', () => {
+    const prog = calcAll('\\foo', 'x+1');
+    expect(prog.cells[0].issues.some((i) => i.severity === 'error')).toBe(
+      true,
+    );
+    expect(prog.cells[1].issues).toEqual([]);
+    expect(prog.cells[1].statementLines).toEqual([0]);
   });
 });
 

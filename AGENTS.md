@@ -31,7 +31,8 @@ through a MathJSON IR to LaTeX or SymPy-flavored Python (`src/compile/`).
 
 ```
 src/
-  App.svelte          worksheet UI: cell list, output column, header
+  App.svelte          worksheet UI: stacked cells (latex/python keep a
+                      two-column layout under .two-col), header
   commands.ts         Command type + command list factory
   fuzzy.ts            palette search scoring
   state/
@@ -110,9 +111,11 @@ and empty blocks serialize as `{ }`.
 - `target === 'calculator'` renders `CalcOutput` per cell: nerdamer
   interim rows (dimmed, no `code`) until the Pyodide/SymPy worker is
   ready, then one result row per top-level statement.
-- The cell compiles via `compileCellForCalc` — the shared pipeline, not
-  a second parser — so the worker only exec/evals Python. Assignments/
-  defs carry a `display` expression (`a = 5` -> `Eq(a, 5)`).
+- The worksheet prefix compiles via `compileCellsForCalc` — the shared
+  pipeline, not a second parser — so the worker only exec/evals Python.
+  Cells share one namespace in order (a `def g` or `a = 5` above is in
+  scope below). Assignments/defs carry a `display` expression
+  (`a = 5` -> `Eq(a, 5)`).
 - See CALCULATOR-ENGINES.md for the engine protocol, nerdamer coverage,
   and earned gotchas.
 
