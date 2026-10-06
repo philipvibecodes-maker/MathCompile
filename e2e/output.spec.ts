@@ -226,17 +226,20 @@ test('import-all checkbox switches between import * and sp. qualifiers', async (
   await expect(first).toContainText('x = sp.Symbol("x")');
 });
 
-// \antid and \iint are insertion aliases for a boundless indefinite ∫ —
-// the latex output view (and its copy) shows the canonical \int, which is
-// also what a pasted-elsewhere LaTeX doc needs.
-test('latex output shows \\antid and \\iint as \\int', async ({ page }) => {
+// \antid is an insertion alias for a boundless indefinite ∫ — the latex
+// output view (and its copy) shows the canonical \int, which is also what
+// a pasted-elsewhere LaTeX doc needs. \iint is a real boundless ∬ sign,
+// not an alias — it round-trips verbatim.
+test('latex output shows \\antid as \\int, keeps \\iint verbatim', async ({
+  page,
+}) => {
   const mf = cell(page, 0);
   await mf.click();
   await mf.pressSequentially('antid', { delay: 60 });
   await mf.pressSequentially('xdx', { delay: 40 });
   await expect(page.locator('.cell-latex').first()).toHaveText('\\int xdx');
 
-  // \iint with sibling SupSub bounds renders as \int_{a}^{b} too.
+  // \iint with sibling SupSub bounds stays \iint_{a}^{b}.
   await page.locator('.add-expr').click();
   await cell(page, 1).pressSequentially('iint_a', { delay: 60 });
   await page.keyboard.press('ArrowRight');
@@ -244,7 +247,7 @@ test('latex output shows \\antid and \\iint as \\int', async ({ page }) => {
   await page.keyboard.press('ArrowRight');
   await cell(page, 1).pressSequentially('xdx', { delay: 40 });
   await expect(page.locator('.cell-latex').nth(1)).toHaveText(
-    '\\int_{a}^{b}xdx',
+    '\\iint_{a}^{b}xdx',
   );
 });
 

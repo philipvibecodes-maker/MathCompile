@@ -1,11 +1,12 @@
-// \iint and \antid are MathQuill's boundless insertion aliases for a
-// single indefinite ∫ — the output view (and copies/parses fed by
-// outputLatex) shows the canonical \int. The (?![a-zA-Z]) guard keeps
-// longer command names like \iintx untouched, and the backslash-run
-// parity check keeps a `\\` row separator followed by the literal
-// letters "antid"/"iint" (e.g. `x\\antid y`) from collapsing: the
+// \antid is MathQuill's boundless insertion alias for a single
+// indefinite ∫ — the output view (and copies/parses fed by
+// outputLatex) shows the canonical \int. \iint is NOT aliased: it's a
+// real boundless ∬ sign that CE parses natively. The (?![a-zA-Z])
+// guard keeps longer command names like \antidx untouched, and the
+// backslash-run parity check keeps a `\\` row separator followed by
+// the literal letters "antid" (e.g. `x\\antid y`) from collapsing: the
 // alias's own \ must sit at an odd position in the run.
-const INT_ALIASES = /(?<!\\)((?:\\\\)*)\\(?:antid|iint)(?![a-zA-Z])/g;
+const INT_ALIASES = /(?<!\\)((?:\\\\)*)\\antid(?![a-zA-Z])/g;
 const canonicalInt = (s: string): string =>
   s.replace(INT_ALIASES, '$1\\int');
 

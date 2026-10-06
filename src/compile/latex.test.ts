@@ -29,14 +29,15 @@ describe('outputLatex', () => {
     expect(outputLatex('\\displaylines{x} + y')).toBe('\\displaylines{x} + y');
   });
 
-  it('shows boundless \\antid and \\iint as \\int', () => {
-    // The boundless signs are insertion aliases — the output view shows
-    // the canonical \int (a copied \antid is meaningless outside MQ).
+  it('shows boundless \\antid as \\int, keeps \\iint verbatim', () => {
+    // \antid is an insertion alias — the output view shows the
+    // canonical \int (a copied \antid is meaningless outside MQ).
+    // \iint is a real boundless ∬ sign, not an alias — it round-trips.
     expect(outputLatex('\\antid x^{2}dx')).toBe('\\int x^{2}dx');
-    expect(outputLatex('\\iint xdxdy')).toBe('\\int xdxdy');
-    expect(outputLatex('\\iint_{a}^{b} x\\,dx')).toBe('\\int_{a}^{b} x\\,dx');
+    expect(outputLatex('\\iint xdxdy')).toBe('\\iint xdxdy');
+    expect(outputLatex('\\iint_{a}^{b} x\\,dx')).toBe('\\iint_{a}^{b} x\\,dx');
     expect(outputLatex('\\displaylines{\\antid x\\\\ \\iint y}')).toBe(
-      '\\int x\\\\ \\int y',
+      '\\int x\\\\ \\iint y',
     );
     // Bounds grow as a sibling SupSub — the alias still maps.
     expect(outputLatex('\\antid_{1} xdx')).toBe('\\int_{1} xdx');
@@ -48,7 +49,7 @@ describe('outputLatex', () => {
     expect(outputLatex('x\\\\antid y')).toBe('x\\\\antid y');
     expect(outputLatex('x\\\\iint y')).toBe('x\\\\iint y');
     expect(outputLatex('x\\\\\\antid y')).toBe('x\\\\\\int y');
-    expect(outputLatex('x\\\\\\iint y')).toBe('x\\\\\\int y');
+    expect(outputLatex('x\\\\\\iint y')).toBe('x\\\\\\iint y');
   });
 });
 
@@ -62,7 +63,7 @@ describe('copyableLatex', () => {
     );
   });
 
-  it('still canonicalizes \\antid/\\iint to \\int', () => {
+  it('still canonicalizes \\antid to \\int', () => {
     expect(copyableLatex('\\antid xdx')).toBe('\\int xdx');
   });
 
@@ -83,10 +84,10 @@ describe('displayLatex', () => {
     expect(displayLatex('x+1')).toBe('x+1');
   });
 
-  it('shows \\antid and \\iint as \\int too', () => {
+  it('shows \\antid as \\int too', () => {
     expect(displayLatex('\\antid xdx')).toBe('\\int xdx');
     expect(displayLatex('\\displaylines{\\iint x\\\\ \\antid y}')).toBe(
-      '\\int x\\\\\n\\int y',
+      '\\iint x\\\\\n\\int y',
     );
   });
 });

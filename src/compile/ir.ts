@@ -265,9 +265,10 @@ export function parseCellLatex(latex: string): MathJson | undefined {
     try {
       // `form: 'raw'` skips CE canonicalization so the user's term order
       // survives to codegen (a * 2 stays Multiply(a, 2), not sorted).
-      // \antid/\iint (MathQuill's boundless insertion aliases for \int)
-      // already read as \int here — outputLatex canonicalizes them in
+      // \antid (MathQuill's boundless insertion alias for \int)
+      // already reads as \int here — outputLatex canonicalizes it in
       // latexToStatementStrings, so CE sees an ordinary Integrate node.
+      // \iint is not aliased — CE parses it natively to Integrate.
       j = ce().parse(s, { form: 'raw' }).json as MathJson;
     } catch {
       return ['Error', `'parse-failed'`] as MathJson;

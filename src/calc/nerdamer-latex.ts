@@ -90,10 +90,13 @@ function constLetter(src: string): string {
 
 // \int_{lo}^{hi} f dx → defint(f, lo, hi, var); without bounds →
 // integrate(f, var) + C. The integrand is the rest of the line.
+// The boundless signs (\iint, \iiint, …) match too — they're the same
+// integrate call; extra differentials stay in the integrand text.
 const matchInt: Matcher = (src, rec) => {
-  const start = src.indexOf('\\int');
-  if (start < 0) return null;
-  const [lo, hi, end] = readBounds(src, start + 4);
+  const m = /\\i+nt(?![a-zA-Z])/.exec(src);
+  if (!m) return null;
+  const start = m.index;
+  const [lo, hi, end] = readBounds(src, start + m[0].length);
   const [body, dvar] = splitDifferential(src.slice(end));
   const inner = nonempty(body) ? rec(body) : 'x';
   if (nonempty(lo) !== nonempty(hi))
