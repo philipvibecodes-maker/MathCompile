@@ -541,6 +541,13 @@ LatexCmds.lowercase = makeTextBlock('\\lowercase', 'Lowercase', 'span', {
   class: 'mq-text-mode'
 });
 
+// MATHCOMPILE: \py{...} — raw Python as a text-mode block so spaces,
+// colons and operators stay literal. The compiler lifts each top-level
+// \py statement verbatim into the emitted program (see parseCellLatex).
+LatexCmds.py = makeTextBlock('\\py', 'Python', 'span', {
+  class: 'mq-py mq-monospace mq-text-mode'
+});
+
 class RootMathCommand extends MathCommand {
   cursor: Cursor;
   constructor(cursor: Cursor) {
