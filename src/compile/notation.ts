@@ -767,6 +767,18 @@ export const NOTATION: Notation[] = [
   //   "unknown head") —
   { name: 'Set', heads: ['Set'], callTier: true, callSympy: 'FiniteSet' },
   {
+    name: 'Range',
+    heads: ['Range'],
+    probes: [
+      { latex: '\\{1,2,\\ldots,10\\}', expect: 'sp.Range(1, 11)' },
+      { latex: '\\{2,4,\\ldots,20\\}', expect: 'sp.Range(2, 21, 2)' },
+      { latex: '\\{10,9,\\ldots,1\\}', expect: 'sp.Range(10, 0, -1)' },
+    ],
+    note: '\\{a,b,\\ldots,z\\} — CE mints a hi-INCLUSIVE integer range '
+      + '(step from the first two entries); codegen shifts the bound by '
+      + 'one step for sp.Range\'s exclusive end',
+  },
+  {
     name: 'Superstar',
     callTier: true,
     callSympy: 'Adjoint',
@@ -885,6 +897,11 @@ const STRUCTURAL_HEADS = [
   'Condition', 'Complement', 'Difference',
   // statement-level IR
   'Assign', 'Declare', 'Block', 'WhereBlock', 'Function',
+  // control flow minted by parseCellLatex's row folding (\text{if}/
+  // elif/else/while/for/def `:` headers + \quad indents) plus CE's
+  // native \text{break}/continue/return statement heads
+  'If', 'Elif', 'Else', 'While', 'For', 'Break', 'Continue', 'Return',
+
   // structural helpers — 'call' marks a node already escaped by the
   // normalizer; without it a nested g(f(x)) re-wraps into
   // ['call', 'call', ...]

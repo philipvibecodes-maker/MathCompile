@@ -217,6 +217,8 @@ describe('derived ir.ts views equal the replaced literals', () => {
         'NotSupersetNotEqual', 'And', 'Or', 'Not', 'Which', 'Piecewise',
         'Set', 'Condition', 'Complement', 'Difference',
         'Assign', 'Def', 'Declare', 'Block', 'WhereBlock', 'Function',
+        'If', 'Elif', 'Else', 'While', 'For', 'Break', 'Continue',
+        'Return', 'Range',
         'Limits', 'Tuple', 'List', 'Subscript', 'Delimiters', 'Error',
         'call', 'MatrixMethod',
         'Integrate', 'Sum', 'Product', 'Limit', 'D', 'Determinant',

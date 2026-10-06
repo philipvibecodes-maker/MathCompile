@@ -536,6 +536,20 @@ function emit(node: MathJson | undefined, ctx: Ctx): string | null {
         ? emit(args[args.length - 1], ctx)
         : null;
     }
+    // Control-flow statements minted by parseCellLatex's row folding —
+    // statements, not expressions, so nerdamer has nothing to evaluate.
+    // '' suppresses the row; null would leaf-fallback to the raw
+    // `\text{if} …:` source and guess a wrong interim.
+    case 'Block':
+    case 'If':
+    case 'Elif':
+    case 'Else':
+    case 'While':
+    case 'For':
+    case 'Break':
+    case 'Continue':
+    case 'Return':
+      return '';
     default:
       if (FUNCS[h] !== undefined) {
         const ts = subs(args);

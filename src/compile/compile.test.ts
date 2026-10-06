@@ -1399,6 +1399,177 @@ const FIXTURES: {
       'sp.Lambda(sp.Symbol("x"), f(g(sp.Symbol("x"))))',
     ],
   },
+  // --- `...` integer ranges + \text{...}: block statements ------------
+  {
+    // \{a, b, \ldots, z\} — CE's Range is hi-INCLUSIVE; sp.Range's upper
+    // bound is exclusive so the emitted bound shifts +1.
+    latex: 'S = \\{1,2,\\ldots,10\\}',
+    expectedIR: ['Assign', 'S', ['Range', 1, 10, 1]],
+    expectedPython: ['S = sp.Range(1, 11)'],
+  },
+  {
+    // The step comes from the first two elements (2, 4, ... -> step 2).
+    latex: 'i \\in \\{2,4,\\ldots,20\\}',
+    expectedIR: ['Element', 'i', ['Range', 2, 20, 2]],
+    expectedPython: ['sp.Contains(sp.I, sp.Range(2, 21, 2))'],
+  },
+  {
+    // Symbolic bound — the +1 shift emits as an expression.
+    latex: '\\{1,\\ldots,n\\}',
+    expectedIR: ['Range', 1, 'n'],
+    expectedPython: ['n = sp.Symbol("n")', 'sp.Range(1, n + 1)'],
+  },
+  {
+    // A descending range steps down — the exclusive bound shifts -1.
+    latex: '\\{10,9,\\ldots,1\\}',
+    expectedIR: ['Range', 10, 1, -1],
+    expectedPython: ['sp.Range(10, 0, -1)'],
+  },
+  {
+    // \text{def} f(x): + \quad-indented rows — the multi-line def; a
+    // bare expression row in the body is the return value.
+    latex: '\\displaylines{\\text{def} f(x):\\\\ \\quad x^2}',
+    expectedIR: ['Def', 'f', ['List', 'x'], ['Block', ['Power', 'x', 2]]],
+    expectedPython: ['def f(x):', '    return x**2'],
+  },
+  {
+    // \text{return} is explicit when it isn't the last row.
+    latex: '\\displaylines{\\text{def} f(x):\\\\ \\quad \\text{return} x^2}',
+    expectedIR: [
+      'Def',
+      'f',
+      ['List', 'x'],
+      ['Block', ['Return', ['Power', 'x', 2]]],
+    ],
+    expectedPython: ['def f(x):', '    return x**2'],
+  },
+  {
+    // if/elif/else chain inside a def body — \quad\\quad (or \qquad)
+    // indents the suite, \quad brings the next header back out.
+    latex:
+      '\\displaylines{\\text{def} f(x):\\\\ \\quad \\text{if} x > 0:\\\\ \\quad\\quad x\\\\ \\quad \\text{elif} x = 0:\\\\ \\quad\\quad 0\\\\ \\quad \\text{else}:\\\\ \\quad\\quad -x}',
+    expectedIR: [
+      'Def',
+      'f',
+      ['List', 'x'],
+      [
+        'Block',
+        [
+          'If',
+          ['Greater', 'x', 0],
+          ['Block', 'x'],
+          [
+            'Elif',
+            ['Equal', 'x', 0],
+            ['Block', 0],
+            ['Else', ['Block', ['Negate', 'x']]],
+          ],
+        ],
+      ],
+    ],
+    expectedPython: [
+      'def f(x):',
+      '    if sp.Gt(x, 0):',
+      '        return x',
+      '    elif sp.Eq(x, 0):',
+      '        return 0',
+      '    else:',
+      '        return -x',
+    ],
+  },
+  {
+    // while + break — the nested \text{if} keeps its own body at
+    // the deeper indent.
+    latex:
+      '\\displaylines{x = 0\\\\ \\text{while} x < 3:\\\\ \\quad x = x + 1\\\\ \\quad \\text{if} x > 2:\\\\ \\quad\\quad \\text{break}}',
+    expectedIR: [
+      'Block',
+      ['Assign', 'x', 0],
+      [
+        'While',
+        ['Less', 'x', 3],
+        [
+          'Block',
+          ['Assign', 'x', ['Add', 'x', 1]],
+          ['If', ['Greater', 'x', 2], ['Block', ['Break']]],
+        ],
+      ],
+    ],
+    expectedPython: [
+      'x = 0',
+      'while sp.Lt(x, 3):',
+      '    x = x + 1',
+      '    if sp.Gt(x, 2):',
+      '        break',
+    ],
+  },
+  {
+    // for over a `...` range — the loop var binds like Python (no
+    // Symbol decl for i) and stays bound after the loop.
+    latex:
+      '\\displaylines{y = 0\\\\ \\text{for} i \\in \\{1,2,\\ldots,10\\}:\\\\ \\quad y = y + i\\\\ \\quad \\text{if} y > 4:\\\\ \\quad\\quad \\text{break}}',
+    expectedIR: [
+      'Block',
+      ['Assign', 'y', 0],
+      [
+        'For',
+        'i',
+        ['Range', 1, 10, 1],
+        [
+          'Block',
+          ['Assign', 'y', ['Add', 'y', 'i']],
+          ['If', ['Greater', 'y', 4], ['Block', ['Break']]],
+        ],
+      ],
+    ],
+    expectedPython: [
+      'y = 0',
+      'for i in sp.Range(1, 11):',
+      '    y = y + i',
+      '    if sp.Gt(y, 4):',
+      '        break',
+    ],
+  },
+  {
+    // for over an explicit finite set literal.
+    latex: '\\displaylines{\\text{for} k \\in \\{a,b,c\\}:\\\\ \\quad k + 1}',
+    expectedIR: [
+      'For',
+      'k',
+      ['Set', 'a', 'b', 'c'],
+      ['Block', ['Add', 'k', 1]],
+    ],
+    expectedPython: [
+      "a, b, c = sp.symbols('a b c')",
+      'for k in sp.FiniteSet(a, b, c):',
+      '    k + 1',
+    ],
+  },
+  {
+    // \text{continue} — CE parses it natively like \text{break}.
+    latex:
+      '\\displaylines{\\text{for} i \\in \\{1,2,3\\}:\\\\ \\quad \\text{continue}}',
+    expectedPython: [
+      'for i in sp.FiniteSet(1, 2, 3):',
+      '    continue',
+    ],
+  },
+  {
+    // An empty def body — no indented rows — emits `pass`.
+    latex: '\\displaylines{\\text{def} g(x):}',
+    expectedPython: ['def g(x):', '    pass'],
+  },
+  {
+    latex: '\\displaylines{\\text{while} \\text{true}:\\\\ \\quad \\text{break}}',
+    expectedPython: ['while True:', '    break'],
+  },
+  // --- block syntax errors are flagged, not degraded ----------------
+  {
+    // `elif`/`else` rows need an `if` above them at the same indent.
+    latex: '\\displaylines{\\text{elif} x > 0:\\\\ \\quad x}',
+    expectedPython: ['x = sp.Symbol("x")'],
+    issues: ['\\text{elif} without a matching \\text{if}'],
+  },
 ];
 
 describe('worksheet matrix tracking', () => {
@@ -1578,6 +1749,26 @@ describe('error messages + resilient emission', () => {
       ok: out.ok,
     };
   };
+
+  it('a block keyword without a trailing : flags rather than degrading to a symbol', () => {
+    const { lines, issues } = compile('\\displaylines{\\text{if} x > 0}');
+    expect(issues).toContain('\\text{if} needs a trailing : to start a block');
+    expect(lines).toEqual([]);
+  });
+
+  it('\\text{break}/\\text{continue} outside a loop are errors', () => {
+    for (const kw of ['break', 'continue']) {
+      const { lines, issues } = compile(`\\displaylines{\\text{${kw}}}`);
+      expect(issues).toContain('outside a loop');
+      expect(lines).toEqual([]);
+    }
+  });
+
+  it('\\text{return} outside a \\text{def} block is an error', () => {
+    const { lines, issues } = compile('\\displaylines{\\text{return} x}');
+    expect(issues).toContain('outside a function');
+    expect(lines).toEqual([]);
+  });
 
   it('a bare \\int hints at the missing integrand, not a cryptic code', () => {
     const { lines, issues, ok } = compile('\\int');

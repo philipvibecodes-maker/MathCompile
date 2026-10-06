@@ -161,7 +161,16 @@ const foldDQuotient = (args: MathJson[]): MathJson[] | null => {
 // brace depth 0 — before parsing. \\ inside a \begin{...}...\end{...}
 // environment is a matrix/cases row separator, not a statement break, so
 // environment depth is tracked alongside brace depth.
-export function latexToStatementStrings(latex: string): string[] {
+export interface StatementRow {
+  /** Statement LaTeX — leading `\quad`/`\qquad` indent markers stripped. */
+  text: string;
+  /** Indent level from leading `\quad` (1em) and `\qquad` (2em) runs —
+   * `\quad`=1, `\qquad`=2, `\quad\quad`=2. Rows deeper than a
+   * `\text{...}:` header above them form that header's block body. */
+  indent: number;
+}
+
+export function latexToStatementRows(latex: string): StatementRow[] {
   // The pre-parse surgery lives in latex.ts as named rules — composed
   // by name here (limits-hints, thin-space, partial-subscript).
   const inner = applyLatexRules(outputLatex(latex), PRE_PARSE_RULES);
@@ -187,7 +196,26 @@ export function latexToStatementStrings(latex: string): string[] {
     current += ch;
   }
   statements.push(current);
-  return statements.map((s) => s.trim()).filter((s) => s !== '');
+  return statements
+    .map((s) => {
+      // Leading \quad/\qquad runs are the block indent — counted by em
+      // width, then removed so the marker line parses like any other
+      // (a stray `\quad \text{if}` trips CE's `unexpected-operator`).
+      let text = s;
+      let indent = 0;
+      for (;;) {
+        const m = /^\s*\\(q?quad)(?![a-zA-Z])/.exec(text);
+        if (!m) break;
+        indent += m[1] === 'qquad' ? 2 : 1;
+        text = text.slice(m[0].length);
+      }
+      return { text: text.trim(), indent };
+    })
+    .filter((r) => r.text !== '');
+}
+
+export function latexToStatementStrings(latex: string): string[] {
+  return latexToStatementRows(latex).map((r) => r.text);
 }
 
 // `\text{for}`/`operatorname{for}`-style comprehensions (`2x \text{ for }
@@ -248,13 +276,252 @@ const intervalBind = (s: string, j: MathJson): MathJson => {
   return [head(j), j[1], ['Interval', lo, hi]] as MathJson;
 };
 
+// Statement-level block keywords — `\text{if} cond:`, `\text{while}
+// cond:`, `\text{for} i \in S:`, `\text{elif} cond:`, `\text{else}:`,
+// `\text{def} f(x):`. Written as the CE string literal the \text command
+// produces; like `\text{def}` they are statement markers, not values.
+const BLOCK_KEYWORDS = new Set([
+  'if',
+  'elif',
+  'else if',
+  'elseif',
+  'else',
+  'while',
+  'for',
+  'def',
+]);
+
+// Statement heads that legitimately carry no arguments — every other
+// arg-less node head is CE's empty-slot marker (e.g. `['Add']` for an
+// empty integrand). `['Block']` is the empty suite a `:` header mints
+// when no rows sit beneath it.
+const ZERO_ARG_HEADS = new Set(['Break', 'Continue', 'Block']);
+
+const kwText = (v: MathJson): string | undefined => {
+  const t = isString(v) ? unquote(v) : undefined;
+  return t !== undefined ? t.trim() : undefined;
+};
+
+// Strip a leading `\text{kw}` marker from a raw parse: the keyword fuses
+// into the leftmost InvisibleOperator factor chain (`\text{if} x > 0:`
+// → Greater(InvisibleOperator('if ', x), 0)). Returns the keyword and
+// the node with it removed — `rest` undefined when the keyword was the
+// whole expression (`\text{else}:` → Colon('else', …)).
+function stripKeyword(
+  node: MathJson,
+): { kw: string; rest: MathJson | undefined } | null {
+  const t = kwText(node);
+  if (t !== undefined) {
+    return BLOCK_KEYWORDS.has(t) ? { kw: t, rest: undefined } : null;
+  }
+  if (!isArray(node) || node.length < 2) return null;
+  if (head(node) === 'InvisibleOperator') {
+    const args = node.slice(1).filter((a) => !isSpacing(a));
+    const kw = args.length > 0 ? kwText(args[0]) : undefined;
+    if (kw !== undefined && BLOCK_KEYWORDS.has(kw)) {
+      const rest = args.slice(1);
+      return {
+        kw,
+        rest:
+          rest.length === 0
+            ? undefined
+            : rest.length === 1
+              ? rest[0]
+              : (['InvisibleOperator', ...rest] as MathJson),
+      };
+    }
+  }
+  const inner = stripKeyword(node[1] as MathJson);
+  if (!inner) return null;
+  const rest: MathJson =
+    inner.rest === undefined
+      ? ([node[0], ...node.slice(2)] as MathJson)
+      : ([node[0], inner.rest, ...node.slice(2)] as MathJson);
+  return { kw: inner.kw, rest };
+}
+
+type RowHeader =
+  | { type: 'if' | 'elif' | 'while'; cond: MathJson }
+  | { type: 'else' }
+  | { type: 'for'; v: MathJson; set: MathJson }
+  | { type: 'def'; name: string; params: string[] }
+  | { type: 'error'; node: MathJson };
+
+const headerError = (
+  code: string,
+  src: string,
+): { type: 'error'; node: MathJson } => ({
+  type: 'error',
+  node: ['Error', `'${code}'`, ['LatexString', `'${src}'`]],
+});
+
+// A `\text{kw} …:` row ends in a colon, so CE wraps it as
+// Colon(lhs, Error('missing')) — a plain `x:` gives the same shape
+// without a keyword, so the marker decides. Rows without the colon
+// carry the keyword as a fused literal — flagged rather than emitted
+// as a stray `if_`/`while_` symbol.
+function classifyRow(node: MathJson): RowHeader | null {
+  const isHeaderShape =
+    isArray(node) &&
+    head(node) === 'Colon' &&
+    node.length === 3 &&
+    isArray(node[2]) &&
+    head(node[2]) === 'Error';
+  if (!isHeaderShape) {
+    const r = stripKeyword(node);
+    if (r !== null && r.kw !== 'def')
+      return headerError('missing-block-colon', `\\text{${r.kw}}`);
+    return null;
+  }
+  const lhs = node[1] as MathJson;
+  const r = stripKeyword(lhs);
+  if (r === null) return null;
+  switch (r.kw) {
+    case 'def': {
+      const def = defMarkedShape(lhs);
+      if (!def) return headerError('bad-def-header', '\\text{def}');
+      return { type: 'def', name: def.name, params: def.params };
+    }
+    case 'if':
+    case 'while':
+      if (r.rest === undefined)
+        return headerError('empty-condition', `\\text{${r.kw}}`);
+      return { type: r.kw, cond: r.rest };
+    case 'elif':
+    case 'else if':
+    case 'elseif':
+      if (r.rest === undefined)
+        return headerError('empty-condition', '\\text{elif}');
+      return { type: 'elif', cond: r.rest };
+    case 'else':
+      if (r.rest !== undefined)
+        return headerError('else-has-condition', '\\text{else}');
+      return { type: 'else' };
+    case 'for': {
+      const el = r.rest;
+      if (isArray(el) && head(el) === 'Element' && el.length === 3) {
+        const v = el[1] as MathJson;
+        const vh = head(v);
+        if (
+          isSymbolString(v) ||
+          vh === 'Sequence' ||
+          vh === 'List' ||
+          vh === 'Delimiter'
+        )
+          return { type: 'for', v, set: el[2] as MathJson };
+      }
+      return headerError('bad-for-header', '\\text{for}');
+    }
+    default:
+      return null;
+  }
+}
+
+// Fold displayline rows into a statement tree: a keyword header
+// (`\text{if} cond:` etc.) owns every following row deeper-indented
+// than it; `elif`/`else` rows at the header's own indent chain onto
+// the preceding `if` (a stray one flags an orphan error). Body
+// statements nest under `['Block', ...]` so the rest of the pipeline
+// sees the usual statement-list shape.
+function foldRows(rows: { indent: number; node: MathJson }[]): MathJson[] {
+  const out: MathJson[] = [];
+  let i = 0;
+  while (i < rows.length) {
+    const { indent, node } = rows[i];
+    const h = classifyRow(node);
+    if (h === null) {
+      out.push(node);
+      i++;
+      continue;
+    }
+    if (h.type === 'error') {
+      out.push(h.node);
+      i++;
+      continue;
+    }
+    if (h.type === 'elif' || h.type === 'else') {
+      out.push(headerError('orphaned-block-header', `\\text{${h.type}}`).node);
+      i++;
+      continue;
+    }
+    // Body: the run of rows indented deeper than the header.
+    let j = i + 1;
+    while (j < rows.length && rows[j].indent > indent) j++;
+    const body: MathJson = ['Block', ...foldRows(rows.slice(i + 1, j))];
+    if (h.type === 'while') {
+      out.push(['While', h.cond, body]);
+      i = j;
+      continue;
+    }
+    if (h.type === 'for') {
+      out.push(['For', h.v, h.set, body]);
+      i = j;
+      continue;
+    }
+    if (h.type === 'def') {
+      out.push(['Def', h.name, ['List', ...h.params], body]);
+      i = j;
+      continue;
+    }
+    // `if` — chain any `elif`/`else` headers at the same indent.
+    const ifNode: MathJson[] = ['If', h.cond, body];
+    let tail = ifNode;
+    while (j < rows.length && rows[j].indent === indent) {
+      const nh = classifyRow(rows[j].node);
+      if (nh === null || (nh.type !== 'elif' && nh.type !== 'else')) break;
+      let k = j + 1;
+      while (k < rows.length && rows[k].indent > indent) k++;
+      const sub: MathJson = ['Block', ...foldRows(rows.slice(j + 1, k))];
+      if (nh.type === 'elif') {
+        const e: MathJson[] = ['Elif', nh.cond, sub];
+        tail.push(e);
+        tail = e;
+      } else {
+        tail.push(['Else', sub]);
+      }
+      j = k;
+      if (nh.type === 'else') break;
+    }
+    out.push(ifNode);
+    i = j;
+  }
+  return out;
+}
+
+// How many displaylines a normalized top-level statement consumed —
+// header blocks span their written rows recursively, a WhereBlock is
+// one row's fragments. Used to map statement nodes back to the input
+// rows they came from (issue line anchors, interim-row fallback).
+export function displayLineCount(n: MathJson): number {
+  if (!isArray(n)) return 1;
+  const h = head(n);
+  if (h === 'WhereBlock') return 1;
+  if (h === 'Block')
+    return n.slice(1).reduce<number>((s, c) => s + displayLineCount(c), 0);
+  if (h === 'If' || h === 'Elif')
+    return (
+      1 + displayLineCount(n[2]) + (n[3] !== undefined ? displayLineCount(n[3]) : 0)
+    );
+  if (h === 'Else') return 1 + displayLineCount(n[1]);
+  if (h === 'While') return 1 + displayLineCount(n[2]);
+  if (h === 'For') return 1 + displayLineCount(n[3]);
+  if (h === 'Def')
+    return isArray(n[3]) && head(n[3]) === 'Block'
+      ? 1 + displayLineCount(n[3])
+      : 1;
+  return 1;
+}
+
 // Parse a cell's LaTeX into raw MathJSON. Multiple statements become a
-// `["Block", ...]` node so downstream code sees one tree per cell. Parse
-// failures degrade to an Error node — the pipeline reports, never throws.
+// `["Block", ...]` node so downstream code sees one tree per cell; `\quad`-
+// indented rows under `\text{if}`/`\text{while}`/`\text{for}`/`\text{def}`
+// colon headers fold into nested block bodies (If/Elif/Else/While/For/
+// Def nodes). Parse failures degrade to an Error node — the pipeline
+// reports, never throws.
 export function parseCellLatex(latex: string): MathJson | undefined {
-  const statements = latexToStatementStrings(latex);
-  if (statements.length === 0) return undefined;
-  const parsed = statements.map((s) => {
+  const rows = latexToStatementRows(latex);
+  if (rows.length === 0) return undefined;
+  const parsed = rows.map((r) => {
     let j: MathJson;
     try {
       // `form: 'raw'` skips CE canonicalization so the user's term order
@@ -263,21 +530,34 @@ export function parseCellLatex(latex: string): MathJson | undefined {
       // already reads as \int here — outputLatex canonicalizes it in
       // latexToStatementStrings, so CE sees an ordinary Integrate node.
       // \iint is not aliased — CE parses it natively to Integrate.
-      j = ce().parse(s, { form: 'raw' }).json as MathJson;
+      j = ce().parse(r.text, { form: 'raw' }).json as MathJson;
     } catch {
-      return ['Error', `'parse-failed'`] as MathJson;
+      return {
+        indent: r.indent,
+        node: ['Error', `'parse-failed'`] as MathJson,
+      };
     }
-    return intervalBind(s, TEXT_FOR.test(s) ? forToComprehension(j) : j);
+    return {
+      indent: r.indent,
+      node: intervalBind(
+        r.text,
+        TEXT_FOR.test(r.text) ? forToComprehension(j) : j,
+      ),
+    };
   });
   // A single statement can itself parse to a Block (`x² \text{ where }
   // x>0` — CE parks the condition first). Tag those so real `\\` rows
-  // keep written order while where-blocks still flip body-first.
-  const tagged = parsed.map((p) =>
-    isArray(p) && head(p) === 'Block'
-      ? (['WhereBlock', ...p.slice(1)] as MathJson)
-      : p,
-  );
-  return tagged.length === 1 ? tagged[0] : (['Block', ...tagged] as MathJson);
+  // keep written order while where-blocks still flip body-first. Tags
+  // are applied per-row before folding so suite bodies keep them.
+  const tagged = parsed.map((r) => ({
+    indent: r.indent,
+    node:
+      isArray(r.node) && head(r.node) === 'Block'
+        ? (['WhereBlock', ...r.node.slice(1)] as MathJson)
+        : r.node,
+  }));
+  const folded = foldRows(tagged);
+  return folded.length === 1 ? folded[0] : (['Block', ...folded] as MathJson);
 }
 
 // CE string literals arrive as "'text'" (e.g. \text{...}); `unquote`
@@ -327,6 +607,18 @@ function describeError(node: MathJson[]): string {
       return 'unclosed \\begin{...} — missing \\end{...}';
     case 'expected-closing-delimiter':
       return `missing closing brace${hint ? ` near${hint}` : ''}`;
+    case 'missing-block-colon':
+      return `${src} needs a trailing : to start a block`;
+    case 'orphaned-block-header':
+      return `${src} without a matching \\text{if} above`;
+    case 'bad-def-header':
+      return '`\\text{def}` needs a signature — `\\text{def} f(x):`';
+    case 'bad-for-header':
+      return '`\\text{for}` needs a membership — `\\text{for} i \\in \\{1,\\ldots,10\\}:`';
+    case 'empty-condition':
+      return `${src} needs a condition`;
+    case 'else-has-condition':
+      return '`\\text{else}` takes no condition — just `\\text{else}:`';
     case 'parse-failed':
       return "couldn't parse this — check for a typo";
     default:
@@ -647,9 +939,11 @@ export function normalizeIR(
     issues.push(issue(severity, message));
   };
   if (json === undefined) return { ok: true, ir: undefined, issues };
-  // Tracks whether the current Block is the outermost (\displaylines)
-  // one — only its children count as input lines.
-  let blockDepth = 0;
+  // Displayline counter — the index of the input row being normalized.
+  // Rows nested inside header bodies are still input lines, so leaf
+  // statements advance it wherever they appear (Block children at any
+  // depth); a WhereBlock's kids all share its single line.
+  let leaf = 0;
 
   // Names declared callable by statements seen so far, in cell order —
   // `f(x) = …`, `f(x) := …`, `f: x \mapsto …`, `g: (x,y) \mapsto …`.
@@ -679,6 +973,10 @@ export function normalizeIR(
       }
       const text = isString(node) ? unquote(node) : undefined;
       if (text !== undefined) {
+        // `\text{true}`/`\text{false}` — the booleans, not symbols
+        // (`while \text{true}:` is the natural loop-forever spelling).
+        if (text === 'true' || text === 'True') return 'True';
+        if (text === 'false' || text === 'False') return 'False';
         pushIssue('note', `text literal "${text}" treated as a symbol`);
         return text;
       }
@@ -720,13 +1018,18 @@ export function normalizeIR(
     // operands. Strip them from every node's argument list; a bare spacing
     // node on its own degrades to the empty-slot path.
     if (h === 'HorizontalSpacing') return 'Nothing';
+    const hadArgs = node.length > 1;
     node = [
       node[0],
       ...node
         .slice(1)
         .filter((c) => !(isArray(c) && head(c) === 'HorizontalSpacing')),
     ];
-    if (node.length === 1) return 'Nothing';
+    // `['Break']`/`['Continue']` legitimately have no arguments — every
+    // other arg-less head (e.g. CE's empty `['Add']` integrand marker)
+    // degrades to the empty-slot path like stripped spacing did.
+    if (node.length === 1 && (hadArgs || !ZERO_ARG_HEADS.has(h as string)))
+      return 'Nothing';
 
     if (h === 'Error') {
       pushIssue('error', describeError(node));
@@ -758,22 +1061,92 @@ export function normalizeIR(
     }
 
     if (h === 'Block' || h === 'WhereBlock') {
-      // The outermost Block is the \displaylines wrapper — each child is
-      // one input line, so issues raised inside it get stamped with the
-      // line's index for line-anchored reporting. (WhereBlock children
-      // are fragments of a single line — never top-level lines.)
-      const top = h === 'Block' && blockDepth === 0;
-      blockDepth++;
-      const kids = node.slice(1).map((n, i) => {
+      // Each leaf statement is one input line — stamp issues raised
+      // while normalizing it with the current displayline index for
+      // line-anchored reporting. Headers and nested suites advance
+      // `leaf` internally (so `leaf === leafStart` identifies a leaf);
+      // a WhereBlock's children are fragments of its single line and
+      // don't advance it.
+      const isWhere = h === 'WhereBlock';
+      const kids = node.slice(1).map((n) => {
         const issuesAt = issues.length;
+        const leafStart = leaf;
         const norm = normalize(n, true);
-        if (top)
+        if (isWhere) {
           for (const iss of issues.slice(issuesAt))
-            if (iss.line === undefined) iss.line = i;
+            if (iss.line === undefined) iss.line = leafStart;
+        } else if (leaf === leafStart) {
+          for (const iss of issues.slice(issuesAt))
+            if (iss.line === undefined) iss.line = leaf;
+          leaf += 1;
+        }
         return norm;
       });
-      blockDepth--;
       return [h, ...kids];
+    }
+
+    // `\text{if} c:` / `\text{elif} c:` / `\text{while} c:` /
+    // `\text{for} v \in S:` headers minted by parseCellLatex — the header
+    // row itself is one displayline (its cond/set issues stamp it), the
+    // body Block's rows advance the counter as usual. An `Elif`/`Else`
+    // tail follows its own header's body.
+    if (
+      h === 'If' ||
+      h === 'Elif' ||
+      h === 'Else' ||
+      h === 'While' ||
+      h === 'For'
+    ) {
+      const headLine = leaf;
+      const issuesAt = issues.length;
+      let headNodes: MathJson[];
+      let bodyIdx: number;
+      if (h === 'Else') {
+        headNodes = [];
+        bodyIdx = 1;
+      } else if (h === 'For') {
+        // The loop variable is a name slot; the set normalizes as a value.
+        headNodes = [
+          normalize(node[1], false, false, true),
+          normalize(node[2], false),
+        ];
+        bodyIdx = 3;
+      } else {
+        headNodes = [normalize(node[1], false)];
+        bodyIdx = 2;
+      }
+      for (const iss of issues.slice(issuesAt))
+        if (iss.line === undefined) iss.line = headLine;
+      leaf += 1;
+      const out: MathJson[] = [
+        h,
+        ...headNodes,
+        normalize(node[bodyIdx], false),
+      ];
+      if (node[bodyIdx + 1] !== undefined)
+        out.push(normalize(node[bodyIdx + 1], false));
+      return out;
+    }
+
+    // `\text{def} f(x):` + indented rows — the multi-line def minted by
+    // parseCellLatex (the `=` form's Def arrives already normalized).
+    // The signature row is one displayline; params are name slots.
+    if (h === 'Def') {
+      leaf += 1;
+      // The def name binds for its own body and later statements — this
+      // branch intercepts before the atStatement decl pre-scan below.
+      if (atStatement && isString(node[1])) declaredFns.add(node[1]);
+      return [
+        'Def',
+        node[1],
+        isArray(node[2]) && head(node[2]) === 'List'
+          ? ([
+              'List',
+              ...node[2].slice(1).map((p) => normalize(p, false, false, true)),
+            ] as MathJson)
+          : node[2],
+        normalize(node[3], false),
+      ];
     }
 
     // \left. f \right|_{a}^{b}: CE emits the evaluation bar as
@@ -978,6 +1351,9 @@ export function normalizeIR(
         head(node[2]) === 'Function'
       )
         decl = node[1];
+      // A `\text{def} f(x):` block def minted by parseCellLatex declares
+      // its name in the early `Def` head branch — the pre-scan never
+      // sees one.
       // `f = x \mapsto body` (with `=`, not `:=`) binds a callable the
       // same way — without this `f(2)` in a later statement flags
       // 'unknown head' even though the cell defines f.
