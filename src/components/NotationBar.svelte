@@ -55,6 +55,9 @@
       addError = `\\${p.name} is already a command`;
       return;
     }
+    // A new macro makes every cached parse stale (cells that typed
+    // \name before it existed now expand).
+    appStore.reparseAll();
     nameArg = '';
     body = '';
     addError = '';
@@ -98,7 +101,10 @@
             title="Remove \\{m.name}"
             aria-label="Remove \\{m.name}"
             onmousedown={(e) => e.preventDefault()}
-            onclick={() => removeUserMacro(m.name)}>×</button
+            onclick={() => {
+              removeUserMacro(m.name);
+              appStore.reparseAll();
+            }}>×</button
           >
         {/if}
       </span>
