@@ -7,7 +7,11 @@
     type CalcRow,
     type CalcRowErr,
   } from '../calc/calculator.svelte.ts';
-  import { latexToStatementStrings, type Issue } from '../compile/ir';
+  import {
+    collectPyLines,
+    latexToStatementStrings,
+    type Issue,
+  } from '../compile/ir';
   import { mountStaticMath } from '../editor/static-math';
   import { highlightPython } from '../calc/python-highlight';
   import { appStore, type Cell } from '../state/store.svelte';
@@ -73,9 +77,23 @@
         : '…',
   );
 
+  // The OTHER cells' `\py{...}` sources — they exec in this cell's
+  // prelude so their bindings resolve worksheet-wide. Tracked on json
+  // (latex is the same data, but json also catches programmatic
+  // reparses); a signature string keeps the effect cheap to re-check.
+  const otherPy = $derived(
+    appStore.cells
+      .filter((c) => c.id !== cell.id)
+      .flatMap((c) => collectPyLines(c.json)),
+  );
+  const otherPySig = $derived(otherPy.join('\n'));
+
   let seq = 0;
   $effect(() => {
     const latex = cell.latex;
+    // Read the signature so a \py edit in another cell re-evals this
+    // one — its result may call a name the \py binds.
+    void otherPySig;
     const mine = ++seq;
     if (latexToStatementStrings(latex).length === 0) {
       rows = [];
@@ -103,7 +121,7 @@
           }
         });
       }
-      evaluate(cell).then(
+      evaluate(cell, otherPy).then(
         (r) => {
           if (mine !== seq) return;
           rows = r.rows;

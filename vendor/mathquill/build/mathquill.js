@@ -6516,6 +6516,12 @@ var __assign = (this && this.__assign) || function () {
         style: 'text-transform:lowercase',
         class: 'mq-text-mode'
     });
+    // MATHCOMPILE: \py{...} \u2014 raw Python as a text-mode block so spaces,
+    // colons and operators stay literal. The compiler lifts each top-level
+    // \py statement verbatim into the emitted program (see parseCellLatex).
+    LatexCmds.py = makeTextBlock('\\py', 'Python', 'span', {
+        class: 'mq-py mq-monospace mq-text-mode'
+    });
     var RootMathCommand = /** @class */ (function (_super) {
         __extends(RootMathCommand, _super);
         function RootMathCommand(cursor) {

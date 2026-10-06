@@ -16,7 +16,7 @@
 // targets is future work.
 
 import type { Issue, MathJson, NormResult } from './ir';
-import { normalizeIR } from './ir';
+import { collectPyLines, normalizeIR, pyBoundNames } from './ir';
 import { CALC_RUNTIME_PY } from './calc-runtime';
 
 export interface CellInput {
@@ -342,6 +342,14 @@ interface Scope {
    * `List` IR node, not a sympy Set) — set ops must splat it
    * (`sp.FiniteSet(*B)`); `FiniteSet(B)` raises TypeError. */
   listNames: Set<string>;
+  /** `\py{...}` source lines from the worksheet's OTHER cells — emitted
+   * into this cell's prelude so their bound names resolve here too
+   * (cells are independent programs). */
+  pyLines: string[];
+  /** Names bound by `\py` lines anywhere in the worksheet — calls/
+   * operands emit them bare, with no Symbol/Function decl that would
+   * shadow the Python binding. */
+  pyBound: Set<string>;
   /** Free symbol name -> emitted python identifier, insertion-ordered.
    * A def line is emitted in the cell where the name is first needed. */
   symbols: Map<string, string>;
@@ -546,6 +554,8 @@ class Emitter {
         ? this.alloc(this.scope.symbols, name)
         : `${this.sp}I`;
     }
+    // \py-bound names are bound by the prelude — no Symbol decl.
+    if (this.scope.pyBound.has(name)) return pyIdent(name);
     if (this.scope.bound.has(name)) return pyIdent(name);
     if (this.scope.functions.has(name)) {
       const ident = this.scope.functions.get(name)!;
@@ -577,6 +587,9 @@ class Emitter {
   // A name used as a function (f in f'(x)) needs sp.Function, not
   // sp.symbols — symbols aren't callable.
   private fn(name: string): string {
+    // A \py-bound name is a real Python binding — emit it bare (the
+    // prelude runs its definition) rather than minting sp.Function.
+    if (this.scope.pyBound.has(name)) return pyIdent(name);
     if (this.scope.defined.has(name)) {
       // `x = 5` then `\dot{x}` — the name is already a bound value;
       // `x(t)` raises TypeError at exec. Def'd/lambda-bound names stay
@@ -2445,6 +2458,11 @@ class Emitter {
           ];
         if (CALL_RENAMES[name])
           return [`${this.sp}${CALL_RENAMES[name]}(${rendered})`, PREC_ATOM];
+        // \py-bound names call the user's Python binding directly —
+        // before both the worksheet-Function and sp.<builtin> tiers so
+        // a `\py` definition shadows them (the prelude runs first).
+        if (this.scope.pyBound.has(name))
+          return [`${pyIdent(name)}(${rendered})`, PREC_ATOM];
         if (this.scope.declared.has(name) || !SP_BUILTIN_CALL.has(name)) {
           // Record the application so a later bare `f` in operand
           // position emits `f(<args>)` — an UndefinedFunction operand
@@ -2720,7 +2738,9 @@ function cellStatements(ir: MathJson | undefined, scope: Scope): string[] {
   const stmts = parts.flatMap(({ stmt, out }) =>
     isStr(stmt) && newNames.has(stmt) ? [] : out.lines,
   );
-  return [...defs, ...stmts];
+  // \py lines from other cells run before this cell's statements (the
+  // cell's own \py statements stay inline in written order).
+  return [...defs, ...scope.pyLines, ...stmts];
 }
 
 // Emit a single expression statement, dropping it when emission flagged
@@ -2909,6 +2929,15 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       display: assignDisplay(sp, name, rhs),
     };
   }
+  if (h === 'Py') {
+    // `\py{...}` — verbatim Python. Its line also runs in every cell's
+    // prelude (scope.pyLines covers the OTHER cells), so bound names
+    // resolve worksheet-wide.
+    const src = isStr(node[1]) ? node[1] : '';
+    const bound = pyBoundNames(src);
+    for (const b of bound) emitter.scope.defined.add(b);
+    return { lines: [src], display: bound[0] ?? 'True' };
+  }
   if (h === 'Block' || h === 'WhereBlock')
     return {
       lines: node.slice(1).flatMap((s) => emitStatement(s, emitter).lines),
@@ -2996,6 +3025,14 @@ export function compileWorksheet(
   for (const r of perCell)
     if (r.ir !== undefined) collectDeclared(r.ir, declared, declaredFns);
 
+  // `\py{...}` lines are worksheet-wide: every cell's prelude gets the
+  // OTHER cells' Python (a cell's own \py statements stay inline), and
+  // the names they bind emit bare — no Symbol/Function decl shadows.
+  const cellPyLines = perCell.map((r) => collectPyLines(r.ir));
+  const pyBound = new Set(
+    cellPyLines.flat().flatMap((l) => pyBoundNames(l)),
+  );
+
   // Each cell emits with fresh defined/symbols/functions state — cells
   // are independent, so a name used in a cell is always defined there.
   // matrixNames is likewise cell-scoped: `A` declared a matrix in cell 1
@@ -3022,6 +3059,8 @@ export function compileWorksheet(
         issues,
         genIssues,
         i + 1,
+        cellPyLines.filter((_, j) => j !== i).flat(),
+        pyBound,
       ),
     );
   });
@@ -3115,12 +3154,16 @@ function buildScope(
   issues: Issue[],
   cellIssues: Issue[][],
   cell: number,
+  pyLines: string[] = [],
+  pyBound: Set<string> = new Set(),
 ): Scope {
   return {
     qualified,
     declared,
     declaredFns,
     matrixNames,
+    pyLines,
+    pyBound,
     defined: new Set(),
     bound: new Set(),
     lambdaBound: new Set(),
@@ -3198,7 +3241,12 @@ const calcEval = (expr: string): string =>
 // compileWorksheet (always `sp.`-qualified — the worker execs against
 // `import sympy as sp`), but keeps the statement split and display
 // expressions so each top-level statement yields its own result row.
-export function compileCellForCalc(cell: CellInput): CalcProgram {
+// `otherPyLines` are the worksheet's OTHER cells' `\py{...}` sources —
+// they exec in the prelude so their bound names resolve here.
+export function compileCellForCalc(
+  cell: CellInput,
+  otherPyLines: string[] = [],
+): CalcProgram {
   const { ir, issues } = normalizeIR(cell.json);
   if (ir === undefined)
     return { prelude: [], statements: [], issues, statementLines: [] };
@@ -3208,6 +3256,11 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
   const matrixNames = new Set<string>();
   collectDeclared(ir, declared, declaredFns);
   collectMatrices(ir, matrixNames);
+  const pyBound = new Set(
+    [...collectPyLines(ir), ...otherPyLines].flatMap((l) =>
+      pyBoundNames(l),
+    ),
+  );
   const scope = buildScope(
     true,
     declared,
@@ -3216,6 +3269,8 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
     issues,
     [[]],
     0,
+    [],
+    pyBound,
   );
   const { defs, parts } = cellBody(ir, scope);
   // Statements dropped by an emission error carry it in place — the
@@ -3274,7 +3329,7 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
     // The CALC_RUNTIME_PY block defines the mc_* helpers the statements
     // call — it execs as part of the program (self-contained) and shows
     // once in the first row's code block, like the import line.
-    prelude: ['import sympy as sp', CALC_RUNTIME_PY, ...defs],
+    prelude: ['import sympy as sp', CALC_RUNTIME_PY, ...defs, ...otherPyLines],
     statements,
     issues: issues
       .filter((i) => !consumed.has(i))

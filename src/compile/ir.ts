@@ -261,6 +261,15 @@ export function parseCellLatex(latex: string): MathJson | undefined {
   const statements = latexToStatementStrings(latex);
   if (statements.length === 0) return undefined;
   const parsed = statements.map((s) => {
+    // A `\py{...}` statement is verbatim Python — the text block keeps
+    // it literal, so it never reaches ce.parse. codegen emits the line
+    // into every cell's program (pyBound names resolve in calls).
+    // Adjacent blocks (`\py{a}\py{b}` — a `\\`-less paste) join as lines.
+    const py = /^\\py\{([\s\S]*)\}$/.exec(s);
+    if (py) {
+      const src = py[1].replace(/\}\s*\\py\{/g, '\n');
+      return ['Py', unescapePy(src)] as MathJson;
+    }
     let j: MathJson;
     try {
       // `form: 'raw'` skips CE canonicalization so the user's term order
@@ -283,6 +292,44 @@ export function parseCellLatex(latex: string): MathJson | undefined {
       : p,
   );
   return tagged.length === 1 ? tagged[0] : (['Block', ...tagged] as MathJson);
+}
+
+// Undo TextBlock's latex escapes inside a \py{...} statement: `\\` is
+// stored as `\backslash `, and braces/backslash-sensitive characters
+// come back \escaped so the group stays parseable.
+function unescapePy(src: string): string {
+  return src
+    .replace(/\\backslash\s*/g, '\\')
+    .replace(/\\([{}$%_&#])/g, '$1');
+}
+
+// The Python source lines of a cell's top-level `\py{...}` statements,
+// in written order — compileWorksheet/compileCellForCalc prepend them
+// to the emitted program so the names they bind resolve worksheet-wide
+// (cells are independent programs — inline statements wouldn't reach).
+export function collectPyLines(ir: MathJson | undefined): string[] {
+  if (ir === undefined || !isArray(ir)) return [];
+  const kids = head(ir) === 'Block' ? ir.slice(1) : [ir];
+  const out: string[] = [];
+  for (const k of kids)
+    if (isArray(k) && head(k) === 'Py' && isString(k[1])) out.push(k[1]);
+  return out;
+}
+
+// Names a `\py` source line binds — `x = …`, `def f(…)`, `import numpy`
+// — so `call`/`fn` emit the bound name directly instead of minting a
+// Symbol/Function decl that would shadow it.
+export function pyBoundNames(src: string): string[] {
+  const names = new Set<string>();
+  for (const line of src.split('\n')) {
+    const assign = /^\s*([A-Za-z_]\w*)\s*=(?!=)/.exec(line);
+    const def = /^\s*(?:def|class)\s+([A-Za-z_]\w*)/.exec(line);
+    const imp = /^\s*(?:import\s+|from\s+\w+\s+import\s+)([A-Za-z_]\w*)/.exec(
+      line,
+    );
+    for (const m of [assign, def, imp]) if (m) names.add(m[1]);
+  }
+  return [...names];
 }
 
 // Heads the normalizer understands and passes through (children still get
@@ -336,6 +383,9 @@ const KNOWN_HEADS = new Set([
   // literal (CE fuses `\mathrm{trace}(M)` into Multiply or an
   // InvisibleOperator call) to `(<matrix>).trace()` in codegen.
   'MatrixMethod',
+  // `\py{...}` — verbatim Python statement lines (parseCellLatex mints
+  // these before ce.parse; codegen emits them into the prelude).
+  'Py',
 ]);
 
 // CE string literals arrive as "'text'" (e.g. \text{...}); unwrap to the
