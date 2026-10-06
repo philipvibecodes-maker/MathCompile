@@ -1858,3 +1858,55 @@ describe('target gating', () => {
     expect(out.issues.some((i) => i.message.includes('Piecewise'))).toBe(true);
   });
 });
+
+describe('verbatim Python (\\py)', () => {
+  it('a \\py statement is verbatim source — emitted inline + display', () => {
+    const cells = [
+      {
+        json: parseCellLatex(
+          '\\py{fib = lambda n: 1 if n < 2 else fib(n-1) + fib(n-2)}',
+        ),
+      },
+    ];
+    const out = compileWorksheet(cells, 'python', { importAll: false });
+    expect(out.program).toContain(
+      'fib = lambda n: 1 if n < 2 else fib(n-1) + fib(n-2)',
+    );
+  });
+
+  it('other cells run \\py lines in their prelude and call the binding', () => {
+    const cells = [
+      { json: parseCellLatex('\\py{fib = lambda n: sp.fibonacci(n)}') },
+      { json: parseCellLatex('\\operatorname{fib}(10)') },
+    ];
+    const out = compileWorksheet(cells, 'python', { importAll: false });
+    // Cell 2 emits a bare call to the Python binding — no
+    // `fib = sp.Function('fib')` decl shadows it.
+    expect(out.cellLines[1]).toEqual([
+      'import sympy as sp',
+      'fib = lambda n: sp.fibonacci(n)',
+      'fib(10)',
+    ]);
+  });
+
+  it('a py-bound name in operand position emits bare, no Symbol decl', () => {
+    const cells = [
+      { json: parseCellLatex('\\py{f = 5}') },
+      { json: parseCellLatex('f + 1') },
+    ];
+    const out = compileWorksheet(cells, 'python', { importAll: false });
+    expect(out.cellLines[1]).toEqual([
+      'import sympy as sp',
+      'f = 5',
+      'f + 1',
+    ]);
+  });
+
+  it('TextBlock escapes inside \\py are undone', () => {
+    const cells = [
+      { json: parseCellLatex("\\py{r = 'a\\backslash b'}") },
+    ];
+    const out = compileWorksheet(cells, 'python', { importAll: false });
+    expect(out.program).toContain("r = 'a\\b'");
+  });
+});

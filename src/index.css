@@ -286,6 +286,11 @@ body {
   pointer-events: none;
 }
 
+/* \py{...} verbatim-Python block inside a field. */
+.mq-editable-field .mq-py {
+  color: var(--accent-text);
+}
+
 /* Autocomplete dropdown anchored under the caret/command input. */
 .mc-ac {
   position: absolute;
