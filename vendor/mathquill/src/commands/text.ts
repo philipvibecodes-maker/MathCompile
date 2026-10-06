@@ -541,16 +541,56 @@ LatexCmds.lowercase = makeTextBlock('\\lowercase', 'Lowercase', 'span', {
   class: 'mq-text-mode'
 });
 
+// MATHCOMPILE: braces typed into an empty \py/\code block act like the
+// statement's delimiters, not text: the first `{` opens the block (eaten,
+// once), and `}` at the right end closes it when the contents are
+// brace-balanced — typed dicts and f-strings keep their braces because
+// theirs leave the contents unbalanced until the last `}`.
+function codeTextBlock(
+  latex: string,
+  ariaLabel: string,
+  attrs: { class: string }
+) {
+  const Base = makeTextBlock(latex, ariaLabel, 'span', attrs);
+  return class extends Base {
+    _ateOpenBrace = false;
+    write(cursor: Cursor, ch: string) {
+      if (ch === '{' && this.isEmpty() && !this._ateOpenBrace) {
+        this._ateOpenBrace = true;
+        return;
+      }
+      if (ch === '}' && !cursor[R]) {
+        const text = this.textContents();
+        let depth = 0;
+        let balanced = true;
+        for (let i = 0; i < text.length; i += 1) {
+          if (text[i] === '{') depth += 1;
+          else if (text[i] === '}') depth -= 1;
+          if (depth < 0) {
+            balanced = false;
+            break;
+          }
+        }
+        if (balanced && depth === 0) {
+          cursor.insRightOf(this);
+          return;
+        }
+      }
+      super.write(cursor, ch);
+    }
+  };
+}
+
 // MATHCOMPILE: \py{...} — raw Python as a text-mode block so spaces,
 // colons and operators stay literal. The compiler lifts each top-level
 // \py statement verbatim into the emitted program (see parseCellLatex).
-LatexCmds.py = makeTextBlock('\\py', 'Python', 'span', {
+LatexCmds.py = codeTextBlock('\\py', 'Python', {
   class: 'mq-py mq-monospace mq-text-mode'
 });
 // MATHCOMPILE: \code{name(params) := template} — declares notation for
 // Python: calls `\name{args}` emit the template with the params
 // substituted. Contents are raw text like \py.
-LatexCmds.code = makeTextBlock('\\code', 'Code notation', 'span', {
+LatexCmds.code = codeTextBlock('\\code', 'Code notation', {
   class: 'mq-py mq-monospace mq-text-mode'
 });
 

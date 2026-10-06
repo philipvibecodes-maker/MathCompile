@@ -3017,11 +3017,15 @@ export function compileWorksheet(
     : 'from sympy import *';
   // `\code{name(...) := template}` decls are worksheet-wide: every cell
   // normalizes `\name{...}` call sites against the full name set and
-  // emits the shared templates.
+  // emits the shared templates. `\py`-bound names count too — `\clen{27}`
+  // calls the lambda a `\py` statement binds.
   const codeTemplates = new Map<string, CodeDecl>();
   for (const c of cells)
     collectCodeDecls(c.json).forEach((d, n) => codeTemplates.set(n, d));
   const codeNames = new Set(codeTemplates.keys());
+  for (const c of cells)
+    for (const n of collectPyLines(c.json).flatMap((l) => pyBoundNames(l)))
+      codeNames.add(n);
   const perCell = cells.map((c) => normalizeIR(c.json, codeNames));
   const issues: Issue[] = perCell.flatMap((r, i) =>
     r.issues.map((iss) => ({
@@ -3304,10 +3308,13 @@ export function compileCellForCalc(
 ): CalcProgram {
   const codeTemplates = new Map(otherCodeDecls);
   collectCodeDecls(cell.json).forEach((d, n) => codeTemplates.set(n, d));
-  const { ir, issues } = normalizeIR(
-    cell.json,
-    new Set(codeTemplates.keys()),
-  );
+  // `\name{...}` call sites may resolve to any decl or `\py`-bound name
+  // (own \py's names are picked up inside normalizeIR; other's come via
+  // otherPyLines).
+  const codeNames = new Set(codeTemplates.keys());
+  for (const n of otherPyLines.flatMap((l) => pyBoundNames(l)))
+    codeNames.add(n);
+  const { ir, issues } = normalizeIR(cell.json, codeNames);
   if (ir === undefined)
     return { prelude: [], statements: [], issues, statementLines: [] };
 

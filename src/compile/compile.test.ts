@@ -1964,3 +1964,40 @@ describe('\\code notation decls', () => {
     expect(out.ok).toBe(false);
   });
 });
+
+describe('\\py-bound names as \\name{...} calls', () => {
+  it('cross-cell: \\py binds clen, another cell calls \\clen{27} — no \\code needed', () => {
+    const cells = [
+      { json: parseCellLatex('\\py{clen = lambda n, k=0: k if n == 1 else clen(3*n+1 if n%2 else n//2, k+1)}') },
+      { json: parseCellLatex('\\clen{27}') },
+    ];
+    const out = compileWorksheet(cells, 'python', { importAll: false });
+    expect(out.cellLines[1]).toEqual([
+      'import sympy as sp',
+      'clen = lambda n, k=0: k if n == 1 else clen(3*n+1 if n%2 else n//2, k+1)',
+      'clen(27)',
+    ]);
+  });
+
+  it('same-cell: \\py line then \\clen{27} in one cell also resolves', () => {
+    const cells = [
+      {
+        json: parseCellLatex(
+          '\\displaylines{\\py{clen = lambda n: n} \\\\ \\clen{3}}',
+        ),
+      },
+    ];
+    const out = compileWorksheet(cells, 'python', { importAll: false });
+    expect(out.cellLines[0]).toEqual([
+      'import sympy as sp',
+      'clen = lambda n: n',
+      'clen(3)',
+    ]);
+  });
+
+  it('a still-unknown \\name{...} flags an error', () => {
+    const cells = [{ json: parseCellLatex('\\mystery{5}') }];
+    const out = compileWorksheet(cells, 'python', { importAll: false });
+    expect(out.cellIssues[0].some((i) => i.severity === 'error')).toBe(true);
+  });
+});

@@ -268,7 +268,7 @@ export function parseCellLatex(latex: string): MathJson | undefined {
     const py = /^\\py\{([\s\S]*)\}$/.exec(s);
     if (py) {
       const src = py[1].replace(/\}\s*\\py\{/g, '\n');
-      return ['Py', unescapePy(src)] as MathJson;
+      return ['Py', unescapePy(src).trimStart()] as MathJson;
     }
     // `\code{name(params) := template}` — declares notation for Python:
     // calls `\name{a}{b}`/`\name(a,b)` emit the template with params
@@ -932,9 +932,9 @@ function normalizeStatementEqual(
   return ['Equal', ...node.slice(1).map(normalizeExpr)];
 }
 
-// `extraCodeNames` — notation names declared `\code`-style anywhere in
-// the worksheet (the caller unions every cell's collectCodeDecls);
-// this cell's own decls are added below.
+// `extraCodeNames` — notation names declared `\code`-style or bound by
+// `\py` statements anywhere in the worksheet (the caller unions every
+// cell's decls + pyBound names); this cell's own are added below.
 export function normalizeIR(
   json: MathJson | undefined,
   extraCodeNames?: ReadonlySet<string>,
@@ -946,14 +946,18 @@ export function normalizeIR(
   if (json === undefined) return { ok: true, ir: undefined, issues };
 
   // Commands a `\name{...}` call site may resolve to: declared `\code`
-  // notation, this cell's own plus the worksheet-wide set.
+  // notation and `\py`-bound names, this cell's own plus the
+  // worksheet-wide set the caller passes.
   const codeCallNames = new Set<string>(extraCodeNames);
   {
     const kids =
       isArray(json) && head(json) === 'Block' ? json.slice(1) : [json];
-    for (const k of kids)
+    for (const k of kids) {
       if (isArray(k) && head(k) === 'CodeDecl' && isString(k[1]))
         codeCallNames.add(k[1]);
+      if (isArray(k) && head(k) === 'Py' && isString(k[1]))
+        for (const n of pyBoundNames(k[1])) codeCallNames.add(n);
+    }
   }
   // Tracks whether the current Block is the outermost (\displaylines)
   // one — only its children count as input lines.
