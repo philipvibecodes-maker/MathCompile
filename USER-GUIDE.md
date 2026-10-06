@@ -38,7 +38,8 @@ right after a letter becomes a subscript:
 | You want | Type | Renders |
 | --- | --- | --- |
 | Definite integral | `int` | \(\int\) with upper and lower bound blocks |
-| Indefinite integral | `iint` or `antid` | a bare \(\int\) |
+| Indefinite integral | `antid` | a bare \(\int\) |
+| Indefinite double integral | `iint` | a bare \(\iint\) |
 | Sum / product | `sum`, `prod` | \(\sum\), \(\prod\) with bound blocks |
 | Square root | `sqrt` | \(\sqrt{\phantom{x}}\) |
 | Constants and Greek | `pi`, `theta`, `infty` | \(\pi\), \(\theta\), \(\infty\) |
@@ -73,7 +74,7 @@ works.
 | Square / nth root | `sqrt`, or `\nthroot` | \(\sqrt{x}\), \(\sqrt[3]{x}\) |
 | Sum / product with bounds | `sum` or `prod`, fill the bound blocks | \(\sum_{k=1}^{n}\), \(\prod_{k=1}^{n}\) |
 | Definite integral | `int`, fill the bound blocks | \(\int_{0}^{1}\) |
-| Indefinite integral | `iint` or `antid` — add bounds later with `_` | \(\int\) |
+| Indefinite integral | `antid` or `iint` — add bounds later with `_` | \(\int\), \(\iint\) |
 | Limit | `\lim`, then `_{x\to0}` | \(\lim_{x \to 0}\) |
 | Binomial coefficient | `\binom` | \(\binom{n}{k}\) |
 | Matrix | `\pmatrix` — Enter adds a row, `Shift+Space` a column | \(\begin{pmatrix} a & b \\ c & d \end{pmatrix}\) |
