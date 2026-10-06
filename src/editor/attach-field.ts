@@ -131,7 +131,13 @@ export function attachField(
         autoCommands: v ? SMART_AUTO_COMMANDS : '',
         autoSubscriptNumerals: v,
       }),
-    insertCommand: (latex) => el.mq?.cmd(latex),
+    insertCommand: (latex) => {
+      el.mq?.cmd(latex);
+      // Refocus so the caret shows where cmd() placed it (inside the
+      // first arg block for block commands) — an unfocused insert leaves
+      // it hidden and the next click would re-seek it.
+      el.mq?.focus();
+    },
     lineAnchors: () => {
       const fieldRect = el.getBoundingClientRect();
       const toAnchor = (r: DOMRect) => ({

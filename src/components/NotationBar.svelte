@@ -64,8 +64,6 @@
   function insert(name: string) {
     const id = appStore.focusedId;
     appStore.fields.get(id)?.insertCommand(`\\${name}`);
-    // Inserting doesn't move focus — return it to the cell explicitly.
-    appStore.focusCell(id);
   }
 
   function onFormKeydown(e: KeyboardEvent) {
