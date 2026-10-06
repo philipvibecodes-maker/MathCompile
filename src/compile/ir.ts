@@ -268,7 +268,7 @@ export function parseCellLatex(latex: string): MathJson | undefined {
     const py = /^\\py\{([\s\S]*)\}$/.exec(s);
     if (py) {
       const src = py[1].replace(/\}\s*\\py\{/g, '\n');
-      return ['Py', unescapePy(src)] as MathJson;
+      return ['Py', unescapePy(src).trimStart()] as MathJson;
     }
     let j: MathJson;
     try {
