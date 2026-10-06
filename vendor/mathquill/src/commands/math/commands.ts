@@ -1824,16 +1824,18 @@ LatexCmds.left = class extends MathCommand {
     return optWhitespace
       .then(
         regex(
-          /^(?:[([|.]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z])|\\\|)/
+          /^(?:[([|.]|\\\{|\\langle(?![a-zA-Z])|\\rangle(?![a-zA-Z])|\\lVert(?![a-zA-Z])|\\rVert(?![a-zA-Z])|\\\|)/
         )
       )
       .then(function (ctrlSeq) {
         var open = ctrlSeq.replace(/^\\/, '');
-        if (ctrlSeq == '\\langle') {
+        // MATHCOMPILE: mirrored delimiter spellings are accepted on both
+        // sides — \left\lVert…\right\lVert is what users write.
+        if (ctrlSeq == '\\langle' || ctrlSeq == '\\rangle') {
           open = '&lang;';
           ctrlSeq = ctrlSeq + ' ';
         }
-        if (ctrlSeq == '\\lVert') {
+        if (ctrlSeq == '\\lVert' || ctrlSeq == '\\rVert') {
           open = '&#8741;';
           ctrlSeq = ctrlSeq + ' ';
         }
@@ -1846,16 +1848,16 @@ LatexCmds.left = class extends MathCommand {
             .skip(optWhitespace)
             .then(
               regex(
-                /^(?:[\])|.]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z])|\\\|)/
+                /^(?:[\])|.]|\\\}|\\rangle(?![a-zA-Z])|\\langle(?![a-zA-Z])|\\rVert(?![a-zA-Z])|\\lVert(?![a-zA-Z])|\\\|)/
               )
             )
             .map(function (end) {
               var close = end.replace(/^\\/, '');
-              if (end == '\\rangle') {
+              if (end == '\\rangle' || end == '\\langle') {
                 close = '&rang;';
                 end = end + ' ';
               }
-              if (end == '\\rVert') {
+              if (end == '\\rVert' || end == '\\lVert') {
                 close = '&#8741;';
                 end = end + ' ';
               }

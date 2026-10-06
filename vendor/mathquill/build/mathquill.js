@@ -11406,14 +11406,16 @@ var __assign = (this && this.__assign) || function () {
             var string = Parser.string;
             var optWhitespace = Parser.optWhitespace;
             return optWhitespace
-                .then(regex(/^(?:[([|.]|\\\{|\\langle(?![a-zA-Z])|\\lVert(?![a-zA-Z])|\\\|)/))
+                .then(regex(/^(?:[([|.]|\\\{|\\langle(?![a-zA-Z])|\\rangle(?![a-zA-Z])|\\lVert(?![a-zA-Z])|\\rVert(?![a-zA-Z])|\\\|)/))
                 .then(function (ctrlSeq) {
                 var open = ctrlSeq.replace(/^\\/, '');
-                if (ctrlSeq == '\\langle') {
+                // MATHCOMPILE: mirrored delimiter spellings are accepted on both
+                // sides \u2014 \left\lVert\u2026\right\lVert is what users write.
+                if (ctrlSeq == '\\langle' || ctrlSeq == '\\rangle') {
                     open = '&lang;';
                     ctrlSeq = ctrlSeq + ' ';
                 }
-                if (ctrlSeq == '\\lVert') {
+                if (ctrlSeq == '\\lVert' || ctrlSeq == '\\rVert') {
                     open = '&#8741;';
                     ctrlSeq = ctrlSeq + ' ';
                 }
@@ -11424,14 +11426,14 @@ var __assign = (this && this.__assign) || function () {
                 return latexMathParser.then(function (block) {
                     return string('\\right')
                         .skip(optWhitespace)
-                        .then(regex(/^(?:[\])|.]|\\\}|\\rangle(?![a-zA-Z])|\\rVert(?![a-zA-Z])|\\\|)/))
+                        .then(regex(/^(?:[\])|.]|\\\}|\\rangle(?![a-zA-Z])|\\langle(?![a-zA-Z])|\\rVert(?![a-zA-Z])|\\lVert(?![a-zA-Z])|\\\|)/))
                         .map(function (end) {
                         var close = end.replace(/^\\/, '');
-                        if (end == '\\rangle') {
+                        if (end == '\\rangle' || end == '\\langle') {
                             close = '&rang;';
                             end = end + ' ';
                         }
-                        if (end == '\\rVert') {
+                        if (end == '\\rVert' || end == '\\lVert') {
                             close = '&#8741;';
                             end = end + ' ';
                         }

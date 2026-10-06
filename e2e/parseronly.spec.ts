@@ -110,6 +110,10 @@ const ESCAPE_CASES: [string, string][] = [
   ['a\\nle b', 'a\\nleq b'],
   ['a\\nge b', 'a\\ngeq b'],
   ['a\\asymp b', 'a\\asymp b'],
+  // Mirrored \left/\right spellings: \right\lVert / \left\rangle used to
+  // blank the whole field on hydrate (real LaTeX accepts both).
+  ['\\left\\lVert u\\right\\lVert', '\\left\\lVert u\\right\\lVert'],
+  ['\\left\\rangle u\\right\\langle', '\\left\\rangle u\\right\\langle'],
 ];
 for (const [latex, expected] of ESCAPE_CASES) {
   test(`hydrates \\-escape ${latex}`, async ({ page }) => {
