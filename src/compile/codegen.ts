@@ -403,6 +403,37 @@ const headOf = (v: MathJson | undefined): string | undefined =>
 const isHead = (v: MathJson | undefined, h: string): v is MathJson[] =>
   headOf(v) === h;
 
+// The matrix-valued walk shared by emission and the matrixNames
+// pre-scan: a `Matrix` literal or a `isMatrixLeaf` name, or a
+// composition that stays a matrix — a sum/negation of matrix terms, a
+// product/quotient/power with a matrix factor, or a matrix-returning
+// op (transpose/adjoint/inverse). `isMatrixLeaf` decides what a bare
+// name resolves to (scope-bound at emission, sequential at pre-scan).
+function matrixValuedNode(
+  node: MathJson | undefined,
+  isMatrixLeaf: (name: string) => boolean,
+): boolean {
+  if (isHead(node, 'Matrix')) return true;
+  if (isStr(node)) return isMatrixLeaf(node);
+  if (!isArr(node)) return false;
+  const operands = node.slice(1) as MathJson[];
+  switch (headOf(node)) {
+    case 'Add':
+      return operands.every((a) => matrixValuedNode(a, isMatrixLeaf));
+    case 'Negate':
+    case 'Transpose':
+    case 'ConjugateTranspose':
+    case 'Inverse':
+      return matrixValuedNode(node[1], isMatrixLeaf);
+    case 'Multiply':
+    case 'Divide':
+    case 'Power':
+      return operands.some((a) => matrixValuedNode(a, isMatrixLeaf));
+    default:
+      return false;
+  }
+}
+
 function numText(node: MathJson): string {
   if (typeof node === 'number') return String(node);
   if (typeof node === 'object' && node !== null && 'num' in node)
@@ -497,31 +528,18 @@ class Emitter {
   /** Is this node matrix-valued? A `Matrix` literal, a declared matrix
    * name, or a composition that stays a matrix: a sum/negation of
    * matrix terms, a product/quotient/power with a matrix factor, or a
-   * matrix-returning op (transpose/adjoint/inverse). */
-  private matrixValued(node: MathJson | undefined): boolean {
-    if (
-      isHead(node, 'Matrix') ||
-      this.matrixRef(node) ||
-      this.identityDim(node)
-    )
-      return true;
-    if (!isArr(node)) return false;
-    const operands = node.slice(1) as MathJson[];
-    switch (headOf(node)) {
-      case 'Add':
-        return operands.every((a) => this.matrixValued(a));
-      case 'Negate':
-      case 'Transpose':
-      case 'ConjugateTranspose':
-      case 'Inverse':
-        return this.matrixValued(node[1]);
-      case 'Multiply':
-      case 'Divide':
-      case 'Power':
-        return operands.some((a) => this.matrixValued(a));
-      default:
-        return false;
-    }
+   * matrix-returning op (transpose/adjoint/inverse). `minted` also
+   * counts MatrixSymbol-minted names — only for value-typing (matrixRef
+   * leaves them out because MatrixExpr lacks the .norm()/.trace()
+   * method surface some callers emit). */
+  matrixValued(node: MathJson | undefined, minted = false): boolean {
+    return matrixValuedNode(
+      node,
+      (name) =>
+        this.matrixRef(name) ||
+        (minted && this.scope.matrices.has(name)) ||
+        this.identityDim(name) !== null,
+    );
   }
 
   /** matrixValued AND every matrix leaf is a `Matrix` literal — the
@@ -2878,11 +2896,10 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     // like a def'd name instead of flagging a bound-value call.
     if (isStr(node[1]) && isHead(node[2], 'Function'))
       emitter.scope.declaredFns.add(node[1]);
-    const matrixRhs =
-      /\bMatrix\b/.test(rhs) ||
-      (isStr(node[2]) &&
-        (emitter.scope.matrixNames.has(node[2]) ||
-          emitter.scope.matrices.has(node[2])));
+    // Matrix-valued by shape, not by emitted text — `I_2` emits
+    // `sp.eye(2)`, `B = A^T` emits `Transpose`, and Eq(Symbol, <matrix>)
+    // collapses to literal False without evaluate=False.
+    const matrixRhs = emitter.matrixValued(node[2], true);
     const setRhs = emitter.isSetish(node[2]);
     const finiteRhs = emitter.isFiniteSet(node[2]);
     const listRhs =
@@ -3190,17 +3207,27 @@ function collectDeclared(
   collect(ir);
 }
 
-// Names bound to a Matrix literal by the end of the IR — `A.det()`,
-// `A.norm()` etc. are valid on the emitted `A = sp.Matrix(...)`. A later
+// Names bound to a matrix value by the end of the IR — `A.det()`,
+// `A.norm()` etc. are valid on the emitted `A = <matrix>`. A later
 // `A = <non-matrix>` rebinds the name back to a scalar, so a name only
-// counts when its last assignment is a Matrix.
+// counts when its last assignment is a matrix. Same leaf rule as
+// emission: a Matrix literal, an `I_n` identity (unless that name is
+// itself bound), or an earlier matrix-bound name.
 function collectMatrices(ir: MathJson, matrixNames: Set<string>): void {
+  const defined = new Set<string>();
   const collect = (n: MathJson) => {
     if (!isArr(n)) return;
     const h = headOf(n);
     if (h === 'Assign' && isStr(n[1])) {
-      if (isHead(n[2], 'Matrix')) matrixNames.add(n[1]);
+      if (
+        matrixValuedNode(
+          n[2],
+          (s) => matrixNames.has(s) || (!defined.has(s) && /^I_\d+$/.test(s)),
+        )
+      )
+        matrixNames.add(n[1]);
       else matrixNames.delete(n[1]);
+      defined.add(n[1]);
     }
     if (h === 'Block') n.slice(1).forEach(collect);
   };

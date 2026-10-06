@@ -670,6 +670,23 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(calc('a = 5').statements[0].display).not.toContain(
       'evaluate=False',
     );
+    // `I_n` is matrix-valued without a `Matrix` in its emit (sp.eye(n)).
+    const i = calc('a = I_2');
+    expect(i.statements[0].code).toBe('a = sp.eye(2)');
+    expect(i.statements[0].display).toContain('evaluate=False');
+    // So are matrix compositions — `C = A^T`/`C = A + B` collapse the
+    // same way without evaluate=False.
+    const t = calc(
+      'A = \\begin{pmatrix}1&0\\\\0&1\\end{pmatrix} \\ \\\\ \\ C = A^{T} \\ \\\\ \\ D = A + A',
+    );
+    expect(t.statements[1].display).toContain('evaluate=False');
+    expect(t.statements[2].display).toContain('evaluate=False');
+  });
+
+  it('marks an `a = I_2` binding matrix-typed for later ops', () => {
+    // `det a` reads `a` as its bound DenseMatrix, not a new MatrixSymbol.
+    const prog = calc('a = I_2 \\ \\\\ \\ \\det a');
+    expect(prog.statements[1].code).toBe(F('sp.Determinant(a)'));
   });
 
   it('peels a differential nested inside the integrand argument', () => {
