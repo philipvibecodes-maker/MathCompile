@@ -110,6 +110,22 @@ describe('expandLatex', () => {
     );
   });
 
+  it('expands macros nested inside another macro\'s args', () => {
+    setCellMacros([
+      { name: 'sq', arity: 1, params: ['x'], body: 'x^2' },
+      { name: 'half', arity: 0, params: [], body: '\\frac{1}{2}' },
+    ]);
+    expect(expandLatex('\\sq{3 + \\half}')).toBe('3 + \\frac{1}{2}^2');
+  });
+
+  it('expands a macro invoked from another macro\'s body', () => {
+    setCellMacros([
+      { name: 'q', arity: 0, params: [], body: '\\half + \\half' },
+      { name: 'half', arity: 0, params: [], body: '\\frac{1}{2}' },
+    ]);
+    expect(expandLatex('\\q')).toBe('\\frac{1}{2} + \\frac{1}{2}');
+  });
+
   it('expands cell macros over user macros of the same name', () => {
     defineUserMacro({ name: 'k', arity: 0, params: [], body: '1' });
     setCellMacros([{ name: 'k', arity: 0, params: [], body: '2' }]);
