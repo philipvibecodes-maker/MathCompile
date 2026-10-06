@@ -944,7 +944,8 @@ export function normalizeIR(
   // notation, this cell's own plus the worksheet-wide set.
   const codeCallNames = new Set<string>(extraCodeNames);
   {
-    const kids = head(json) === 'Block' ? json.slice(1) : [json];
+    const kids =
+      isArray(json) && head(json) === 'Block' ? json.slice(1) : [json];
     for (const k of kids)
       if (isArray(k) && head(k) === 'CodeDecl' && isString(k[1]))
         codeCallNames.add(k[1]);
