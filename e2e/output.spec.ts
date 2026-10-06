@@ -100,27 +100,49 @@ test('smart mode checkbox drives the math-field autoCommands option', async ({
   expect(await smartModeOn(page)).toBe(true);
 });
 
-test('each cell stacks its output directly beneath its input', async ({
+test('calculator output stacks beneath its input; latex and python keep two columns', async ({
   page,
 }) => {
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('x+1', { delay: 40 });
   await expect(page.locator('.cell-latex').first()).toHaveText('x+1');
 
+  const input0 = await page
+    .locator('.expr-row .cell-input')
+    .first()
+    .boundingBox();
+  // Latex and python sit in a framed output column right of the input,
+  // separated by the draggable divider.
+  for (const target of ['latex', 'python'] as const) {
+    if (target === 'python') await setTarget(page, 'python');
+    const out = await page
+      .locator('.expr-row .cell-output')
+      .first()
+      .boundingBox();
+    expect(input0 && out).toBeTruthy();
+    expect(out!.x).toBeGreaterThan(input0!.x + input0!.width - 1);
+    await expect(page.locator('.col-resize').first()).toBeVisible();
+  }
+
+  // The calculator's rows stack directly beneath the input cell at the
+  // same left edge — the notebook layout.
+  await setTarget(page, 'calculator');
+  await expect(
+    page.locator('.calc-row .calc-math').first(),
+  ).toContainText('x', { timeout: 90_000 });
   const input = await page
     .locator('.expr-row .cell-input')
     .first()
     .boundingBox();
   const output = await page
-    .locator('.expr-row .cell-output')
+    .locator('.expr-row .calc-output')
     .first()
     .boundingBox();
   expect(input && output).toBeTruthy();
-  // The output sits under the input cell at the same left edge, not
-  // beside it in a second column.
   expect(output!.y).toBeGreaterThanOrEqual(input!.y + input!.height - 1);
   expect(Math.abs(output!.x - input!.x)).toBeLessThanOrEqual(1);
   expect(Math.abs(output!.width - input!.width)).toBeLessThanOrEqual(2);
+  await expect(page.locator('.col-resize')).toHaveCount(0);
 });
 
 test('latex target shows per-cell output with a copy button', async ({

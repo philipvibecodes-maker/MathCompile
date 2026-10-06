@@ -4,8 +4,8 @@ Desmos-style multi-cell math expression editor: write math, get LaTeX and
 executable code out. Cells are `<math-field>` custom elements backed by a
 vendored Desmos-fork [MathQuill](vendor/mathquill). Each cell's LaTeX is
 compiled through a MathJSON IR (`@cortex-js/compute-engine`) to LaTeX or
-SymPy-flavored Python, shown per cell beneath its input (beside it for
-the Python target).
+SymPy-flavored Python, shown per cell — beneath the input for the
+calculator, beside it for LaTeX and Python.
 
 **Stack:** Svelte 5 (runes) · TypeScript · Vite · Vitest · Playwright · oxlint
 

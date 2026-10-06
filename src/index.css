@@ -218,7 +218,8 @@ body {
   flex-direction: column;
 }
 
-/* Python keeps the two-column layout (input | divider | framed output):
+/* Latex and python keep the two-column layout (input | divider |
+   framed output); only the calculator stacks output beneath its input.
    .cell-stack goes display:contents so its input joins the row's flex
    directly, and the column-width rules below take over. */
 .cell-stack.flat {
@@ -275,6 +276,16 @@ body {
 
 .two-col .cell-output {
   flex: 0 0 var(--output-w, 34%);
+  padding: 0 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+/* .cell-code carries its own padding — keep it over the framed-output
+   padding above (same-element rule must win the specificity tie). */
+.two-col .cell-code {
+  padding: 6px 8px;
 }
 
 /* The math-field plus (calculator target) its issue list below it —

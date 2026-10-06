@@ -252,7 +252,7 @@
   <div class="main">
     <section
       class="expr-panel"
-      class:two-col={appStore.target === 'python'}
+      class:two-col={appStore.target !== 'calculator'}
       style:--output-w={`${outputPct}%`}
     >
       <div class="col-headers">
@@ -507,7 +507,7 @@
             >
             <div
               class="cell-stack"
-              class:flat={appStore.target === 'python'}
+              class:flat={appStore.target !== 'calculator'}
             >
               <div
                 class="cell-input"
@@ -523,22 +523,11 @@
                   <CalcIssues {cell} />
                 {/if}
               </div>
-              {#if appStore.target === 'latex'}
-                <div class="cell-output">
-                  <code class="cell-latex">{displayLatex(cell.latex)}</code>
-                  <button
-                    class="cell-copy"
-                    title="Copy LaTeX"
-                    disabled={cell.latex.trim() === ''}
-                    onclick={() => copyLatex(cell)}
-                    >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
-                  >
-                </div>
-              {:else if appStore.target === 'calculator'}
+              {#if appStore.target === 'calculator'}
                 <CalcOutput {cell} index={i} />
               {/if}
             </div>
-            {#if appStore.target === 'python'}
+            {#if appStore.target !== 'calculator'}
               <div
                 class="col-resize"
                 role="separator"
@@ -546,6 +535,19 @@
                 aria-label="Resize output column"
                 onpointerdown={startColDrag}
               ></div>
+            {/if}
+            {#if appStore.target === 'latex'}
+              <div class="cell-output">
+                <code class="cell-latex">{displayLatex(cell.latex)}</code>
+                <button
+                  class="cell-copy"
+                  title="Copy LaTeX"
+                  disabled={cell.latex.trim() === ''}
+                  onclick={() => copyLatex(cell)}
+                  >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
+                >
+              </div>
+            {:else if appStore.target === 'python'}
               <div class="cell-output cell-code">
                 <div class="cell-code-body">
                   <code class="cell-python"
