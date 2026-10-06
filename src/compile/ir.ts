@@ -211,6 +211,25 @@ export function extractPythonBlocks(latex: string): {
   return { latex: out, snippets };
 }
 
+// A `def name(` line inside a `\python{ ... }` body binds a real Python
+// name — the def execs verbatim, so `name` is callable from later
+// statements and cells exactly like a worksheet \text{def}. Collecting
+// the names lets codegen emit `name(args)` instead of minting a
+// shadowing `sp.Function` decl.
+const PY_DEF_RE = /^[ \t]*def[ \t]+([A-Za-z_]\w*)[ \t]*\(/gm;
+export function pythonDefNames(code: string): string[] {
+  return [...code.matchAll(PY_DEF_RE)].map((m) => m[1]);
+}
+
+// Every PythonSource statement's `def` names, wherever they appear in
+// the IR (cell top level or inside \displaylines blocks).
+export function collectPythonDefs(ir: MathJson, out: Set<string>): void {
+  if (!isArray(ir)) return;
+  if (head(ir) === 'PythonSource' && isString(ir[1]))
+    for (const name of pythonDefNames(ir[1])) out.add(name);
+  for (const child of ir.slice(1)) collectPythonDefs(child, out);
+}
+
 // A cell's LaTeX may hold multiple statements: MathQuill wraps multi-line
 // content as \displaylines{a \\ b \\ c}. CE cannot parse that wrapper (it
 // surfaces as Error/Tuple garbage), so rows are split here — on \\ at
@@ -1784,6 +1803,11 @@ export function normalizeIR(
       )
         decl = node[1];
       if (decl !== undefined) declaredFns.add(decl);
+      // `\python{def add1(…): …}` — the verbatim def binds add1 as a real
+      // Python callable, so `add1(9)` in a later statement reads as a
+      // call (declaredFns may be shared across cells — see codegen).
+      if (h === 'PythonSource' && isString(node[1]))
+        for (const name of pythonDefNames(node[1])) declaredFns.add(name);
     }
 
     const ctx: NormalizeCtx = {
