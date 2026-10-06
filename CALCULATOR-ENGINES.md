@@ -1,18 +1,19 @@
-# Calculator engines: Pyodide/SymPy + nerdamer interim
+# Calculator engines: Pyodide/SymPy + Compute Engine interim
 
 Notes for agents working on the calculator target. Two engines produce a
 cell's results: **SymPy on Pyodide** (authoritative, ~4s cold boot) and
-**nerdamer** (interim, ~ms while Pyodide boots). Interim rows carry no
-`code` field — the per-cell generating-code block stays SymPy-only.
+**Compute Engine** (interim, ~ms while Pyodide boots — the same
+`@cortex-js/compute-engine` that parses LaTeX for the compiler, so the
+interim needs no second parser or extra dependency). Interim rows carry
+no `code` field — the per-cell generating-code block stays SymPy-only.
 
 ## Layout
 
 - `src/calc/calculator.worker.ts` — classic (`iife`) worker running
   Pyodide + SymPy; owns `mc_run`.
 - `src/calc/calculator.svelte.ts` — `evaluate()` (real engine),
-  `interimEvaluate()` (nerdamer), `prewarm()`, `calcEngine` status rune.
-- `src/calc/nerdamer-latex.ts` — LaTeX → nerdamer-call translator (the
-  piece that makes the interim engine do real calculus).
+  `interimEvaluate()` (Compute Engine), `prewarm()`, `calcEngine`
+  status rune.
 - `src/components/CalcOutput.svelte` — per-cell output; fires
   `interimEvaluate` while `calcEngine.status !== 'ready'`, `evaluate`
   always; interim rows render dimmed via `.pending` and tagged
@@ -88,8 +89,10 @@ SymPy emitter) now does the input→SymPy translation in TypeScript, so:
   The letter is the first capital not used by the cell or worksheet —
   `C`, else `D`, `E`, …; each boundless `Integrate` takes the next free
   one, including each level of an iterated integral — `∬f dxdy` shows
-  `F + C·y + D`, not `F + C`. The nerdamer interim matches
-  (`integrate(f, v) + C`).
+  `F + C·y + D`, not `F + C`. The Compute Engine interim matches:
+  each boundless `Integrate` node is wrapped in `Add(…, letter)` before
+  evaluation, so inner constants integrate into the result the same
+  way.
 - After `simplify()`, `_mc_order` rewrites each `Add` (and `Eq` sides)
   with terms in decreasing degree, constants of integration last — so a
   result displays `x^2/2 + x + C`, not SymPy's canonical `C + x^2/2`.
@@ -100,51 +103,57 @@ Measured boot (M-series laptop, warm network): ~4.5s cold → ~3.5s with
 the SW cache, and a touch less now that the antlr wheel install is gone.
 The ~3s CPU floor (SymPy import) is irreducible — hence `prewarm()` on
 the Output dropdown's pointerdown/focus (the worker self-boots on spawn)
-and the nerdamer interim below.
+and the Compute Engine interim below.
 
-## nerdamer interim — coverage and gaps
+## Compute Engine interim — how it works
 
-`nerdamer@1.1.13` is dynamically imported (`import('nerdamer/all')`) —
-a separate ~440KB chunk that only loads when a cell evaluates before the
-engine is ready. Never in the main bundle.
+`interimEvaluate(latex)` in `calculator.svelte.ts` reuses the compiler's
+own front end: `parseCellLatex` (environment-aware `\\` split + `ce.parse`
+raw-form MathJSON) → per-statement `ce.box(json).evaluate().evaluate().latex`.
+One interim row per `\\` row, matching the real engine's
+row-per-statement shape so results swap in place. CE lives in the main
+bundle already (the compiler needs it), so there is no lazy chunk — the
+interim is effectively synchronous.
 
-`convertFromLaTeX` alone handles arithmetic/algebra/powers/roots/
-fractions (e.g. `x+\sqrt{2}` → `\sqrt{2}+x`). It **throws** on `\int`,
-`\sum`, `\prod`, `\lim`, `\binom`, `\sqrt[n]`, and malformed input —
-those were mapped to nerdamer's real CAS calls in `nerdamer-latex.ts`:
+CE's `evaluate()` covers the interim's whole calculus surface natively:
+`Integrate` definite *and* indefinite, `D` derivatives, `Sum`/`Product`
+with numeric bounds (symbolic bounds stay unevaluated, like the real
+engine's un-evaluable forms), `Limit`, `Root`, `Binomial`, `Det`, exact
+trig values. Examples: `\int_{0}^{1}x` → `1/2`, `\int x dx` → `x²/2 + C`,
+`\frac{d}{dx}x^2` → `2x`, `\lim_{x→0} sin x/x` → `1`, `\binom{5}{2}` → `10`.
+First row lands in ~ms, dimmed until SymPy's answer replaces it.
 
-| LaTeX | nerdamer call | interim result |
-|---|---|---|
-| `\int_{0}^{1}x\,dx` | `defint(x, 0, 1, x)` | `1/2` |
-| `\int x` | `integrate(x, x)` | `x^2/2` |
-| `\frac{d }{d x}x^2` (MathQuill's `\derivative` expansion) | `diff(x^2, x)` | `2x` |
-| `\sum_{i=0}^{n}\binom{i}{n}` | `sum(factorial-expansion, i, 0, n)` | renders `Σ` symbolic |
-| `\lim_{x\to 0}…` | `limit(…, x, 0)` | `1` for `sin(x)/x` |
-| `\sqrt[3]{8}` | `nthroot(8, 3)` | `2` |
+### Interim mechanics (earned, not docs-read)
 
-Interim rows are per-`\\`-row too, matching the real engine's
-row-per-statement shape so results swap in place. First row lands in
-~750ms instead of ~5s, dimmed until SymPy's answer replaces it.
-
-### nerdamer gotchas (earned, not docs-read)
-
-- **No `binomial`** — expand `\binom{a}{b}` to
-  `factorial(a)/(factorial(b)*factorial(a-b))`; evaluates for numbers,
-  renders `n!/(k!(n-k)!)` for symbols.
-- **Symbolic `sum`/`product` stay unevaluated** — good for display
-  (`\sum\limits_{i=0}^{n}`), don't expect a closed form.
-- `toTeX()` emits `\limits` — strip it (`.replace(/\\limits/g, '')`);
-  MathQuill renders bounds under/over anyway.
-- **Trailing `=` / `\to` break `convertFromLaTeX`** — leaf fallback
-  strips `{}` and returns raw (`2^{n}=…` survives as `2^n=…`).
-- **Splicing bug shape**: a translated command's `after` text must keep
-  a leading operator verbatim — feeding `+\sqrt{2}` to
-  `convertFromLaTeX` eats the unary `+` (`∛x + √2` → `∛x·√2`). The
-  translator's `START_OP`/`END_OP` joiners exist because of this.
-- Interim unknowns are silent: any throw → `[]` → cell stays dimmed/
-  empty until SymPy lands. That failure mode is intentional — never
-  show a guess as a real result. (Real-engine errors *are* shown:
-  normalization issues and per-statement exceptions land as error rows.)
+- **Pushed scope per call**: `engine.pushScope()`/`popScope()` wraps the
+  per-statement evaluations so `name = rhs` rows bind for the rows below
+  (`a = 5 \\ a+1` → `a=5`, `6`) without leaking into other cells or
+  later evals.
+- **`name = rhs` is a binding**: `Equal`/`Assign` with a bare-name lhs
+  evaluates `Assign(name, rhs)` (the binding side effect) and displays
+  `name = evaluated-rhs` — mirroring the worker's `Eq` display for
+  assignments.
+- **`+C` per boundless Integrate**: `addConstants` wraps each
+  `['Integrate', body, 'v']` (a bare string var slot = indefinite; a
+  `Tuple`/`Limits` slot = definite) in `Add(…, letter)`, letters drawn
+  from the same first-free-capital rule as codegen's `nextConstName`.
+- **`Nothing` handling**: CE fills a missing integration variable with
+  `Nothing`; `repairBounds` substitutes the body's single free name
+  (`\int_0^1 x` → integrates over `x`). A `Nothing` or missing *bound*
+  (`\int_{0}^{ }x`, `\sum_{i=0}^{ }i`) poisons the statement — matching
+  the real engine's error.
+- **Double evaluate**: CE's first `.evaluate()` only resolves the
+  outermost `Integrate` — a second pass reaches nested ones (`∬x dxdy`
+  → `y(x²/2 + C) + D`).
+- **Skipped statements stay empty**: `\text{def}` lines, parse `Error`
+  nodes, and custom IR heads (`call`, `Declare`, `IntegerRange`, …)
+  return no row — never show a guess as a real result. (Real-engine
+  errors *are* shown: normalization issues and per-statement exceptions
+  land as error rows.)
+- **Serializer fixups**: `.latex` emits `\exponentialE`, `\imaginaryI`,
+  `\lparen`/`\rparen` — `cleanLatex` maps them to `e`, `i`, `(`, `)` so
+  MathQuill renders the names instead of italicizing the command text.
+  `arcTrigNames` isn't needed here — CE already writes `\arcsin`.
 
 ## Related incident fixed during this work
 

@@ -28,7 +28,6 @@
     "vitest": "^5.0.1"
   },
   "dependencies": {
-    "@cortex-js/compute-engine": "^0.133.0",
-    "nerdamer": "^1.1.13"
+    "@cortex-js/compute-engine": "^0.133.0"
   }
 }

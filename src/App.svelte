@@ -304,8 +304,8 @@
               {#if calcEngine.status === 'loading'}
                 <span class="engine-spinner" aria-hidden="true"></span>
                 <span class="engine-chip-text"
-                  >SymPy engine loading — interim results use nerdamer, a
-                  faster but less accurate engine</span
+                  >SymPy engine loading — interim results use Compute
+                  Engine, a faster but less accurate engine</span
                 >
               {:else if calcEngine.status === 'error'}
                 <span class="engine-chip-text">SymPy failed to load</span>
@@ -336,9 +336,9 @@
                     Answers come from SymPy, a full computer-algebra
                     system running as WebAssembly (Pyodide), which takes
                     a while to download and boot. Until it's ready,
-                    results come from nerdamer — a lightweight JavaScript
-                    engine that's faster but less accurate — and are
-                    marked "estimate".
+                    results come from Compute Engine — the same
+                    JavaScript math engine that parses LaTeX for the
+                    compiler — and are marked "estimate".
                   {/if}
                 </span>
               </button>

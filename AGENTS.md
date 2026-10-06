@@ -50,7 +50,7 @@ src/
                           calcEngine status rune
     calculator.worker.ts  Pyodide + SymPy in a classic worker; exec/evals
                           the emitted program (mc_run)
-    nerdamer-latex.ts     latex -> nerdamer calls (interim engine)
+    result-latex.ts      output latex touch-ups (a-trig -> arc-)
     python-highlight.ts   tiny tokenizer for the generating-code block
   editor/
     mathquill.ts      imports the vendored build + CSS; exports mq3 + types
@@ -108,15 +108,15 @@ and empty blocks serialize as `{ }`.
 
 ## Calculator target
 
-- `target === 'calculator'` renders `CalcOutput` per cell: nerdamer
-  interim rows (dimmed, no `code`) until the Pyodide/SymPy worker is
-  ready, then one result row per top-level statement.
+- `target === 'calculator'` renders `CalcOutput` per cell: Compute
+  Engine interim rows (dimmed, no `code`) until the Pyodide/SymPy
+  worker is ready, then one result row per top-level statement.
 - The worksheet prefix compiles via `compileCellsForCalc` — the shared
   pipeline, not a second parser — so the worker only exec/evals Python.
   Cells share one namespace in order (a `def g` or `a = 5` above is in
   scope below). Assignments/defs carry a `display` expression
   (`a = 5` -> `Eq(a, 5)`).
-- See CALCULATOR-ENGINES.md for the engine protocol, nerdamer coverage,
+- See CALCULATOR-ENGINES.md for the engine protocol, interim coverage,
   and earned gotchas.
 
 ## Command palette

@@ -243,7 +243,7 @@ test('evaluation bar computes the substitution difference', async ({
   await expect(row.locator('.calc-math')).toContainText('1');
 });
 
-test('calculator shows an instant nerdamer result while SymPy boots', async ({
+test('calculator shows an instant Compute Engine result while SymPy boots', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -253,7 +253,7 @@ test('calculator shows an instant nerdamer result while SymPy boots', async ({
   await mf.click();
   await mf.pressSequentially('2+2', { delay: 40 });
 
-  // The nerdamer interim row lands long before the ~4s engine boot and
+  // The Compute Engine interim row lands long before the ~4s engine boot and
   // stays dimmed (.pending) until the real SymPy result replaces it.
   const rows = page.locator('.calc-rows');
   await expect(rows.first()).toContainText('4', { timeout: 10_000 });
@@ -279,7 +279,7 @@ test('flags interim results and the engine-loading banner while SymPy boots', as
   // row is tagged as an estimate.
   const chip = page.locator('.engine-chip');
   await expect(chip).toContainText('SymPy engine loading');
-  await expect(chip).toContainText('nerdamer');
+  await expect(chip).toContainText('Compute Engine');
   await expect(page.locator('.calc-interim').first()).toBeVisible({
     timeout: 10_000,
   });
@@ -287,7 +287,7 @@ test('flags interim results and the engine-loading banner while SymPy boots', as
   // The chip's info icon explains on hover why an interim engine runs.
   await chip.locator('.info-icon').hover();
   await expect(chip.locator('.info-tip')).toBeVisible();
-  await expect(chip.locator('.info-tip')).toContainText('nerdamer');
+  await expect(chip.locator('.info-tip')).toContainText('Compute Engine');
 
   // The chip flips to ready and the tag clears once the real SymPy
   // result lands.
@@ -340,7 +340,7 @@ test('show generating code toggle reveals the cell program in one block', async 
   await expect(
     page.locator('.calc-row .calc-math').first(),
   ).toContainText('x', { timeout: 90_000 });
-  // Wait for the real SymPy row — the nerdamer interim satisfies the
+  // Wait for the real SymPy row — the Compute Engine interim satisfies the
   // text check while the engine boots but carries no code block.
   const calcRows = page.locator('.calc-rows').first();
   await expect(calcRows).toBeAttached({ timeout: 90_000 });
