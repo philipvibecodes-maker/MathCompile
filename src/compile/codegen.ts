@@ -3459,6 +3459,83 @@ export function compileCellsForCalc(
   };
 }
 
+/** Prefix on a shown-program line that never ran — CalcOutput strips
+ * the mark and paints the line red. */
+export const CALC_ERR_MARK = '\u001f';
+
+// The shown program as tagged lines: prelude, then per cell a
+// `# cell N` marker (multi-cell only), defs, and statements. A
+// statement that failed to emit becomes a `# <error>` comment where
+// its code would be, and the cell's unbound errors trail its section
+// the same way — an error always leaves something to show. `stmt`
+// links a line to its statement index in the last cell so a runtime
+// failure (a failed worker row) marks exactly the lines it died on.
+export function calcShownProgram(
+  prog: CalcWorksheetProgram,
+  failed: ReadonlySet<number> = new Set<number>(),
+): { code: string; displayCode: string } {
+  type ShownLine = { text: string; err?: true; stmt?: number };
+  const errComment = (message: string): ShownLine => ({
+    text: `# ${message.replaceAll('\n', ' ')}`,
+    err: true,
+  });
+  const code: ShownLine[] = [];
+  const displayCode: ShownLine[] = [];
+  prog.prelude.forEach((p) =>
+    p.split('\n').forEach((text) => {
+      code.push({ text });
+      displayCode.push({ text });
+    }),
+  );
+  const last = prog.cells.length - 1;
+  prog.cells.forEach((c, i) => {
+    if (prog.cells.length > 1) {
+      code.push({ text: `# cell ${i + 1}` });
+      displayCode.push({ text: `# cell ${i + 1}` });
+    }
+    c.defs.forEach((text) => {
+      code.push({ text });
+      displayCode.push({ text });
+    });
+    c.statements.forEach((s, si) => {
+      const stmt = i === last ? si : undefined;
+      if (s.error !== undefined) {
+        code.push(errComment(s.error));
+        displayCode.push(errComment(s.error));
+      } else if (s.code === '') return;
+      else {
+        s.code.split('\n').forEach((text) => code.push({ text, stmt }));
+        if (s.display === undefined) {
+          displayCode.push({ text: `e = ${s.code}`, stmt });
+        } else {
+          s.code
+            .split('\n')
+            .forEach((text) => displayCode.push({ text, stmt }));
+          displayCode.push({ text: `e = ${s.display}`, stmt });
+        }
+      }
+    });
+    // Errors not bound to a statement (a dropped row, an unparseable
+    // line) trail the cell's section as comments — the block still
+    // shows where the program gave up.
+    c.issues
+      .filter((iss) => iss.severity === 'error')
+      .forEach((iss) => {
+        code.push(errComment(iss.message));
+        displayCode.push(errComment(iss.message));
+      });
+  });
+  const mark = (lines: ShownLine[]) =>
+    lines
+      .map((l) =>
+        l.err || (l.stmt !== undefined && failed.has(l.stmt))
+          ? CALC_ERR_MARK + l.text
+          : l.text,
+      )
+      .join('\n');
+  return { code: mark(code), displayCode: mark(displayCode) };
+}
+
 // Compile a single cell for the calculator target — the standalone
 // equivalent of compileCellsForCalc([cell]), with the cell's decls
 // folded into the prelude (a self-contained program).

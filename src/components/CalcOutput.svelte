@@ -8,6 +8,7 @@
     type CalcRowErr,
   } from '../calc/calculator.svelte.ts';
   import { latexToStatementStrings, type Issue } from '../compile/ir';
+  import { CALC_ERR_MARK } from '../compile/codegen';
   import { mountStaticMath } from '../editor/static-math';
   import { highlightPython } from '../calc/python-highlight';
   import { appStore, type Cell } from '../state/store.svelte';
@@ -118,7 +119,10 @@
           cellDisplayCode = r.displayCode ?? '';
           pending = false;
           interim = false;
-          failed = '';
+          failed = r.error ?? '';
+          // A dead eval still produced a program — open the code block
+          // so the attempted lines are visible without a click.
+          if (r.error !== undefined && cellCode !== '') showCode = true;
         },
         (e) => {
           if (mine !== seq) return;
@@ -178,6 +182,18 @@
     }));
   }
 
+  // Split a shown-program chunk into lines, stripping the
+  // CALC_ERR_MARK prefix codegen puts on lines that never ran —
+  // CalcOutput paints those red.
+  const codeLines = (text: string): { text: string; err: boolean }[] =>
+    text
+      .split('\n')
+      .map((l) =>
+        l.startsWith(CALC_ERR_MARK)
+          ? { text: l.slice(1), err: true }
+          : { text: l, err: false },
+      );
+
   // The shown program and its folded regions: the helper block and
   // every prior cell's section start collapsed; this cell's section
   // always stays expanded.
@@ -233,14 +249,15 @@
         </svg>
         <span class="info-tip" role="tooltip" aria-hidden="true">
           The Python program MathCompile generated and ran through SymPy
-          to produce this cell's results.
+          to produce this cell's results. Lines in red failed to run.
         </span>
       </button>
     </div>
   {/if}
   {#if failed !== ''}
     <span class="parse-error-icon" title={failed}>!</span>
-  {:else if rows.length > 0}
+  {/if}
+  {#if rows.length > 0}
     <div class="calc-rows" class:pending={pending}>
       {#each rows as row, i (i)}
         <div class="calc-row">
@@ -269,79 +286,87 @@
           >estimate · SymPy still loading</span
         >
       {/if}
-      {#if showCode && cellCode !== ''}
-        {#if codeSplit}
-          <pre class="calc-code has-fold"><button
-              type="button"
-              class="code-copy"
-              title="Copy the code that generates this cell's results"
-              onclick={() => copyGeneratingCode(shownCode)}
-              >{copied ? 'Copied' : 'Copy generating code'}</button
-            ><code
-              >{#each highlightPython(codeSplit.head) as tok, j (j)}<span
-                  class={tok.cls ? `tok-${tok.cls}` : undefined}
-                  >{tok.text}</span
-                >{/each}{codeSplit.head === '' ? '' : '\n'}<button
-                type="button"
-                class="code-fold"
-                title="Toggle the clean_and_simplify helper definitions"
-                aria-expanded={showHelpers}
-                onclick={() => (showHelpers = !showHelpers)}
-                >{showHelpers ? '▾' : '▸'}</button
-              ><span class="code-helper">{#each highlightPython(
-                  codeSplit.sig,
-                ) as tok, j (j)}<span
-                    class={tok.cls ? `tok-${tok.cls}` : undefined}
-                    >{tok.text}</span
-                  >{/each}</span
-              >{#if !showHelpers}<span
-                  class="code-elide"> ⋯</span>{/if}{'\n'}{#if showHelpers}{#each highlightPython(
-                    codeSplit.body + '\n',
-                  ) as tok, j (j)}<span
-                    class={tok.cls ? `tok-${tok.cls}` : undefined}
-                    >{tok.text}</span
-                  >{/each}{/if}{#each codeSections as sec, s (s)}{#if s <
-                    codeSections.length - 1 && sec.body.trim() !== ''}<button
-                    type="button"
-                    class="code-fold"
-                    title="Toggle this cell's code"
-                    aria-expanded={!!openCells[s]}
-                    onclick={() => (openCells[s] = !openCells[s])}
-                    >{openCells[s] ? '▾' : '▸'}</button
-                  >{/if}{#each highlightPython(
-                    sec.marker,
-                  ) as tok, j (j)}<span
-                    class={tok.cls ? `tok-${tok.cls}` : undefined}
-                    >{tok.text}</span
-                  >{/each}{#if s === codeSections.length - 1 || openCells[s]}{#if sec.marker !==
-                      '' && sec.body !== ''}{'\n'}{/if}{#each highlightPython(
-                      sec.body,
-                    ) as tok, j (j)}<span
-                      class={tok.cls ? `tok-${tok.cls}` : undefined}
-                      >{tok.text}</span
-                    >{/each}{:else if sec.body !== ''}<span
-                    class="code-elide"> ⋯</span>{/if}{#if s <
-                  codeSections.length - 1}{'\n'}{/if}{/each}</code
-            ></pre>
-        {:else}
-          <pre class="calc-code"><button
-              type="button"
-              class="code-copy"
-              title="Copy the code that generates this cell's results"
-              onclick={() => copyGeneratingCode(shownCode)}
-              >{copied ? 'Copied' : 'Copy generating code'}</button
-            ><code
-              >{#each highlightPython(shownCode) as tok, j (j)}<span
-                  class={tok.cls ? `tok-${tok.cls}` : undefined}
-                  >{tok.text}</span
-                >{/each}</code
-            ></pre>
-        {/if}
-      {/if}
     </div>
-  {:else if pending}
+  {:else if pending && failed === ''}
     <!-- Empty cells and complete-but-empty results render nothing — a
          bare '…' reads as "still evaluating" forever. -->
     <span class="calc-status">{statusLabel}</span>
+  {/if}
+  {#if showCode && cellCode !== ''}
+    {#if codeSplit}
+      <pre class="calc-code has-fold" class:err={failed !== ''}><button
+          type="button"
+          class="code-copy"
+          title="Copy the code that generates this cell's results"
+          onclick={() =>
+            copyGeneratingCode(shownCode.replaceAll(CALC_ERR_MARK, ''))}
+          >{copied ? 'Copied' : 'Copy generating code'}</button
+        ><code
+          >{#each highlightPython(codeSplit.head) as tok, j (j)}<span
+              class={tok.cls ? `tok-${tok.cls}` : undefined}
+              >{tok.text}</span
+            >{/each}{codeSplit.head === '' ? '' : '\n'}<button
+            type="button"
+            class="code-fold"
+            title="Toggle the clean_and_simplify helper definitions"
+            aria-expanded={showHelpers}
+            onclick={() => (showHelpers = !showHelpers)}
+            >{showHelpers ? '▾' : '▸'}</button
+          ><span class="code-helper">{#each highlightPython(
+              codeSplit.sig,
+            ) as tok, j (j)}<span
+                class={tok.cls ? `tok-${tok.cls}` : undefined}
+                >{tok.text}</span
+              >{/each}</span
+          >{#if !showHelpers}<span
+              class="code-elide"> ⋯</span>{/if}{'\n'}{#if showHelpers}{#each highlightPython(
+                codeSplit.body + '\n',
+              ) as tok, j (j)}<span
+                class={tok.cls ? `tok-${tok.cls}` : undefined}
+                >{tok.text}</span
+              >{/each}{/if}{#each codeSections as sec, s (s)}{#if s <
+                codeSections.length - 1 && sec.body.trim() !== ''}<button
+                type="button"
+                class="code-fold"
+                title="Toggle this cell's code"
+                aria-expanded={!!openCells[s]}
+                onclick={() => (openCells[s] = !openCells[s])}
+                >{openCells[s] ? '▾' : '▸'}</button
+              >{/if}{#each highlightPython(
+                sec.marker,
+              ) as tok, j (j)}<span
+                class={tok.cls ? `tok-${tok.cls}` : undefined}
+                >{tok.text}</span
+              >{/each}{#if s === codeSections.length - 1 || openCells[s]}{#if sec.marker !==
+                  '' && sec.body !== ''}{'\n'}{/if}{#each codeLines(
+                  sec.body,
+                ) as ln, k (k)}{#if k > 0}{'\n'}{/if}<span
+                    class:code-err={ln.err}
+                    >{#each highlightPython(ln.text) as tok, j (j)}<span
+                        class={tok.cls ? `tok-${tok.cls}` : undefined}
+                        >{tok.text}</span
+                      >{/each}</span
+                  >{/each}{:else if sec.body !== ''}<span
+                  class="code-elide"> ⋯</span>{/if}{#if s <
+                codeSections.length - 1}{'\n'}{/if}{/each}</code
+        ></pre>
+    {:else}
+      <pre class="calc-code" class:err={failed !== ''}><button
+          type="button"
+          class="code-copy"
+          title="Copy the code that generates this cell's results"
+          onclick={() =>
+            copyGeneratingCode(shownCode.replaceAll(CALC_ERR_MARK, ''))}
+          >{copied ? 'Copied' : 'Copy generating code'}</button
+        ><code
+          >{#each codeLines(shownCode) as ln, k (k)}{#if k > 0}{'\n'}{/if}<span
+                class:code-err={ln.err}
+                >{#each highlightPython(ln.text) as tok, j (j)}<span
+                    class={tok.cls ? `tok-${tok.cls}` : undefined}
+                    >{tok.text}</span
+                  >{/each}</span
+              >{/each}</code
+        ></pre>
+    {/if}
   {/if}
 </div>

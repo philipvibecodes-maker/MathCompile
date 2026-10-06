@@ -363,10 +363,10 @@ test('show generating code toggle reveals the cell program in one block', async 
   await expect(code).not.toContainText('e = ');
   await expect(code.locator('.tok-call').first()).toBeAttached();
   await expect(code.locator('.tok-str').first()).toBeAttached();
-  // The block sits after every result row.
+  // The block sits after the result rows.
   await expect(
     code.locator('xpath=preceding-sibling::*').last(),
-  ).toHaveClass(/calc-row/);
+  ).toHaveClass(/calc-rows/);
 
   await page.locator('.settings-btn').click();
   await page
@@ -394,4 +394,42 @@ test('show generating code toggle reveals the cell program in one block', async 
 
   await toggle.uncheck();
   await expect(page.locator('.calc-code')).toHaveCount(0);
+});
+
+// An error used to leave the code block blank: a dropped statement
+// had no emitted code at all. Now the block always shows what
+// compiled — a dead row trails its section as a red `# <error>`
+// comment, and a statement that fails inside SymPy gets its emitted
+// lines marked red.
+test('a failed eval keeps the generating code, marked non-functioning', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await setTarget(page, 'calculator');
+
+  const mf = cell(page, 0);
+  await mf.evaluate((el, v) => {
+    (el as { value: string }).value = v;
+  }, 'x+');
+
+  // The dropped row reports only its ! marker, but the code that did
+  // emit (the Symbol decl) still shows.
+  await expect(
+    page.locator('.calc-row .parse-error-icon').first(),
+  ).toBeVisible({ timeout: 90_000 });
+  const output0 = page.locator('.calc-output').first();
+  await output0.getByLabel('Show generating code').check();
+  const code = output0.locator('.calc-code');
+  await expect(code).toContainText('Symbol("x")');
+  await expect(code.locator('.code-err')).toContainText('stray operator');
+
+  // A statement that compiles but dies inside SymPy gets its emitted
+  // line itself marked — Eq(Symbol, list) raises SympifyError in the
+  // display eval.
+  await mf.evaluate((el, v) => {
+    (el as { value: string }).value = v;
+  }, 'L = [1,2,3]');
+  await expect(code.locator('.code-err')).toContainText('L = [1, 2, 3]', {
+    timeout: 90_000,
+  });
 });

@@ -1,4 +1,4 @@
-import { compileCellsForCalc } from '../compile/codegen';
+import { calcShownProgram, compileCellsForCalc } from '../compile/codegen';
 import {
   latexToStatementStrings,
   type Issue,
@@ -33,6 +33,9 @@ export interface CalcResult {
   // with the `e = ...` display-plumbing capture lines inlined.
   code?: string;
   displayCode?: string;
+  // Set when the eval itself died (engine failure, timeout) — `rows`
+  // still carries compile issues and `code` what was attempted.
+  error?: string;
 }
 
 export type EngineStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -65,11 +68,11 @@ let worker: Worker | undefined;
 let nextId = 1;
 const pending = new Map<
   number,
-  { resolve: (rows: CalcRow[]) => void; reject: (e: Error) => void }
+  { resolve: (rows: CalcRow[]) => void; fail: (message: string) => void }
 >();
 
 function failAll(message: string) {
-  for (const p of pending.values()) p.reject(new Error(message));
+  for (const p of pending.values()) p.fail(message);
   pending.clear();
 }
 
@@ -115,7 +118,7 @@ function ensureWorker(): Worker {
       );
     } else {
       console.log('[calc] error:', m.error ?? 'evaluation failed');
-      p.reject(new Error(m.error ?? 'evaluation failed'));
+      p.fail(m.error ?? 'evaluation failed');
     }
   };
   w.onerror = (e) => {
@@ -168,47 +171,26 @@ export function evaluate(
       }) as CalcRowErr,
   );
   if (last.statements.length === 0)
-    // Uncompileable cells show their issues; a cell with none at all
-    // (empty, or only notes) shows nothing.
-    return Promise.resolve({ rows: issueRows });
+    // Uncompileable cells show their issues plus as much of the
+    // program as emitted (prelude, earlier cells, decls) — the
+    // errors trail the code as comments.
+    return Promise.resolve({ rows: issueRows, ...calcShownProgram(prog) });
   // The emitted program as one block — prelude, then each cell's decls
   // and statements in worksheet order (# cell markers only when the
-  // result ran in real context). The plumbing variant swaps expression
-  // statements for their `e = ...` capture lines and adds
-  // `e = <display>` after assignments/defs, mirroring the worker's
-  // exec/eval split.
-  const okStmts = (c: (typeof prog.cells)[number]) =>
-    c.statements.filter((s) => s.error === undefined && s.code !== '');
-  const marker = (i: number) => (prog.cells.length > 1 ? [`# cell ${i + 1}`] : []);
-  const code = [
-    ...prog.prelude,
-    ...prog.cells.flatMap((c, i) => [
-      ...marker(i),
-      ...c.defs,
-      ...okStmts(c).map((s) => s.code),
-    ]),
-  ].join('\n');
-  const displayCode = [
-    ...prog.prelude,
-    ...prog.cells.flatMap((c, i) => [
-      ...marker(i),
-      ...c.defs,
-      ...okStmts(c).flatMap((s) =>
-        s.display === undefined
-          ? [`e = ${s.code}`]
-          : [s.code, `e = ${s.display}`],
-      ),
-    ]),
-  ].join('\n');
-  // A multi-statement cell keeps its good rows when a sibling statement
-  // is broken — and issue rows interleave at their own input line, not
-  // at the bottom of the output.
+  // result ran in real context), with dropped/failed statements marked
+  // in place. The plumbing variant swaps expression statements for
+  // their `e = ...` capture lines and adds `e = <display>` after
+  // assignments/defs, mirroring the worker's exec/eval split.
   const w = ensureWorker();
   const id = nextId++;
-  return new Promise<CalcResult>((resolve, reject) => {
+  return new Promise<CalcResult>((resolve) => {
     pending.set(id, {
       resolve: (r) => {
         clearTimeout(timer);
+        // Worker rows parallel the last cell's statements — the
+        // failed ones get their emitted lines marked in the shown
+        // program.
+        const failed = new Set(r.flatMap((row, i) => (row.ok ? [] : [i])));
         const merged = [
           ...r.map((row, i) => ({ row, line: last.statementLines[i] })),
           ...issueRows.map((row) => ({ row, line: row.line })),
@@ -221,11 +203,17 @@ export function evaluate(
           .map(({ row, line }) =>
             row.ok || line === undefined ? row : { ...row, line },
           );
-        resolve({ rows: merged, code, displayCode });
+        resolve({ rows: merged, ...calcShownProgram(prog, failed) });
       },
-      reject: (e) => {
+      fail: (message) => {
         clearTimeout(timer);
-        reject(e);
+        // The eval died wholesale (engine failure, timeout) — the
+        // attempted program still shows alongside the issue rows.
+        resolve({
+          rows: issueRows,
+          ...calcShownProgram(prog),
+          error: message,
+        });
       },
     });
     // A hung SymPy call (pathological simplify/integrate) would block

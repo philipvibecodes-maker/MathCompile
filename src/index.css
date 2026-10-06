@@ -1095,6 +1095,19 @@ body {
   color: var(--faint);
 }
 
+/* The eval died wholesale (engine failure, timeout) — the block shows
+   the attempted program, framed as non-functioning. */
+.calc-code.err {
+  border-color: var(--danger);
+}
+
+/* A line that never ran — a statement that failed to emit (shown as a
+   `# <error>` comment) or died inside SymPy. */
+.calc-code .code-err,
+.calc-code .code-err span {
+  color: var(--danger) !important;
+}
+
 /* Per-cell opt-in to reveal the generating-code block — a small
    control pinned to the output cell's top-right corner. */
 .calc-code-toggle {

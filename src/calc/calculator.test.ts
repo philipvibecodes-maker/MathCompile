@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import nerdamer from 'nerdamer/all';
-import { compileCellForCalc, compileCellsForCalc } from '../compile/codegen';
+import {
+  CALC_ERR_MARK,
+  calcShownProgram,
+  compileCellForCalc,
+  compileCellsForCalc,
+} from '../compile/codegen';
 import { parseCellLatex } from '../compile/ir';
 import { toNerdamerInput } from './nerdamer-latex';
 import { interimEvaluate } from './calculator.svelte.ts';
@@ -894,6 +899,52 @@ describe('compileCellsForCalc (worksheet cells share one scope)', () => {
     );
     expect(prog.cells[1].issues).toEqual([]);
     expect(prog.cells[1].statementLines).toEqual([0]);
+  });
+});
+
+describe('calcShownProgram (the shown generating-code block)', () => {
+  // Lines that never ran carry CALC_ERR_MARK — CalcOutput strips it
+  // and paints the line red.
+  const E = CALC_ERR_MARK;
+
+  it('keeps a failed statement as a marked # <error> comment', () => {
+    const prog = calcAll('\\displaystyle');
+    const { code } = calcShownProgram(prog);
+    expect(code).toContain(`${E}# missing argument cannot be emitted`);
+  });
+
+  it('trails dropped-row errors as marked comments after the emitted code', () => {
+    const prog = calcAll('x+');
+    const { code } = calcShownProgram(prog);
+    // The symbol decl still emitted — the block shows it alongside the
+    // error that sank the statement.
+    expect(code).toContain('x = sp.Symbol("x")');
+    expect(code).toContain(
+      `${E}# stray operator "+" — delete it or finish the expression`,
+    );
+  });
+
+  it('keeps working statements unmarked around a failed sibling', () => {
+    const prog = calcAll('2+2\\\\ x+');
+    const { code } = calcShownProgram(prog);
+    expect(code).toContain(`\n${F('2 + 2')}\n`);
+    expect(code).toContain(`${E}# stray operator`);
+    expect(code).not.toContain(`${E}${F('2 + 2')}`);
+  });
+
+  it("marks a runtime-failed statement's emitted lines", () => {
+    const prog = calcAll('1+1\\\\ 2+2');
+    const { code } = calcShownProgram(prog, new Set([1]));
+    expect(code).toContain(`${E}${F('2 + 2')}`);
+    expect(code).not.toContain(`${E}${F('1 + 1')}`);
+  });
+
+  it('marks the plumbing variant identically', () => {
+    const prog = calcAll('a = 5');
+    const { displayCode } = calcShownProgram(prog, new Set([0]));
+    // Both the assign and its display capture belong to statement 0.
+    expect(displayCode).toContain(`\n${E}a = 5\n`);
+    expect(displayCode).toContain(`${E}e = `);
   });
 });
 
