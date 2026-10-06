@@ -262,15 +262,16 @@ const intervalBind = (s: string, j: MathJson): MathJson => {
 // Rescan the worksheet's notation-defining statements
 // (`\text{notation}`/`\newcommand`) into the cell-macro table — the
 // store calls this on every cell mutation so a deleted definition stops
-// expanding and unregisters its `\name` command.
-export function syncCellMacros(latexList: string[]): void {
+// expanding and unregisters its `\name` command. Returns true when the
+// table changed, meaning every cached parse is stale.
+export function syncCellMacros(latexList: string[]): boolean {
   const defs = [];
   for (const l of latexList)
     for (const s of latexToStatementStrings(l)) {
       const d = parseNotationDef(s);
       if (d) defs.push(d);
     }
-  setCellMacros(defs);
+  return setCellMacros(defs);
 }
 
 // Parse a cell's LaTeX into raw MathJSON. Multiple statements become a
