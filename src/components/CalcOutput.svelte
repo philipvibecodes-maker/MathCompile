@@ -12,6 +12,7 @@
     latexToStatementStrings,
     type Issue,
   } from '../compile/ir';
+  import { codeFnNames, codeFnPyLines } from '../compile/codefns.svelte.ts';
   import { mountStaticMath } from '../editor/static-math';
   import { highlightPython } from '../calc/python-highlight';
   import { appStore, type Cell } from '../state/store.svelte';
@@ -81,12 +82,18 @@
   // prelude so their bindings resolve worksheet-wide. Tracked on json
   // (latex is the same data, but json also catches programmatic
   // reparses); a signature string keeps the effect cheap to re-check.
-  const otherPy = $derived(
-    appStore.cells
+  // UI-defined functions (`codeFns`) behave like worksheet-wide \py
+  // lines — they prepend the other cells' sources in the prelude and
+  // resolve `\name{...}` calls in this cell.
+  const uiPy = $derived(codeFnPyLines());
+  const uiNames = $derived(codeFnNames());
+  const otherPy = $derived([
+    ...uiPy,
+    ...appStore.cells
       .filter((c) => c.id !== cell.id)
       .flatMap((c) => collectPyLines(c.json)),
-  );
-  const otherPySig = $derived(otherPy.join('\n'));
+  ]);
+  const otherPySig = $derived(otherPy.join('\n') + uiNames.size);
 
   let seq = 0;
   $effect(() => {
@@ -121,7 +128,7 @@
           }
         });
       }
-      evaluate(cell, otherPy).then(
+      evaluate(cell, otherPy, uiNames).then(
         (r) => {
           if (mine !== seq) return;
           rows = r.rows;

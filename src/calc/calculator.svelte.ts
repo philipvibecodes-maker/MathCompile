@@ -142,10 +142,11 @@ export function evaluate(
     json?: MathJson;
   },
   otherPyLines: string[] = [],
+  extraCodeNames?: ReadonlySet<string>,
 ): Promise<CalcResult> {
   let prog: ReturnType<typeof compileCellForCalc>;
   try {
-    prog = compileCellForCalc(cell, otherPyLines);
+    prog = compileCellForCalc(cell, otherPyLines, extraCodeNames);
   } catch (e) {
     // The compiler reports issues instead of throwing — a hard throw
     // must still not leave the cell stuck on '…' forever.

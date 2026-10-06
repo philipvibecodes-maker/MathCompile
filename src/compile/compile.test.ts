@@ -1910,3 +1910,60 @@ describe('verbatim Python (\\py)', () => {
     expect(out.program).toContain("r = 'a\\b'");
   });
 });
+
+describe('UI-defined code functions (extraPyLines/extraCodeNames)', () => {
+  it('extraPyLines run in every cell prelude; \\name{…} resolves to the def', () => {
+    const cells = [{ json: parseCellLatex('\\clen{27}') }];
+    const out = compileWorksheet(cells, 'python', {
+      importAll: false,
+      extraPyLines: [
+        'clen = lambda n, k=0: k if n == 1 else clen(3*n+1 if n%2 else n//2, k+1)',
+      ],
+      extraCodeNames: new Set(['clen']),
+    });
+    expect(out.cellLines[0]).toEqual([
+      'import sympy as sp',
+      'clen = lambda n, k=0: k if n == 1 else clen(3*n+1 if n%2 else n//2, k+1)',
+      'clen(27)',
+    ]);
+  });
+
+  it('typed \\text{clen}(27) also resolves via pyBound (no extraCodeNames needed)', () => {
+    const cells = [{ json: parseCellLatex('\\text{clen}(27)') }];
+    const out = compileWorksheet(cells, 'python', {
+      importAll: false,
+      extraPyLines: ['clen = lambda n: n'],
+      extraCodeNames: new Set(['clen']),
+    });
+    expect(out.cellLines[0]).toEqual([
+      'import sympy as sp',
+      'clen = lambda n: n',
+      'clen(27)',
+    ]);
+  });
+
+  it('\\name{…} NOT in extraCodeNames keeps the unknown-command error', () => {
+    const cells = [{ json: parseCellLatex('\\mystery{5}') }];
+    const out = compileWorksheet(cells, 'python', {
+      importAll: false,
+      extraPyLines: [],
+      extraCodeNames: new Set(['clen']),
+    });
+    expect(out.cellIssues[0].some((i) => i.severity === 'error')).toBe(true);
+    expect(out.cellLines[0]).not.toContain('mystery(5)');
+  });
+
+  it('a def name in operand position emits bare (pyBound), no Symbol decl', () => {
+    const cells = [{ json: parseCellLatex('x + 1') }];
+    const out = compileWorksheet(cells, 'python', {
+      importAll: false,
+      extraPyLines: ['x = 5'],
+      extraCodeNames: new Set(['x']),
+    });
+    expect(out.cellLines[0]).toEqual([
+      'import sympy as sp',
+      'x = 5',
+      'x + 1',
+    ]);
+  });
+});

@@ -316,6 +316,26 @@ export function collectPyLines(ir: MathJson | undefined): string[] {
   return out;
 }
 
+// The command name an 'unexpected-command' Error node carries, e.g.
+// `\fib` in `['Error', "'unexpected-command'", ['LatexString', "'\\fib'"]]`.
+export function unexpectedCommandName(node: MathJson): string | undefined {
+  if (
+    !isArray(node) ||
+    head(node) !== 'Error' ||
+    node[1] !== "'unexpected-command'"
+  )
+    return undefined;
+  for (const arg of node.slice(1)) {
+    if (isArray(arg) && head(arg) === 'LatexString' && isString(arg[1])) {
+      const m = /^'(.*)'$/s.exec(arg[1]);
+      const src = (m ? m[1] : arg[1]).trim();
+      const cmd = /^\\([a-zA-Z]+)/.exec(src);
+      if (cmd) return cmd[1];
+    }
+  }
+  return undefined;
+}
+
 // Names a `\py` source line binds — `x = …`, `def f(…)`, `import numpy`
 // — so `call`/`fn` emit the bound name directly instead of minting a
 // Symbol/Function decl that would shadow it.
@@ -865,12 +885,19 @@ function normalizeStatementEqual(
   return ['Equal', ...node.slice(1).map(normalizeExpr)];
 }
 
-export function normalizeIR(json: MathJson | undefined): NormResult {
+// `extraCodeNames` — notation names declared outside the latex (UI
+// function defs). A `\name{...}` call site rewrites to a `call` when
+// the name is in this set so codegen emits the user's binding.
+export function normalizeIR(
+  json: MathJson | undefined,
+  extraCodeNames?: ReadonlySet<string>,
+): NormResult {
   const issues: Issue[] = [];
   const pushIssue = (severity: Issue['severity'], message: string) => {
     issues.push(issue(severity, message));
   };
   if (json === undefined) return { ok: true, ir: undefined, issues };
+  const codeCallNames = new Set<string>(extraCodeNames);
   // Tracks whether the current Block is the outermost (\displaylines)
   // one — only its children count as input lines.
   let blockDepth = 0;
@@ -1322,6 +1349,29 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       if (atStatement && isDefMark(items[0])) {
         const def = defMarkedShape(['InvisibleOperator', ...items]);
         if (def) return ['Declare', def.name, ['List', ...def.params]];
+      }
+      // `\name{a}{b}` where `name` is UI-declared (CodeFn): the unknown
+      // \name arrived as an 'unexpected-command' Error with the brace
+      // args as operands — rewrite to a `call` so the emitted program
+      // calls the user's Python binding.
+      const errIdx = items.findIndex(
+        (n) => unexpectedCommandName(n) !== undefined,
+      );
+      if (errIdx >= 0) {
+        const name = unexpectedCommandName(items[errIdx])!;
+        if (codeCallNames.has(name)) {
+          const call: MathJson = [
+            'call',
+            name,
+            ...items.slice(errIdx + 1).map((n) => normalize(n, false)),
+          ];
+          if (errIdx === 0) return call;
+          return [
+            'Multiply',
+            ...items.slice(0, errIdx).map((n) => normalize(n, false)),
+            call,
+          ];
+        }
       }
       const last = items[items.length - 1];
       // firstNorm caches normalize(items[0]) for the callee check so a
@@ -1796,7 +1846,11 @@ export function normalizeIR(json: MathJson | undefined): NormResult {
       // about a stub that never reaches the output. A worksheet-declared
       // name isn't unknown either — `f(3)` after `f(x) = …` calls the
       // def the cell already made.
-      if (!CALL_RENAMED.has(h) && !declaredFns.has(h))
+      if (
+        !CALL_RENAMED.has(h) &&
+        !declaredFns.has(h) &&
+        !codeCallNames.has(h.replace(/^'|'$/g, ''))
+      )
         pushIssue('note', `unknown head "${h}" — emitted as ${h}(...)`);
       return ['call', h, ...node.slice(1).map((n) => normalize(n, false))];
     }

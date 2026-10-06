@@ -7,7 +7,9 @@
   import { TARGETS } from './compile/targets';
   import type { TargetId } from './compile/targets';
   import CommandPalette from './components/CommandPalette.svelte';
+  import CodeFnDialog from './components/CodeFnDialog.svelte';
   import HowToGuide from './components/HowToGuide.svelte';
+  import { codeFnNames, codeFnPyLines } from './compile/codefns.svelte';
   import { appStore, THEME_STORAGE_KEY } from './state/store.svelte';
   import { savePrefs } from './state/persistence';
   import { copyableLatex, displayLatex } from './compile/latex';
@@ -61,6 +63,10 @@
     appStore.target === 'python'
       ? compileWorksheet(appStore.cells, appStore.target, {
           importAll: appStore.importAll,
+          // UI-defined functions run in every cell's prelude and
+          // resolve `\name{...}` calls — like a worksheet-wide \py.
+          extraPyLines: codeFnPyLines(),
+          extraCodeNames: codeFnNames(),
         })
       : null,
   );
@@ -605,4 +611,5 @@
     </section>
   </div>
   <CommandPalette {commands} />
+  <CodeFnDialog />
 </div>

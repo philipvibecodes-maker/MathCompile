@@ -1,4 +1,5 @@
 import { TARGETS } from './compile/targets';
+import { codeFnDialog } from './compile/codefns.svelte';
 import type { AppStore } from './state/store.svelte';
 
 export interface Command {
@@ -40,6 +41,12 @@ export const buildCommands = (store: AppStore): Command[] => {
       title: 'Clear all expressions',
       keywords: 'reset delete remove',
       run: () => store.clearAll(),
+    },
+    {
+      id: 'define-codefn',
+      title: 'Define Python function…',
+      keywords: 'code notation custom lambda sympy python def',
+      run: () => (codeFnDialog.open = true),
     },
     {
       id: 'toggle-smart',

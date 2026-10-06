@@ -2960,6 +2960,13 @@ export interface CompileOptions {
   /** Emit `from sympy import *` and unqualified sympy names (default).
    * `false` emits `import sympy as sp` with `sp.` qualifiers. */
   importAll?: boolean;
+  /** Python lines run in EVERY cell's prelude, like a `\py` statement —
+   * UI function defs (name = lambda …) arrive this way so their
+   * bindings resolve worksheet-wide. */
+  extraPyLines?: string[];
+  /** Extra names a `\name{...}` call site may resolve to (UI function
+   * defs) — unioned into each cell's normalize pass. */
+  extraCodeNames?: ReadonlySet<string>;
 }
 
 // Compile the whole worksheet. `python` produces a runnable SymPy program;
@@ -2973,7 +2980,9 @@ export function compileWorksheet(
   const importLine = qualified
     ? 'import sympy as sp'
     : 'from sympy import *';
-  const perCell = cells.map((c) => normalizeIR(c.json));
+  const perCell = cells.map((c) =>
+    normalizeIR(c.json, opts.extraCodeNames),
+  );
   const issues: Issue[] = perCell.flatMap((r, i) =>
     r.issues.map((iss) => ({
       ...iss,
@@ -3029,8 +3038,9 @@ export function compileWorksheet(
   // OTHER cells' Python (a cell's own \py statements stay inline), and
   // the names they bind emit bare — no Symbol/Function decl shadows.
   const cellPyLines = perCell.map((r) => collectPyLines(r.ir));
+  const extraPy = opts.extraPyLines ?? [];
   const pyBound = new Set(
-    cellPyLines.flat().flatMap((l) => pyBoundNames(l)),
+    [...cellPyLines.flat(), ...extraPy].flatMap((l) => pyBoundNames(l)),
   );
 
   // Each cell emits with fresh defined/symbols/functions state — cells
@@ -3059,7 +3069,10 @@ export function compileWorksheet(
         issues,
         genIssues,
         i + 1,
-        cellPyLines.filter((_, j) => j !== i).flat(),
+        [
+          ...extraPy,
+          ...cellPyLines.filter((_, j) => j !== i).flat(),
+        ],
         pyBound,
       ),
     );
@@ -3246,8 +3259,9 @@ const calcEval = (expr: string): string =>
 export function compileCellForCalc(
   cell: CellInput,
   otherPyLines: string[] = [],
+  extraCodeNames?: ReadonlySet<string>,
 ): CalcProgram {
-  const { ir, issues } = normalizeIR(cell.json);
+  const { ir, issues } = normalizeIR(cell.json, extraCodeNames);
   if (ir === undefined)
     return { prelude: [], statements: [], issues, statementLines: [] };
 

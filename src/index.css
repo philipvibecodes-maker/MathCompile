@@ -1391,6 +1391,144 @@ body {
   border-top: 1px solid var(--border);
 }
 
+/* ── Define Python function dialog ──────────────────── */
+/* Always mounted like the palette: .open flips visibility. */
+.codefn-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 10vh;
+  background: var(--backdrop);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.codefn-backdrop.open {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.codefn {
+  width: min(520px, 92vw);
+  max-height: 76vh;
+  overflow-y: auto;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px var(--shadow);
+  padding: 16px;
+  contain: layout style paint;
+}
+
+.codefn-title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.codefn-blurb {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.codefn-field {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.codefn-hint {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.codefn-field input,
+.codefn-field textarea {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 7px 9px;
+  font-size: 13px;
+  font-family: var(--mono, monospace);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.codefn-error {
+  margin: -6px 0 8px;
+  font-size: 11px;
+  color: var(--error, #c0392b);
+}
+
+.codefn-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 4px 0 8px;
+}
+
+.codefn-save {
+  padding: 6px 14px;
+  font-size: 13px;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.codefn-save:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.codefn-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--border);
+}
+
+.codefn-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.codefn-list code {
+  font-family: var(--mono, monospace);
+  color: var(--accent-text);
+  white-space: nowrap;
+}
+
+.codefn-body {
+  flex: 1;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono, monospace);
+}
+
+.codefn-remove {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
 /* ── How-to guide ───────────────────────────────────── */
 
 .howto {
