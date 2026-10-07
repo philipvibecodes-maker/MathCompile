@@ -93,6 +93,27 @@ def test_boot_failure_reports_error_and_evals_fail_clean():
     ]
 
 
+def test_failed_boot_retries_on_next_call():
+    backend = calc_backend.CalcBackend()
+    attempts = []
+
+    def flaky():
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RuntimeError('docker not up yet')
+        return FakeSandbox(stdout=b'[{"ok": true, "text": "2"}]\n')
+
+    backend._make_sandbox = flaky
+    backend.prewarm()
+    backend._boot.join()
+    assert backend.engine_status()['status'] == 'error'
+    # The next call boots again — a transient failure must not wedge
+    # the app until a restart.
+    assert backend.calc_eval('{}') == [{'ok': True, 'text': '2'}]
+    assert backend.engine_status()['status'] == 'ready'
+    assert len(attempts) == 2
+
+
 def test_runtime_file_stays_the_single_source(tmp_path):
     # The backend and the Pyodide worker share mc_runtime.py — the
     # worker must keep importing it via ?raw rather than re-inlining.

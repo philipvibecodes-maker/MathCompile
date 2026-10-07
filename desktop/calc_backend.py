@@ -49,7 +49,7 @@ class CalcBackend:
         self._error = ''
         self._sf = None
         self._boot: threading.Thread | None = None
-        self._eval_lock = threading.Lock()
+        self._boot_lock = threading.Lock()
 
     # --- js_api surface (called from JS as pywebview.api.<name>) ---
 
@@ -68,20 +68,22 @@ class CalcBackend:
         if self._status != 'ready':
             return [{'ok': False, 'error': self._error or 'engine failed to start'}]
         source = _runner_source(program_json)
-        with self._eval_lock:
-            try:
-                # Each eval is a fresh sandboxed interpreter — the whole
-                # worksheet prefix re-runs (mc_runtime's _snaps always
-                # starts empty, so mc_run evaluates every cell).
-                result = self._sf.eval(code=source, time_limit=TIME_LIMIT)
-            except subprocess.CalledProcessError as e:
-                detail = (e.stderr or b'').decode('utf-8', 'replace').strip()
-                return [
-                    {
-                        'ok': False,
-                        'error': detail or f'sandbox exited {e.returncode}',
-                    }
-                ]
+        try:
+            # Each eval is a fresh sandboxed interpreter — the whole
+            # worksheet prefix re-runs (mc_runtime's _snaps always
+            # starts empty, so mc_run evaluates every cell). Evals run
+            # concurrently: there's no shared state in the sandbox, and
+            # serializing behind one request would let a slow cell eat
+            # the queued cells' frontend watchdog budget.
+            result = self._sf.eval(code=source, time_limit=TIME_LIMIT)
+        except subprocess.CalledProcessError as e:
+            detail = (e.stderr or b'').decode('utf-8', 'replace').strip()
+            return [
+                {
+                    'ok': False,
+                    'error': detail or f'sandbox exited {e.returncode}',
+                }
+            ]
         line = result.stdout.decode('utf-8', 'replace').strip().rsplit('\n', 1)[-1]
         try:
             return json.loads(line)
@@ -91,7 +93,14 @@ class CalcBackend:
     # --- boot ---
 
     def _ensure_boot(self) -> None:
-        if self._boot is None:
+        with self._boot_lock:
+            # A finished, failed boot is retried on the next call — a
+            # transient docker hiccup shouldn't wedge the app until a
+            # restart. An in-flight or succeeded boot is left alone.
+            if self._boot is not None and (
+                self._boot.is_alive() or self._status != 'error'
+            ):
+                return
             self._status = 'loading'
             self._error = ''
             self._boot = threading.Thread(target=self._boot_engine, daemon=True)

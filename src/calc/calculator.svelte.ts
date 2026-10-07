@@ -80,14 +80,21 @@ interface DesktopCalcApi {
   calc_eval(programJson: string): Promise<CalcRow[]>;
 }
 
+// The desktop shell pins its origin to port 42001 (main.py's
+// private_mode + http_server): a deterministic pre-bridge signal so an
+// evaluate() that beats the js_api injection still waits for the local
+// backend instead of falling back to the CDN-dependent wasm engine.
+const DESKTOP_ORIGIN =
+  typeof location !== 'undefined' && location.port === '42001';
+
 let desktopApiP: Promise<DesktopCalcApi | undefined> | undefined;
 
 function desktopApi(): Promise<DesktopCalcApi | undefined> {
   const w = globalThis as { pywebview?: { api?: DesktopCalcApi } };
-  if (!w.pywebview) return Promise.resolve(undefined);
-  if (w.pywebview.api) return Promise.resolve(w.pywebview.api);
+  if (w.pywebview?.api) return Promise.resolve(w.pywebview.api);
+  if (!w.pywebview && !DESKTOP_ORIGIN) return Promise.resolve(undefined);
   // js_api binds on 'pywebviewready' — an eval that somehow beats it
-  // waits for the bind rather than falling back to the wasm engine.
+  // waits for the bind rather than picking the wasm engine.
   return (desktopApiP ??= new Promise((resolve) => {
     const done = () => resolve(w.pywebview?.api);
     if (typeof document !== 'undefined') {
@@ -99,7 +106,7 @@ function desktopApi(): Promise<DesktopCalcApi | undefined> {
     setTimeout(() => {
       desktopApiP = undefined;
       done();
-    }, 5000);
+    }, 15000);
   }));
 }
 
@@ -347,6 +354,14 @@ export function evaluate(
           (e: unknown) =>
             settle(id, e instanceof Error ? e : new Error(String(e))),
         );
+      } else if (DESKTOP_ORIGIN) {
+        // On the desktop origin a missing bridge is a hard failure, not
+        // a cue to start the CDN-backed worker — offline shells would
+        // hang anyway, and misrouting hides the real problem.
+        settle(
+          id,
+          new Error('the desktop engine bridge failed to initialize'),
+        );
       } else {
         ensureWorker().postMessage({ id, program });
       }
@@ -382,7 +397,7 @@ export function prewarm(): void {
       // when the poll starts ticking.
       void api.prewarm().then(() => trackDesktopStatus(api));
       trackDesktopStatus(api);
-    } else {
+    } else if (!DESKTOP_ORIGIN) {
       ensureWorker();
     }
   });
