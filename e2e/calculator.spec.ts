@@ -52,9 +52,13 @@ test('calculator evaluates fully offline — no requests leave the origin', asyn
   await mf.click();
   await mf.pressSequentially('2+2', { delay: 40 });
 
+  // .pending clears only when the real SymPy eval lands — a nerdamer
+  // interim row alone would leave this waiting forever.
+  const rows = page.locator('.calc-rows').first();
+  await expect(rows).toBeAttached();
+  await expect(rows).not.toHaveClass(/pending/, { timeout: 90_000 });
   await expect(page.locator('.calc-row .calc-math').first()).toContainText(
     '4',
-    { timeout: 90_000 },
   );
 });
 
