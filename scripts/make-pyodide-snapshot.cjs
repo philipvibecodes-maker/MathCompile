@@ -1,16 +1,19 @@
 // Freezes a post-`import sympy` Pyodide interpreter into
 // dist/pyodide/engine.snapshot so the desktop app's calculator worker
-// restores memory (~0.1s) instead of cold-booting CPython + SymPy (~4s).
+// restores it (~1s total) instead of cold-booting CPython + SymPy (~4s).
 // The worker falls back to a normal boot when the file is absent or
 // stale (BUILD_ID check inside pyodide), so dev/Pages builds — which
 // don't run this script — are unaffected and the web bundle stays small.
 //
-// Why not loadPackage before snapshotting: pyodide mounts wheel contents
-// in a JS-side filesystem outside the WASM heap, so only modules already
-// imported survive a memory snapshot — lazy imports (e.g.
-// sympy.tensor.tensor) fail after restore. This script instead unzips
-// the vendored wheels into the in-heap FS via zipfile, so every file is
-// inside the snapshot.
+// Why zipfile instead of loadPackage for the pre-snapshot install:
+// loadPackage records packages in a map that occupies a reserved hiwire
+// slot makeMemorySnapshot() refuses to serialize ("Unexpected hiwire
+// entry at index 6"). Extracting the wheels into the in-heap FS via
+// zipfile resolves the same imports without touching hiwire state. The
+// files themselves don't need to survive the restore — the worker
+// re-runs loadPackage to repopulate them (EMFS metadata lives outside
+// the heap and never snapshots); only the imported modules in
+// sys.modules must carry over, which the memory image preserves.
 //
 // Loaded via `node -e "require('...')"` (see the pyodide:snapshot npm
 // script): pyodide.asm.js mixes require() with a top-level await, and
@@ -81,6 +84,9 @@ x = sp.Symbol('x')
 sp.integrate(x**2, x); sp.diff(sp.sin(x), x); sp.summation(x, (x, 1, 5))
 sp.Matrix([[1, 2], [3, 4]]).det(); sp.solve(x**2 - 1, x)
 sp.series(sp.sin(x), x); sp.latex(sp.sqrt(2))
+# _mc_row simplifies every result — warm it so sympy.physics (pulled in
+# lazily by simplify) is resident in the snapshot.
+sp.simplify(x + x); sp.N(sp.pi, 12)
 `);
 
   const snap = py.makeMemorySnapshot();
@@ -88,17 +94,18 @@ sp.series(sp.sin(x), x); sp.latex(sp.sqrt(2))
   await writeFile(OUT, Buffer.from(snap));
   console.log(`engine.snapshot: ${(snap.byteLength / 1e6).toFixed(1)} MB`);
 
-  // Round-trip check: a second interpreter restores the snapshot and
-  // runs a lazy sympy subpackage import that only passes if the
-  // unpacked wheel files really made it into the image.
+  // Round-trip check mirroring the worker's boot: restore the image,
+  // re-run loadPackage to repopulate the package FS, then exercise a
+  // lazy sympy subpackage import plus a real evaluation.
   const check = await loadPyodide({
     indexURL: `${VENDOR}/`,
     _loadSnapshot: snap,
   });
+  await check.loadPackage(['sympy']);
   await check.runPythonAsync(
-    'import sympy.tensor.tensor; sp.integrate(sp.Symbol("x")**2, sp.Symbol("x"))',
+    'import sympy.physics; import sympy as sp; sp.integrate(sp.Symbol("x")**2, sp.Symbol("x"))',
   );
-  console.log('snapshot verified (restore + lazy import ok)');
+  console.log('snapshot verified (restore + loadPackage + lazy import ok)');
 }
 
 main().catch((e) => {

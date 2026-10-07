@@ -27,8 +27,8 @@ through a MathJSON IR to LaTeX or SymPy-flavored Python (`src/compile/`).
   test:perf`; `node perf/compare.mjs <labelA> <labelB>` diffs runs in
   `perf-results/`.
 - `npm run desktop` — build + generate `dist/pyodide/engine.snapshot`
-  (frozen post-`import sympy` interpreter the worker restores in ~0.1s
-  instead of a ~4s cold boot; `scripts/make-pyodide-snapshot.cjs`) +
+  (frozen post-`import sympy` interpreter the worker restores, cutting
+  the ~4s cold boot to ~1s; `scripts/make-pyodide-snapshot.cjs`) +
   launch the pywebview desktop shell (`desktop/`, needs
   `pip install -r desktop/requirements.txt`; serves `dist/` over a
   fixed localhost origin so localStorage persists;

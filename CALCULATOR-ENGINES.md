@@ -109,11 +109,13 @@ has two escapes: `prewarm()` on the Output dropdown's pointerdown/focus
 (the worker self-boots on spawn) plus the nerdamer interim below, and —
 desktop only — `npm run pyodide:snapshot` freezes a post-import
 interpreter into `dist/pyodide/engine.snapshot` (~52MB) that the worker
-restores in ~0.1s (`_loadSnapshot`). The snapshot is generated, not
-vendored: `loadPackage` mounts wheel contents in a JS-side FS outside
-the WASM heap, so the generator unzips the wheels into the in-heap FS
-via `zipfile` first — that's what makes lazy imports
-(`sympy.tensor.tensor`, …) survive a restore.
+restores (`_loadSnapshot`), cutting boot to ~1s. Two snapshot gotchas
+the implementation earns: `loadPackage` pollutes a reserved hiwire slot
+that `makeMemorySnapshot()` refuses to serialize, so the generator
+unzips the wheels via `zipfile` instead; and the EMFS directory tree
+lives outside the WASM heap, so package files never survive a restore —
+the worker re-runs `loadPackage` post-restore to repopulate them for
+lazy imports (`sympy.physics`, …).
 
 ## nerdamer interim — coverage and gaps
 

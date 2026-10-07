@@ -183,27 +183,39 @@ let boot: Promise<PyodideLike> | undefined;
 async function bootEngine(): Promise<PyodideLike> {
   importScripts(`${pyodideBase}pyodide.js`);
   // Fast path: engine.snapshot is a frozen post-`import sympy` memory
-  // image (scripts/make-pyodide-snapshot.cjs, desktop builds only).
-  // Missing file, a stale BUILD_ID, or any restore error all fall back
-  // to the normal boot, so dev/Pages builds cold-boot as before.
+  // image (scripts/make-pyodide-snapshot.cjs, desktop builds only) that
+  // restores the interpreter instead of paying the multi-second import.
+  // The EMFS directory tree lives outside the WASM heap, so package
+  // files never survive a snapshot — loadPackage must run afterwards
+  // either way to (re)populate them for lazy imports (sympy.physics…).
+  // Missing file, a stale BUILD_ID, or any restore error falls back to
+  // the normal boot, so dev/Pages builds cold-boot as before.
   let py: PyodideLike | undefined;
   const resp = await fetch(`${pyodideBase}engine.snapshot`).catch(
     () => undefined,
   );
   if (resp?.ok) {
-    try {
-      py = await loadPyodide({
-        indexURL: pyodideBase,
-        _loadSnapshot: await resp.arrayBuffer(),
-      });
-    } catch (err) {
-      console.warn('[calc] snapshot restore failed, cold-booting:', err);
+    const buf = await resp.arrayBuffer();
+    // Check the snapshot magic before handing bytes to _loadSnapshot:
+    // servers that fall back to index.html answer 200 with HTML, and
+    // feeding that to _loadSnapshot hangs the boot instead of throwing.
+    const SNAPSHOT_MAGIC = 1886286592;
+    if (
+      buf.byteLength > 48 &&
+      new Uint32Array(buf, 0, 4)[0] === SNAPSHOT_MAGIC
+    ) {
+      try {
+        py = await loadPyodide({
+          indexURL: pyodideBase,
+          _loadSnapshot: buf,
+        });
+      } catch (err) {
+        console.warn('[calc] snapshot restore failed, cold-booting:', err);
+      }
     }
   }
-  if (!py) {
-    py = await loadPyodide({ indexURL: pyodideBase });
-    await py.loadPackage(['sympy']);
-  }
+  if (!py) py = await loadPyodide({ indexURL: pyodideBase });
+  await py.loadPackage(['sympy']);
   await py.runPythonAsync(SETUP_PY);
   return py;
 }
