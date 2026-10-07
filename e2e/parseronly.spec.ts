@@ -189,6 +189,38 @@ test('typed \\underset inserts the two-block command', async ({ page }) => {
   expect(await value(page)).toBe('\\underset{ }{ }');
 });
 
+// \mathbb{X} parses to a glyph leaf — it has no editable block, so its
+// typed insertion used to be a no-op that deleted `\mathbb` on the next
+// key. A pending `\mathbb{arg}` input now takes the arg and resolves
+// via writeLatex — the same node a paste produces.
+test('typed \\mathbb{R} produces the glyph leaf', async ({ page }) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\mathbb{R}', { delay: 60 });
+  expect(await value(page)).toBe('\\mathbb{R}');
+  // the leaf renders the double-struck char, not the latex text
+  const text = await mf.evaluate((el) => el.textContent);
+  expect(text).toContain('ℝ');
+});
+
+test('typed \\mathbb{ stays a visible pending input', async ({ page }) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\mathbb{', { delay: 60 });
+  expect(await value(page)).toBe('\\mathbb{ }');
+});
+
+test('typed \\mathbb arg resolves on Enter', async ({ page }) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\mathbb{N', { delay: 60 });
+  await page.keyboard.press('Enter');
+  expect(await value(page)).toBe('\\mathbb{N}');
+});
+
+test('typed \\Bbb resolves to \\mathbb', async ({ page }) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\Bbb{Z}', { delay: 60 });
+  expect(await value(page)).toBe('\\mathbb{Z}');
+});
+
 // \tr is an insertion alias — it expands to \mathrm{tr}, the word-op
 // form the compiler lowers to .trace().
 test('typed \\tr expands to \\mathrm{tr}', async ({ page }) => {

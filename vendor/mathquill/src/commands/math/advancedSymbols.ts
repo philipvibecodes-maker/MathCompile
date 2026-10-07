@@ -160,8 +160,67 @@ var MATHBB_GLYPHS: { [ch: string]: number } = {
   Y: 0x1d550
 };
 
+// MATHCOMPILE: Pending `\mathbb{arg}` input for the typed path, the
+// arg-entry twin of EnvSpecInput. \mathbb's parser maps `{X}` to a
+// glyph leaf, so it has no editable block for createLeftOf to fill —
+// the no-op used to discard the typed command, so `\mathbb` + any
+// non-letter key deleted it wholesale. The input renders
+// `\mathbb{arg}` (and serializes the same, reparsing canonically to
+// the leaf); `}`/Enter/Tab resolves by re-parsing `\mathbb{arg}` via
+// writeLatex, so typed and pasted input land on the same node — and
+// an arg the parser rejects drops the same way a paste would.
+class MathBBInput extends MathCommand {
+  ctrlSeq = '\\mathbb';
+  domView = new DOMView(1, (blocks) =>
+    h('span', { class: 'mq-non-leaf' }, [
+      h.text('\\mathbb{'),
+      h.block('span', {}, blocks[0]),
+      h.text('}')
+    ])
+  );
+
+  createBlocks() {
+    super.createBlocks();
+    const input = this;
+    const argBlock = this.getEnd(L);
+
+    const resolve = function (cursor: Cursor) {
+      const arg = argBlock.latex();
+      input.remove();
+      if (input[R]) cursor.insLeftOf(input[R] as MQNode);
+      else cursor.insAtRightEnd(input.parent);
+      cursor.parent.writeLatex(cursor.show(), '\\mathbb{' + arg + '}');
+    };
+
+    const origWrite = argBlock.write;
+    argBlock.write = function (cursor: Cursor, ch: string) {
+      if (ch === '}') {
+        resolve(cursor);
+        return;
+      }
+      origWrite.call(this, cursor, ch);
+    };
+
+    const origKeystroke = argBlock.keystroke;
+    argBlock.keystroke = function (key, e, ctrlr) {
+      if (key === 'Enter' || key === 'Tab') {
+        e?.preventDefault();
+        resolve(ctrlr.cursor);
+        return;
+      }
+      return origKeystroke.call(this, key, e, ctrlr);
+    };
+  }
+}
+
 LatexCmds.mathbb = class extends MathCommand {
-  createLeftOf(_cursor: Cursor) {}
+  // MATHCOMPILE: the typed path calls createLeftOf with no arg text to
+  // parse — open the pending input instead of discarding the command.
+  createLeftOf(cursor: Cursor) {
+    var input = new MathBBInput();
+    if (this.replacedFragment) input.replaces(this.replacedFragment);
+    input.createLeftOf(cursor);
+  }
   numBlocks() {
     return 1 as const;
   }

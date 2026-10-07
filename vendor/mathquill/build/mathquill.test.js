@@ -6758,12 +6758,75 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         X: 0x1d54f,
         Y: 0x1d550
     };
+    // MATHCOMPILE: Pending `\mathbb{arg}` input for the typed path, the
+    // arg-entry twin of EnvSpecInput. \mathbb's parser maps `{X}` to a
+    // glyph leaf, so it has no editable block for createLeftOf to fill —
+    // the no-op used to discard the typed command, so `\mathbb` + any
+    // non-letter key deleted it wholesale. The input renders
+    // `\mathbb{arg}` (and serializes the same, reparsing canonically to
+    // the leaf); `}`/Enter/Tab resolves by re-parsing `\mathbb{arg}` via
+    // writeLatex, so typed and pasted input land on the same node — and
+    // an arg the parser rejects drops the same way a paste would.
+    var MathBBInput = /** @class */ (function (_super) {
+        __extends(MathBBInput, _super);
+        function MathBBInput() {
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.ctrlSeq = '\\mathbb';
+            _this_1.domView = new DOMView(1, function (blocks) {
+                return h('span', { class: 'mq-non-leaf' }, [
+                    h.text('\\mathbb{'),
+                    h.block('span', {}, blocks[0]),
+                    h.text('}')
+                ]);
+            });
+            return _this_1;
+        }
+        MathBBInput.prototype.createBlocks = function () {
+            _super.prototype.createBlocks.call(this);
+            var input = this;
+            var argBlock = this.getEnd(L);
+            var resolve = function (cursor) {
+                var arg = argBlock.latex();
+                input.remove();
+                if (input[R])
+                    cursor.insLeftOf(input[R]);
+                else
+                    cursor.insAtRightEnd(input.parent);
+                cursor.parent.writeLatex(cursor.show(), '\\mathbb{' + arg + '}');
+            };
+            var origWrite = argBlock.write;
+            argBlock.write = function (cursor, ch) {
+                if (ch === '}') {
+                    resolve(cursor);
+                    return;
+                }
+                origWrite.call(this, cursor, ch);
+            };
+            var origKeystroke = argBlock.keystroke;
+            argBlock.keystroke = function (key, e, ctrlr) {
+                if (key === 'Enter' || key === 'Tab') {
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    resolve(ctrlr.cursor);
+                    return;
+                }
+                return origKeystroke.call(this, key, e, ctrlr);
+            };
+        };
+        return MathBBInput;
+    }(MathCommand));
     LatexCmds.mathbb = /** @class */ (function (_super) {
         __extends(class_5, _super);
         function class_5() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_5.prototype.createLeftOf = function (_cursor) { };
+        // MATHCOMPILE: the typed path calls createLeftOf with no arg text to
+        // parse — open the pending input instead of discarding the command.
+        class_5.prototype.createLeftOf = function (cursor) {
+            var input = new MathBBInput();
+            if (this.replacedFragment)
+                input.replaces(this.replacedFragment);
+            input.createLeftOf(cursor);
+        };
         class_5.prototype.numBlocks = function () {
             return 1;
         };
@@ -9986,7 +10049,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         }
         // Parser-only command: typing '\textcolor' in the command input
         // can't supply a color argument, so typed insertion is a no-op
-        // (same convention as \operatorname / \mathbb).
+        // (same convention as \operatorname).
         class_17.prototype.createLeftOf = function () { };
         class_17.prototype.numBlocks = function () {
             return 1;

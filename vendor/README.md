@@ -122,7 +122,11 @@ Inline `// MATHCOMPILE:` edits, by file:
   `Binomial`'s strict two-block parser is invoked directly in the
   `\choose` path.
 - `src/commands/math/advancedSymbols.ts` — `\mathbb` gets a glyph table
-  for the double-struck capitals plus `\Bbb`/`mathds` spellings;
+  for the double-struck capitals plus `\Bbb`/`mathds` spellings; typed
+  `\mathbb` opens a pending `\mathbb{arg}` input (`MathBBInput`, the
+  arg-entry twin of `EnvSpecInput`) that resolves via `writeLatex` on
+  `}`/Enter/Tab — before this its no-op `createLeftOf` deleted the typed
+  command on the next key;
   invisible style switches `\displaystyle` `\textstyle` `\scriptstyle`
   `\scriptscriptstyle` `\limits` `\nolimits` serialize their command
   verbatim; `\not<rel>` produces the negated relation glyph (`\not\in`
