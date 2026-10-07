@@ -62,6 +62,29 @@ New files:
   of `mathquill-basic` — `extraCommands.ts` is in `SOURCES_BASIC` too:
   anything added there may only reference symbols from `BASE_SOURCES` +
   `math.ts` + `basicSymbols.ts` + `commands.ts`.
+- `src/commands/math/pythonBlock.ts` (in `SOURCES_FULL` between
+  `extraCommands.ts` and `environments.ts` — it subclasses `TextBlock`
+  from `text.ts`, which `SOURCES_BASIC` omits, and `environments.ts`'s
+  line-break path references it) — `\python{ ... }`: a `TextBlock`
+  subclass whose body is raw Python source, potentially multi-line,
+  edited as plain text with none of MathQuill's math-key behavior
+  (every character goes through `write`; Enter/Tab insert `\n`/`\t`;
+  Up/Down move between source lines with a goal column; Home/End bound
+  the current line; a real Enter is swallowed in `keystroke` so the
+  keypress path never routes to `insertLineBreak`). The `\python{` and
+  `}` delimiters are `::before`/`::after` pseudo content in CSS — the
+  editable DOM stays a single text node, so TextBlock's fuse/seek/
+  caret contract is untouched. Python syntax highlighting uses the CSS
+  Custom Highlight API (`CSS.highlights` ranges over that text node —
+  no DOM mutation, so nothing interferes with selection or deletion),
+  refreshed on the `reflow` bubble; the `::highlight(mq-py-*)` rules
+  live in `editable.less`, the block styles in `math.less`, and the
+  dark-theme palette overrides in `src/index.css`. The body parser
+  scans balanced braces honoring `\` escapes and consumes the rest of
+  the stream when unclosed (same contract the app-side extractor
+  `extractPythonBlocks` in `src/compile/ir.ts` mirrors); the
+  serializer emits raw code when balanced, else braces/backslashes
+  escaped.
 
 Inline `// MATHCOMPILE:` edits, by file:
 
@@ -118,7 +141,9 @@ Inline `// MATHCOMPILE:` edits, by file:
   declaration form (braced group or bare switch); `\mbox`.
 - `src/commands/math/LatexCommandInput.ts` — an empty input ended by a
   non-letter resolves `\<char>` escapes (`\;` `\{` `\|` …) to their
-  atoms instead of writing the raw character.
+  atoms instead of writing the raw character; the `{` that opens a
+  `\python` block is swallowed since it's the block's visible
+  delimiter, not source text.
 - `src/commands/math/basicSymbols.ts` — also: `lim` removed from the
   default `autoOperatorNames` list — `\lim` is a real command (see
   extraCommands.ts), so typed `lim` resolves through `autoCommands`.
@@ -156,10 +181,20 @@ Inline `// MATHCOMPILE:` edits, by file:
 - `src/commands/math/extraCommands.ts` — also: typed `:` is a
   `BinaryOperator` relation (`f : X → Y`), with `.mq-comma` styling
   covered in `math.less`.
+- `src/commands/math/environments.ts` — `insertLineBreakAtCursor`
+  inside a `\python` block inserts a `\n` into the source instead of
+  splitting a `\displaylines` row (covers programmatic
+  `typedText('\n')`/`insertLineBreak()`; real keypresses are swallowed
+  by the block's own `keystroke`).
+- `src/services/mouse.ts` + `src/cursor.ts` — `Controller_mouse.seek`
+  stashes the click's clientY on the cursor (`cursor.seekClientY`) so
+  seek implementations that hit-test rendered lines (`PythonBlock`'s
+  `caretRangeFromPoint` path) can use it.
 - `Makefile` — `extraCommands.ts` + `environments.ts` added to
   `SOURCES_FULL` (in that order: environments calls
-  `boundlessIntegral()` from extraCommands) and `extraCommands.ts` to
-  `SOURCES_BASIC`.
+  `boundlessIntegral()` from extraCommands), `pythonBlock.ts` between
+  them (environments' line-break path references it), and
+  `extraCommands.ts` to `SOURCES_BASIC`.
 
 Boundless-integral note: `LatexCmds.iint`/`∬` and `LatexCmds.antid`
 produce a leaf `MQSymbol` (bare ∫ glyph) instead of the

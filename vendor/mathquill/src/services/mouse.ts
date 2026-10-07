@@ -182,7 +182,11 @@ class Controller_mouse extends Controller_latex {
     // seek from root, which is less accurate (e.g. fraction)
     cursor.clearSelection().show();
 
+    // MATHCOMPILE: ride the click's clientY on the cursor so seek()
+    // implementations that hit-test rendered lines (PythonBlock) can use it.
+    cursor.seekClientY = _clientY;
     node.seek(clientX, cursor);
+    cursor.seekClientY = undefined;
     this.scrollHoriz(); // before .selectFrom when mouse-selecting, so
     // always hits no-selection case in scrollHoriz and scrolls slower
     return this;

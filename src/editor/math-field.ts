@@ -81,6 +81,10 @@ export class MathFieldElement extends HTMLElement {
   }
   set value(latex: string) {
     this._mq?.latex(latex);
+    // A programmatic latex() doesn't run the edit path that bubbles
+    // 'reflow' — refresh reflow hooks (e.g. \python highlight ranges)
+    // so hydrated blocks render like typed ones.
+    this._mq?.reflow();
   }
 
   connectedCallback() {

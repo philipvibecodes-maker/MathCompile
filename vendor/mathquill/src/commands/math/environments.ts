@@ -1117,6 +1117,16 @@ function insertLineBreakAtCursor(ctrlr: Controller) {
   var cursor = ctrlr.cursor;
   if (cursor.selection) cursor.deleteSelection();
 
+  // MATHCOMPILE: inside \python{ ... } Enter is a newline in the source,
+  // not a \displaylines row. Real keypresses never reach here — the block's
+  // own keystroke('Enter') swallows them — this covers programmatic
+  // typedText('\n')/insertLineBreak().
+  if (cursor.parent instanceof PythonBlock) {
+    cursor.parent.write(cursor, '\n');
+    ctrlr.notify('edit');
+    return;
+  }
+
   // Find the line-level block (nearest MatrixCell / root block) and the
   // atom inside it that contains the caret.
   var lineBlock: MQNode | undefined;

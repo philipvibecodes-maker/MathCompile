@@ -30,6 +30,10 @@ class Cursor extends Point {
    * point in that node when moving up and down among blocks.
    */
   upDownCache: Record<number | string, Point | undefined> = {};
+  // MATHCOMPILE: the clientY of an in-flight mouse seek — seek()
+  // implementations that hit-test rendered lines (PythonBlock) read it;
+  // Controller_mouse.seek sets and clears it around node.seek().
+  seekClientY: number | undefined = undefined;
   blink: () => void;
   private readonly cursorElement: HTMLElement = h(
     'span',

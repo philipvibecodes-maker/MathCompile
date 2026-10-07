@@ -885,6 +885,8 @@ const STRUCTURAL_HEADS = [
   'Condition', 'Complement', 'Difference',
   // statement-level IR
   'Assign', 'Declare', 'Block', 'WhereBlock', 'Function',
+  // verbatim \python{...} source — codegen emits it uninterpreted
+  'PythonSource',
   // structural helpers — 'call' marks a node already escaped by the
   // normalizer; without it a nested g(f(x)) re-wraps into
   // ['call', 'call', ...]

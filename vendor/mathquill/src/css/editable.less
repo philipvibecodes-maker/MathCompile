@@ -78,3 +78,23 @@
   // so IE8 won't show a vertical scrollbar
   overflow-y: hidden;
 }
+
+// MATHCOMPILE: \python{...} source highlighting — CSS Custom Highlights so
+// the editable DOM stays a single text node (see pythonBlock.ts). Palette
+// mirrors the app's .tok-* colors (src/index.css); the dark theme's
+// overrides live beside the .tok-* ones there.
+::highlight(mq-py-kw) {
+  color: #a626a4;
+}
+::highlight(mq-py-str) {
+  color: #50a14f;
+}
+::highlight(mq-py-comment) {
+  color: #8a8a8a;
+}
+::highlight(mq-py-num) {
+  color: #986801;
+}
+::highlight(mq-py-call) {
+  color: #4078f2;
+}
