@@ -80,9 +80,31 @@ const RESERVED_IDENTS = new Set([
   'clean_and_simplify',
 ]);
 
+// CE tags font-styled letters with a per-piece suffix: `\mathrm{a}` ->
+// `a_upright`, `\mathbf{x}` -> `x_bold`, `a_{\mathrm{i}}` -> `a_i_upright`.
+// Rewrite each tagged piece to the latex command's prefix so the python
+// identifier reads like what was typed — `mathrm_a`, `x_mathrm_i`,
+// `mathrm_a_mathrm_i` for `\mathrm{a}_{\mathrm{i}}`.
+const FONT_TAG_CMD: Record<string, string> = {
+  upright: 'mathrm',
+  italic: 'mathit',
+  bold: 'mathbf',
+  calligraphic: 'mathcal',
+  script: 'mathscr',
+  sansserif: 'mathsf',
+  monospace: 'mathtt',
+  fraktur: 'mathfrak',
+};
+const FONT_TAG =
+  /(^|_)([A-Za-z]+)_(upright|italic|bold|calligraphic|script|sansserif|monospace|fraktur)(?=_|$)/g;
+
 // Mangle an arbitrary symbol name (e.g. `a_{n+1}`) into a valid python
 // identifier that consistently refers to that symbol.
 function pyIdent(name: string): string {
+  name = name.replace(
+    FONT_TAG,
+    (_, lead, piece, tag) => `${lead}${FONT_TAG_CMD[tag]}_${piece}`,
+  );
   if (RESERVED_IDENTS.has(name)) return `${name}_`;
   if (/^[A-Za-z_]\w*$/.test(name) && !PY_KEYWORDS.has(name)) return name;
   // Prime ticks are meaningful (x' is a distinct variable, not x) —
