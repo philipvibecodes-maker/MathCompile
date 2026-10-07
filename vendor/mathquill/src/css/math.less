@@ -120,11 +120,13 @@
     }
   }
 
-  // MATHCOMPILE: an empty block keeps its slot box while the cursor is in
-  // it — focus() strips .mq-empty, so a one-block style like \mathrm{ }
-  // collapses to a zero-width span and it looks like nothing happened.
-  // Root/text/command-input blocks have their own empty-state chrome.
-  .mq-hasCursor:has(> .mq-cursor:only-child) {
+  // MATHCOMPILE: the block containing the cursor keeps the empty-slot
+  // box while you type in it — focus() strips .mq-empty, so a one-block
+  // style like \mathrm{ } collapsed to a zero-width span and it looked
+  // like nothing happened, and after the first keystroke there was no
+  // sign which block the caret was in. Root/text/command-input blocks
+  // have their own cursor chrome.
+  .mq-hasCursor:has(> .mq-cursor) {
     background: rgba(0, 0, 0, 0.2);
     &.mq-root-block,
     &.mq-quiet-delimiter,

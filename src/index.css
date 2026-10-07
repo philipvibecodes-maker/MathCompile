@@ -1534,13 +1534,18 @@ body {
   border-color: currentColor;
 }
 
-:root[data-theme='dark'] .mq-math-mode .mq-empty {
+:root[data-theme='dark'] .mq-math-mode .mq-empty,
+:root[data-theme='dark'] .mq-math-mode .mq-hasCursor:has(> .mq-cursor) {
   background: rgba(255, 255, 255, 0.22);
 }
 
 :root[data-theme='dark'] .mq-math-mode .mq-empty.mq-root-block,
 :root[data-theme='dark'] .mq-math-mode .mq-empty.mq-quiet-delimiter,
-:root[data-theme='dark'] .mq-math-mode.mq-empty {
+:root[data-theme='dark'] .mq-math-mode.mq-empty,
+:root[data-theme='dark'] .mq-math-mode .mq-hasCursor.mq-root-block:has(> .mq-cursor),
+:root[data-theme='dark'] .mq-math-mode .mq-hasCursor.mq-quiet-delimiter:has(> .mq-cursor),
+:root[data-theme='dark'] .mq-math-mode .mq-hasCursor.mq-text-mode:has(> .mq-cursor),
+:root[data-theme='dark'] .mq-math-mode .mq-hasCursor.mq-latex-command-input:has(> .mq-cursor) {
   background: transparent;
 }
 

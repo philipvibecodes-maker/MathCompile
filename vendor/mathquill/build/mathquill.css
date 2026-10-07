@@ -200,13 +200,13 @@
 .mq-math-mode .mq-empty.mq-quiet-delimiter {
   background: transparent;
 }
-.mq-math-mode .mq-hasCursor:has(> .mq-cursor:only-child) {
+.mq-math-mode .mq-hasCursor:has(> .mq-cursor) {
   background: rgba(0, 0, 0, 0.2);
 }
-.mq-math-mode .mq-hasCursor:has(> .mq-cursor:only-child).mq-root-block,
-.mq-math-mode .mq-hasCursor:has(> .mq-cursor:only-child).mq-quiet-delimiter,
-.mq-math-mode .mq-hasCursor:has(> .mq-cursor:only-child).mq-text-mode,
-.mq-math-mode .mq-hasCursor:has(> .mq-cursor:only-child).mq-latex-command-input {
+.mq-math-mode .mq-hasCursor:has(> .mq-cursor).mq-root-block,
+.mq-math-mode .mq-hasCursor:has(> .mq-cursor).mq-quiet-delimiter,
+.mq-math-mode .mq-hasCursor:has(> .mq-cursor).mq-text-mode,
+.mq-math-mode .mq-hasCursor:has(> .mq-cursor).mq-latex-command-input {
   background: transparent;
 }
 .mq-math-mode.mq-empty {
