@@ -16,13 +16,7 @@
 // targets is future work.
 
 import type { Issue, MathJson, NormResult } from './ir';
-import {
-  collectPythonDefs,
-  isDiffMark,
-  normalizeIR,
-  pythonDefNames,
-  unquote,
-} from './ir';
+import { isDiffMark, normalizeIR, unquote } from './ir';
 import { CALC_RUNTIME_PY } from './calc-runtime';
 // The name tables below are derived views over the notation registry —
 // each name lives once in src/compile/notation.ts.
@@ -3044,20 +3038,7 @@ export function compileWorksheet(
   const importLine = qualified
     ? 'import sympy as sp'
     : 'from sympy import *';
-  // `\python{def f(…)}` binds a real Python name — the def line lands in
-  // the program in cell order, so `f` is callable from every cell below
-  // it. `pySeen` accumulates those names in cell order and each cell's
-  // normalize gets a copy (a shared set would leak \text{def} names into
-  // later cells' call folding, breaking per-cell independence);
-  // `pyBefore[i]` is the snapshot for cell i's Scope below.
-  const pySeen = new Set<string>();
-  const pyBefore: Set<string>[] = [];
-  const perCell = cells.map((c) => {
-    pyBefore.push(new Set(pySeen));
-    const r = normalizeIR(c.json, new Set(pySeen));
-    if (r.ir !== undefined) collectPythonDefs(r.ir, pySeen);
-    return r;
-  });
+  const perCell = cells.map((c) => normalizeIR(c.json));
   const issues: Issue[] = perCell.flatMap((r, i) =>
     r.issues.map((iss) => ({
       ...iss,
@@ -3123,10 +3104,7 @@ export function compileWorksheet(
     // programs — a name def'd in cell 1 still gets its own
     // `f = sp.Function` decl when called in cell 2, and only an
     // Assign-rebind in THIS cell drops a pending Function decl.
-    // \python def names from earlier cells are the exception: the def
-    // line is already in the program verbatim, so a call there must NOT
-    // mint a shadowing `sp.Function` decl — seed them from pyBefore.
-    const cellDeclaredFns = new Set(pyBefore[i]);
+    const cellDeclaredFns = new Set<string>();
     collectDeclared(r.ir, new Set(), cellDeclaredFns);
     return cellStatements(
       r.ir,
@@ -3202,15 +3180,6 @@ export function collectDeclared(
       declared.add(n[2]);
       declaredFns.add(n[2]);
     }
-    // `\python{def add1(…): …}` binds a real Python callable — the def
-    // line execs verbatim, so `add1` reads like a worksheet \text{def}:
-    // `add1(9)` in a later cell emits a call, not `add1*9` or a
-    // shadowing `sp.Function('add1')` decl.
-    if (h === 'PythonSource' && isStr(n[1]))
-      for (const name of pythonDefNames(n[1])) {
-        declared.add(name);
-        declaredFns.add(name);
-      }
     if (h === 'Block' || h === 'WhereBlock')
       n.slice(1).forEach(collect);
   };

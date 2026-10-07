@@ -6,11 +6,7 @@ import {
   extractPythonBlocks,
   NORMALIZE_RULES,
 } from './ir';
-import {
-  compileWorksheet,
-  compileCellForCalc,
-  compileCellsForCalc,
-} from './codegen';
+import { compileWorksheet, compileCellForCalc } from './codegen';
 
 // Fixture triples per the IR spec: latex -> normalized IR -> generated
 // SymPy. `expectedPython` is the *cell's* def + statement lines in the
@@ -2041,68 +2037,5 @@ describe('\\python{...} source blocks', () => {
     const out = compileCellForCalc({ json: parseCellLatex('\\python{}') });
     expect(out.statements).toEqual([]);
     expect(out.issues).toEqual([]);
-  });
-
-  it('a def inside \\python is callable from a later cell (python target)', () => {
-    const out = compileWorksheet(
-      [
-        { json: parseCellLatex('\\python{def f(x):\n    return x + 1}') },
-        { json: parseCellLatex('f(9)') },
-      ],
-      'python',
-    );
-    // The call emits bare — no `f = sp.Function('f')` decl, which
-    // would shadow the verbatim def in the joined program.
-    expect(out.cellLines[1]).toEqual(['from sympy import *', 'f(9)']);
-  });
-
-  it('a def inside \\python is callable from a later cell (calc target)', () => {
-    const out = compileCellsForCalc([
-      { json: parseCellLatex('\\python{def f(x):\n    return x + 1}') },
-      { json: parseCellLatex('f(9)') },
-    ]);
-    expect(out.cells[1].defs).toEqual([]);
-    expect(out.cells[1].statements).toEqual([
-      { code: 'clean_and_simplify(f(9))' },
-    ]);
-  });
-
-  it('a call above the \\python def stays a juxtaposition', () => {
-    // f isn't bound yet in cell 1 — `f(9)` there keeps the ordinary
-    // f·9 reading (the python def only applies to cells below it).
-    const out = compileWorksheet(
-      [
-        { json: parseCellLatex('f(9)') },
-        { json: parseCellLatex('\\python{def f(x):\n    return x + 1}') },
-      ],
-      'python',
-      { importAll: false },
-    );
-    expect(out.cellLines[0]).toContain('f * 9');
-    expect(out.cellLines[0]).not.toContain('f(9)');
-  });
-
-  it('a \\python def is callable from a later statement in the same cell', () => {
-    const out = compileCellForCalc({
-      json: parseCellLatex(
-        '\\python{def f(x):\n    return x + 1} \\\\ f(9)',
-      ),
-    });
-    expect(out.statements.map((s) => s.code)).toEqual([
-      'def f(x):\n    return x + 1',
-      'clean_and_simplify(f(9))',
-    ]);
-  });
-
-  it('a multi-char \\python def is callable via \\mathrm (calc target)', () => {
-    // Typed letters juxtapose (add1(9) reads as a·d·d·1·9); a
-    // font-grouped name arrives as one token and calls the def.
-    const out = compileCellsForCalc([
-      { json: parseCellLatex('\\python{def add1(x):\n    return x + 1}') },
-      { json: parseCellLatex('\\mathrm{add1}(9)') },
-    ]);
-    expect(out.cells[1].statements).toEqual([
-      { code: 'clean_and_simplify(add1(9))' },
-    ]);
   });
 });
