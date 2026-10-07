@@ -31,6 +31,6 @@ perf-results/
 # Vendored Pyodide runtime (scripts/fetch-pyodide.mjs -> predev/prebuild)
 public/pyodide/
 
-# Python
+# Python (desktop/ shell)
 __pycache__/
 .venv/

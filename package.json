@@ -15,7 +15,8 @@
     "docs:pdf": "node scripts/build-reference-pdf.mjs",
     "pyodide:fetch": "node scripts/fetch-pyodide.mjs",
     "predev": "npm run pyodide:fetch",
-    "prebuild": "npm run pyodide:fetch"
+    "prebuild": "npm run pyodide:fetch",
+    "desktop": "npm run build && python desktop/main.py"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

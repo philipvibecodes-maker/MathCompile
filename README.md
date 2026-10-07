@@ -27,6 +27,7 @@ npm run dev        # http://localhost:5573
 | `npm test` | Vitest unit tests (`src/**/*.test.ts`, node env) |
 | `npm run test:e2e` | Playwright behavioral suite (`e2e/`) |
 | `npm run test:perf` | Input→paint perf battery (`perf/`); builds + previews on :4173 |
+| `npm run desktop` | Build + launch the pywebview desktop shell (`desktop/`) |
 
 `PERF_BASE_URL=<url> PERF_LABEL=<name> npm run test:perf` measures any
 other served build; `node perf/compare.mjs <labelA> <labelB>` diffs two
