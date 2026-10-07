@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { compileCellForCalc, compileCellsForCalc } from '../compile/codegen';
 import { normalizeIR, parseCellLatex } from '../compile/ir';
 import { interimConstNames, irToNerdamer } from './nerdamer-emit';
-import { interimEvaluate } from './calculator.svelte.ts';
+import { evaluate, interimEvaluate } from './calculator.svelte.ts';
 
 // latex statement -> nerdamer input through the shared pipeline —
 // '' is a poisoned row, null falls back to nerdamer's latex reader.
@@ -1141,6 +1141,70 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
     // Unrelated names don't reserve letters.
     const rows2 = await interimEvaluate('\\int x dx', ['a = 7']);
     expect((rows2[0] as { latex?: string }).latex ?? '').toContain('C');
+  });
+});
+
+describe('evaluate() over the desktop (pywebview) transport', () => {
+  // Inside the pywebview shell the injected window.pywebview.api swaps
+  // the Pyodide worker for the PythonSafeEval backend — the compiled
+  // {prelude, cells} program and the row shape stay identical.
+  const withApi = async (
+    api: {
+      calc_eval: (p: string) => Promise<{ ok: boolean; latex?: string }[]>;
+    },
+    run: () => Promise<void>,
+  ) => {
+    const g = globalThis as { pywebview?: unknown };
+    g.pywebview = {
+      api: {
+        engine_status: () =>
+          Promise.resolve({ status: 'ready', error: '' }),
+        prewarm: () => Promise.resolve(),
+        ...api,
+      },
+    };
+    try {
+      await run();
+    } finally {
+      delete g.pywebview;
+    }
+  };
+
+  it('sends the compiled program to api.calc_eval and returns rows', async () => {
+    const captured: string[] = [];
+    await withApi(
+      {
+        calc_eval: (p) => {
+          captured.push(p);
+          return Promise.resolve([{ ok: true, latex: '2' }]);
+        },
+      },
+      async () => {
+        const res = await evaluate([
+          { latex: '1+1', json: parseCellLatex('1+1') },
+        ]);
+        expect(res.rows).toEqual([{ ok: true, latex: '2' }]);
+        expect(res.code).toContain('clean_and_simplify(1 + 1)');
+      },
+    );
+    expect(captured).toHaveLength(1);
+    const program = JSON.parse(captured[0]);
+    expect(program.prelude[0]).toBe('import sympy as sp');
+    expect(program.cells).toHaveLength(1);
+    expect(program.cells[0].statements[0].code).toBe(
+      'clean_and_simplify(1 + 1)',
+    );
+  });
+
+  it('rejects the eval when the backend call fails', async () => {
+    await withApi(
+      { calc_eval: () => Promise.reject(new Error('sandbox down')) },
+      async () => {
+        await expect(
+          evaluate([{ latex: '1+1', json: parseCellLatex('1+1') }]),
+        ).rejects.toThrow('sandbox down');
+      },
+    );
   });
 });
 

@@ -67,6 +67,79 @@ interface WorkerReply {
   error?: string;
 }
 
+// Desktop shell (desktop/main.py): pywebview exposes its js_api as
+// window.pywebview.api — prewarm/engine_status/calc_eval mirror the
+// worker's spawn/status/postMessage contract, with calc_eval taking the
+// whole {prelude, cells} program as a JSON string and resolving to the
+// rows the worker would have posted (same mc_run on the backend). The
+// global is injected only inside the webview; in a plain browser it's
+// absent and the Pyodide worker stays the engine.
+interface DesktopCalcApi {
+  prewarm(): Promise<unknown>;
+  engine_status(): Promise<{ status: EngineStatus; error: string }>;
+  calc_eval(programJson: string): Promise<CalcRow[]>;
+}
+
+let desktopApiP: Promise<DesktopCalcApi | undefined> | undefined;
+
+function desktopApi(): Promise<DesktopCalcApi | undefined> {
+  const w = globalThis as { pywebview?: { api?: DesktopCalcApi } };
+  if (!w.pywebview) return Promise.resolve(undefined);
+  if (w.pywebview.api) return Promise.resolve(w.pywebview.api);
+  // js_api binds on 'pywebviewready' — an eval that somehow beats it
+  // waits for the bind rather than falling back to the wasm engine.
+  return (desktopApiP ??= new Promise((resolve) => {
+    const done = () => resolve(w.pywebview?.api);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('pywebviewready', done, { once: true });
+    }
+    // Give up waiting for the bind: resolve, but don't cache it — the
+    // api may still land later and a cached undefined would strand the
+    // desktop shell on the wasm worker forever.
+    setTimeout(() => {
+      desktopApiP = undefined;
+      done();
+    }, 5000);
+  }));
+}
+
+// Mirrors the worker's ready/init-error messages off the backend's
+// engine_status, driving the same calcEngine rune the UI reads.
+let statusPoll: ReturnType<typeof setTimeout> | undefined;
+
+function trackDesktopStatus(api: DesktopCalcApi) {
+  if (statusPoll !== undefined) return;
+  const tick = () => {
+    void api
+      .engine_status()
+      .then((s) => {
+        calcEngine.status = s.status;
+        calcEngine.error = s.error ?? '';
+        if (s.status === 'error') {
+          failAll(s.error || 'the SymPy engine failed to start');
+          statusPoll = undefined;
+          return;
+        }
+        // Keep polling while the sandbox boots (first boot builds the
+        // docker image — minutes) or an eval is still in flight.
+        statusPoll =
+          s.status === 'loading' || pending.size > 0
+            ? setTimeout(tick, 500)
+            : undefined;
+      })
+      .catch(() => {
+        // A dropped status call shouldn't kill the poll.
+        statusPoll = setTimeout(tick, 1000);
+      });
+  };
+  tick();
+}
+
+// Both transports post-process rows the same way — the backend runs the
+// identical mc_runtime.py, so the arcTrigNames safety net applies too.
+const fixTrig = (rows: CalcRow[]) =>
+  rows.map((r) => (r.ok && r.latex ? { ...r, latex: arcTrigNames(r.latex) } : r));
+
 let worker: Worker | undefined;
 let nextId = 1;
 const pending = new Map<
@@ -114,11 +187,7 @@ function ensureWorker(): Worker {
       // — anything still emitting \operatorname{atan}-style a- names
       // (user-defined functions, sympy paths outside _mc_row) renders
       // as "a tan" in MathQuill without it.
-      p.resolve(
-        (m.rows ?? []).map((r) =>
-          r.ok && r.latex ? { ...r, latex: arcTrigNames(r.latex) } : r,
-        ),
-      );
+      p.resolve(fixTrig(m.rows ?? []));
     } else {
       console.log('[calc] error:', m.error ?? 'evaluation failed');
       p.reject(new Error(m.error ?? 'evaluation failed'));
@@ -209,8 +278,19 @@ export function evaluate(
   // A multi-statement cell keeps its good rows when a sibling statement
   // is broken — and issue rows interleave at their own input line, not
   // at the bottom of the output.
-  const w = ensureWorker();
   const id = nextId++;
+  // Same {prelude, cells} payload either way — the worker reads it off
+  // postMessage, the desktop api off a JSON argument.
+  const program = {
+    prelude: prog.prelude,
+    cells: prog.cells.map((c) => ({
+      // Content key for the worker's snapshot chain — the first
+      // cell whose program differs is where eval rewinds to.
+      key: JSON.stringify({ defs: c.defs, statements: c.statements }),
+      defs: c.defs,
+      statements: c.statements,
+    })),
+  };
   return new Promise<CalcResult>((resolve, reject) => {
     pending.set(id, {
       resolve: (r) => {
@@ -236,11 +316,13 @@ export function evaluate(
     });
     // A hung SymPy call (pathological simplify/integrate) would block
     // every cell's results forever — the worker is single-threaded.
-    // Past the deadline, kill it; the next eval reboots (~4s).
+    // Past the deadline, kill it; the next eval reboots (~4s). On the
+    // desktop path there's no worker to kill — the nsjail time_limit
+    // bounds the sandboxed run instead.
     const armWatchdog = () =>
       setTimeout(() => {
         if (!pending.has(id)) return;
-        // A still-booting worker hasn't started this eval — killing it
+        // A still-booting engine hasn't started this eval — killing it
         // mid-download would just restart the boot on the next eval, so
         // on a slow connection the engine never finishes loading.
         // Re-check instead; the deadline effectively counts from ready.
@@ -248,26 +330,45 @@ export function evaluate(
           timer = armWatchdog();
           return;
         }
-        w.terminate();
+        worker?.terminate();
         worker = undefined;
         calcEngine.status = 'idle';
         failAll('calculation timed out — the SymPy engine is restarting');
       }, 30000);
     let timer = armWatchdog();
-    w.postMessage({
-      id,
-      program: {
-        prelude: prog.prelude,
-        cells: prog.cells.map((c) => ({
-          // Content key for the worker's snapshot chain — the first
-          // cell whose program differs is where eval rewinds to.
-          key: JSON.stringify({ defs: c.defs, statements: c.statements }),
-          defs: c.defs,
-          statements: c.statements,
-        })),
-      },
+    void desktopApi().then((api) => {
+      if (api) {
+        // Desktop: the backend evals the program in its nsjail sandbox.
+        // The promise still goes through `pending` so failAll/watchdog
+        // treat both transports uniformly.
+        trackDesktopStatus(api);
+        api.calc_eval(JSON.stringify(program)).then(
+          (rows) => settle(id, fixTrig(rows)),
+          (e: unknown) =>
+            settle(id, e instanceof Error ? e : new Error(String(e))),
+        );
+      } else {
+        ensureWorker().postMessage({ id, program });
+      }
     });
   });
+}
+
+// Resolves an engine request through `pending` — the desktop transport's
+// equivalent of the worker's onmessage branch.
+function settle(id: number, result: CalcRow[] | Error) {
+  const p = pending.get(id);
+  if (!p) return;
+  pending.delete(id);
+  if (result instanceof Error) {
+    console.log('[calc] error:', result.message);
+    p.reject(result);
+  } else {
+    for (const r of result) {
+      if (!r.ok) console.log('[calc] error:', r.error);
+    }
+    p.resolve(result);
+  }
 }
 
 // Kicks the engine boot (~4s cold) before an expression is actually
@@ -275,7 +376,16 @@ export function evaluate(
 // so the wasm+wheels download overlaps the user's menu interaction.
 // The worker starts booting on spawn, so just creating it is enough.
 export function prewarm(): void {
-  ensureWorker();
+  void desktopApi().then((api) => {
+    if (api) {
+      // Await the call so the backend's status is already 'loading'
+      // when the poll starts ticking.
+      void api.prewarm().then(() => trackDesktopStatus(api));
+      trackDesktopStatus(api);
+    } else {
+      ensureWorker();
+    }
+  });
 }
 
 let nerdamerP: Promise<typeof import('nerdamer/all')> | undefined;

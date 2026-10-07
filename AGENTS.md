@@ -116,6 +116,11 @@ and empty blocks serialize as `{ }`.
   Cells share one namespace in order (a `def g` or `a = 5` above is in
   scope below). Assignments/defs carry a `display` expression
   (`a = 5` -> `Eq(a, 5)`).
+- Two engines run the same program through the same `mc_run` runtime
+  (`src/calc/mc_runtime.py`, worker-loads it via `?raw`): the Pyodide
+  worker in a browser, or `desktop/calc_backend.py`'s PythonSafeEval
+  (nsjail/docker) sandbox under the pywebview shell — the frontend picks
+  the backend when `window.pywebview.api` is injected.
 - See CALCULATOR-ENGINES.md for the engine protocol, nerdamer coverage,
   and earned gotchas.
 
