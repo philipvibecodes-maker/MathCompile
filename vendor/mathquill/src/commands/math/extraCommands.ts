@@ -24,7 +24,8 @@
 // MATHCOMPILE: typed \mathcal opens the pending `\mathcal{arg}` input
 // like \mathbb — before, it rendered an invisible-boundary Style block
 // and `}` just hopped out, so the typed command looked nothing like its
-// latex. Parse/serialize still land on the plain Style node.
+// latex. Parse/serialize still land on the plain Style node; the
+// script shapes come from the KaTeX_Caligraphic webfont in math.less.
 LatexCmds.mathcal = () =>
   new (class extends Style {
     constructor() {

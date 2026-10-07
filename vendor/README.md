@@ -130,6 +130,12 @@ Inline `// MATHCOMPILE:` edits, by file:
   the typed command shows its literal `\mathcal{arg}` text like
   `\mathbb` (its builder returns a `Style` subclass whose `createLeftOf`
   opens the input; parse still lands the plain `Style`);
+- `src/css/font.less` + `src/fonts/KaTeX_Caligraphic-Regular.woff2` —
+  bundles the OFL-licensed KaTeX caligraphic face (maps A-Z to script
+  shapes) and `@font-face`s it; `math.less`'s `.mq-caligraphic` uses it
+  first in the stack and suppresses synthetic italic, since the old
+  Lucida Calligraphy/Apple Chancery stack isn't installed anywhere and
+  `\mathcal{P}` rendered as a plain italic P;
   invisible style switches `\displaystyle` `\textstyle` `\scriptstyle`
   `\scriptscriptstyle` `\limits` `\nolimits` serialize their command
   verbatim; `\not<rel>` produces the negated relation glyph (`\not\in`

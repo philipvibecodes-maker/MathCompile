@@ -30,6 +30,10 @@
   src: url(fonts/Symbola.eot);
   src: local('Symbola Regular'), local('Symbola'), url(fonts/Symbola.woff2) format('woff2'), url(fonts/Symbola.woff) format('woff'), url(fonts/Symbola.ttf) format('truetype'), url(fonts/Symbola.svg#Symbola) format('svg');
 }
+@font-face {
+  font-family: 'KaTeX_Caligraphic';
+  src: local('KaTeX_Caligraphic Regular'), local('KaTeX_Caligraphic'), url(fonts/KaTeX_Caligraphic-Regular.woff2) format('woff2');
+}
 .mq-editable-field {
   display: -moz-inline-box;
   display: inline-block;
@@ -335,7 +339,12 @@
   font-family: monospace, Symbola, serif;
 }
 .mq-math-mode .mq-caligraphic {
-  font-family: 'Lucida Calligraphy', 'Apple Chancery', cursive, Symbola, serif;
+  font-family: 'KaTeX_Caligraphic', Symbola, serif;
+  font-style: normal;
+}
+.mq-math-mode .mq-caligraphic var,
+.mq-math-mode .mq-caligraphic i {
+  font-style: normal;
 }
 .mq-math-mode .mq-fraktur {
   font-family: 'Old English Text MT', 'UnifrakturMaguntia', fantasy, Symbola, serif;

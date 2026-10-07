@@ -11938,7 +11938,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     // MATHCOMPILE: typed \mathcal opens the pending `\mathcal{arg}` input
     // like \mathbb \u2014 before, it rendered an invisible-boundary Style block
     // and `}` just hopped out, so the typed command looked nothing like its
-    // latex. Parse/serialize still land on the plain Style node.
+    // latex. Parse/serialize still land on the plain Style node; the
+    // script shapes come from the KaTeX_Caligraphic webfont in math.less.
     LatexCmds.mathcal = function () {
         return new (/** @class */ (function (_super) {
             __extends(class_25, _super);

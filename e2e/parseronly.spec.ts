@@ -223,7 +223,9 @@ test('typed \\Bbb resolves to \\mathbb', async ({ page }) => {
 
 // \mathcal types through the same pending `\mathcal{arg}` input as
 // \mathbb — literal text while typing, resolving to the Style node a
-// paste produces.
+// paste produces. Script shapes come from the bundled KaTeX_Caligraphic
+// webfont behind .mq-caligraphic (asserted via computed font, since the
+// glyphs are font-mapped ASCII, not Unicode).
 test('typed \\mathcal{A} produces the calligraphic style node', async ({
   page,
 }) => {
@@ -232,9 +234,9 @@ test('typed \\mathcal{A} produces the calligraphic style node', async ({
   expect(await value(page)).toBe('\\mathcal{ }');
   await mf.pressSequentially('A}', { delay: 60 });
   expect(await value(page)).toBe('\\mathcal{A}');
-  await expect(
-    mf.locator('.mq-editable-field > .mq-root-block .mq-caligraphic'),
-  ).toHaveCount(1);
+  const cal = mf.locator('.mq-editable-field > .mq-root-block .mq-caligraphic');
+  await expect(cal).toHaveCount(1);
+  await expect(cal).toHaveCSS('font-family', /KaTeX_Caligraphic/);
 });
 
 test('typed \\mathcal arg resolves on Enter and keeps extra letters', async ({

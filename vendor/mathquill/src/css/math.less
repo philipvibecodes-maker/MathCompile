@@ -285,10 +285,18 @@
     font-family: monospace, Symbola, serif;
   }
 
-  // MATHCOMPILE: \mathcal/\mathscr/\mathfrak
+  // MATHCOMPILE: \mathcal/\mathscr/\mathfrak. KaTeX_Caligraphic (bundled
+  // woff2) maps A-Z to script shapes; chars it lacks (lowercase, digits)
+  // fall through to the body fonts like LaTeX's \mathcal. The glyphs
+  // are already script-slanted, so italic is suppressed to avoid
+  // synthetic oblique (lowercase shows upright rather than italic).
   .mq-caligraphic {
-    font-family: 'Lucida Calligraphy', 'Apple Chancery', cursive, Symbola,
-      serif;
+    font-family: 'KaTeX_Caligraphic', Symbola, serif;
+    font-style: normal;
+    var,
+    i {
+      font-style: normal;
+    }
   }
 
   .mq-fraktur {
