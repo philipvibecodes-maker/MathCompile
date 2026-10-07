@@ -153,12 +153,6 @@
   // Capture phase so Ctrl+K is seen even inside a <math-field>, which may
   // swallow keydown events at the target.
   onMount(() => {
-    // Cache-first SW for the pyodide CDN assets — warms repeat visits.
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker
-        .register(`${import.meta.env.BASE_URL}pyodide-sw.js`)
-        .catch(() => {});
-    }
     return installGlobalKeymap({
       onPaletteToggle: () => appStore.togglePalette(),
     });

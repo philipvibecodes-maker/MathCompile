@@ -86,6 +86,14 @@ function ensureWorker(): Worker {
   const w = new Worker(new URL('./calculator.worker.ts', import.meta.url), {
     type: 'classic',
   });
+  // Worker messages are FIFO — the init lands before any eval post.
+  // indexURL is built here because the worker's own location can't name
+  // the vendored dir: it lives under src/ in dev, assets/ in prod.
+  w.postMessage({
+    type: 'init',
+    pyodideBase: new URL('pyodide/', location.origin + import.meta.env.BASE_URL)
+      .href,
+  });
   w.onmessage = (e: MessageEvent<WorkerReply>) => {
     const m = e.data;
     if (m.type === 'ready') {

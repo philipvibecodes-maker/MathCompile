@@ -1,14 +1,15 @@
 // SymPy evaluation engine on Pyodide (WASM CPython), running off the main
 // thread so heavy simplifications can't freeze the editor. Spawned lazily
-// by calculator.svelte.ts on the first evaluation; one-time startup pulls
-// the pyodide runtime + sympy wheels from the pinned CDN.
+// by calculator.svelte.ts on the first evaluation; one-time startup loads
+// the pyodide runtime + sympy wheels vendored under public/pyodide/ (see
+// scripts/fetch-pyodide.mjs) — no runtime network.
 //
 // The LaTeX -> SymPy translation happens on the main thread by
 // compileCellForCalc (the shared codegen pipeline), so the worker only
 // exec/evals emitted Python — no latex parser (parse_latex/antlr) needed.
 //
 // Built as a classic (iife) worker — importScripts pulls the pyodide
-// loader; package assets stream from the same pinned CDN base.
+// loader; package assets stream from the same vendored indexURL.
 
 declare function importScripts(...urls: string[]): void;
 declare function loadPyodide(opts: {
@@ -39,10 +40,18 @@ interface EvalCellMsg {
 
 interface EvalRequest {
   id: number;
+  type?: never;
   // The worksheet prefix ending at the requesting cell: shared prelude
   // plus every cell's program in order. The reply's `rows` are the last
   // cell's results.
   program: { prelude: string[]; cells: EvalCellMsg[] };
+}
+
+// First message the main thread sends — the vendored pyodide directory
+// URL to boot from (it knows BASE_URL; the worker's own location doesn't).
+interface InitRequest {
+  type: 'init';
+  pyodideBase: string;
 }
 
 type WorkerMessage =
@@ -53,10 +62,15 @@ type WorkerMessage =
 
 const scope = self as unknown as {
   postMessage(msg: WorkerMessage): void;
-  onmessage: ((e: MessageEvent<EvalRequest>) => void) | null;
+  onmessage:
+    | ((e: MessageEvent<InitRequest | EvalRequest>) => void)
+    | null;
 };
 
-const PYODIDE_BASE = 'https://cdn.jsdelivr.net/pyodide/v0.29.0/full/';
+// Set by the 'init' message (the main thread knows the app's BASE_URL —
+// the worker's own location doesn't tell it, dev vs prod differ). Empty
+// means boot hasn't been configured yet; ensureEngine only runs after.
+let pyodideBase = '';
 
 const SETUP_PY = `
 import json
@@ -166,8 +180,8 @@ def mc_run(prog_json):
 let boot: Promise<PyodideLike> | undefined;
 
 async function bootEngine(): Promise<PyodideLike> {
-  importScripts(`${PYODIDE_BASE}pyodide.js`);
-  const py = await loadPyodide({ indexURL: PYODIDE_BASE });
+  importScripts(`${pyodideBase}pyodide.js`);
+  const py = await loadPyodide({ indexURL: pyodideBase });
   await py.loadPackage(['sympy']);
   await py.runPythonAsync(SETUP_PY);
   return py;
@@ -193,11 +207,14 @@ function ensureEngine(): Promise<PyodideLike> {
   return boot;
 }
 
-// Boot on spawn so prewarm() — which only creates the worker — already
-// overlaps the wasm download with the user's menu interaction.
-void ensureEngine();
-
 scope.onmessage = (e) => {
+  if (e.data.type === 'init') {
+    pyodideBase = e.data.pyodideBase;
+    // Boot on spawn so prewarm() — which only creates the worker —
+    // already overlaps the wasm load with the user's menu interaction.
+    void ensureEngine();
+    return;
+  }
   const { id, program } = e.data;
   void ensureEngine()
     .then(async (py) => {
