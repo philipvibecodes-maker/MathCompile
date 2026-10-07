@@ -160,24 +160,29 @@ var MATHBB_GLYPHS: { [ch: string]: number } = {
   Y: 0x1d550
 };
 
-// MATHCOMPILE: Pending `\mathbb{arg}` input for the typed path, the
-// arg-entry twin of EnvSpecInput. \mathbb's parser maps `{X}` to a
-// glyph leaf, so it has no editable block for createLeftOf to fill —
-// the no-op used to discard the typed command, so `\mathbb` + any
-// non-letter key deleted it wholesale. The input renders
-// `\mathbb{arg}` (and serializes the same, reparsing canonically to
-// the leaf); `}`/Enter/Tab resolves by re-parsing `\mathbb{arg}` via
-// writeLatex, so typed and pasted input land on the same node — and
-// an arg the parser rejects drops the same way a paste would.
-class MathBBInput extends MathCommand {
-  ctrlSeq = '\\mathbb';
-  domView = new DOMView(1, (blocks) =>
-    h('span', { class: 'mq-non-leaf' }, [
-      h.text('\\mathbb{'),
-      h.block('span', {}, blocks[0]),
-      h.text('}')
-    ])
-  );
+// MATHCOMPILE: Pending `\name{arg}` input for the typed path, the
+// arg-entry twin of EnvSpecInput — used by \mathbb and \mathcal so a
+// typed font command shows its literal `\name{arg}` text and resolves
+// on `}`/Enter/Tab by re-parsing `\name{arg}` via writeLatex, landing
+// on the same node a paste produces. For \mathbb this also fixes a
+// deletion: its parser maps `{X}` to a glyph leaf, so createLeftOf
+// was a no-op and `\mathbb` + any non-letter vanished wholesale.
+class FontArgInput extends MathCommand {
+  name: string;
+
+  constructor(name: string) {
+    super(
+      '\\' + name,
+      new DOMView(1, (blocks) =>
+        h('span', { class: 'mq-non-leaf' }, [
+          h.text('\\' + name + '{'),
+          h.block('span', {}, blocks[0]),
+          h.text('}')
+        ])
+      )
+    );
+    this.name = name;
+  }
 
   createBlocks() {
     super.createBlocks();
@@ -189,7 +194,7 @@ class MathBBInput extends MathCommand {
       input.remove();
       if (input[R]) cursor.insLeftOf(input[R] as MQNode);
       else cursor.insAtRightEnd(input.parent);
-      cursor.parent.writeLatex(cursor.show(), '\\mathbb{' + arg + '}');
+      cursor.parent.writeLatex(cursor.show(), '\\' + input.name + '{' + arg + '}');
     };
 
     const origWrite = argBlock.write;
@@ -217,7 +222,7 @@ LatexCmds.mathbb = class extends MathCommand {
   // MATHCOMPILE: the typed path calls createLeftOf with no arg text to
   // parse — open the pending input instead of discarding the command.
   createLeftOf(cursor: Cursor) {
-    var input = new MathBBInput();
+    var input = new FontArgInput('mathbb');
     if (this.replacedFragment) input.replaces(this.replacedFragment);
     input.createLeftOf(cursor);
   }

@@ -6758,30 +6758,27 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         X: 0x1d54f,
         Y: 0x1d550
     };
-    // MATHCOMPILE: Pending `\mathbb{arg}` input for the typed path, the
-    // arg-entry twin of EnvSpecInput. \mathbb's parser maps `{X}` to a
-    // glyph leaf, so it has no editable block for createLeftOf to fill \u2014
-    // the no-op used to discard the typed command, so `\mathbb` + any
-    // non-letter key deleted it wholesale. The input renders
-    // `\mathbb{arg}` (and serializes the same, reparsing canonically to
-    // the leaf); `}`/Enter/Tab resolves by re-parsing `\mathbb{arg}` via
-    // writeLatex, so typed and pasted input land on the same node \u2014 and
-    // an arg the parser rejects drops the same way a paste would.
-    var MathBBInput = /** @class */ (function (_super) {
-        __extends(MathBBInput, _super);
-        function MathBBInput() {
-            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
-            _this_1.ctrlSeq = '\\mathbb';
-            _this_1.domView = new DOMView(1, function (blocks) {
+    // MATHCOMPILE: Pending `\name{arg}` input for the typed path, the
+    // arg-entry twin of EnvSpecInput \u2014 used by \mathbb and \mathcal so a
+    // typed font command shows its literal `\name{arg}` text and resolves
+    // on `}`/Enter/Tab by re-parsing `\name{arg}` via writeLatex, landing
+    // on the same node a paste produces. For \mathbb this also fixes a
+    // deletion: its parser maps `{X}` to a glyph leaf, so createLeftOf
+    // was a no-op and `\mathbb` + any non-letter vanished wholesale.
+    var FontArgInput = /** @class */ (function (_super) {
+        __extends(FontArgInput, _super);
+        function FontArgInput(name) {
+            var _this_1 = _super.call(this, '\\' + name, new DOMView(1, function (blocks) {
                 return h('span', { class: 'mq-non-leaf' }, [
-                    h.text('\\mathbb{'),
+                    h.text('\\' + name + '{'),
                     h.block('span', {}, blocks[0]),
                     h.text('}')
                 ]);
-            });
+            })) || this;
+            _this_1.name = name;
             return _this_1;
         }
-        MathBBInput.prototype.createBlocks = function () {
+        FontArgInput.prototype.createBlocks = function () {
             _super.prototype.createBlocks.call(this);
             var input = this;
             var argBlock = this.getEnd(L);
@@ -6792,7 +6789,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     cursor.insLeftOf(input[R]);
                 else
                     cursor.insAtRightEnd(input.parent);
-                cursor.parent.writeLatex(cursor.show(), '\\mathbb{' + arg + '}');
+                cursor.parent.writeLatex(cursor.show(), '\\' + input.name + '{' + arg + '}');
             };
             var origWrite = argBlock.write;
             argBlock.write = function (cursor, ch) {
@@ -6812,7 +6809,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 return origKeystroke.call(this, key, e, ctrlr);
             };
         };
-        return MathBBInput;
+        return FontArgInput;
     }(MathCommand));
     LatexCmds.mathbb = /** @class */ (function (_super) {
         __extends(class_5, _super);
@@ -6822,7 +6819,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         // MATHCOMPILE: the typed path calls createLeftOf with no arg text to
         // parse \u2014 open the pending input instead of discarding the command.
         class_5.prototype.createLeftOf = function (cursor) {
-            var input = new MathBBInput();
+            var input = new FontArgInput('mathbb');
             if (this.replacedFragment)
                 input.replaces(this.replacedFragment);
             input.createLeftOf(cursor);
@@ -11938,8 +11935,24 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     //======================================================================
     //  Fonts (\mathcal \mathfrak \boldsymbol \mathbfit \u2026)
     //======================================================================
+    // MATHCOMPILE: typed \mathcal opens the pending `\mathcal{arg}` input
+    // like \mathbb \u2014 before, it rendered an invisible-boundary Style block
+    // and `}` just hopped out, so the typed command looked nothing like its
+    // latex. Parse/serialize still land on the plain Style node.
     LatexCmds.mathcal = function () {
-        return new Style('\\mathcal', 'span', { class: 'mq-caligraphic mq-font' }, 'Calligraphic Font');
+        return new (/** @class */ (function (_super) {
+            __extends(class_25, _super);
+            function class_25() {
+                return _super.call(this, '\\mathcal', 'span', { class: 'mq-caligraphic mq-font' }, 'Calligraphic Font') || this;
+            }
+            class_25.prototype.createLeftOf = function (cursor) {
+                var input = new FontArgInput('mathcal');
+                if (this.replacedFragment)
+                    input.replaces(this.replacedFragment);
+                input.createLeftOf(cursor);
+            };
+            return class_25;
+        }(Style)))();
     };
     LatexCmds.mathscr = function () {
         return new Style('\\mathscr', 'span', { class: 'mq-caligraphic mq-font' }, 'Script Font');
@@ -11977,8 +11990,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     // \colorbox{color}{math} \u2014 a filled box around content; the color arg is
     // raw text like \textcolor's, emitted back verbatim.
     LatexCmds.colorbox = /** @class */ (function (_super) {
-        __extends(class_25, _super);
-        function class_25() {
+        __extends(class_26, _super);
+        function class_26() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.color = '';
             _this_1.model = '';
@@ -11987,11 +12000,11 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         // Parser-only command: typing '\colorbox' in the command input can't
         // supply a color argument, so typed insertion is a no-op (same
         // convention as \textcolor).
-        class_25.prototype.createLeftOf = function () { };
-        class_25.prototype.numBlocks = function () {
+        class_26.prototype.createLeftOf = function () { };
+        class_26.prototype.numBlocks = function () {
             return 1;
         };
-        class_25.prototype.parser = function () {
+        class_26.prototype.parser = function () {
             var _this_1 = this;
             var self = this;
             return Parser.optWhitespace
@@ -12011,7 +12024,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 return _super.prototype.parser.call(_this_1);
             });
         };
-        class_25.prototype.latexRecursive = function (ctx) {
+        class_26.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
             ctx.uncleanedLatex +=
                 '\\colorbox' +
@@ -12023,15 +12036,15 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             ctx.uncleanedLatex += '}';
             this.checkCursorContextClose(ctx);
         };
-        class_25.prototype.isStyleBlock = function () {
+        class_26.prototype.isStyleBlock = function () {
             return true;
         };
-        return class_25;
+        return class_26;
     }(MathCommand));
     // \fcolorbox{frame}{bg}{math} \u2014 framed + filled box; two raw color args.
     LatexCmds.fcolorbox = /** @class */ (function (_super) {
-        __extends(class_26, _super);
-        function class_26() {
+        __extends(class_27, _super);
+        function class_27() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.frameColor = '';
             _this_1.bgColor = '';
@@ -12041,11 +12054,11 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         // Parser-only command: typing '\fcolorbox' in the command input can't
         // supply color arguments, so typed insertion is a no-op (same
         // convention as \textcolor).
-        class_26.prototype.createLeftOf = function () { };
-        class_26.prototype.numBlocks = function () {
+        class_27.prototype.createLeftOf = function () { };
+        class_27.prototype.numBlocks = function () {
             return 1;
         };
-        class_26.prototype.parser = function () {
+        class_27.prototype.parser = function () {
             var _this_1 = this;
             var self = this;
             var colorGroup = Parser.string('{')
@@ -12076,7 +12089,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 return _super.prototype.parser.call(_this_1);
             });
         };
-        class_26.prototype.latexRecursive = function (ctx) {
+        class_27.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
             ctx.uncleanedLatex +=
                 '\\fcolorbox' +
@@ -12090,15 +12103,15 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             ctx.uncleanedLatex += '}';
             this.checkCursorContextClose(ctx);
         };
-        class_26.prototype.isStyleBlock = function () {
+        class_27.prototype.isStyleBlock = function () {
             return true;
         };
-        return class_26;
+        return class_27;
     }(MathCommand));
     // \href{url}{math} \u2014 link wrapper; the url arg is raw text.
     LatexCmds.href = /** @class */ (function (_super) {
-        __extends(class_27, _super);
-        function class_27() {
+        __extends(class_28, _super);
+        function class_28() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.url = '';
             return _this_1;
@@ -12106,11 +12119,11 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         // Parser-only command: typing '\href' in the command input can't
         // supply a url argument, so typed insertion is a no-op (same
         // convention as \textcolor).
-        class_27.prototype.createLeftOf = function () { };
-        class_27.prototype.numBlocks = function () {
+        class_28.prototype.createLeftOf = function () { };
+        class_28.prototype.numBlocks = function () {
             return 1;
         };
-        class_27.prototype.parser = function () {
+        class_28.prototype.parser = function () {
             var _this_1 = this;
             var self = this;
             return Parser.optWhitespace
@@ -12125,14 +12138,14 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 return _super.prototype.parser.call(_this_1);
             });
         };
-        class_27.prototype.latexRecursive = function (ctx) {
+        class_28.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
             ctx.uncleanedLatex += '\\href{' + this.url + '}{';
             this.blocks[0].latexRecursive(ctx);
             ctx.uncleanedLatex += '}';
             this.checkCursorContextClose(ctx);
         };
-        return class_27;
+        return class_28;
     }(MathCommand));
     // \fbox/\framebox \u2014 boxed frames; \nicefrac canonicalizes to \frac.
     LatexCmds.fbox = function () {
@@ -12144,8 +12157,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     // SOURCES_BASIC too, so the mathquill-basic bundle can use it)
     function bindOptBracketCmd(ctrlSeq, maxOpt, speak) {
         return /** @class */ (function (_super) {
-            __extends(class_28, _super);
-            function class_28() {
+            __extends(class_29, _super);
+            function class_29() {
                 var _this_1 = _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
                     return h('span', { class: 'mq-non-leaf' }, [
                         h.block('span', {}, blocks[0])
@@ -12154,7 +12167,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 _this_1.optText = '';
                 return _this_1;
             }
-            class_28.prototype.parser = function () {
+            class_29.prototype.parser = function () {
                 var self = this;
                 return Parser.regex(new RegExp('^(?:\\[[^\\]]*\\]){0,' + maxOpt + '}'))
                     .then(function (opt) {
@@ -12167,14 +12180,14 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     return self;
                 });
             };
-            class_28.prototype.latexRecursive = function (ctx) {
+            class_29.prototype.latexRecursive = function (ctx) {
                 this.checkCursorContextOpen(ctx);
                 ctx.uncleanedLatex += this.ctrlSeq + this.optText + '{';
                 this.blocks[0].latexRecursive(ctx);
                 ctx.uncleanedLatex += '}';
                 this.checkCursorContextClose(ctx);
             };
-            return class_28;
+            return class_29;
         }(MathCommand));
     }
     // \framebox keeps optional [width][pos] args like \makebox.
@@ -12194,8 +12207,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     // \overset{label}{base} stacks a small label above; \underset below;
     // \stackrel is the plain-TeX name for \overset
     LatexCmds.overset = /** @class */ (function (_super) {
-        __extends(class_29, _super);
-        function class_29() {
+        __extends(class_30, _super);
+        function class_30() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.ctrlSeq = '\\overset';
             _this_1.domView = new DOMView(2, function (blocks) {
@@ -12206,12 +12219,12 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             });
             return _this_1;
         }
-        return class_29;
+        return class_30;
     }(MathCommand));
     LatexCmds.stackrel = LatexCmds.overset;
     LatexCmds.underset = /** @class */ (function (_super) {
-        __extends(class_30, _super);
-        function class_30() {
+        __extends(class_31, _super);
+        function class_31() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.ctrlSeq = '\\underset';
             _this_1.domView = new DOMView(2, function (blocks) {
@@ -12222,7 +12235,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             });
             return _this_1;
         }
-        return class_30;
+        return class_31;
     }(MathCommand));
     //======================================================================
     //  Modular arithmetic (\pmod \pod \bmod \mod)
@@ -12473,8 +12486,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     function bindArrowLabelCmd(ctrlSeq, arrow) {
         return function () {
             return new (/** @class */ (function (_super) {
-                __extends(class_31, _super);
-                function class_31() {
+                __extends(class_32, _super);
+                function class_32() {
                     return _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
                         return h('span', { class: 'mq-non-leaf mq-overunderset' }, [
                             h.block('span', { class: 'mq-overscript' }, blocks[0]),
@@ -12482,7 +12495,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                         ]);
                     })) || this;
                 }
-                class_31.prototype.parser = function () {
+                class_32.prototype.parser = function () {
                     var self = this;
                     return latexMathParser.optBlock
                         .then(function (optBlock) {
@@ -12497,7 +12510,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                         .or(_super.prototype.parser.call(this))
                         .or(Parser.succeed(new VanillaSymbol(ctrlSeq + ' ', h.text(arrow), ctrlSeq.slice(1))));
                 };
-                return class_31;
+                return class_32;
             }(MathCommand)))();
         };
     }
@@ -12823,8 +12836,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     function bindOverlapCmd(ctrlSeq, cls, optRegex) {
         return function () {
             return new (/** @class */ (function (_super) {
-                __extends(class_32, _super);
-                function class_32() {
+                __extends(class_33, _super);
+                function class_33() {
                     var _this_1 = _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
                         return h('span', { class: 'mq-non-leaf ' + cls }, [
                             h.block('span', {}, blocks[0])
@@ -12835,7 +12848,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 }
                 // An overlap command with no following block degrades to a bare
                 // \name leaf instead of failing the parse.
-                class_32.prototype.parser = function () {
+                class_33.prototype.parser = function () {
                     var self = this;
                     return (optRegex
                         ? Parser.regex(new RegExp('^' + optRegex))
@@ -12852,14 +12865,14 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     })
                         .or(Parser.succeed(new VanillaSymbol(ctrlSeq + ' ', h.text(ctrlSeq), ctrlSeq.replace(/\\/g, ''))));
                 };
-                class_32.prototype.latexRecursive = function (ctx) {
+                class_33.prototype.latexRecursive = function (ctx) {
                     this.checkCursorContextOpen(ctx);
                     ctx.uncleanedLatex += this.ctrlSeq + this.optText + '{';
                     this.blocks[0].latexRecursive(ctx);
                     ctx.uncleanedLatex += '}';
                     this.checkCursorContextClose(ctx);
                 };
-                return class_32;
+                return class_33;
             }(MathCommand)))();
         };
     }
@@ -13418,8 +13431,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
      *************************************************/
     var Environments = {};
     LatexCmds.begin = /** @class */ (function (_super) {
-        __extends(class_33, _super);
-        function class_33() {
+        __extends(class_34, _super);
+        function class_34() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.ctrlSeq = '\\begin';
             _this_1.domView = new DOMView(1, function (blocks) {
@@ -13431,7 +13444,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             });
             return _this_1;
         }
-        class_33.prototype.createBlocks = function () {
+        class_34.prototype.createBlocks = function () {
             _super.prototype.createBlocks.call(this);
             var beginNode = this;
             var nameBlock = this.getEnd(L);
@@ -13480,7 +13493,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 return origKeystroke.call(this, key, e, ctrlr);
             };
         };
-        class_33.prototype.parser = function () {
+        class_34.prototype.parser = function () {
             var string = Parser.string;
             var regex = Parser.regex;
             return string('{')
@@ -13500,7 +13513,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     .skip(string('\\end{' + env + '}'));
             });
         };
-        return class_33;
+        return class_34;
     }(MathCommand));
     // A MathCommand whose children ("cells") are laid out in a grid:
     // the matrix family (N columns, optional bracket delimiters) and
@@ -14613,15 +14626,15 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     // and the \begin parser's .skip('\\end{...}') consumes it as the close.
     LatexCmds.end = function () {
         return new (/** @class */ (function (_super) {
-            __extends(class_34, _super);
-            function class_34() {
+            __extends(class_35, _super);
+            function class_35() {
                 var _this_1 = _super.call(this, '\\end', new DOMView(0, function () {
                     return h('span', { class: 'mq-non-leaf' }, [h.text('\\end')]);
                 })) || this;
                 _this_1.env = '';
                 return _this_1;
             }
-            class_34.prototype.parser = function () {
+            class_35.prototype.parser = function () {
                 var self = this;
                 return Parser.string('{')
                     .then(Parser.regex(/^[a-z*]+/i))
@@ -14633,12 +14646,12 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     return Parser.succeed(self);
                 });
             };
-            class_34.prototype.latexRecursive = function (ctx) {
+            class_35.prototype.latexRecursive = function (ctx) {
                 this.checkCursorContextOpen(ctx);
                 ctx.uncleanedLatex += '\\end{' + this.env + '}';
                 this.checkCursorContextClose(ctx);
             };
-            return class_34;
+            return class_35;
         }(MathCommand)))();
     };
     // \begin{tabular}{spec} \u2014 the text-mode twin of \begin{array}, same

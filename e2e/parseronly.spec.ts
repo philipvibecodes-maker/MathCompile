@@ -221,6 +221,34 @@ test('typed \\Bbb resolves to \\mathbb', async ({ page }) => {
   expect(await value(page)).toBe('\\mathbb{Z}');
 });
 
+// \mathcal types through the same pending `\mathcal{arg}` input as
+// \mathbb — literal text while typing, resolving to the Style node a
+// paste produces.
+test('typed \\mathcal{A} produces the calligraphic style node', async ({
+  page,
+}) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\mathcal{', { delay: 60 });
+  expect(await value(page)).toBe('\\mathcal{ }');
+  await mf.pressSequentially('A}', { delay: 60 });
+  expect(await value(page)).toBe('\\mathcal{A}');
+  await expect(
+    mf.locator('.mq-editable-field > .mq-root-block .mq-caligraphic'),
+  ).toHaveCount(1);
+});
+
+test('typed \\mathcal arg resolves on Enter and keeps extra letters', async ({
+  page,
+}) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\mathcal{BC', { delay: 60 });
+  await page.keyboard.press('Enter');
+  expect(await value(page)).toBe('\\mathcal{BC}');
+  await expect(
+    mf.locator('.mq-editable-field > .mq-root-block .mq-caligraphic'),
+  ).toHaveCount(1);
+});
+
 // \tr is an insertion alias — it expands to \mathrm{tr}, the word-op
 // form the compiler lowers to .trace().
 test('typed \\tr expands to \\mathrm{tr}', async ({ page }) => {
