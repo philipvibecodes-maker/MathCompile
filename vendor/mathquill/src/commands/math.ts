@@ -513,6 +513,16 @@ function bindBinaryOperator(
  */
 class MathBlock extends MathElement {
   controller?: Controller;
+  // MATHCOMPILE: true on a command's optional `[n]` arg slot
+  // (\newcommand's arity) — `[` and `]` insert literal chars instead of
+  // growing \left[ \right] pairs, and `{` hops to the next block, so a
+  // typed `\newcommand{\vv}[1]{…}` flows block to block.
+  literalBrackets = false;
+  // MATHCOMPILE: true on \newcommand's name slot — a \word typed here
+  // is the macro's name, not a call, so the latex command input
+  // commits a literal `\word` leaf instead of a live command (a user
+  // macro would grow a phantom { } arg inside the def's own braces).
+  literalCommands = false;
 
   join(methodName: JoinMethod) {
     return this.foldChildren('', function (fold, child) {
@@ -682,6 +692,21 @@ class MathBlock extends MathElement {
     // elsewhere keep making real braces.)
     var owner = this.parent;
     if (owner instanceof MathCommand && !(owner instanceof Bracket)) {
+      // A literal-brackets slot (\newcommand's [n]) only holds the
+      // optional arg's brackets and digits: `{` always means "start the
+      // next arg", never a \left\{ pair.
+      if (this.literalBrackets) {
+        if (ch === '{' && !cursor.selection && (this as MQNode)[R]) {
+          cursor.insAtLeftEnd((this as MQNode)[R] as MQNode);
+          return;
+        }
+        if (ch === '[' || ch === ']') {
+          var lit = new VanillaSymbol(ch);
+          if (cursor.selection) lit.replaces(cursor.replaceSelection());
+          lit.createLeftOf(cursor.show());
+          return;
+        }
+      }
       if (ch === '{' && this.isEmpty() && !cursor[L] && !cursor.selection) {
         return;
       }

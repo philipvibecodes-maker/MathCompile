@@ -143,6 +143,16 @@ CharCmds['\\'] = class LatexCommandInput extends MathCommand {
     if (!latex) latex = ' ';
     var cmd = LatexCmds[latex];
 
+    // MATHCOMPILE: inside \newcommand's name slot a typed \word is the
+    // macro's name, not a call — commit it as literal `\word` text so
+    // the def's own braces never host a live command (or a user
+    // macro's phantom { } arg).
+    if (cursor.parent instanceof MathBlock && cursor.parent.literalCommands) {
+      var lit = new VanillaSymbol('\\' + latex);
+      lit.createLeftOf(cursor);
+      return lit;
+    }
+
     if (cmd) {
       let node: MQNode;
       if (isMQNodeClass(cmd)) {

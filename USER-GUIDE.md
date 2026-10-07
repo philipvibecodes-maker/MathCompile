@@ -384,7 +384,10 @@ as the name is a plain word.
 ## Custom notation
 
 Define your own command with `\newcommand` on its own line — type it as
-a statement (Enter starts the next line in the cell):
+a statement (Enter starts the next line in the cell). `newcommand` is
+also in the autocomplete menu and the symbol picker (Ctrl+Space);
+accepting it inserts `\newcommand{}{}` with the cursor in the first
+brace, ready for the command name.
 
 ```
 \newcommand{\vv}[1]{\mathbf{#1}}

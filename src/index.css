@@ -476,6 +476,16 @@ body {
   color: var(--muted);
 }
 
+/* \newcommand{name}[n]{body} — the command reads as literal text; the
+   optional [n] slot hides itself while empty and unfocused (it holds
+   literal [ ] chars when filled). */
+.mq-newcommand-name {
+  font-family: inherit;
+}
+.mq-newcommand-arity.mq-empty:not(.mq-hasCursor) {
+  display: none;
+}
+
 /* On-demand symbol picker (Ctrl+Space), anchored under the caret. */
 .mc-pick {
   position: absolute;

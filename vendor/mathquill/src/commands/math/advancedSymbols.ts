@@ -1366,30 +1366,8 @@ class RawArgCommand extends MQSymbol {
 }
 // One brace group with a single level of nesting allowed.
 var RAW_GROUP = '\\{(?:[^{}]|\\{[^{}]*\\})*\\}';
-LatexCmds.newcommand = () =>
-  new RawArgCommand(
-    '\\newcommand',
-    new RegExp(
-      '^' + RAW_GROUP + '(?:\\[[0-9]\\])?(?:' + RAW_GROUP + ')?'
-    ),
-    'new command'
-  );
-LatexCmds.renewcommand = () =>
-  new RawArgCommand(
-    '\\renewcommand',
-    new RegExp(
-      '^' + RAW_GROUP + '(?:\\[[0-9]\\])?(?:' + RAW_GROUP + ')?'
-    ),
-    'renew command'
-  );
-LatexCmds.providecommand = () =>
-  new RawArgCommand(
-    '\\providecommand',
-    new RegExp(
-      '^' + RAW_GROUP + '(?:\\[[0-9]\\])?(?:' + RAW_GROUP + ')?'
-    ),
-    'provide command'
-  );
+// MATHCOMPILE: \newcommand/\renewcommand/\providecommand moved to
+// extraCommands.ts — they're editable {name}[n]{body} blocks there.
 LatexCmds.DeclareMathOperator = () =>
   new RawArgCommand(
     '\\DeclareMathOperator',

@@ -136,3 +136,70 @@ test('defs and macro atoms persist across reload', async ({ page }) => {
   await setTarget(page, 'python');
   await expect(page.locator('.cell-python')).toContainText('u_bold');
 });
+
+test('typing \\newcommand shows editable braces — no … leaf', async ({
+  page,
+}) => {
+  await cell(page, 0).click();
+  await page.keyboard.type('\\newcommand', { delay: 10 });
+
+  // The def is a real MathCommand, not the collapsed `\name…` leaf.
+  await expect(cell(page, 0).locator('.mq-newcommand')).toBeVisible();
+  await expect(cell(page, 0)).not.toContainText('…');
+
+  // And typed braces flow block to block: name, [arity], body.
+  await page.keyboard.type('{\\vv}[1]{\\mathbf{#1}}', { delay: 10 });
+  expect(await cellValue(page, 0)).toBe(
+    '\\newcommand{\\vv}[1]{\\mathbf{#1}}',
+  );
+});
+
+test('a def without [n] types and hydrates cleanly', async ({ page }) => {
+  await cell(page, 0).click();
+  await page.keyboard.type('\\newcommand{\\halfx}{x/2}', { delay: 10 });
+  // `/` lowers to \frac the way it does in any block.
+  expect(await cellValue(page, 0)).toBe(
+    '\\newcommand{\\halfx}{\\frac{x}{2}}',
+  );
+
+  // Hydration round-trips the strict {name}[n]{body} serialization.
+  await cell(page, 0).evaluate((el) => {
+    (el as unknown as { value: string }).value =
+      '\\newcommand{\\vv}[1]{\\mathbf{#1}}';
+  });
+  expect(await cellValue(page, 0)).toBe(
+    '\\newcommand{\\vv}[1]{\\mathbf{#1}}',
+  );
+});
+
+test('autocomplete and symbol picker accept scaffold \\newcommand{}{}', async ({
+  page,
+}) => {
+  const caretInNameBlock = () =>
+    expect(
+      cell(page, 0).locator('.mq-newcommand-arg.mq-hasCursor').first(),
+    ).toBeVisible();
+
+  // Autocomplete: \newc + Enter.
+  await cell(page, 0).click();
+  await page.keyboard.type('\\newc', { delay: 10 });
+  const item = page
+    .locator('.mc-ac-item')
+    .filter({ hasText: 'newcommand' });
+  await expect(item.first()).toBeVisible();
+  await page.keyboard.press('Enter');
+  expect(await cellValue(page, 0)).toBe('\\newcommand{}{}');
+  await caretInNameBlock();
+
+  // Symbol picker: Ctrl+Space, filter, Enter.
+  await cell(page, 0).evaluate((el) => {
+    (el as unknown as { value: string }).value = '';
+  });
+  await cell(page, 0).click();
+  await page.keyboard.press('Control+Space');
+  await expect(page.locator('.mc-pick')).toBeVisible();
+  await page.keyboard.type('newcommand', { delay: 10 });
+  await page.keyboard.press('Enter');
+  expect(await cellValue(page, 0)).toBe('\\newcommand{}{}');
+  await caretInNameBlock();
+});

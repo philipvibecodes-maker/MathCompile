@@ -48,6 +48,11 @@ export const COMPLETIONS: CompletionItem[] = [
   { name: 'begin', hint: 'environment (pmatrix, cases, …)' },
   { name: 'def', hint: 'function definition', preview: '\\text{def} ' },
   { name: 'python', hint: 'inline Python code', preview: '\\python{x = 1}' },
+  {
+    name: 'newcommand',
+    hint: 'define your own notation',
+    preview: '\\newcommand{\\vv}[1]{\\mathbf{#1}}',
+  },
   // `\tr` is an insertion alias — it expands to `\mathrm{tr}`; the item
   // comes from the trace registry entry.
   fromRegistry('tr'),

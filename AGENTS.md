@@ -191,9 +191,17 @@ and empty blocks serialize as `{ }`.
   (builtins always win; a collision flags an error on the def line),
   and `expandLatex` substitutes `#k` args textually before `ce.parse`.
   The def itself lowers to a `['Notation', name, body]` IR node that
-  codegen turns into a note. Both def serializations parse: pasted
-  verbatim braces and the typed `\left\{…\right\}`/`\left[…\right]`
-  form. The macro table is worksheet state — `store.setLatex`/`persist`
+  codegen turns into a note. The def is a real three-block command in
+  the field (name / `[n]` / body) — the name slot is `literalCommands`
+  (a typed `\word` stays literal text, never a live atom) and the
+  arity slot is `literalBrackets` (`[`/`]` are chars, `{` hops to the
+  body), so `\newcommand{\vv}[1]{\mathbf{#1}}` types end to end and
+  serializes as written; accepting `newcommand` from the autocomplete
+  menu or symbol picker scaffolds `\newcommand{}{}` with the caret in
+  the name block. Non-strict stored forms (e.g. the old
+  `\newcommand\left\{…\right\}` typed serialization) degrade to a
+  plain `\newcommand` leaf + siblings — the spelling round-trips.
+  The macro table is worksheet state — `store.setLatex`/`persist`
   resync it on every mutation and reparse every cell when it changes,
   so a deleted def unregisters and leftover uses flag
   `incomplete or unsupported command`.

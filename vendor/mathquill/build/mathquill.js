@@ -33,6 +33,15 @@ var __assign = (this && this.__assign) || function () {
     };
     return __assign.apply(this, arguments);
 };
+var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
+    if (pack || arguments.length === 2) for (var i = 0, l = from.length, ar; i < l; i++) {
+        if (ar || !(i in from)) {
+            if (!ar) ar = Array.prototype.slice.call(from, 0, i);
+            ar[i] = from[i];
+        }
+    }
+    return to.concat(ar || Array.prototype.slice.call(from));
+};
 (function () {
     var _hasSpacingBug;
     function hasSpacingBug() {
@@ -1736,6 +1745,10 @@ var __assign = (this && this.__assign) || function () {
              * point in that node when moving up and down among blocks.
              */
             _this_1.upDownCache = {};
+            // MATHCOMPILE: the clientY of an in-flight mouse seek \u2014 seek()
+            // implementations that hit-test rendered lines (PythonBlock) read it;
+            // Controller_mouse.seek sets and clears it around node.seek().
+            _this_1.seekClientY = undefined;
             _this_1.cursorElement = h('span', { class: 'mq-cursor' }, [h.text(U_ZERO_WIDTH_SPACE)]);
             _this_1._domFrag = domFrag();
             _this_1.controller = controller;
@@ -4411,7 +4424,7 @@ var __assign = (this && this.__assign) || function () {
             return;
         };
         Controller_latex.prototype.updateLatexMathEfficiently = function (latex, oldLatex) {
-            var _c, _d, _e, _f;
+            var _c, _d, _f, _g;
             // Note, benchmark/update.html is useful for measuring the
             // performance of renderLatexMathEfficiently
             var root = this.root;
@@ -4514,7 +4527,7 @@ var __assign = (this && this.__assign) || function () {
             // remove the extra digits at the end
             if (oldDigits.length > newDigits.length) {
                 charNode = oldCharNodes[newDigits.length - 1];
-                root.setEnds((_e = {}, _e[L] = root.getEnd(L), _e[R] = charNode, _e));
+                root.setEnds((_f = {}, _f[L] = root.getEnd(L), _f[R] = charNode, _f));
                 charNode[R] = 0;
                 for (i = oldDigits.length - 1; i >= commonLength; i--) {
                     oldCharNodes[i].domFrag().remove();
@@ -4536,7 +4549,7 @@ var __assign = (this && this.__assign) || function () {
                     newNode[R] = 0;
                     var newNodeL = newNode[L];
                     newNodeL[R] = newNode;
-                    root.setEnds((_f = {}, _f[L] = root.getEnd(L), _f[R] = newNode, _f));
+                    root.setEnds((_g = {}, _g[L] = root.getEnd(L), _g[R] = newNode, _g));
                 }
                 root.domFrag().oneElement().appendChild(frag);
             }
@@ -4841,7 +4854,11 @@ var __assign = (this && this.__assign) || function () {
             // target was selection span, otherwise target will have no parent and will
             // seek from root, which is less accurate (e.g. fraction)
             cursor.clearSelection().show();
+            // MATHCOMPILE: ride the click's clientY on the cursor so seek()
+            // implementations that hit-test rendered lines (PythonBlock) can use it.
+            cursor.seekClientY = _clientY;
             node.seek(clientX, cursor);
+            cursor.seekClientY = undefined;
             this.scrollHoriz(); // before .selectFrom when mouse-selecting, so
             // always hits no-selection case in scrollHoriz and scrolls slower
             return this;
@@ -5042,7 +5059,7 @@ var __assign = (this && this.__assign) || function () {
             this.setTabindex(tabindex);
         };
         Controller.prototype.setTabindex = function (tabindex) {
-            var _c, _d, _e, _f, _g;
+            var _c, _d, _f, _g, _h;
             if (tabindex === this.previousTabindex || !this.textarea)
                 return;
             this.previousTabindex = tabindex;
@@ -5051,13 +5068,13 @@ var __assign = (this && this.__assign) || function () {
                 (_d = this.textarea) === null || _d === void 0 ? void 0 : _d.setAttribute('aria-hidden', 'true');
             }
             else {
-                (_e = this.textarea) === null || _e === void 0 ? void 0 : _e.removeAttribute('aria-hidden');
+                (_f = this.textarea) === null || _f === void 0 ? void 0 : _f.removeAttribute('aria-hidden');
             }
             if (tabindex >= 0) {
-                (_f = this.mathspeakSpan) === null || _f === void 0 ? void 0 : _f.setAttribute('aria-hidden', 'true');
+                (_g = this.mathspeakSpan) === null || _g === void 0 ? void 0 : _g.setAttribute('aria-hidden', 'true');
             }
             else {
-                (_g = this.mathspeakSpan) === null || _g === void 0 ? void 0 : _g.removeAttribute('aria-hidden');
+                (_h = this.mathspeakSpan) === null || _h === void 0 ? void 0 : _h.removeAttribute('aria-hidden');
             }
         };
         Controller.prototype.selectionChanged = function () {
@@ -5662,6 +5679,16 @@ var __assign = (this && this.__assign) || function () {
         __extends(MathBlock, _super);
         function MathBlock() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            // MATHCOMPILE: true on a command's optional `[n]` arg slot
+            // (\newcommand's arity) \u2014 `[` and `]` insert literal chars instead of
+            // growing \left[ \right] pairs, and `{` hops to the next block, so a
+            // typed `\newcommand{\vv}[1]{\u2026}` flows block to block.
+            _this_1.literalBrackets = false;
+            // MATHCOMPILE: true on \newcommand's name slot \u2014 a \word typed here
+            // is the macro's name, not a call, so the latex command input
+            // commits a literal `\word` leaf instead of a live command (a user
+            // macro would grow a phantom { } arg inside the def's own braces).
+            _this_1.literalCommands = false;
             _this_1.ariaLabel = 'block';
             return _this_1;
         }
@@ -5825,6 +5852,22 @@ var __assign = (this && this.__assign) || function () {
             // elsewhere keep making real braces.)
             var owner = this.parent;
             if (owner instanceof MathCommand && !(owner instanceof Bracket)) {
+                // A literal-brackets slot (\newcommand's [n]) only holds the
+                // optional arg's brackets and digits: `{` always means "start the
+                // next arg", never a \left\{ pair.
+                if (this.literalBrackets) {
+                    if (ch === '{' && !cursor.selection && this[R]) {
+                        cursor.insAtLeftEnd(this[R]);
+                        return;
+                    }
+                    if (ch === '[' || ch === ']') {
+                        var lit = new VanillaSymbol(ch);
+                        if (cursor.selection)
+                            lit.replaces(cursor.replaceSelection());
+                        lit.createLeftOf(cursor.show());
+                        return;
+                    }
+                }
                 if (ch === '{' && this.isEmpty() && !cursor[L] && !cursor.selection) {
                     return;
                 }
@@ -7386,15 +7429,8 @@ var __assign = (this && this.__assign) || function () {
     }(MQSymbol));
     // One brace group with a single level of nesting allowed.
     var RAW_GROUP = '\\{(?:[^{}]|\\{[^{}]*\\})*\\}';
-    LatexCmds.newcommand = function () {
-        return new RawArgCommand('\\newcommand', new RegExp('^' + RAW_GROUP + '(?:\\[[0-9]\\])?(?:' + RAW_GROUP + ')?'), 'new command');
-    };
-    LatexCmds.renewcommand = function () {
-        return new RawArgCommand('\\renewcommand', new RegExp('^' + RAW_GROUP + '(?:\\[[0-9]\\])?(?:' + RAW_GROUP + ')?'), 'renew command');
-    };
-    LatexCmds.providecommand = function () {
-        return new RawArgCommand('\\providecommand', new RegExp('^' + RAW_GROUP + '(?:\\[[0-9]\\])?(?:' + RAW_GROUP + ')?'), 'provide command');
-    };
+    // MATHCOMPILE: \newcommand/\renewcommand/\providecommand moved to
+    // extraCommands.ts \u2014 they're editable {name}[n]{body} blocks there.
     LatexCmds.DeclareMathOperator = function () {
         return new RawArgCommand('\\DeclareMathOperator', new RegExp('^\\*?' + RAW_GROUP + '(?:' + RAW_GROUP + ')?'), 'declare math operator');
     };
@@ -11748,6 +11784,11 @@ var __assign = (this && this.__assign) || function () {
                     var cmd = input.renderCommand(cursor);
                     // TODO needs tests
                     cursor.controller.aria.queue(cmd.mathspeak({ createdLeftOf: cursor }));
+                    // MATHCOMPILE: the `{` that opens a \python block is its visible
+                    // delimiter, not source text \u2014 swallow it instead of writing it
+                    // into the code.
+                    if (cmd instanceof PythonBlock && ch === '{')
+                        return;
                     if (ch !== '\\' || !this.isEmpty())
                         cursor.parent.write(cursor, ch);
                     else
@@ -11806,6 +11847,15 @@ var __assign = (this && this.__assign) || function () {
             if (!latex)
                 latex = ' ';
             var cmd = LatexCmds[latex];
+            // MATHCOMPILE: inside \newcommand's name slot a typed \word is the
+            // macro's name, not a call \u2014 commit it as literal `\word` text so
+            // the def's own braces never host a live command (or a user
+            // macro's phantom { } arg).
+            if (cursor.parent instanceof MathBlock && cursor.parent.literalCommands) {
+                var lit = new VanillaSymbol('\\' + latex);
+                lit.createLeftOf(cursor);
+                return lit;
+            }
             if (cmd) {
                 var node = void 0;
                 if (isMQNodeClass(cmd)) {
@@ -13021,6 +13071,501 @@ var __assign = (this && this.__assign) || function () {
         deadMacroNames.add(name);
         LatexCmds[name] = function () { var _c; return new UserMacro(name, (_c = userMacroArities.get(name)) !== null && _c !== void 0 ? _c : 0, true); };
     };
+    //======================================================================
+    //  MATHCOMPILE: \newcommand/\renewcommand/\providecommand as editable
+    //  {name}[n]{body} \u2014 replaces the collapsed RawArgCommand `\name\u2026` leaf
+    //======================================================================
+    // Blocks: [name, arity, body]. The arity block is the optional `[n]` \u2014
+    // it renders its brackets only when non-empty (or focused), so the
+    // scaffold shows `\newcommand{ }{ }` and serializes `[n]` only when
+    // filled. Stored forms that aren't the strict shape (e.g. the old
+    // `\newcommand\left\{\u2026\right\}` typed serialization) degrade to a
+    // plain `\newcommand` leaf + siblings \u2014 the spelling round-trips.
+    var NewCommand = /** @class */ (function (_super) {
+        __extends(NewCommand, _super);
+        function NewCommand(cmdName) {
+            var _this_1 = _super.call(this) || this;
+            _this_1.ctrlSeq = cmdName;
+            _this_1.domView = new DOMView(3, function (blocks) {
+                var kids = [
+                    h('span', { class: 'mq-newcommand-name' }, [h.text(cmdName)]),
+                    h.text('{'),
+                    h.block('span', { class: 'mq-newcommand-arg' }, blocks[0]),
+                    h.text('}'),
+                    h.block('span', { class: 'mq-newcommand-arity' }, blocks[1]),
+                    h.text('{'),
+                    h.block('span', { class: 'mq-newcommand-arg' }, blocks[2]),
+                    h.text('}'),
+                ];
+                return h('span', { class: 'mq-newcommand' }, kids);
+            });
+            _this_1.textTemplate = [cmdName + '{', '}[', ']{', '}'];
+            _this_1.mathspeakTemplate = ['Start' + cmdName + ' ', ', ', ' ', 'End' + cmdName];
+            return _this_1;
+        }
+        NewCommand.prototype.createBlocks = function () {
+            _super.prototype.createBlocks.call(this);
+            this.blocks[0].literalCommands = true;
+            this.blocks[1].literalBrackets = true;
+        };
+        NewCommand.prototype.parser = function () {
+            var self = this;
+            var block = latexMathParser.block;
+            var optBlock = latexMathParser.optBlock;
+            // {\name} \u2014 the name slot holds literal text (literalCommands), so
+            // a def's name is never a live command or user-macro atom.
+            var nameBlock = Parser.string('{')
+                .then(Parser.regex(/^\\[a-zA-Z]+/))
+                .skip(Parser.string('}'))
+                .map(function (name) {
+                var b = new MathBlock();
+                new VanillaSymbol(name).adopt(b, 0, 0);
+                return b;
+            });
+            var finish = function (name, arity, body) {
+                self.blocks = [name, arity, body];
+                name.adopt(self, 0, 0);
+                arity.adopt(self, name, 0);
+                body.adopt(self, arity, 0);
+                name.literalCommands = true;
+                arity.literalBrackets = true;
+                return self;
+            };
+            // {name}[n]{body} \u2014 optBlock owns the [n] alternative, like \sqrt.
+            // The arity slot holds the [ ] as literal chars (literalBrackets),
+            // matching what typing produces.
+            return nameBlock
+                .then(function (name) {
+                return optBlock.then(function (opt) {
+                    return block.map(function (body) {
+                        var arity = new MathBlock();
+                        var lb = new VanillaSymbol('[');
+                        var rb = new VanillaSymbol(']');
+                        lb.adopt(arity, 0, 0);
+                        rb.adopt(arity, lb, 0);
+                        opt.children().adopt(arity, lb, rb);
+                        return finish(name, arity, body);
+                    });
+                });
+            })
+                .or(nameBlock.then(function (name) {
+                return block.map(function (body) { return finish(name, new MathBlock(), body); });
+            }))
+                .or(
+            // Verbatim-leaf fallback (same shape as MathCommand.parser, but
+            // also accepts end-of-input so a lone stored \newcommand can't
+            // blank the row on re-typeset).
+            Parser.regex(/^(?=\S|$)/).then(function () {
+                return Parser.succeed(new VanillaSymbol(self.ctrlSeq + ' ', h.text(self.ctrlSeq || ''), self.ctrlSeq));
+            }));
+        };
+        NewCommand.prototype.latexRecursive = function (ctx) {
+            this.checkCursorContextOpen(ctx);
+            ctx.uncleanedLatex += this.ctrlSeq + '{';
+            this.blocks[0].latexRecursive(ctx);
+            ctx.uncleanedLatex += '}';
+            var arity = this.blocks[1];
+            if (!arity.isEmpty()) {
+                var inner = ctx.uncleanedLatex.length;
+                arity.latexRecursive(ctx);
+                var arityText = ctx.uncleanedLatex.slice(inner);
+                ctx.uncleanedLatex = ctx.uncleanedLatex.slice(0, inner);
+                // Typed `[` inside the slot pairs as \left[\u2026\right] \u2014 don't
+                // double-wrap bracketed content.
+                ctx.uncleanedLatex +=
+                    arityText.startsWith('[') || arityText.startsWith('\\left[')
+                        ? arityText
+                        : '[' + arityText + ']';
+            }
+            ctx.uncleanedLatex += '{';
+            this.blocks[2].latexRecursive(ctx);
+            ctx.uncleanedLatex += '}';
+            this.checkCursorContextClose(ctx);
+        };
+        return NewCommand;
+    }(MathCommand));
+    LatexCmds.newcommand = function () { return new NewCommand('\\newcommand'); };
+    LatexCmds.renewcommand = function () { return new NewCommand('\\renewcommand'); };
+    LatexCmds.providecommand = function () { return new NewCommand('\\providecommand'); };
+    // Triple-quoted strings come first \u2014 docstrings span lines and must not get
+    // keyword/call coloring on their contents.
+    var PY_TOKEN_RE = /("""[\s\S]*?"""|'''[\s\S]*?'''|'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*")|(#[^\n]*)|(\b(?:and|as|assert|async|await|break|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|not|or|pass|raise|return|try|while|with|yield|True|False)\b)|(\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|([A-Za-z_]\w*(?=\s*\())/g;
+    var PY_TOKEN_CLASSES = [
+        'str',
+        'comment',
+        'kw',
+        'num',
+        'call',
+    ];
+    function pyTokenRanges(code) {
+        var ranges = [];
+        PY_TOKEN_RE.lastIndex = 0;
+        var m;
+        while ((m = PY_TOKEN_RE.exec(code)) !== null) {
+            for (var g = 1; g <= PY_TOKEN_CLASSES.length; g++) {
+                if (m[g] === undefined)
+                    continue;
+                ranges.push({
+                    start: m.index,
+                    end: m.index + m[g].length,
+                    cls: PY_TOKEN_CLASSES[g - 1],
+                });
+                break;
+            }
+        }
+        return ranges;
+    }
+    // A Range covering chars [start,end) of el's concatenated text, across
+    // however many DOM text nodes the pieces are currently split into.
+    function textRangeForOffsets(el, s, e) {
+        var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        var acc = 0;
+        var node;
+        var sNode;
+        var sOff = 0;
+        while ((node = walker.nextNode())) {
+            var len = node.data.length;
+            if (sNode === undefined && s <= acc + len) {
+                sNode = node;
+                sOff = s - acc;
+            }
+            if (e <= acc + len) {
+                if (sNode === undefined)
+                    return undefined;
+                var range = document.createRange();
+                range.setStart(sNode, sOff);
+                range.setEnd(node, e - acc);
+                return range;
+            }
+            acc += len;
+        }
+        return undefined;
+    }
+    // Rebuild every `mq-py-*` Highlight in the document: the highlight registry
+    // is global and registry.set replaces a whole named highlight, so a
+    // per-block refresh would drop the other fields' ranges.
+    function refreshPythonHighlights() {
+        var css = window.CSS;
+        var registry = css && css.highlights;
+        var HighlightCtor = window.Highlight;
+        if (!registry ||
+            typeof registry.set !== 'function' ||
+            typeof HighlightCtor !== 'function')
+            return;
+        var ranges = {};
+        var codeEls = document.querySelectorAll('.mq-python');
+        for (var i = 0; i < codeEls.length; i++) {
+            var el = codeEls[i];
+            var code = el.textContent || '';
+            var tokens = pyTokenRanges(code);
+            for (var t = 0; t < tokens.length; t++) {
+                var tok = tokens[t];
+                var range = textRangeForOffsets(el, tok.start, tok.end);
+                if (!range)
+                    continue;
+                (ranges[tok.cls] || (ranges[tok.cls] = [])).push(range);
+            }
+        }
+        for (var c = 0; c < PY_TOKEN_CLASSES.length; c++) {
+            var cls = PY_TOKEN_CLASSES[c];
+            registry.set('mq-py-' + cls, new (HighlightCtor.bind.apply(HighlightCtor, __spreadArray([void 0], (ranges[cls] || []), false)))());
+        }
+    }
+    // Serialize the code body for latex(): source that is brace-balanced and
+    // backslash-free stays raw (the readable common case); anything else gets
+    // \ { } escaped so the balanced scan in PYTHON_BODY can't stop early and
+    // the pair round-trips byte-exact.
+    function escapePythonBody(code) {
+        if (code.indexOf('\\') === -1) {
+            var depth = 0;
+            var balanced = true;
+            for (var i = 0; i < code.length; i++) {
+                var c = code[i];
+                if (c === '{')
+                    depth++;
+                else if (c === '}')
+                    depth--;
+                if (depth < 0) {
+                    balanced = false;
+                    break;
+                }
+            }
+            if (balanced && depth === 0)
+                return code;
+        }
+        return code
+            .replace(/\\/g, '\\\\')
+            .replace(/\{/g, '\\{')
+            .replace(/\}/g, '\\}');
+    }
+    // The \python body after the opening `{`: raw source scanned to the
+    // depth-0 `}` that closes it. `\{`, `\}` and `\\` are the literal escapes
+    // escapePythonBody emits; an unclosed body takes the rest of the stream so
+    // one bad latex string can't blank the field.
+    var PYTHON_BODY = new Parser(function (stream, onSuccess, _onFailure) {
+        var depth = 1;
+        for (var i = 0; i < stream.length; i++) {
+            var c = stream[i];
+            if (c === '\\') {
+                i++;
+                continue;
+            }
+            if (c === '{')
+                depth++;
+            else if (c === '}') {
+                depth--;
+                if (depth === 0)
+                    return onSuccess(stream.slice(i + 1), stream.slice(0, i));
+            }
+        }
+        return onSuccess('', stream);
+    });
+    var PythonBlock = /** @class */ (function (_super) {
+        __extends(PythonBlock, _super);
+        function PythonBlock() {
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.ctrlSeq = '\\python';
+            _this_1.ariaLabel = 'Python block';
+            _this_1.mathspeakTemplate = ['Python', 'EndPython'];
+            return _this_1;
+        }
+        PythonBlock.prototype.parser = function () {
+            var block = this;
+            return Parser.optWhitespace
+                .then(Parser.string('{'))
+                .then(PYTHON_BODY)
+                .map(function (body) {
+                var code = body.replace(/\\([{}\\])/g, '$1');
+                if (code !== '')
+                    new TextPiece(code).adopt(block, 0, 0);
+                return block;
+            });
+        };
+        PythonBlock.prototype.html = function () {
+            var out = h('span', { class: 'mq-text-mode mq-python' }, [
+                h.text(this.textContents()),
+            ]);
+            this.setDOM(out);
+            NodeBase.linkElementByCmdNode(out, this);
+            // Bind the left-end piece to the code text node: upstream leaves
+            // TextPieces DOM-less until a fuse binds them, and appendText on an
+            // unbound piece throws.
+            var endsL = this.getEnd(L);
+            if (endsL instanceof TextPiece && endsL.domFrag().isEmpty())
+                endsL.setDOM(out.childNodes[0]);
+            return out;
+        };
+        PythonBlock.prototype.latexRecursive = function (ctx) {
+            this.checkCursorContextOpen(ctx);
+            // Always emit the wrapper so an empty block round-trips as \python{}.
+            ctx.uncleanedLatex += '\\python{';
+            ctx.uncleanedLatex += escapePythonBody(this.textContents());
+            ctx.uncleanedLatex += '}';
+            this.checkCursorContextClose(ctx);
+        };
+        // --- editing -----------------------------------------------------------
+        // Every character \u2014 `$` included \u2014 is plain text in a source block.
+        PythonBlock.prototype.write = function (cursor, ch) {
+            cursor.show().deleteSelection();
+            var cursorL = cursor[L];
+            if (!cursorL)
+                new TextPiece(ch).createLeftOf(cursor);
+            else if (cursorL instanceof TextPiece)
+                cursorL.appendText(ch);
+            this.bubble(function (node) {
+                node.reflow();
+                return undefined;
+            });
+            cursor.controller.aria.alert(ch);
+        };
+        PythonBlock.prototype.keystroke = function (key, e, ctrlr) {
+            var cursor = ctrlr.cursor;
+            switch (key) {
+                // Enter is a newline in the source, not a line break in the field \u2014
+                // preventing the keydown default keeps the keypress -> typedText('\n')
+                // -> handle('enter') -> insertLineBreak path from firing too.
+                case 'Enter':
+                    this.write(cursor, '\n');
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    ctrlr.notify('edit');
+                    ctrlr.scrollHoriz();
+                    return;
+                case 'Tab':
+                    this.write(cursor, '\t');
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    ctrlr.notify('edit');
+                    ctrlr.scrollHoriz();
+                    return;
+                case 'Home': {
+                    var text = this.textContents();
+                    this.placeCaret(text.lastIndexOf('\n', this.caretOffset(cursor) - 1) + 1, cursor);
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    ctrlr.scrollHoriz();
+                    return;
+                }
+                case 'End': {
+                    var endText = this.textContents();
+                    var nextBreak = endText.indexOf('\n', this.caretOffset(cursor));
+                    this.placeCaret(nextBreak === -1 ? endText.length : nextBreak, cursor);
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    ctrlr.scrollHoriz();
+                    return;
+                }
+            }
+            return _super.prototype.keystroke.call(this, key, e, ctrlr);
+        };
+        // Up/Down step between source lines; at the edge line they return true so
+        // the moveUpDown bubble continues to the root's upOutOf/downOutOf and the
+        // field emits its move-out (cell hop) event as usual.
+        PythonBlock.prototype.upOutOf = function (cursor) {
+            return this.verticalMove(L, cursor) ? undefined : true;
+        };
+        PythonBlock.prototype.downOutOf = function (cursor) {
+            return this.verticalMove(R, cursor) ? undefined : true;
+        };
+        // Char offset of the caret within the block's text.
+        PythonBlock.prototype.caretOffset = function (cursor) {
+            var off = 0;
+            for (var n = this.getEnd(L); n && n !== cursor[R]; n = n[R]) {
+                off += n.textStr.length;
+            }
+            return off;
+        };
+        // Fuse pieces and drop the caret at a char offset \u2014 same shape as the
+        // tail of TextBlock.seek. The caret detaches first: fuse prays the
+        // element holds a single text node, and a shown caret span inside it
+        // would be a second child.
+        PythonBlock.prototype.placeCaret = function (offset, cursor) {
+            cursor.hide();
+            var textPc = TextBlockFuseChildren(this);
+            if (!textPc || offset <= 0)
+                cursor.insAtLeftEnd(this);
+            else if (offset >= textPc.textStr.length)
+                cursor.insAtRightEnd(this);
+            else
+                cursor.insLeftOf(textPc.splitRight(offset));
+            cursor.show();
+        };
+        // Move the caret one source line up (dir === L) or down (dir === R),
+        // keeping a goal column across repeats in cursor.upDownCache (cleared on
+        // any non-upDown notify \u2014 the same mechanism arrows into sub/sup use).
+        PythonBlock.prototype.verticalMove = function (dir, cursor) {
+            var text = this.textContents();
+            var caret = this.caretOffset(cursor);
+            var lineStart = text.lastIndexOf('\n', caret - 1) + 1;
+            var col = caret - lineStart;
+            if (dir === L && lineStart === 0)
+                return false;
+            var nextBreak = text.indexOf('\n', caret);
+            if (dir === R && nextBreak === -1)
+                return false;
+            var cacheKey = 'python:' + this.id;
+            var cache = cursor.upDownCache[cacheKey];
+            var goal = typeof cache === 'number' ? cache : col;
+            var target;
+            if (dir === L) {
+                var prevStart = lineStart >= 2 ? text.lastIndexOf('\n', lineStart - 2) + 1 : 0;
+                target = Math.min(prevStart + goal, lineStart - 1);
+            }
+            else {
+                var nextStart = nextBreak + 1;
+                var nextEnd = text.indexOf('\n', nextStart);
+                var nextLen = (nextEnd === -1 ? text.length : nextEnd) - nextStart;
+                target = nextStart + Math.min(goal, nextLen);
+            }
+            cursor.upDownCache[cacheKey] = goal;
+            this.placeCaret(target, cursor);
+            return true;
+        };
+        PythonBlock.prototype.seek = function (clientX, cursor) {
+            cursor.hide();
+            var el;
+            if (!this.domFrag().isEmpty())
+                el = this.domFrag().oneElement();
+            var placed = false;
+            // Multi-line source needs the click's rendered position, not a flat
+            // width guess: caretRangeFromPoint maps (x, y) to the nearest text
+            // position, which the Range below converts to a char offset.
+            var caretFromPoint = document.caretRangeFromPoint;
+            if (el &&
+                cursor.seekClientY !== undefined &&
+                typeof caretFromPoint === 'function') {
+                try {
+                    var point = caretFromPoint.call(document, clientX, cursor.seekClientY);
+                    if (point && el.contains(point.startContainer)) {
+                        var before = document.createRange();
+                        before.selectNodeContents(el);
+                        before.setEnd(point.startContainer, point.startOffset);
+                        this.placeCaret(before.toString().length, cursor);
+                        placed = true;
+                    }
+                }
+                catch (_e) {
+                    // fall through to the flat-width approximation
+                }
+            }
+            if (!placed && el) {
+                var textPc = TextBlockFuseChildren(this);
+                if (!textPc)
+                    return;
+                var textNode = el.childNodes[0];
+                if (textNode && textNode.nodeType === 3) {
+                    var range = document.createRange();
+                    range.selectNodeContents(textNode);
+                    var rects = range.getClientRects();
+                    if (rects.length === 1) {
+                        var left = rects[0].left;
+                        var width = rects[0].width;
+                        var approx = Math.round(((clientX - left) / width) * textPc.textStr.length);
+                        this.placeCaret(approx, cursor);
+                    }
+                    else {
+                        cursor.insAtLeftEnd(this);
+                    }
+                }
+            }
+            cursor.show();
+            // Anticursor bookkeeping, identical to TextBlock.seek \u2014 needed so
+            // mouse-drag selection anchors inside the block.
+            if (!cursor.anticursor) {
+                var cursorL = cursor[L];
+                this.anticursorPosition =
+                    cursorL && cursorL.textStr.length;
+            }
+            else if (cursor.anticursor.parent === this) {
+                var cursorL = cursor[L];
+                var cursorPosition = cursorL && cursorL.textStr.length;
+                if (this.anticursorPosition === cursorPosition) {
+                    cursor.anticursor = Anticursor.fromCursor(cursor);
+                }
+                else {
+                    if (this.anticursorPosition < cursorPosition) {
+                        var newTextPc = cursorL.splitRight(this.anticursorPosition);
+                        cursor[L] = newTextPc;
+                    }
+                    else {
+                        var cursorR = cursor[R];
+                        var newTextPc = cursorR.splitRight(this.anticursorPosition - cursorPosition);
+                    }
+                    cursor.anticursor = new Anticursor(this, newTextPc[L], newTextPc);
+                }
+            }
+        };
+        PythonBlock.prototype.blur = function (cursor) {
+            MathBlock.prototype.blur.call(this, cursor);
+            if (!cursor)
+                return;
+            // An empty block stays \u2014 \python{} is a real cell (the delimiters are
+            // visible chrome, so nothing reads as missing), unlike \text which
+            // self-removes.
+            TextBlockFuseChildren(this);
+        };
+        PythonBlock.prototype.reflow = function () {
+            refreshPythonHighlights();
+        };
+        return PythonBlock;
+    }(TextBlock));
+    LatexCmds.python = PythonBlock;
     /*************************************************
      * LaTeX environments: \begin{matrix} family and
      * \displaylines{...}, plus insertion-time \derivative.
@@ -14106,6 +14651,15 @@ var __assign = (this && this.__assign) || function () {
         var cursor = ctrlr.cursor;
         if (cursor.selection)
             cursor.deleteSelection();
+        // MATHCOMPILE: inside \python{ ... } Enter is a newline in the source,
+        // not a \displaylines row. Real keypresses never reach here \u2014 the block's
+        // own keystroke('Enter') swallows them \u2014 this covers programmatic
+        // typedText('\n')/insertLineBreak().
+        if (cursor.parent instanceof PythonBlock) {
+            cursor.parent.write(cursor, '\n');
+            ctrlr.notify('edit');
+            return;
+        }
         // Find the line-level block (nearest MatrixCell / root block) and the
         // atom inside it that contains the caret.
         var lineBlock;

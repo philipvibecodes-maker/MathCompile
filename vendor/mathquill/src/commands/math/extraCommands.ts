@@ -1342,3 +1342,125 @@ mcWindow.__mcUserMacroRemove = (name) => {
   LatexCmds[name] = () =>
     new UserMacro(name, userMacroArities.get(name) ?? 0, true);
 };
+
+//======================================================================
+//  MATHCOMPILE: \newcommand/\renewcommand/\providecommand as editable
+//  {name}[n]{body} — replaces the collapsed RawArgCommand `\name…` leaf
+//======================================================================
+
+// Blocks: [name, arity, body]. The arity block is the optional `[n]` —
+// it renders its brackets only when non-empty (or focused), so the
+// scaffold shows `\newcommand{ }{ }` and serializes `[n]` only when
+// filled. Stored forms that aren't the strict shape (e.g. the old
+// `\newcommand\left\{…\right\}` typed serialization) degrade to a
+// plain `\newcommand` leaf + siblings — the spelling round-trips.
+class NewCommand extends MathCommand {
+  constructor(cmdName: string) {
+    super();
+    this.ctrlSeq = cmdName;
+    this.domView = new DOMView(3, (blocks) => {
+      const kids: ChildNode[] = [
+        h('span', { class: 'mq-newcommand-name' }, [h.text(cmdName)]),
+        h.text('{'),
+        h.block('span', { class: 'mq-newcommand-arg' }, blocks[0]),
+        h.text('}'),
+        h.block('span', { class: 'mq-newcommand-arity' }, blocks[1]),
+        h.text('{'),
+        h.block('span', { class: 'mq-newcommand-arg' }, blocks[2]),
+        h.text('}'),
+      ];
+      return h('span', { class: 'mq-newcommand' }, kids) as HTMLElement;
+    });
+    this.textTemplate = [cmdName + '{', '}[', ']{', '}'];
+    this.mathspeakTemplate = ['Start' + cmdName + ' ', ', ', ' ', 'End' + cmdName];
+  }
+  createBlocks() {
+    super.createBlocks();
+    this.blocks[0].literalCommands = true;
+    this.blocks[1].literalBrackets = true;
+  }
+  parser(): Parser<MQNode | Fragment> {
+    var self = this;
+    var block = latexMathParser.block;
+    var optBlock = latexMathParser.optBlock;
+    // {\name} — the name slot holds literal text (literalCommands), so
+    // a def's name is never a live command or user-macro atom.
+    var nameBlock = Parser.string('{')
+      .then(Parser.regex(/^\\[a-zA-Z]+/))
+      .skip(Parser.string('}'))
+      .map((name) => {
+        var b = new MathBlock();
+        new VanillaSymbol(name).adopt(b, 0, 0);
+        return b;
+      });
+    const finish = (name: MathBlock, arity: MathBlock, body: MathBlock) => {
+      self.blocks = [name, arity, body];
+      name.adopt(self, 0, 0);
+      arity.adopt(self, name, 0);
+      body.adopt(self, arity, 0);
+      name.literalCommands = true;
+      arity.literalBrackets = true;
+      return self as MQNode | Fragment;
+    };
+    // {name}[n]{body} — optBlock owns the [n] alternative, like \sqrt.
+    // The arity slot holds the [ ] as literal chars (literalBrackets),
+    // matching what typing produces.
+    return nameBlock
+      .then((name) =>
+        optBlock.then((opt) =>
+          block.map((body) => {
+            var arity = new MathBlock();
+            var lb = new VanillaSymbol('[');
+            var rb = new VanillaSymbol(']');
+            lb.adopt(arity, 0, 0);
+            rb.adopt(arity, lb, 0);
+            opt.children().adopt(arity, lb, rb);
+            return finish(name, arity, body);
+          }),
+        ),
+      )
+      .or(nameBlock.then((name) =>
+        block.map((body) => finish(name, new MathBlock(), body)),
+      ))
+      .or(
+        // Verbatim-leaf fallback (same shape as MathCommand.parser, but
+        // also accepts end-of-input so a lone stored \newcommand can't
+        // blank the row on re-typeset).
+        Parser.regex(/^(?=\S|$)/).then(() =>
+          Parser.succeed(
+            new VanillaSymbol(
+              self.ctrlSeq + ' ',
+              h.text(self.ctrlSeq || ''),
+              self.ctrlSeq
+            ) as MQNode | Fragment
+          ),
+        ),
+      );
+  }
+  latexRecursive(ctx: LatexContext) {
+    this.checkCursorContextOpen(ctx);
+    ctx.uncleanedLatex += this.ctrlSeq + '{';
+    this.blocks[0].latexRecursive(ctx);
+    ctx.uncleanedLatex += '}';
+    const arity = this.blocks[1];
+    if (!arity.isEmpty()) {
+      var inner = ctx.uncleanedLatex.length;
+      arity.latexRecursive(ctx);
+      const arityText = ctx.uncleanedLatex.slice(inner);
+      ctx.uncleanedLatex = ctx.uncleanedLatex.slice(0, inner);
+      // Typed `[` inside the slot pairs as \left[…\right] — don't
+      // double-wrap bracketed content.
+      ctx.uncleanedLatex +=
+        arityText.startsWith('[') || arityText.startsWith('\\left[')
+          ? arityText
+          : '[' + arityText + ']';
+    }
+    ctx.uncleanedLatex += '{';
+    this.blocks[2].latexRecursive(ctx);
+    ctx.uncleanedLatex += '}';
+    this.checkCursorContextClose(ctx);
+  }
+}
+LatexCmds.newcommand = () => new NewCommand('\\newcommand');
+LatexCmds.renewcommand = () => new NewCommand('\\renewcommand');
+LatexCmds.providecommand = () => new NewCommand('\\providecommand');
