@@ -1,0 +1,9 @@
+# Runtime deps for desktop/main.py. Windows/macOS backends (WebView2,
+# WKWebView) install automatically as pywebview platform deps; Linux
+# needs a GUI backend — qt6 pulls PyQt6-WebEngine via pip, or install
+# system WebKitGTK and drop the extra.
+pywebview[qt6]>=6.0
+# Calculator engine: runs the emitted SymPy program in an nsjail'd
+# docker sandbox instead of Pyodide. Also needs `docker` and `git` on
+# PATH (non-pip requirements — see README).
+PythonSafeEval>=0.0.1

@@ -27,3 +27,7 @@ test-results-perf/
 playwright-report/
 .playwright-mcp/
 perf-results/
+
+# Python (desktop/ shell)
+__pycache__/
+.venv/

@@ -27,10 +27,30 @@ npm run dev        # http://localhost:5573
 | `npm test` | Vitest unit tests (`src/**/*.test.ts`, node env) |
 | `npm run test:e2e` | Playwright behavioral suite (`e2e/`) |
 | `npm run test:perf` | Input→paint perf battery (`perf/`); builds + previews on :4173 |
+| `npm run desktop` | Build + launch the pywebview desktop shell (`desktop/`) |
 
 `PERF_BASE_URL=<url> PERF_LABEL=<name> npm run test:perf` measures any
 other served build; `node perf/compare.mjs <labelA> <labelB>` diffs two
 labeled runs in `perf-results/`.
+
+## Desktop shell
+
+`desktop/main.py` wraps the production bundle in a pywebview window. In
+the shell the calculator target runs the emitted SymPy program on the
+host through **PythonSafeEval** (an nsjail'd docker sandbox) instead of
+the Pyodide wasm worker — no wasm boot, no CDN.
+
+```
+python -m venv desktop/.venv
+desktop/.venv/bin/pip install -r desktop/requirements.txt
+npm run build
+desktop/.venv/bin/python desktop/main.py
+```
+
+Host requirements beyond pip: `docker` (daemon reachable — PythonSafeEval
+builds and `docker exec`s into the sandbox image) and `git` (nsjail
+clone). The first engine boot builds the image and takes minutes; later
+boots hit the docker layer cache.
 
 ## Layout
 

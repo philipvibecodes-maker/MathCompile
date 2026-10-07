@@ -8,7 +8,14 @@ cell's results: **SymPy on Pyodide** (authoritative, ~4s cold boot) and
 ## Layout
 
 - `src/calc/calculator.worker.ts` — classic (`iife`) worker running
-  Pyodide + SymPy; owns `mc_run`.
+  Pyodide + SymPy; execs `mc_run`.
+- `src/calc/mc_runtime.py` — the shared engine runtime (`mc_run` and the
+  `_mc_*` harness): the worker `?raw`-imports it, and
+  `desktop/calc_backend.py` appends a `print(mc_run(prog))` call to run
+  the identical source inside its PythonSafeEval docker sandbox
+  (`desktop/main.py` exposes it as `window.pywebview.api`). Each sandbox
+  eval is a fresh interpreter — the whole worksheet prefix re-runs (no
+  cross-call `_snaps`) and nsjail enforces the time limit.
 - `src/calc/calculator.svelte.ts` — `evaluate()` (real engine),
   `interimEvaluate()` (nerdamer), `prewarm()`, `calcEngine` status rune.
 - `src/calc/nerdamer-emit.ts` — normalized-IR → nerdamer-input emitter
