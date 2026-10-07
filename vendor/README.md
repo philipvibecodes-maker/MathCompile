@@ -78,10 +78,8 @@ New files:
   Custom Highlight API (`CSS.highlights` ranges over that text node —
   no DOM mutation, so nothing interferes with selection or deletion),
   refreshed on the `reflow` bubble; the `::highlight(mq-py-*)` rules
-  live in `editable.less`, the block styles in `math.less` (which also
-  suppress the `.mq-empty` placeholder grey — an empty `\python{}`
-  shows just the delimiters), and the dark-theme palette overrides in
-  `src/index.css`. The body parser
+  live in `editable.less`, the block styles in `math.less`, and the
+  dark-theme palette overrides in `src/index.css`. The body parser
   scans balanced braces honoring `\` escapes and consumes the rest of
   the stream when unclosed (same contract the app-side extractor
   `extractPythonBlocks` in `src/compile/ir.ts` mirrors); the
