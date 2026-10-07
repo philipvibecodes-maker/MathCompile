@@ -153,6 +153,7 @@
   // Capture phase so Ctrl+K is seen even inside a <math-field>, which may
   // swallow keydown events at the target.
   onMount(() => {
+    prewarm();
     return installGlobalKeymap({
       onPaletteToggle: () => appStore.togglePalette(),
     });
@@ -475,8 +476,6 @@
               value={appStore.target}
               onchange={(e) =>
                 (appStore.target = e.currentTarget.value as TargetId)}
-              onpointerdown={prewarm}
-              onfocus={prewarm}
             >
               {#each TARGETS as t (t.id)}
                 <option value={t.id} disabled={!t.enabled}>

@@ -46,7 +46,7 @@ export type EngineStatus = 'idle' | 'loading' | 'ready' | 'error';
 // Load-time experiment: the SymPy engine (Pyodide worker + its vendored
 // payload) is fully disconnected — the worker is never spawned and
 // evaluations resolve empty instead of booting WASM.
-const ENGINE_DISCONNECTED = true;
+const ENGINE_DISCONNECTED = false;
 
 // Engine status is shared UI state (the CalcOutput components read it for
 // their loading labels), so it lives in a rune like the app store.
@@ -286,9 +286,9 @@ export function evaluate(
 }
 
 // Kicks the engine boot (~4s cold) before an expression is actually
-// evaluated — the Output dropdown's pointerdown/focus hooks call this
-// so the wasm+wheels download overlaps the user's menu interaction.
-// The worker starts booting on spawn, so just creating it is enough.
+// evaluated. App.svelte calls it on mount so boot overlaps first paint
+// instead of waiting for the Output menu. The worker boots on spawn, so
+// just creating it is enough.
 export function prewarm(): void {
   if (ENGINE_DISCONNECTED) return;
   ensureWorker();
