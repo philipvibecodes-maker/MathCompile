@@ -1,18 +1,20 @@
 // SymPy evaluation engine on Pyodide (WASM CPython), running off the main
 // thread so heavy simplifications can't freeze the editor. Spawned lazily
-// by calculator.svelte.ts on the first evaluation; one-time startup pulls
-// the pyodide runtime + sympy wheels from the pinned CDN.
+// by calculator.svelte.ts on the first evaluation; one-time startup loads
+// the pyodide runtime + sympy wheels vendored under public/pyodide/ (see
+// scripts/fetch-pyodide.mjs) — no runtime network.
 //
 // The LaTeX -> SymPy translation happens on the main thread by
 // compileCellForCalc (the shared codegen pipeline), so the worker only
 // exec/evals emitted Python — no latex parser (parse_latex/antlr) needed.
 //
 // Built as a classic (iife) worker — importScripts pulls the pyodide
-// loader; package assets stream from the same pinned CDN base.
+// loader; package assets stream from the same vendored indexURL.
 
 declare function importScripts(...urls: string[]): void;
 declare function loadPyodide(opts: {
   indexURL: string;
+  _loadSnapshot?: ArrayBuffer;
 }): Promise<PyodideLike>;
 
 interface PyodideLike {
@@ -39,10 +41,18 @@ interface EvalCellMsg {
 
 interface EvalRequest {
   id: number;
+  type?: never;
   // The worksheet prefix ending at the requesting cell: shared prelude
   // plus every cell's program in order. The reply's `rows` are the last
   // cell's results.
   program: { prelude: string[]; cells: EvalCellMsg[] };
+}
+
+// First message the main thread sends — the vendored pyodide directory
+// URL to boot from (it knows BASE_URL; the worker's own location doesn't).
+interface InitRequest {
+  type: 'init';
+  pyodideBase: string;
 }
 
 type WorkerMessage =
@@ -53,10 +63,15 @@ type WorkerMessage =
 
 const scope = self as unknown as {
   postMessage(msg: WorkerMessage): void;
-  onmessage: ((e: MessageEvent<EvalRequest>) => void) | null;
+  onmessage:
+    | ((e: MessageEvent<InitRequest | EvalRequest>) => void)
+    | null;
 };
 
-const PYODIDE_BASE = 'https://cdn.jsdelivr.net/pyodide/v0.29.0/full/';
+// Set by the 'init' message (the main thread knows the app's BASE_URL —
+// the worker's own location doesn't tell it, dev vs prod differ). Empty
+// means boot hasn't been configured yet; ensureEngine only runs after.
+let pyodideBase = '';
 
 const SETUP_PY = `
 import json
@@ -166,8 +181,40 @@ def mc_run(prog_json):
 let boot: Promise<PyodideLike> | undefined;
 
 async function bootEngine(): Promise<PyodideLike> {
-  importScripts(`${PYODIDE_BASE}pyodide.js`);
-  const py = await loadPyodide({ indexURL: PYODIDE_BASE });
+  importScripts(`${pyodideBase}pyodide.js`);
+  // Fast path: engine.snapshot is a frozen post-`import sympy` memory
+  // image (scripts/make-pyodide-snapshot.cjs, desktop builds only) that
+  // restores the interpreter instead of paying the multi-second import.
+  // The EMFS directory tree lives outside the WASM heap, so package
+  // files never survive a snapshot — loadPackage must run afterwards
+  // either way to (re)populate them for lazy imports (sympy.physics…).
+  // Missing file, a stale BUILD_ID, or any restore error falls back to
+  // the normal boot, so dev/Pages builds cold-boot as before.
+  let py: PyodideLike | undefined;
+  const resp = await fetch(`${pyodideBase}engine.snapshot`).catch(
+    () => undefined,
+  );
+  if (resp?.ok) {
+    const buf = await resp.arrayBuffer();
+    // Check the snapshot magic before handing bytes to _loadSnapshot:
+    // servers that fall back to index.html answer 200 with HTML, and
+    // feeding that to _loadSnapshot hangs the boot instead of throwing.
+    const SNAPSHOT_MAGIC = 1886286592;
+    if (
+      buf.byteLength > 48 &&
+      new Uint32Array(buf, 0, 4)[0] === SNAPSHOT_MAGIC
+    ) {
+      try {
+        py = await loadPyodide({
+          indexURL: pyodideBase,
+          _loadSnapshot: buf,
+        });
+      } catch (err) {
+        console.warn('[calc] snapshot restore failed, cold-booting:', err);
+      }
+    }
+  }
+  if (!py) py = await loadPyodide({ indexURL: pyodideBase });
   await py.loadPackage(['sympy']);
   await py.runPythonAsync(SETUP_PY);
   return py;
@@ -193,11 +240,14 @@ function ensureEngine(): Promise<PyodideLike> {
   return boot;
 }
 
-// Boot on spawn so prewarm() — which only creates the worker — already
-// overlaps the wasm download with the user's menu interaction.
-void ensureEngine();
-
 scope.onmessage = (e) => {
+  if (e.data.type === 'init') {
+    pyodideBase = e.data.pyodideBase;
+    // Boot on spawn so prewarm() — which only creates the worker —
+    // already overlaps the wasm load with the user's menu interaction.
+    void ensureEngine();
+    return;
+  }
   const { id, program } = e.data;
   void ensureEngine()
     .then(async (py) => {

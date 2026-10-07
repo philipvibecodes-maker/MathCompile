@@ -2,8 +2,8 @@ import { expect, test } from '@playwright/test';
 import { clearFirstCell } from './helpers';
 
 // The calculator target evaluates each cell through SymPy on Pyodide
-// (loaded from the CDN on first use). First engine boot pulls the wasm
-// runtime + sympy wheels, so specs get a long timeout.
+// (vendored under public/pyodide/ — first engine boot loads the wasm
+// runtime + sympy wheels from disk, so specs get a long timeout).
 
 const cell = (page: import('@playwright/test').Page, i: number) =>
   page.locator('math-field').nth(i);
@@ -30,6 +30,36 @@ test('calculator evaluates a typed expression through SymPy', async ({
   await expect(
     page.locator('.calc-row .calc-math').first(),
   ).toContainText('4', { timeout: 90_000 });
+});
+
+test('calculator evaluates fully offline — no requests leave the origin', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  // The engine assets are vendored under /pyodide/, so booting the
+  // calculator must not fetch anything off-origin. Aborting all foreign
+  // requests makes a CDN regression fail loudly instead of silently
+  // downloading.
+  await page.route('**/*', (route) => {
+    const host = new URL(route.request().url()).hostname;
+    return ['localhost', '127.0.0.1'].includes(host)
+      ? route.continue()
+      : route.abort();
+  });
+
+  await setTarget(page, 'calculator');
+  const mf = cell(page, 0);
+  await mf.click();
+  await mf.pressSequentially('2+2', { delay: 40 });
+
+  // .pending clears only when the real SymPy eval lands — a nerdamer
+  // interim row alone would leave this waiting forever.
+  const rows = page.locator('.calc-rows').first();
+  await expect(rows).toBeAttached();
+  await expect(rows).not.toHaveClass(/pending/, { timeout: 90_000 });
+  await expect(page.locator('.calc-row .calc-math').first()).toContainText(
+    '4',
+  );
 });
 
 test('calculator renders an approximate value for irrationals', async ({

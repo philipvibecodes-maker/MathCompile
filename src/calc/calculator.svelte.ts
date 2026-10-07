@@ -43,6 +43,11 @@ export interface CalcResult {
 
 export type EngineStatus = 'idle' | 'loading' | 'ready' | 'error';
 
+// Load-time experiment: the SymPy engine (Pyodide worker + its vendored
+// payload) is fully disconnected — the worker is never spawned and
+// evaluations resolve empty instead of booting WASM.
+const ENGINE_DISCONNECTED = false;
+
 // Engine status is shared UI state (the CalcOutput components read it for
 // their loading labels), so it lives in a rune like the app store.
 export const calcEngine = $state<{
@@ -85,6 +90,14 @@ function ensureWorker(): Worker {
   calcEngine.error = '';
   const w = new Worker(new URL('./calculator.worker.ts', import.meta.url), {
     type: 'classic',
+  });
+  // Worker messages are FIFO — the init lands before any eval post.
+  // indexURL is built here because the worker's own location can't name
+  // the vendored dir: it lives under src/ in dev, assets/ in prod.
+  w.postMessage({
+    type: 'init',
+    pyodideBase: new URL('pyodide/', location.origin + import.meta.env.BASE_URL)
+      .href,
   });
   w.onmessage = (e: MessageEvent<WorkerReply>) => {
     const m = e.data;
@@ -209,6 +222,8 @@ export function evaluate(
   // A multi-statement cell keeps its good rows when a sibling statement
   // is broken — and issue rows interleave at their own input line, not
   // at the bottom of the output.
+  if (ENGINE_DISCONNECTED)
+    return Promise.resolve({ rows: issueRows, code, displayCode });
   const w = ensureWorker();
   const id = nextId++;
   return new Promise<CalcResult>((resolve, reject) => {
@@ -271,10 +286,11 @@ export function evaluate(
 }
 
 // Kicks the engine boot (~4s cold) before an expression is actually
-// evaluated — the Output dropdown's pointerdown/focus hooks call this
-// so the wasm+wheels download overlaps the user's menu interaction.
-// The worker starts booting on spawn, so just creating it is enough.
+// evaluated. App.svelte calls it on mount so boot overlaps first paint
+// instead of waiting for the Output menu. The worker boots on spawn, so
+// just creating it is enough.
 export function prewarm(): void {
+  if (ENGINE_DISCONNECTED) return;
   ensureWorker();
 }
 

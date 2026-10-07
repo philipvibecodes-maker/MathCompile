@@ -24,7 +24,9 @@ cell's results: **SymPy on Pyodide** (authoritative, ~4s cold boot) and
   LaTeX → IR → SymPy pipeline over the whole worksheet prefix (cells
   share one scope, so names bound above stay bound below);
   `compileCellForCalc()` is the standalone one-cell equivalent.
-- `public/pyodide-sw.js` — cache-first service worker for the CDN assets.
+- `public/pyodide/` — vendored Pyodide runtime + sympy/mpmath wheels
+  (gitignored; `scripts/fetch-pyodide.mjs` downloads them, wired into
+  predev/prebuild).
 
 ## Input → SymPy: the codegen path (not parse_latex)
 
@@ -37,8 +39,12 @@ SymPy emitter) now does the input→SymPy translation in TypeScript, so:
 
 - **No antlr wheel, no parse_latex** — the worker only exec/evals the
   emitted Python. Boot is `importScripts` pyodide → wasm+stdlib →
-  `loadPackage(['sympy'])` → `mc_run` def; runtime network is jsDelivr
-  only.
+  `loadPackage(['sympy'])` → `mc_run` def, all off the vendored
+  `public/pyodide/` directory — zero runtime network. When
+  `pyodide/engine.snapshot` is present (desktop builds only, see
+  `scripts/make-pyodide-snapshot.cjs`) the worker instead restores that
+  frozen post-`import sympy` memory image via `_loadSnapshot`; a missing
+  or stale snapshot falls back to the normal boot.
 - `compileCellsForCalc(cells)` returns `{ prelude, cells }`: `prelude` =
   `import sympy as sp` + the `mc_*` runtime block; each cell program is
   `{ defs, statements, issues, errorLine?, statementLines }` where
@@ -97,11 +103,19 @@ SymPy emitter) now does the input→SymPy translation in TypeScript, so:
 
 ## Pyodide/SymPy — what it costs
 
-Measured boot (M-series laptop, warm network): ~4.5s cold → ~3.5s with
-the SW cache, and a touch less now that the antlr wheel install is gone.
-The ~3s CPU floor (SymPy import) is irreducible — hence `prewarm()` on
-the Output dropdown's pointerdown/focus (the worker self-boots on spawn)
-and the nerdamer interim below.
+Measured boot (M-series laptop): ~3.5s now that everything is vendored
+and the antlr wheel install is gone. The ~3s CPU floor (SymPy import)
+has two escapes: `prewarm()` on the Output dropdown's pointerdown/focus
+(the worker self-boots on spawn) plus the nerdamer interim below, and —
+desktop only — `npm run pyodide:snapshot` freezes a post-import
+interpreter into `dist/pyodide/engine.snapshot` (~52MB) that the worker
+restores (`_loadSnapshot`), cutting boot to ~1s. Two snapshot gotchas
+the implementation earns: `loadPackage` pollutes a reserved hiwire slot
+that `makeMemorySnapshot()` refuses to serialize, so the generator
+unzips the wheels via `zipfile` instead; and the EMFS directory tree
+lives outside the WASM heap, so package files never survive a restore —
+the worker re-runs `loadPackage` post-restore to repopulate them for
+lazy imports (`sympy.physics`, …).
 
 ## nerdamer interim — coverage and gaps
 
