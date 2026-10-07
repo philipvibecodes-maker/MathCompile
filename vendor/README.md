@@ -134,13 +134,17 @@ Inline `// MATHCOMPILE:` edits, by file:
   extensible arrows/delimiters, `\bra`/`\ket`, the
   boundless-integral sibling supsub rules, and `.mq-limit` (the
   underscript stacks below "lim" via the `\sum`-style
-  float-right/width:100% baseline trick). Also: an argument block
-  containing the cursor keeps the empty-slot box
-  (`.mq-hasCursor:has(> .mq-cursor):not(td)`) — upstream strips
-  `.mq-empty` on focus, so a one-block style like `\mathrm{ }`
-  collapsed to zero width and looked like a no-op. `<td>` blocks are
-  environment grid cells (a `\displaylines` row), line-level rather
-  than slots, and stay unboxed.
+  float-right/width:100% baseline trick). Also: the block holding the
+  caret keeps the empty-slot box — always while it's empty
+  (`.mq-hasCursor:has(> .mq-cursor:only-child)`, upstream strips
+  `.mq-empty` on focus so `\mathrm{ }` collapsed to zero width and
+  looked like a no-op), and once it has content only when the command
+  renders no boundary around its input — font/text wrappers
+  (`.mq-font`/`.mq-bf`/`.mq-text-mode`) versus scripts, fraction slots
+  and roots, which show their structure. The root block, quiet
+  delimiters and the `\`-command input keep their own chrome, and
+  `<td>` blocks are environment grid cells (a `\displaylines` row),
+  line-level rather than slots, and stay unboxed.
 - `src/cursor.ts` — a `\displaylines` that fills the whole root owns
   the field edges: `insDirOf`/`insAtDirEnd` re-descend to the first
   line's start / last line's end instead of leaving the caret beside

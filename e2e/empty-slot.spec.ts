@@ -3,11 +3,13 @@ import type { Locator, Page } from '@playwright/test';
 import { clearFirstCell } from './helpers';
 
 // MathQuill's focus() strips .mq-empty from the block holding the caret,
-// so a one-block style like \mathrm rendered an invisible slot — and once
-// a letter landed, nothing marked which block the caret was in. The
-// vendored CSS boxes any math-mode block that directly contains the
-// cursor (.mq-hasCursor:has(> .mq-cursor)); src/index.css remaps the box
-// to a light gray under data-theme='dark'.
+// so a one-block style like \mathrm rendered an invisible slot. The
+// vendored CSS boxes the block that directly contains the cursor —
+// always while it's empty, and once it has content only when the
+// command renders no boundary around its input (font/text wrappers:
+// .mq-font/.mq-bf/.mq-text-mode). Scripts, fraction slots and roots
+// show their own structure, so a non-empty script block is not boxed.
+// src/index.css remaps the box to a light gray under data-theme='dark'.
 
 const cell = (page: Page, i = 0): Locator =>
   page.locator('math-field').nth(i);
@@ -66,6 +68,29 @@ test('empty \\mathbf block shows a slot too', async ({ page }) => {
   const bf = mf.locator('.mq-editable-field > .mq-root-block b.mq-font');
   await expect(bf).toHaveClass(/mq-hasCursor/);
   expect(await bg(bf)).toBe(SLOT_BG);
+});
+
+test('a non-empty \\text block keeps the slot box', async ({ page }) => {
+  const mf = cell(page);
+  await mf.pressSequentially('\\text{');
+  const tm = mf.locator('.mq-editable-field > .mq-root-block .mq-text-mode');
+  await expect(tm).toHaveClass(/mq-hasCursor/);
+  await page.keyboard.type('hi');
+  await expect(tm).toContainText('hi');
+  expect(await bg(tm)).toBe(SLOT_BG);
+});
+
+test('a non-empty script block is not boxed', async ({ page }) => {
+  const mf = cell(page);
+  await page.keyboard.type('x_');
+  const sub = mf.locator('.mq-editable-field > .mq-root-block .mq-sub');
+  await expect(sub).toHaveClass(/mq-hasCursor/);
+  // Empty while it has no content — the slot is invisible otherwise.
+  expect(await bg(sub)).toBe(SLOT_BG);
+  await page.keyboard.type('2');
+  await expect(sub).toHaveText(/2/);
+  // The script itself marks the extent — no extra box once it has content.
+  expect(await bg(sub)).toBe(TRANSPARENT);
 });
 
 test('a \\displaylines row holding the caret is not boxed', async ({
