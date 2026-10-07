@@ -26,10 +26,13 @@ through a MathJSON IR to LaTeX or SymPy-flavored Python (`src/compile/`).
   its prod build and run `PERF_BASE_URL=<url> PERF_LABEL=<name> npm run
   test:perf`; `node perf/compare.mjs <labelA> <labelB>` diffs runs in
   `perf-results/`.
-- `npm run desktop` — build + launch the pywebview desktop shell
-  (`desktop/`, needs `pip install -r desktop/requirements.txt`; serves
-  `dist/` over a fixed localhost origin so the pyodide SW cache +
-  localStorage persist; `desktop/test_main.py` is pytest).
+- `npm run desktop` — build + generate `dist/pyodide/engine.snapshot`
+  (frozen post-`import sympy` interpreter the worker restores in ~0.1s
+  instead of a ~4s cold boot; `scripts/make-pyodide-snapshot.cjs`) +
+  launch the pywebview desktop shell (`desktop/`, needs
+  `pip install -r desktop/requirements.txt`; serves `dist/` over a
+  fixed localhost origin so localStorage persists;
+  `desktop/test_main.py` is pytest).
 
 ## Architecture
 

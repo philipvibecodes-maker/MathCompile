@@ -14,6 +14,7 @@
 declare function importScripts(...urls: string[]): void;
 declare function loadPyodide(opts: {
   indexURL: string;
+  _loadSnapshot?: ArrayBuffer;
 }): Promise<PyodideLike>;
 
 interface PyodideLike {
@@ -181,8 +182,28 @@ let boot: Promise<PyodideLike> | undefined;
 
 async function bootEngine(): Promise<PyodideLike> {
   importScripts(`${pyodideBase}pyodide.js`);
-  const py = await loadPyodide({ indexURL: pyodideBase });
-  await py.loadPackage(['sympy']);
+  // Fast path: engine.snapshot is a frozen post-`import sympy` memory
+  // image (scripts/make-pyodide-snapshot.cjs, desktop builds only).
+  // Missing file, a stale BUILD_ID, or any restore error all fall back
+  // to the normal boot, so dev/Pages builds cold-boot as before.
+  let py: PyodideLike | undefined;
+  const resp = await fetch(`${pyodideBase}engine.snapshot`).catch(
+    () => undefined,
+  );
+  if (resp?.ok) {
+    try {
+      py = await loadPyodide({
+        indexURL: pyodideBase,
+        _loadSnapshot: await resp.arrayBuffer(),
+      });
+    } catch (err) {
+      console.warn('[calc] snapshot restore failed, cold-booting:', err);
+    }
+  }
+  if (!py) {
+    py = await loadPyodide({ indexURL: pyodideBase });
+    await py.loadPackage(['sympy']);
+  }
   await py.runPythonAsync(SETUP_PY);
   return py;
 }

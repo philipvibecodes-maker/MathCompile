@@ -14,9 +14,10 @@
     "test:perf": "playwright test -c playwright.perf.config.ts",
     "docs:pdf": "node scripts/build-reference-pdf.mjs",
     "pyodide:fetch": "node scripts/fetch-pyodide.mjs",
+    "pyodide:snapshot": "node -e \"require('./scripts/make-pyodide-snapshot.cjs')\"",
     "predev": "npm run pyodide:fetch",
     "prebuild": "npm run pyodide:fetch",
-    "desktop": "npm run build && python desktop/main.py"
+    "desktop": "npm run build && npm run pyodide:snapshot && python desktop/main.py"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

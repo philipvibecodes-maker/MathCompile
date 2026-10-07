@@ -40,7 +40,11 @@ SymPy emitter) now does the input→SymPy translation in TypeScript, so:
 - **No antlr wheel, no parse_latex** — the worker only exec/evals the
   emitted Python. Boot is `importScripts` pyodide → wasm+stdlib →
   `loadPackage(['sympy'])` → `mc_run` def, all off the vendored
-  `public/pyodide/` directory — zero runtime network.
+  `public/pyodide/` directory — zero runtime network. When
+  `pyodide/engine.snapshot` is present (desktop builds only, see
+  `scripts/make-pyodide-snapshot.cjs`) the worker instead restores that
+  frozen post-`import sympy` memory image via `_loadSnapshot`; a missing
+  or stale snapshot falls back to the normal boot.
 - `compileCellsForCalc(cells)` returns `{ prelude, cells }`: `prelude` =
   `import sympy as sp` + the `mc_*` runtime block; each cell program is
   `{ defs, statements, issues, errorLine?, statementLines }` where
@@ -100,9 +104,16 @@ SymPy emitter) now does the input→SymPy translation in TypeScript, so:
 ## Pyodide/SymPy — what it costs
 
 Measured boot (M-series laptop): ~3.5s now that everything is vendored
-and the antlr wheel install is gone. The ~3s CPU floor (SymPy import) is
-irreducible — hence `prewarm()` on the Output dropdown's pointerdown/focus
-(the worker self-boots on spawn) and the nerdamer interim below.
+and the antlr wheel install is gone. The ~3s CPU floor (SymPy import)
+has two escapes: `prewarm()` on the Output dropdown's pointerdown/focus
+(the worker self-boots on spawn) plus the nerdamer interim below, and —
+desktop only — `npm run pyodide:snapshot` freezes a post-import
+interpreter into `dist/pyodide/engine.snapshot` (~52MB) that the worker
+restores in ~0.1s (`_loadSnapshot`). The snapshot is generated, not
+vendored: `loadPackage` mounts wheel contents in a JS-side FS outside
+the WASM heap, so the generator unzips the wheels into the in-heap FS
+via `zipfile` first — that's what makes lazy imports
+(`sympy.tensor.tensor`, …) survive a restore.
 
 ## nerdamer interim — coverage and gaps
 
