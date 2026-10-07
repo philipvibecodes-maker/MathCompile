@@ -1534,7 +1534,17 @@ body {
   border-color: currentColor;
 }
 
-:root[data-theme='dark'] .mq-math-mode .mq-empty {
+/* Slot box while the caret is inside a block — always for an empty
+   block, and for a non-empty one only when the command hides its input
+   boundary (font/text wrappers: .mq-font/.mq-bf/.mq-text-mode).
+   Mirrors the MATHCOMPILE rule in mathquill's math.less. */
+:root[data-theme='dark'] .mq-math-mode .mq-empty,
+:root[data-theme='dark']
+  .mq-math-mode
+  .mq-hasCursor:has(> .mq-cursor:only-child):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input),
+:root[data-theme='dark']
+  .mq-math-mode
+  .mq-hasCursor:has(> .mq-cursor):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):is(.mq-font, .mq-bf, .mq-text-mode) {
   background: rgba(255, 255, 255, 0.22);
 }
 

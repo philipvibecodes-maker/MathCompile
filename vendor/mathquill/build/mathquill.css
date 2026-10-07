@@ -200,6 +200,10 @@
 .mq-math-mode .mq-empty.mq-quiet-delimiter {
   background: transparent;
 }
+.mq-math-mode .mq-hasCursor:has(> .mq-cursor:only-child):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input),
+.mq-math-mode .mq-hasCursor:has(> .mq-cursor):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):is(.mq-font, .mq-bf, .mq-text-mode) {
+  background: rgba(0, 0, 0, 0.2);
+}
 .mq-math-mode.mq-empty {
   background: transparent;
 }

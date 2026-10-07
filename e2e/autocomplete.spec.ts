@@ -32,6 +32,23 @@ test('typing a \\ prefix shows matching commands', async ({ page }) => {
   expect(await menuNames(page)).toContain('sqrt');
 });
 
+test('\\mathrm completes from the menu and appears in the picker', async ({
+  page,
+}) => {
+  await cell(page, 0).focus();
+  await page.keyboard.type('\\mathr');
+  await expect(menu(page)).toBeVisible();
+  expect(await menuNames(page)).toContain('mathrm');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => cellValue(cell(page, 0))).toContain('\\mathrm{ }');
+  // The symbol picker draws from the same list.
+  await page.keyboard.press('Control+Space');
+  await expect(picker(page)).toBeVisible();
+  await page.keyboard.type('roman');
+  expect(await cardNames(page)).toContain('mathrm');
+  await page.keyboard.press('Escape');
+});
+
 test('arrows + Enter accept a command completion', async ({ page }) => {
   await cell(page, 0).focus();
   await page.keyboard.type('\\sq');
