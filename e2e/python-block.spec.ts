@@ -150,4 +150,17 @@ test('the cell value round-trips through reload', async ({ page }) => {
   await page.reload();
   await page.waitForSelector('math-field');
   expect(await cellValue(cell(page, 0))).toBe(latex);
+  // Hydration mounts the block without an edit — the highlight ranges
+  // must re-register anyway (setValue reflows after latex()).
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const reg = (CSS as unknown as { highlights?: Map<string, unknown> })
+          .highlights;
+        if (!reg) return -1;
+        const num = reg.get('mq-py-num') as { size?: number } | undefined;
+        return num?.size ?? 0;
+      }),
+    )
+    .toBeGreaterThan(0);
 });
