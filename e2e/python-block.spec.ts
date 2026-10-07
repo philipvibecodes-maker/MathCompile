@@ -119,6 +119,17 @@ test('Up on the first source line hops to the cell above', async ({ page }) => {
   await waitFocusedIndex(page, 0); // stays: cell 0 is the top cell
 });
 
+test('an empty block shows no placeholder box', async ({ page }) => {
+  await openPythonBlock(page);
+  // mq-empty only applies once the caret has left the block
+  await page.keyboard.press('Shift+Enter'); // new cell below, focus moves
+  await waitFocusedIndex(page, 1);
+  const block = pythonBlock(page);
+  await expect(block).toHaveClass(/mq-empty/);
+  const bg = await block.evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(bg).toBe('rgba(0, 0, 0, 0)');
+});
+
 test('the cell value round-trips through reload', async ({ page }) => {
   await openPythonBlock(page);
   await cell(page, 0).pressSequentially('x = {"a": 1}', { delay: 20 });

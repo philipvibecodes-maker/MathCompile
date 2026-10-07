@@ -244,6 +244,9 @@
   content: '}';
   color: #8a8a8a;
 }
+.mq-math-mode .mq-python.mq-empty {
+  background: transparent;
+}
 .mq-math-mode .mq-python.mq-empty:before {
   visibility: visible;
   content: '\\python{';
