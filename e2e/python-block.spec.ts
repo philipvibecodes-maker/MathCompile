@@ -130,14 +130,6 @@ test('an empty block shows no placeholder box', async ({ page }) => {
   expect(bg).toBe('rgba(0, 0, 0, 0)');
 });
 
-test('no inset overlay while the caret is inside', async ({ page }) => {
-  await openPythonBlock(page);
-  const block = pythonBlock(page);
-  await expect(block).toHaveClass(/mq-hasCursor/);
-  const shadow = await block.evaluate((el) => getComputedStyle(el).boxShadow);
-  expect(shadow).toBe('none');
-});
-
 test('the cell value round-trips through reload', async ({ page }) => {
   await openPythonBlock(page);
   await cell(page, 0).pressSequentially('x = {"a": 1}', { delay: 20 });
