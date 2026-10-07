@@ -293,3 +293,10 @@ calls, and how an area fits together.
 
 `.codegraph/` is git-ignored and machine-local. `codegraph init` builds the
 index for this checkout (about 5 s); `codegraph sync` refreshes it after edits.
+
+For Devin Local/CLI: this repo commits `.devin/mcp_config.json` (the
+`codegraph` server — `codegraph serve --mcp`, project root taken from the
+client's `rootUri`) and allows `mcp__codegraph__*` in `.devin/config.json`,
+so no per-call approval prompt. Personal overrides go in
+`.devin/mcp_config.local.json` / `.devin/config.local.json` (gitignored by
+Devin's convention, though `config.local.json` is currently tracked here).
