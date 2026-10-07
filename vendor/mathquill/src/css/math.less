@@ -125,8 +125,9 @@
   // style like \mathrm{ } collapsed to a zero-width span and it looked
   // like nothing happened, and after the first keystroke there was no
   // sign which block the caret was in. Root/text/command-input blocks
-  // have their own cursor chrome.
-  .mq-hasCursor:has(> .mq-cursor) {
+  // have their own cursor chrome, and <td> blocks are environment grid
+  // cells (a \displaylines row would paint the whole line).
+  .mq-hasCursor:has(> .mq-cursor):not(td) {
     background: rgba(0, 0, 0, 0.2);
     &.mq-root-block,
     &.mq-quiet-delimiter,

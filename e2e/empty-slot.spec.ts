@@ -68,6 +68,19 @@ test('empty \\mathbf block shows a slot too', async ({ page }) => {
   expect(await bg(bf)).toBe(SLOT_BG);
 });
 
+test('a \\displaylines row holding the caret is not boxed', async ({
+  page,
+}) => {
+  const mf = cell(page);
+  await page.keyboard.type('x');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('y');
+  // The caret's row is a <td> grid cell — line-level, not a slot.
+  const row = mf.locator('.mq-displaylines td.mq-hasCursor');
+  await expect(row).toHaveCount(1);
+  expect(await bg(row)).toBe(TRANSPARENT);
+});
+
 test('a completely empty field keeps the root block transparent', async ({
   page,
 }) => {
