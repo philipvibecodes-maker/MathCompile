@@ -160,8 +160,72 @@ var MATHBB_GLYPHS: { [ch: string]: number } = {
   Y: 0x1d550
 };
 
+// MATHCOMPILE: Pending `\name{arg}` input for the typed path, the
+// arg-entry twin of EnvSpecInput — used by \mathbb and \mathcal so a
+// typed font command shows its literal `\name{arg}` text and resolves
+// on `}`/Enter/Tab by re-parsing `\name{arg}` via writeLatex, landing
+// on the same node a paste produces. For \mathbb this also fixes a
+// deletion: its parser maps `{X}` to a glyph leaf, so createLeftOf
+// was a no-op and `\mathbb` + any non-letter vanished wholesale.
+class FontArgInput extends MathCommand {
+  name: string;
+
+  constructor(name: string) {
+    super(
+      '\\' + name,
+      new DOMView(1, (blocks) =>
+        h('span', { class: 'mq-non-leaf' }, [
+          h.text('\\' + name + '{'),
+          h.block('span', {}, blocks[0]),
+          h.text('}')
+        ])
+      )
+    );
+    this.name = name;
+  }
+
+  createBlocks() {
+    super.createBlocks();
+    const input = this;
+    const argBlock = this.getEnd(L);
+
+    const resolve = function (cursor: Cursor) {
+      const arg = argBlock.latex();
+      input.remove();
+      if (input[R]) cursor.insLeftOf(input[R] as MQNode);
+      else cursor.insAtRightEnd(input.parent);
+      cursor.parent.writeLatex(cursor.show(), '\\' + input.name + '{' + arg + '}');
+    };
+
+    const origWrite = argBlock.write;
+    argBlock.write = function (cursor: Cursor, ch: string) {
+      if (ch === '}') {
+        resolve(cursor);
+        return;
+      }
+      origWrite.call(this, cursor, ch);
+    };
+
+    const origKeystroke = argBlock.keystroke;
+    argBlock.keystroke = function (key, e, ctrlr) {
+      if (key === 'Enter' || key === 'Tab') {
+        e?.preventDefault();
+        resolve(ctrlr.cursor);
+        return;
+      }
+      return origKeystroke.call(this, key, e, ctrlr);
+    };
+  }
+}
+
 LatexCmds.mathbb = class extends MathCommand {
-  createLeftOf(_cursor: Cursor) {}
+  // MATHCOMPILE: the typed path calls createLeftOf with no arg text to
+  // parse — open the pending input instead of discarding the command.
+  createLeftOf(cursor: Cursor) {
+    var input = new FontArgInput('mathbb');
+    if (this.replacedFragment) input.replaces(this.replacedFragment);
+    input.createLeftOf(cursor);
+  }
   numBlocks() {
     return 1 as const;
   }

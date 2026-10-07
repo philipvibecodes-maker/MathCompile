@@ -250,7 +250,7 @@ LatexCmds.textcolor = class extends MathCommand {
 
   // Parser-only command: typing '\textcolor' in the command input
   // can't supply a color argument, so typed insertion is a no-op
-  // (same convention as \operatorname / \mathbb).
+  // (same convention as \operatorname).
   createLeftOf() {}
   numBlocks() {
     return 1 as const;

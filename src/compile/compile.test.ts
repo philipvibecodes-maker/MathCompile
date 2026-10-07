@@ -433,6 +433,47 @@ const FIXTURES: {
     expectedPython: ["x_hat, v_vec = sp.symbols('x_hat v_vec')", 'x_hat + v_vec'],
   },
   {
+    // Font-styled letters mint latex-style prefixes: CE tags the letter
+    // `a_upright`; the python variable reads `mathrm_a` while the
+    // Symbol's own name keeps the CE form.
+    latex: '\\mathrm{a}',
+    expectedPython: ['mathrm_a = sp.Symbol("a_upright")'],
+  },
+  {
+    latex: '\\mathrm{a} + \\mathbf{x} + \\mathcal{A}',
+    expectedPython: [
+      'mathrm_a = sp.Symbol("a_upright")',
+      'mathbf_x = sp.Symbol("x_bold")',
+      'mathcal_A = sp.Symbol("A_calligraphic")',
+      'mathrm_a + mathbf_x + mathcal_A',
+    ],
+  },
+  {
+    latex: '\\mathit{u} + \\mathscr{s} + \\mathsf{v} + \\mathtt{w} + \\mathfrak{k}',
+    expectedPython: [
+      'mathit_u = sp.Symbol("u_italic")',
+      'mathscr_s = sp.Symbol("s_script")',
+      'mathsf_v = sp.Symbol("v_sansserif")',
+      'mathtt_w = sp.Symbol("w_monospace")',
+      'mathfrak_k = sp.Symbol("k_fraktur")',
+      'mathit_u + mathscr_s + mathsf_v + mathtt_w + mathfrak_k',
+    ],
+  },
+  {
+    // The tag is per name piece: `a_{\mathrm{i}}` -> `a_i_upright`.
+    latex: 'a_{\\mathrm{i}}',
+    expectedPython: ['a_mathrm_i = sp.Symbol("a_i_upright")'],
+  },
+  {
+    latex: '\\mathrm{a}_{\\mathrm{i}}',
+    expectedPython: ['mathrm_a_mathrm_i = sp.Symbol("a_upright_i_upright")'],
+  },
+  {
+    // Font names bind like any symbol — \mathrm{a} = 5 assigns mathrm_a.
+    latex: '\\mathrm{a} = 5',
+    expectedPython: ['mathrm_a = 5'],
+  },
+  {
     latex: '\\|v\\|',
     expectedPython: ['v = sp.Symbol("v")', 'sp.Abs(v)'],
   },

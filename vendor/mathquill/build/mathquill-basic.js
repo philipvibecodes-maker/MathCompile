@@ -7668,7 +7668,7 @@ var __assign = (this && this.__assign) || function () {
         }
         // Parser-only command: typing '\textcolor' in the command input
         // can't supply a color argument, so typed insertion is a no-op
-        // (same convention as \operatorname / \mathbb).
+        // (same convention as \operatorname).
         class_7.prototype.createLeftOf = function () { };
         class_7.prototype.numBlocks = function () {
             return 1;

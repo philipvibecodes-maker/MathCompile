@@ -122,7 +122,20 @@ Inline `// MATHCOMPILE:` edits, by file:
   `Binomial`'s strict two-block parser is invoked directly in the
   `\choose` path.
 - `src/commands/math/advancedSymbols.ts` — `\mathbb` gets a glyph table
-  for the double-struck capitals plus `\Bbb`/`mathds` spellings;
+  for the double-struck capitals plus `\Bbb`/`mathds` spellings; typed
+  `\mathbb` opens a pending `\mathbb{arg}` input (`FontArgInput`, the
+  arg-entry twin of `EnvSpecInput`) that resolves via `writeLatex` on
+  `}`/Enter/Tab — before this its no-op `createLeftOf` deleted the typed
+  command on the next key; `\mathcal` opens the same pending input so
+  the typed command shows its literal `\mathcal{arg}` text like
+  `\mathbb` (its builder returns a `Style` subclass whose `createLeftOf`
+  opens the input; parse still lands the plain `Style`);
+- `src/css/font.less` + `src/fonts/KaTeX_Caligraphic-Regular.woff2` —
+  bundles the OFL-licensed KaTeX caligraphic face (maps A-Z to script
+  shapes) and `@font-face`s it; `math.less`'s `.mq-caligraphic` uses it
+  first in the stack and suppresses synthetic italic, since the old
+  Lucida Calligraphy/Apple Chancery stack isn't installed anywhere and
+  `\mathcal{P}` rendered as a plain italic P;
   invisible style switches `\displaystyle` `\textstyle` `\scriptstyle`
   `\scriptscriptstyle` `\limits` `\nolimits` serialize their command
   verbatim; `\not<rel>` produces the negated relation glyph (`\not\in`
