@@ -244,6 +244,12 @@
   content: '}';
   color: #8a8a8a;
 }
+.mq-math-mode .mq-python.mq-hasCursor {
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
 .mq-math-mode .mq-python.mq-empty {
   background: transparent;
 }
