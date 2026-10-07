@@ -171,6 +171,7 @@ export const COMPLETIONS: CompletionItem[] = [
   { name: 'mathbb', hint: 'blackboard bold', preview: '\\mathbb{R}' },
   { name: 'mathcal', hint: 'calligraphic', preview: '\\mathcal{F}' },
   { name: 'mathbf', hint: 'bold', preview: '\\mathbf{v}' },
+  { name: 'mathrm', hint: 'upright (roman) text', preview: '\\mathrm{kg}' },
   { name: 'text', hint: 'text mode', preview: '\\text{and}' },
   { name: 'hat', hint: 'accent', preview: '\\hat{x}' },
   { name: 'bar', hint: 'accent', preview: '\\bar{x}' },
