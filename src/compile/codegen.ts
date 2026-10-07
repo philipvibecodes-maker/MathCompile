@@ -2842,6 +2842,44 @@ function emitExprStatement(node: MathJson, emitter: Emitter): StatementOut {
   return { lines: [line] };
 }
 
+// A `\python` body's last line can be an expression — eval it and show
+// the value (REPL lane), like the trailing line at a python prompt.
+// Returns undefined for statement-ending bodies (they echo the source):
+// statement keywords, assignments, `;` chains, suite members (indented
+// or `\`-continued), and unbalanced brackets — the conservative check
+// keeps a partial expression from replacing the source with a
+// SyntaxError row.
+const PY_STMT_LINE_RE =
+  /^[ \t]*(def|class|import|from|if|elif|else|for|while|try|except|finally|with|return|raise|assert|del|global|nonlocal|pass|break|continue|yield)\b/;
+// `=` that isn't part of ==, !=, <=, >=, :=, +=, **=, … — assignment
+// lines exec but aren't eval'able expressions.
+const PY_ASSIGN_RE = /(?<![=<>!:+\-*/%&|^~@])=(?![=>])/;
+
+function trailingPythonExpr(code: string): string | undefined {
+  const lines = code.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (line === '' || line.startsWith('#')) continue;
+    if (
+      lines[i - 1]?.trimEnd().endsWith('\\') || // glued to the line above
+      /^\s/.test(lines[i]) || // suite member, not a top-level line
+      PY_STMT_LINE_RE.test(line) ||
+      PY_ASSIGN_RE.test(line) ||
+      line.includes(';') ||
+      /[+\-*/%&|^~@<>=,\\]$/.test(line)
+    )
+      return undefined;
+    let depth = 0;
+    for (const c of line) {
+      if (c === '(' || c === '[' || c === '{') depth++;
+      else if (c === ')' || c === ']' || c === '}') depth--;
+      if (depth < 0) return undefined;
+    }
+    return depth === 0 ? line : undefined;
+  }
+  return undefined;
+}
+
 // `a = 5` shows `a = 5` — a fresh Symbol for the target renders the raw
 // name (`x_{1}` shows subscripted, not `x_1`). Matrix/set RHSs need
 // evaluate=False: Eq(Symbol, Matrix|FiniteSet) collapses to literal False.
@@ -2996,12 +3034,14 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     };
   }
   // `\python{ ... }` — verbatim user source. It execs in the python
-  // target's program or the calculator's shared namespace; the row's
-  // display is the source itself.
+  // target's program or the calculator's shared namespace. When the
+  // last line is an expression, the row displays its value (REPL
+  // lane — `\python{f(9)}` shows 10); statement-ending bodies echo the
+  // source that ran.
   if (h === 'PythonSource') {
     const code = isStr(node[1]) ? node[1] : '';
     if (code.trim() === '') return { lines: [] };
-    return { lines: [code], display: JSON.stringify(code) };
+    return { lines: [code], display: trailingPythonExpr(code) ?? JSON.stringify(code) };
   }
   if (h === 'Block' || h === 'WhereBlock')
     return {

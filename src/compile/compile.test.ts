@@ -2021,15 +2021,54 @@ describe('\\python{...} source blocks', () => {
 
   it('compileCellForCalc execs the source and echoes it as the row', () => {
     const out = compileCellForCalc({
-      json: parseCellLatex('\\python{x = 1\nprint(x)}'),
+      json: parseCellLatex('\\python{x = 1\ny = x + 1}'),
     });
     expect(out.statements).toEqual([
       {
-        code: 'x = 1\nprint(x)',
-        // evals to the source string — the row shows the code that ran
-        display: `clean_and_simplify(${JSON.stringify('x = 1\nprint(x)')})`,
+        code: 'x = 1\ny = x + 1',
+        // a statement-ending body — the row shows the code that ran
+        display: `clean_and_simplify(${JSON.stringify('x = 1\ny = x + 1')})`,
       },
     ]);
+  });
+
+  it('a trailing expression displays its value, not the source', () => {
+    // REPL lane — the body's last expression evals in the exec'd
+    // namespace: a def above makes f(9) answer 10.
+    const out = compileCellForCalc({
+      json: parseCellLatex(
+        '\\python{def f(x):\n    return x + 1\nf(9)}',
+      ),
+    });
+    expect(out.statements).toEqual([
+      {
+        code: 'def f(x):\n    return x + 1\nf(9)',
+        display: 'clean_and_simplify(f(9))',
+      },
+    ]);
+  });
+
+  it('an expression after statements displays its value', () => {
+    const out = compileCellForCalc({
+      json: parseCellLatex('\\python{x = 3\nx * 2}'),
+    });
+    expect(out.statements[0].display).toBe('clean_and_simplify(x * 2)');
+  });
+
+  it('statement-ending bodies still echo the source', () => {
+    // keyword-ending, assignment-ending, and suite-member endings
+    for (const body of [
+      'x = 1\ny = 2',
+      'def f(x):\n    return x + 1',
+      'if True:\n    y = 1',
+    ]) {
+      const out = compileCellForCalc({
+        json: parseCellLatex(`\\python{${body}}`),
+      });
+      expect(out.statements[0].display).toBe(
+        `clean_and_simplify(${JSON.stringify(body)})`,
+      );
+    }
   });
 
   it('an empty \\python{} parses to no statement at all', () => {
