@@ -28,7 +28,8 @@ def served_dist(tmp_path: Path):
     (dist / 'assets').mkdir(parents=True)
     (dist / 'index.html').write_text('<html>mc</html>')
     (dist / 'assets' / 'app.js').write_text('x=1')
-    (dist / 'pyodide-sw.js').write_text('// sw')
+    (dist / 'pyodide').mkdir()
+    (dist / 'pyodide' / 'pyodide.js').write_text('// engine')
     address, _, server = http.start_server(urls=[str(dist / 'index.html')])
     yield address
     server.running = False
@@ -42,8 +43,8 @@ def test_absolute_vite_asset_paths_resolve(served_dist: str):
     assert fetch(served_dist, 'assets/app.js') == 200
 
 
-def test_service_worker_file_served(served_dist: str):
-    assert fetch(served_dist, 'pyodide-sw.js') == 200
+def test_vendored_engine_files_served(served_dist: str):
+    assert fetch(served_dist, 'pyodide/pyodide.js') == 200
 
 
 def test_main_exits_without_build(monkeypatch, tmp_path: Path):

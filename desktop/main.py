@@ -1,11 +1,11 @@
 """MathCompile desktop shell.
 
 Serves the production bundle (npm run build -> dist/) over a local HTTP
-server — a real http://127.0.0.1 origin where the pyodide service worker
-can register (file:// can't). private_mode=False keeps the webview
-profile on disk across launches and makes pywebview pin a fixed port
-(42001), so the origin stays stable and both the SW's cached SymPy
-engine and the worksheet localStorage survive restarts.
+server — ES-module bundles and web storage don't work off file://, so
+the app needs a real http://127.0.0.1 origin. private_mode=False keeps
+the webview profile on disk across launches and makes pywebview pin a
+fixed port (42001): a stable origin means the worksheet localStorage and
+site caches survive restarts.
 """
 
 import sys
