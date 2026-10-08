@@ -275,6 +275,9 @@ class Scope {
   usesScipy = false;
   usesNumpy = false;
   usesMeanCi = false;
+  /** The stats builtins (stats.ts) are enabled — off means a
+   * `\mathrm{normcdf}(x)` call emits as an ordinary function. */
+  stats: boolean;
 
   constructor(
     qualified: boolean,
@@ -284,6 +287,7 @@ class Scope {
     issues: Issue[],
     cellIssues: Issue[][],
     cell: number,
+    stats = true,
   ) {
     this.qualified = qualified;
     this.decls = { declared, declaredFns, defined: new Set() };
@@ -309,6 +313,7 @@ class Scope {
     this.issues = issues;
     this.cellIssues = cellIssues;
     this.cell = cell;
+    this.stats = stats;
   }
 
   flag(severity: Issue['severity'], message: string): void {
@@ -2531,8 +2536,9 @@ class Emitter {
         }
         // `\mathrm{normcdf}(x,\mu,\sigma)`, `\mathrm{ttest}(d,\mu)` —
         // scipy.stats/numpy builtins (stats.ts); the worker lazy-loads
-        // scipy on first use. A worksheet-declared name shadows them.
-        if (!this.scope.decls.declared.has(name)) {
+        // scipy on first use. A worksheet-declared name shadows them,
+        // and the stats pref turns the whole tier off.
+        if (this.scope.stats && !this.scope.decls.declared.has(name)) {
           const stats = emitStatsCall(name, args.slice(1), {
             emit: (a) => this.emit(a as MathJson),
             stub: (n) =>
@@ -3121,6 +3127,8 @@ export interface CompileOptions {
   /** Emit `from sympy import *` and unqualified sympy names (default).
    * `false` emits `import sympy as sp` with `sp.` qualifiers. */
   importAll?: boolean;
+  /** Recognize the scipy.stats/numpy builtins (stats.ts). Default on. */
+  stats?: boolean;
 }
 
 // Compile the whole worksheet. `python` produces a runnable SymPy program;
@@ -3131,10 +3139,11 @@ export function compileWorksheet(
   opts: CompileOptions = {},
 ): CompileResult {
   const qualified = opts.importAll === false;
+  const stats = opts.stats !== false;
   const importLine = qualified
     ? 'import sympy as sp'
     : 'from sympy import *';
-  const perCell = cells.map((c) => normalizeIR(c.json));
+  const perCell = cells.map((c) => normalizeIR(c.json, undefined, stats));
   const issues: Issue[] = perCell.flatMap((r, i) =>
     r.issues.map((iss) => ({
       ...iss,
@@ -3214,6 +3223,7 @@ export function compileWorksheet(
       issues,
       genIssues,
       i + 1,
+      stats,
     );
     cellScopes.push(scope);
     return cellStatements(r.ir, scope);
@@ -3479,7 +3489,9 @@ function compileCellInScope(
 // in later cells stay invisible to the cells above them.
 export function compileCellsForCalc(
   cells: CellInput[],
+  opts: CompileOptions = {},
 ): CalcWorksheetProgram {
+  const stats = opts.stats !== false;
   const scope = new Scope(
     true,
     new Set<string>(),
@@ -3488,12 +3500,17 @@ export function compileCellsForCalc(
     [],
     [],
     0,
+    stats,
   );
   const compiled = cells.map((cell) => {
     // The shared declaredFns set both seeds this cell's normalize
     // (a `g(4)` below a `\def g` is a call, not juxtaposition) and
     // collects the names this cell declares for the cells below it.
-    const { ir, issues } = normalizeIR(cell.json, scope.decls.declaredFns);
+    const { ir, issues } = normalizeIR(
+      cell.json,
+      scope.decls.declaredFns,
+      stats,
+    );
     if (ir === undefined)
       return { defs: [], statements: [], issues, statementLines: [] };
     return compileCellInScope(ir, issues, scope);
@@ -3515,8 +3532,12 @@ export function compileCellsForCalc(
 // Compile a single cell for the calculator target — the standalone
 // equivalent of compileCellsForCalc([cell]), with the cell's decls
 // folded into the prelude (a self-contained program).
-export function compileCellForCalc(cell: CellInput): CalcProgram {
-  const { ir, issues } = normalizeIR(cell.json);
+export function compileCellForCalc(
+  cell: CellInput,
+  opts: CompileOptions = {},
+): CalcProgram {
+  const stats = opts.stats !== false;
+  const { ir, issues } = normalizeIR(cell.json, undefined, stats);
   if (ir === undefined)
     return { prelude: [], statements: [], issues, statementLines: [] };
   const scope = new Scope(
@@ -3527,6 +3548,7 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
     [],
     [],
     0,
+    stats,
   );
   const c = compileCellInScope(ir, issues, scope);
   return {

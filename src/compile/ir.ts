@@ -754,6 +754,9 @@ interface NormalizeCtx {
   ): MathJson;
   /** Push an issue into the current cell's issue list. */
   issue(severity: Issue['severity'], message: string): void;
+  /** The stats builtins (stats.ts) are enabled — `\mathrm{normcdf}(x)`
+   *  reads as a scipy call rather than `normcdf·x` / an unknown head. */
+  stats: boolean;
 }
 
 // Sentinel for "shape matched but the fold doesn't apply" — see above.
@@ -1131,7 +1134,7 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
           if (mid.length === 0) {
             // `\mathrm{normmean}()` — a stats builtin called with no
             // args; a bare `[fn]` collapses to 'Nothing' below.
-            if (callArgs.length === 0 && isStatsName(fn))
+            if (callArgs.length === 0 && ctx.stats && isStatsName(fn))
               return ['call', fn];
             return ctx.norm([fn, ...callArgs] as MathJson[], ctx.atStatement);
           }
@@ -1607,6 +1610,9 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
 export function normalizeIR(
   json: MathJson | undefined,
   declaredFns?: Set<string>,
+  // The stats builtins (stats.ts) can be turned off per-compile — off
+  // means `\mathrm{normcdf}` parses as an ordinary name.
+  stats = true,
 ): NormResult {
   const issues: Issue[] = [];
   const pushIssue = (severity: Issue['severity'], message: string) => {
@@ -1800,6 +1806,7 @@ export function normalizeIR(
       norm: (n, at = false, an = false, nm = false) =>
         normalize(n, at, an, nm),
       issue: pushIssue,
+      stats,
     };
     for (const rule of NORMALIZE_RULES) {
       if (!rule.when(h, node, ctx)) continue;
@@ -1813,7 +1820,11 @@ export function normalizeIR(
       // about a stub that never reaches the output. A worksheet-declared
       // name isn't unknown either — `f(3)` after `f(x) = …` calls the
       // def the cell already made.
-      if (!CALL_RENAMED.has(h) && !declaredFns.has(h) && !isStatsName(h))
+      if (
+        !CALL_RENAMED.has(h) &&
+        !declaredFns.has(h) &&
+        !(stats && isStatsName(h))
+      )
         pushIssue('note', `unknown head "${h}" — emitted as ${h}(...)`);
       return ['call', h, ...node.slice(1).map((n) => normalize(n, false))];
     }

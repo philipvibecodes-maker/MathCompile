@@ -143,10 +143,11 @@ function ensureWorker(): Worker {
 // rejects surface as error rows without a worker round-trip.
 export function evaluate(
   cells: { latex: string; json?: MathJson }[],
+  opts: { stats?: boolean } = {},
 ): Promise<CalcResult> {
   let prog: ReturnType<typeof compileCellsForCalc>;
   try {
-    prog = compileCellsForCalc(cells);
+    prog = compileCellsForCalc(cells, opts);
   } catch (e) {
     // The compiler reports issues instead of throwing — a hard throw
     // must still not leave the cell stuck on '…' forever.
@@ -292,6 +293,7 @@ let nerdamerP: Promise<typeof import('nerdamer/all')> | undefined;
 export async function interimEvaluate(
   latex: string,
   priorLatex: string[] = [],
+  stats = true,
 ): Promise<CalcRow[]> {
   try {
     const nerdamer = (await (nerdamerP ??= import('nerdamer/all'))).default;
@@ -299,7 +301,7 @@ export async function interimEvaluate(
     // /\\\\/ split would break every interim row for a cell holding a
     // matrix (its \\ row separators look like statement breaks).
     const stmts = latexToStatementStrings(latex);
-    const norm = normalizeIR(parseCellLatex(latex));
+    const norm = normalizeIR(parseCellLatex(latex), undefined, stats);
     // The real engine shares one namespace down the worksheet, so a
     // `C = …` above reserves the letter for constants of integration —
     // interim picks letters off the same declared-name set.

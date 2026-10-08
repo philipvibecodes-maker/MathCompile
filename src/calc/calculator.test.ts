@@ -1518,5 +1518,37 @@ describe('scipy.stats builtins', () => {
     );
     expect(stmt('\\mathrm{binomtest}(3)').error).toContain('k, n');
   });
+
+  it('parses and emits stats names as ordinary functions when off', () => {
+    // stats: false — `\mathrm{normcdf}(x)` is just another unapplied
+    // name: an unknown-head note, an sp.Function stub, no scipy import.
+    const off = compileCellForCalc(
+      { json: parseCellLatex('\\mathrm{normcdf}(1.96)') },
+      { stats: false },
+    );
+    expect(off.statements[0].code).toBe(F('normcdf(1.96)'));
+    expect(off.prelude).not.toContain('import scipy.stats as st');
+    expect(off.issues).toContainEqual(
+      expect.objectContaining({
+        severity: 'note',
+        message: expect.stringContaining('unknown head "normcdf"'),
+      }),
+    );
+    // The worksheet-wide calc path honors it too.
+    const cellsOff = compileCellsForCalc(
+      [{ json: parseCellLatex('\\mathrm{normcdf}(1.96)') }],
+      { stats: false },
+    );
+    expect(cellsOff.prelude).not.toContain('import scipy.stats as st');
+    expect(cellsOff.cells[0].statements[0].code).toBe(F('normcdf(1.96)'));
+    // And the python target.
+    const w = compileWorksheet(
+      [{ json: parseCellLatex('\\mathrm{normcdf}(1.96)') }],
+      'python',
+      { stats: false },
+    );
+    expect(w.program).not.toContain('import scipy.stats as st');
+    expect(w.program).toContain('normcdf(1.96)');
+  });
 });
 

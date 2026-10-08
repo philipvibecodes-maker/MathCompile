@@ -86,7 +86,9 @@ test('guide collapsed state survives reload', async ({ page }) => {
 });
 
 test('smart mode preference survives reload', async ({ page }) => {
-  const box = page.locator('.option-checkbox input');
+  const box = page
+    .locator('.option-checkbox', { hasText: 'Smart mode' })
+    .locator('input');
   await box.uncheck();
   await page.waitForFunction(() =>
     localStorage.getItem('mathcompile-prefs')?.includes('false'),
@@ -94,5 +96,9 @@ test('smart mode preference survives reload', async ({ page }) => {
 
   await page.reload();
   await page.waitForSelector('math-field');
-  await expect(page.locator('.option-checkbox input')).not.toBeChecked();
+  await expect(
+    page
+      .locator('.option-checkbox', { hasText: 'Smart mode' })
+      .locator('input'),
+  ).not.toBeChecked();
 });

@@ -65,6 +65,9 @@ export class AppStore {
   // Python output mode: `from sympy import *` (default, bare names) vs
   // `import sympy as sp` (sp.-qualified).
   importAll = $state(loadPrefs().importAll ?? true);
+  // scipy.stats/numpy builtins (\mathrm{normcdf}, \mathrm{ttest}, …) —
+  // off means they parse and emit as ordinary unknown functions.
+  stats = $state(loadPrefs().stats ?? true);
   // Animation knobs (persisted prefs). fadeMs drives code-line fades
   // (also exported as --fade-ms for CSS mount animations); debounceMs
   // delays issue overlays until typing pauses; fadeInMs/fadeOutMs are
