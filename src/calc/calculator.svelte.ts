@@ -78,7 +78,7 @@ export const cellIssues = $state<
 >({});
 
 interface WorkerReply {
-  type?: 'ready' | 'init-error';
+  type?: 'ready' | 'init-error' | 'pkg-loading' | 'pkg-loaded';
   id: number;
   ok: boolean;
   rows?: CalcRow[];
@@ -86,6 +86,10 @@ interface WorkerReply {
 }
 
 let worker: Worker | undefined;
+// Lazy package downloads (scipy/numpy wheels) the worker has in
+// flight — like engine boot, a slow one can outlive the 30s eval
+// watchdog, so the watchdog re-arms while any are running.
+let pkgLoads = 0;
 let nextId = 1;
 const pending = new Map<
   number,
@@ -107,8 +111,17 @@ function ensureWorker(): Worker {
   // The worker can't read import.meta.env (classic worker), so the
   // base public assets are served under comes from the page.
   w.postMessage({ type: 'init', snapshotBase: import.meta.env.BASE_URL });
+  pkgLoads = 0;
   w.onmessage = (e: MessageEvent<WorkerReply>) => {
     const m = e.data;
+    if (m.type === 'pkg-loading') {
+      pkgLoads++;
+      return;
+    }
+    if (m.type === 'pkg-loaded') {
+      pkgLoads = Math.max(0, pkgLoads - 1);
+      return;
+    }
     if (m.type === 'ready') {
       calcEngine.status = 'ready';
       return;
@@ -241,11 +254,11 @@ export function evaluate(
     const armWatchdog = () =>
       setTimeout(() => {
         if (!pending.has(id)) return;
-        // A still-booting worker hasn't started this eval — killing it
-        // mid-download would just restart the boot on the next eval, so
-        // on a slow connection the engine never finishes loading.
-        // Re-check instead; the deadline effectively counts from ready.
-        if (calcEngine.status === 'loading') {
+        // A still-booting worker — or one mid-download on a lazy package
+        // (scipy/numpy, pulled by stats programs under 'ready') — hasn't
+        // started this eval's compute; killing it would just restart the
+        // download on the next eval. Re-check instead.
+        if (calcEngine.status === 'loading' || pkgLoads > 0) {
           timer = armWatchdog();
           return;
         }

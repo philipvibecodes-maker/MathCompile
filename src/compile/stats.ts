@@ -313,8 +313,17 @@ export function emitStatsCall(
             : `list(${ctx.emit(a)})`,
       )
       .join(', ');
+    if (sample.quoteRest && rest.some((a) => distNameArg(a) === undefined)) {
+      // A non-name arg would quote an emitted expression — silent garbage
+      // like 'l * o * g * I * s * t * I * c'.
+      ctx.flag(
+        'error',
+        `${name}'s distribution arg must be a distribution name like norm`,
+      );
+      return ctx.stub(name);
+    }
     const emittedRest = rest.map((a) => {
-      if (sample.quoteRest) return `'${ctx.emit(a)}'`;
+      if (sample.quoteRest) return `'${distNameArg(a)}'`;
       if (sample.listRest) return `list(${ctx.emit(a)})`;
       return ctx.emit(a);
     });
@@ -348,6 +357,25 @@ function sampleWant(
         : ''
       : ` and ${minRest}–${maxRest} more arguments`;
   return data + extra;
+}
+
+// A scipy dist-name arg (kstest/anderson's second arg): `\text{expon}` /
+// `\mathrm{expon}` arrive as one symbol; a bare `expon` arrives as an
+// implicit product of letters (with 'i'/'e' already rewritten to the
+// constants). Fold either shape back to the name so the quote wraps
+// 'expon', not the emitted product.
+function distNameArg(a: unknown): string | undefined {
+  if (typeof a === 'string') return /^'(.+)'$/.exec(a)?.[1] ?? a;
+  if (!Array.isArray(a) || a[0] !== 'Multiply') return undefined;
+  const letters: string[] = [];
+  for (const p of a.slice(1)) {
+    if (typeof p !== 'string') return undefined;
+    letters.push(
+      p === 'ImaginaryUnit' ? 'i' : p === 'ExponentialE' ? 'e' : p,
+    );
+  }
+  const name = letters.join('');
+  return /^[a-zA-Z][a-zA-Z0-9_]*$/.test(name) ? name : undefined;
 }
 
 function markUsage(u: StatsUsage, needs: 'st' | 'np' | 'ci'): void {
