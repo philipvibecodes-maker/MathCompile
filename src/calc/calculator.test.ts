@@ -1207,29 +1207,40 @@ describe('scipy.stats builtins', () => {
     expect(stmt('\\mathrm{uniformcdf}(2,1,3)').code).toBe(
       F('st.uniform.cdf(2, 1, (3) - (1))'),
     );
+    // An omitted arg pins its declared default once any arg is given —
+    // otherwise the slot falls back to scipy's own default, which for
+    // uniform's derived scale (b - a) is wrong: b=1 must emit scale=0,
+    // not scipy's scale=1.
+    expect(stmt('\\mathrm{uniformcdf}(1.5,1)').code).toBe(
+      F('st.uniform.cdf(1.5, 1, (1) - (1))'),
+    );
+    // No args at all still defers to scipy's defaults wholesale.
+    expect(stmt('\\mathrm{uniformcdf}(1.5)').code).toBe(
+      F('st.uniform.cdf(1.5)'),
+    );
     // gamma(shape, scale?) — scale goes to scipy's third slot.
     expect(stmt('\\mathrm{gammapdf}(2,3)').code).toBe(
-      F('st.gamma.pdf(2, 3)'),
+      F('st.gamma.pdf(2, 3, 0, 1)'),
     );
     expect(stmt('\\mathrm{gammapdf}(2,3,2)').code).toBe(
       F('st.gamma.pdf(2, 3, 0, 2)'),
     );
     expect(stmt('\\mathrm{lognormpdf}(1,0.5)').code).toBe(
-      F('st.lognorm.pdf(1, 0.5)'),
+      F('st.lognorm.pdf(1, 0.5, 0, 1)'),
     );
     expect(stmt('\\mathrm{cauchycdf}(1,0,1)').code).toBe(
       F('st.cauchy.cdf(1, 0, 1)'),
     );
     expect(stmt('\\mathrm{betapdf}(0.5,2,3)').code).toBe(
-      F('st.beta.pdf(0.5, 2, 3)'),
+      F('st.beta.pdf(0.5, 2, 3, 0, 1)'),
     );
     expect(stmt('\\mathrm{fcdf}(1,3,10)').code).toBe(
       F('st.f.cdf(1, 3, 10)'),
     );
     expect(stmt('\\mathrm{chi2cdf}(5,3)').code).toBe(
-      F('st.chi2.cdf(5, 3)'),
+      F('st.chi2.cdf(5, 3, 0, 1)'),
     );
-    expect(stmt('\\mathrm{tcdf}(2.1,9)').code).toBe(F('st.t.cdf(2.1, 9)'));
+    expect(stmt('\\mathrm{tcdf}(2.1,9)').code).toBe(F('st.t.cdf(2.1, 9, 0, 1)'));
   });
 
   it('emits distribution summaries, intervals, rvs, and fit', () => {
@@ -1238,7 +1249,7 @@ describe('scipy.stats builtins', () => {
     );
     // A zero-arg call on a params-only method still emits.
     expect(stmt('\\mathrm{normmean}()').code).toBe(F('st.norm.mean()'));
-    expect(stmt('\\mathrm{tstd}(9)').code).toBe(F('st.t.std(9)'));
+    expect(stmt('\\mathrm{tstd}(9)').code).toBe(F('st.t.std(9, 0, 1)'));
     expect(stmt('\\mathrm{binomvar}(10,0.5)').code).toBe(
       F('st.binom.var(10, 0.5)'),
     );
@@ -1257,7 +1268,7 @@ describe('scipy.stats builtins', () => {
       F('st.norm.interval(0.95)'),
     );
     expect(stmt('\\mathrm{tinterval}(0.95,9)').code).toBe(
-      F('st.t.interval(0.95, 9)'),
+      F('st.t.interval(0.95, 9, 0, 1)'),
     );
     // rvs's first arg is a count — emitted as size=.
     expect(stmt('\\mathrm{normrvs}(5)').code).toBe(

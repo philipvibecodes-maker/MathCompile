@@ -146,3 +146,34 @@ test('the Statistics checkbox toggles stats recognition', async ({
   await toggle.check();
   await expect(out).toContainText('st.norm.cdf(1.96)');
 });
+
+test('a \\python block importing scipy lazy-loads the wheel', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  // Regression: package detection scanned only the program prelude, so
+  // a \python{import scipy.stats} statement ran before the wheel had
+  // loaded and failed with "No module named 'scipy'".
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      'mathcompile-cells',
+      JSON.stringify([
+        { id: 1, latex: '\\python{import scipy.stats as st}' },
+        { id: 2, latex: '\\python{st.norm.cdf(1.96)}' },
+      ]),
+    );
+    window.localStorage.setItem(
+      'mathcompile-prefs',
+      JSON.stringify({ target: 'calculator' }),
+    );
+  });
+  await page.goto('/');
+  await page.waitForSelector('math-field');
+  // The second cell evals in the shared namespace — reaching 0.975 at
+  // all means the wheel loaded before exec (pre-fix the import cell
+  // failed with "No module named 'scipy'").
+  await expect(page.locator('.calc-row .calc-math').nth(1)).toContainText(
+    '0.975',
+    { timeout: 120_000 },
+  );
+});

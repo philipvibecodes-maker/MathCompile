@@ -424,14 +424,25 @@ function emitDistCall(
         : `the point and ${required}-${dist.params.length} distribution args (${sig})`,
     );
   }
-  const emittedParams = params.map((a) => ctx.emit(a));
-  // Emit the positional tail through the last entry whose %-refs are all
-  // provided — literal entries inside that prefix (the `0` loc) emit
-  // positionally, trailing ones fall back to scipy's defaults.
+  // Once any dist arg is provided, fill the rest with their declared
+  // defaults — a dropped tail slot falls back to scipy's own default,
+  // which doesn't always match the latex signature (uniform's b=1
+  // derives scale=0, but scipy's scale default is 1).
+  const emittedParams =
+    params.length === 0
+      ? []
+      : dist.params.map((p, i) =>
+          i < params.length ? ctx.emit(params[i]) : p[1]!,
+        );
+  // Emit the positional tail through the last entry whose %-refs all
+  // resolve (provided or default-filled) — literal entries inside that
+  // prefix (the `0` loc) emit positionally, trailing ones fall back to
+  // scipy's defaults. With no args at all nothing emits and the whole
+  // tail falls through to scipy's defaults.
   let tailEnd = 0;
   dist.tail.forEach((t, i) => {
     const refs = [...t.matchAll(/%(\d)/g)].map((m) => Number(m[1]));
-    if (refs.length > 0 && refs.every((r) => r <= params.length))
+    if (refs.length > 0 && refs.every((r) => r <= emittedParams.length))
       tailEnd = i + 1;
   });
   const tail = dist.tail

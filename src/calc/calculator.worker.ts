@@ -240,10 +240,16 @@ scope.onmessage = (e) => {
           scope.postMessage({ type: 'pkg-loaded' });
         }
       };
-      if (program.prelude.some((l) => l.includes('scipy')))
-        await loadPkg('scipy');
-      if (program.prelude.some((l) => l.includes('numpy')))
-        await loadPkg('numpy');
+      // Package hints live in the prelude (stats builtins) or inline in
+      // emitted code — a `\python{import scipy.stats}` block puts its
+      // import in a statement, not the prelude.
+      const programSrc =
+        program.prelude.join('\n') +
+        program.cells
+          .flatMap((c) => [...c.defs, ...c.statements.map((s) => s.code)])
+          .join('\n');
+      if (programSrc.includes('scipy')) await loadPkg('scipy');
+      if (programSrc.includes('numpy')) await loadPkg('numpy');
       // The program travels inside the python source as a quoted literal —
       // a shared globals slot would race when evals overlap.
       const call = `mc_run(${JSON.stringify(JSON.stringify(program))})`;
