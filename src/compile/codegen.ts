@@ -305,6 +305,9 @@ class Scope {
   usesScipy = false;
   usesNumpy = false;
   usesMeanCi = false;
+  /** The stats builtins (stats.ts) are enabled — off means a
+   * `\mathrm{normcdf}(x)` call emits as an ordinary function. */
+  stats: boolean;
 
   /** Which target a `\text{plot}` statement lowers for — 'calc' emits
    * the worker's `_mc_plot` marker call, 'python' emits the matching
@@ -321,6 +324,7 @@ class Scope {
     cell: number,
     plotTarget: 'calc' | 'python' = 'calc',
     pyFns: Map<string, PyFnEntry> = new Map(),
+    stats = true,
   ) {
     this.qualified = qualified;
     this.plotTarget = plotTarget;
@@ -351,6 +355,7 @@ class Scope {
     this.issues = issues;
     this.cellIssues = cellIssues;
     this.cell = cell;
+    this.stats = stats;
   }
 
   flag(severity: Issue['severity'], message: string): void {
@@ -3534,8 +3539,9 @@ class Emitter {
         }
         // `\mathrm{normcdf}(x,\mu,\sigma)`, `\mathrm{ttest}(d,\mu)` —
         // scipy.stats/numpy builtins (stats.ts); the worker lazy-loads
-        // scipy on first use. A worksheet-declared name shadows them.
-        if (!this.scope.decls.declared.has(name)) {
+        // scipy on first use. A worksheet-declared name shadows them,
+        // and the stats pref turns the whole tier off.
+        if (this.scope.stats && !this.scope.decls.declared.has(name)) {
           const stats = emitStatsCall(name, args.slice(1), {
             emit: (a) => this.emit(a as MathJson),
             stub: (n) =>
@@ -4934,6 +4940,8 @@ export interface CompileOptions extends NormalizeOptions {
    * python defs below the edit point still resolve (with the
    * call-above-def note) instead of minting `sp.Function` stubs. */
   worksheetCells?: CellInput[];
+  /** Recognize the scipy.stats/numpy builtins (stats.ts). Default on. */
+  stats?: boolean;
 }
 
 // Compile the whole worksheet. `python` produces a runnable SymPy program;
@@ -4944,6 +4952,7 @@ export function compileWorksheet(
   opts: CompileOptions = {},
 ): CompileResult {
   const qualified = opts.importAll === false;
+  const stats = opts.stats !== false;
   const importLine = qualified
     ? 'import sympy as sp'
     : 'from sympy import *';
@@ -4953,7 +4962,7 @@ export function compileWorksheet(
   const pyRegistry = collectPyFns(cells);
   const pyNames = new Set(pyRegistry.fns.keys());
   const perCell = cells.map((c) =>
-    normalizeIR(c.json, undefined, { ...opts, pyFns: pyNames }),
+    normalizeIR(c.json, undefined, { ...opts, pyFns: pyNames, stats }),
   );
   const issues: Issue[] = perCell.flatMap((r, i) =>
     r.issues.map((iss) => ({
@@ -5045,6 +5054,7 @@ export function compileWorksheet(
       i + 1,
       'python',
       pyRegistry.fns,
+      stats,
     );
     scope.cellIdx = i;
     cellScopes.push(scope);
@@ -5362,6 +5372,7 @@ export function compileCellsForCalc(
   opts: CompileOptions = {},
 ): CalcWorksheetProgram {
   const qualified = opts.importAll === false;
+  const stats = opts.stats !== false;
   // Python-cell defs register worksheet-wide so a call above its def
   // resolves (with the ordering note) instead of minting a stub.
   const pyRegistry = collectPyFns(opts.worksheetCells ?? cells);
@@ -5376,6 +5387,7 @@ export function compileCellsForCalc(
     0,
     'calc',
     pyRegistry.fns,
+    stats,
   );
   const compiled = cells.map((cell, i) => {
     scope.cellIdx = i;
@@ -5385,6 +5397,7 @@ export function compileCellsForCalc(
     const { ir, issues } = normalizeIR(cell.json, scope.decls.declaredFns, {
       ...opts,
       pyFns: pyNames,
+      stats,
     });
     // Registry notes on this cell (its own python defs) surface here.
     issues.push(
@@ -5421,10 +5434,12 @@ export function compileCellForCalc(
   opts: CompileOptions = {},
 ): CalcProgram {
   const qualified = opts.importAll === false;
+  const stats = opts.stats !== false;
   const pyRegistry = collectPyFns([cell]);
   const { ir, issues } = normalizeIR(cell.json, undefined, {
     ...opts,
     pyFns: new Set(pyRegistry.fns.keys()),
+    stats,
   });
   if (ir === undefined)
     return { prelude: [], statements: [], issues, statementLines: [] };
@@ -5438,6 +5453,7 @@ export function compileCellForCalc(
     0,
     'calc',
     pyRegistry.fns,
+    stats,
   );
   scope.cellIdx = 0;
   const c = compileCellInScope(ir, issues, scope);

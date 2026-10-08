@@ -122,6 +122,7 @@
       if (calcEngine.status !== 'ready' && cell.kind === 'math') {
         interimEvaluate(latex, prefixLatex.slice(0, -1), {
           pairTuple,
+          stats: appStore.stats,
         }).then((r) => {
           if (mine === seq && pending && r.length > 0) {
             rows = r;
@@ -132,6 +133,7 @@
       evaluate(appStore.cells.slice(0, index + 1), {
         pairTuple,
         importAll,
+        stats: appStore.stats,
         // The registry spans the whole worksheet so a def below the
         // call still resolves (with the ordering note).
         worksheetCells: appStore.cells,

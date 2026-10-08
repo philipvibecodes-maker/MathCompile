@@ -32,3 +32,43 @@ test('a stats call lazy-loads scipy and evaluates through the worker', async ({
   await expect(rows.nth(1)).toContainText(',');
   await expect(rows.nth(2)).toContainText(',');
 });
+
+test('the Statistics checkbox toggles stats recognition', async ({
+  page,
+}) => {
+  // Python target — no worker boot, so the toggle flips live.
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      'mathcompile-cells',
+      JSON.stringify([{ id: 1, latex: '\\mathrm{normcdf}(1.96)' }]),
+    );
+    window.localStorage.setItem(
+      'mathcompile-prefs',
+      JSON.stringify({ target: 'python' }),
+    );
+  });
+  await page.goto('/');
+  await page.waitForSelector('math-field');
+  const out = page.locator('.cell-python').first();
+  await expect(out).toContainText('import scipy.stats as st');
+  await expect(out).toContainText('st.norm.cdf(1.96)');
+
+  const toggle = page
+    .locator('.option-checkbox', { hasText: 'Statistics' })
+    .locator('input');
+  await toggle.uncheck();
+  // Off: an ordinary unknown head — the emission flips live and the
+  // issue overlay reports the now-unrecognized name.
+  await expect(out).toContainText('normcdf(1.96)');
+  await expect(out).not.toContainText('scipy');
+  await expect(page.locator('.cell-issues')).toContainText(
+    'unknown head "normcdf"',
+  );
+  // The choice persists.
+  await page.waitForFunction(() =>
+    localStorage.getItem('mathcompile-prefs')?.includes('"stats":false'),
+  );
+
+  await toggle.check();
+  await expect(out).toContainText('st.norm.cdf(1.96)');
+});

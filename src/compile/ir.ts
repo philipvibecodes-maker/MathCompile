@@ -1373,6 +1373,9 @@ export interface NormalizeOptions {
    *  `\mathrm{relu}(x)` lowers to a `call` like a declared fn instead
    *  of raising the unknown-head note. */
   pyFns?: ReadonlySet<string>;
+  /** Stats builtins (stats.ts) enabled — `\mathrm{normcdf}` reads as a
+   *  scipy call rather than an ordinary unknown head. Default on. */
+  stats?: boolean;
 }
 
 interface NormalizeCtx {
@@ -1403,6 +1406,9 @@ interface NormalizeCtx {
   ): MathJson;
   /** Push an issue into the current cell's issue list. */
   issue(severity: Issue['severity'], message: string): void;
+  /** The stats builtins (stats.ts) are enabled — `\mathrm{normcdf}(x)`
+   *  reads as a scipy call rather than `normcdf·x` / an unknown head. */
+  stats: boolean;
 }
 
 const NO_NAMES: ReadonlySet<string> = new Set();
@@ -1842,7 +1848,7 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
           if (mid.length === 0) {
             // `\mathrm{normmean}()` — a stats builtin called with no
             // args; a bare `[fn]` collapses to 'Nothing' below.
-            if (callArgs.length === 0 && isStatsName(fn))
+            if (callArgs.length === 0 && ctx.stats && isStatsName(fn))
               return ['call', fn];
             return ctx.norm([fn, ...callArgs] as MathJson[], ctx.atStatement);
           }
@@ -2652,6 +2658,7 @@ export function normalizeIR(
       norm: (n, at = false, an = false, nm = false) =>
         normalize(n, at, an, nm),
       issue: pushIssue,
+      stats: opts.stats !== false,
     };
     for (const rule of NORMALIZE_RULES) {
       if (!rule.when(h, node, ctx)) continue;
@@ -2669,7 +2676,7 @@ export function normalizeIR(
         !CALL_RENAMED.has(h) &&
         !declaredFns.has(h) &&
         !opts.pyFns?.has(h) &&
-        !isStatsName(h)
+        !(opts.stats !== false && isStatsName(h))
       )
         pushIssue('note', `unknown head "${h}" — emitted as ${h}(...)`);
       return ['call', h, ...node.slice(1).map((n) => normalize(n, false))];
