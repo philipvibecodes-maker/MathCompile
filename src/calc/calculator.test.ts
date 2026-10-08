@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { compileCellForCalc, compileCellsForCalc, compileWorksheet } from '../compile/codegen';
 import { normalizeIR, parseCellLatex } from '../compile/ir';
 import { interimConstNames, irToNerdamer } from './nerdamer-emit';
-import { interimEvaluate } from './calculator.svelte.ts';
+import { evaluate, interimEvaluate } from './calculator.svelte.ts';
 
 // latex statement -> nerdamer input through the shared pipeline —
 // '' is a poisoned row, null falls back to nerdamer's latex reader.
@@ -1502,6 +1502,22 @@ describe('scipy.stats builtins', () => {
     expect(stmt('\\mathrm{anderson}([1,2,3,4])').code).toBe(
       F(`st.anderson(${d}, 'norm')`),
     );
+    // A bare word for the dist name folds back to the name — CE parses
+    // it as a letter product (i -> ImaginaryUnit, e -> ExponentialE).
+    expect(stmt('\\mathrm{kstest}([1,2,3,4],logistic)').code).toBe(
+      F(`st.kstest(${d}, 'logistic')`),
+    );
+    expect(stmt('\\mathrm{kstest}([1,2,3,4],expon)').code).toBe(
+      F(`st.kstest(${d}, 'expon')`),
+    );
+    expect(stmt('\\mathrm{anderson}([1,2,3,4],logistic)').code).toBe(
+      F(`st.anderson(${d}, 'logistic')`),
+    );
+    // A non-name arg is an error + honest stub, not silently quoted
+    // garbage like 'l * o * g * I * s * t * I * c'.
+    expect(stmt('\\mathrm{kstest}([1,2,3,4],norm^2)').error).toContain(
+      'distribution name',
+    );
     // chisquare's optional second arg is the expected-frequency list.
     expect(stmt('\\mathrm{chisquare}([1,2,3])').code).toBe(
       F('st.chisquare(list([1, 2, 3]))'),
@@ -1517,6 +1533,13 @@ describe('scipy.stats builtins', () => {
       F('st.binomtest(3, 10, 0.5)'),
     );
     expect(stmt('\\mathrm{binomtest}(3)').error).toContain('k, n');
+  });
+
+  it('shows no interim row for a stats call nerdamer would misread', async () => {
+    // `normcdf(1.96)` reads as 1.96*normcdf to nerdamer — the interim
+    // engine stays silent rather than guess a product.
+    expect(await interimEvaluate('\\mathrm{normcdf}(1.96)')).toEqual([]);
+    expect(await interimEvaluate('\\mathrm{smean}([1,2,3])')).toEqual([]);
   });
 
   it('parses and emits stats names as ordinary functions when off', () => {
@@ -1552,3 +1575,49 @@ describe('scipy.stats builtins', () => {
   });
 });
 
+
+describe('evaluate watchdog', () => {
+  it('re-arms on a package download, still kills a real hang', async () => {
+    // The 30s eval watchdog must slide while a lazy scipy/numpy wheel
+    // download runs — the download signals ride the same worker channel.
+    vi.useFakeTimers();
+    class FakeWorker {
+      static instances: FakeWorker[] = [];
+      onmessage: ((e: { data: unknown }) => void) | null = null;
+      onerror: ((e: { message?: string }) => void) | null = null;
+      terminated = false;
+      constructor() {
+        FakeWorker.instances.push(this);
+      }
+      postMessage(_m: unknown) {}
+      terminate() {
+        this.terminated = true;
+      }
+    }
+    vi.stubGlobal('Worker', FakeWorker as unknown as typeof Worker);
+    try {
+      const p = evaluate([
+        {
+          latex: '\\mathrm{normcdf}(1.96)',
+          json: parseCellLatex('\\mathrm{normcdf}(1.96)'),
+        },
+      ]);
+      p.catch(() => {}); // asserted below via rejects
+      const w = FakeWorker.instances[0]!;
+      w.onmessage?.({ data: { type: 'ready' } });
+      // The worker reports a scipy download starting — the deadline
+      // must slide while it runs.
+      w.onmessage?.({ data: { type: 'pkg-loading' } });
+      await vi.advanceTimersByTimeAsync(31_000);
+      expect(w.terminated).toBe(false);
+      // Download finished — the next deadline kills for real.
+      w.onmessage?.({ data: { type: 'pkg-loaded' } });
+      await vi.advanceTimersByTimeAsync(31_000);
+      expect(w.terminated).toBe(true);
+      await expect(p).rejects.toThrow('timed out');
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+});

@@ -82,6 +82,10 @@
     const prefixLatex = appStore.cells
       .slice(0, index + 1)
       .map((c) => c.latex);
+    // Read in the effect body so the dependency is tracked — a stats
+    // flip must re-run this eval (reading it inside the setTimeout
+    // callback would subscribe nothing and the toggle would be dead).
+    const stats = appStore.stats;
     const latex = prefixLatex[prefixLatex.length - 1] ?? '';
     const mine = ++seq;
     if (latexToStatementStrings(latex).length === 0) {
@@ -103,7 +107,7 @@
       // The `pending` guard keeps a late interim from overwriting real
       // rows that already landed.
       if (calcEngine.status !== 'ready') {
-        interimEvaluate(latex, prefixLatex.slice(0, -1), appStore.stats).then((r) => {
+        interimEvaluate(latex, prefixLatex.slice(0, -1), stats).then((r) => {
           if (mine === seq && pending && r.length > 0) {
             rows = r;
             interim = true;
@@ -111,7 +115,7 @@
         });
       }
       evaluate(appStore.cells.slice(0, index + 1), {
-        stats: appStore.stats,
+        stats,
       }).then(
         (r) => {
           if (mine !== seq) return;
