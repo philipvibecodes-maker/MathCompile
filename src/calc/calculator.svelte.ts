@@ -1,4 +1,8 @@
-import { collectDeclared, compileCellsForCalc } from '../compile/codegen';
+import {
+  collectDeclared,
+  compileCellsForCalc,
+  type CalcWorksheetProgram,
+} from '../compile/codegen';
 import {
   latexToStatementStrings,
   normalizeIR,
@@ -36,7 +40,9 @@ export interface CalcResult {
   rows: CalcRow[];
   // The emitted program for the whole cell (prelude + statement code)
   // — shown by the per-cell code block. displayCode is the same program
-  // with the `e = ...` display-plumbing capture lines inlined.
+  // with the `e = ...` display-plumbing capture lines inlined for
+  // expression statements (a definition's display just echoes the
+  // statement, so it never gets a capture line).
   code?: string;
   displayCode?: string;
 }
@@ -177,35 +183,7 @@ export function evaluate(
     // Uncompileable cells show their issues; a cell with none at all
     // (empty, or only notes) shows nothing.
     return Promise.resolve({ rows: issueRows });
-  // The emitted program as one block — prelude, then each cell's decls
-  // and statements in worksheet order (# cell markers only when the
-  // result ran in real context). The plumbing variant swaps expression
-  // statements for their `e = ...` capture lines and adds
-  // `e = <display>` after assignments/defs, mirroring the worker's
-  // exec/eval split.
-  const okStmts = (c: (typeof prog.cells)[number]) =>
-    c.statements.filter((s) => s.error === undefined && s.code !== '');
-  const marker = (i: number) => (prog.cells.length > 1 ? [`# cell ${i + 1}`] : []);
-  const code = [
-    ...prog.prelude,
-    ...prog.cells.flatMap((c, i) => [
-      ...marker(i),
-      ...c.defs,
-      ...okStmts(c).map((s) => s.code),
-    ]),
-  ].join('\n');
-  const displayCode = [
-    ...prog.prelude,
-    ...prog.cells.flatMap((c, i) => [
-      ...marker(i),
-      ...c.defs,
-      ...okStmts(c).flatMap((s) =>
-        s.display === undefined
-          ? [`e = ${s.code}`]
-          : [s.code, `e = ${s.display}`],
-      ),
-    ]),
-  ].join('\n');
+  const { code, displayCode } = shownPrograms(prog);
   // A multi-statement cell keeps its good rows when a sibling statement
   // is broken — and issue rows interleave at their own input line, not
   // at the bottom of the output.
@@ -268,6 +246,44 @@ export function evaluate(
       },
     });
   });
+}
+
+// The emitted program as one block — prelude, then each cell's decls
+// and statements in worksheet order (# cell markers only when more
+// than one cell contributed). The plumbing variant swaps expression
+// statements for their `e = ...` capture lines, mirroring the worker's
+// exec/eval split; a definition's display echoes the statement itself,
+// so its capture line is dropped even in the plumbing view.
+export function shownPrograms(prog: CalcWorksheetProgram): {
+  code: string;
+  displayCode: string;
+} {
+  const okStmts = (c: CalcWorksheetProgram['cells'][number]) =>
+    c.statements.filter((s) => s.error === undefined && s.code !== '');
+  const marker = (i: number) => (prog.cells.length > 1 ? [`# cell ${i + 1}`] : []);
+  const code = [
+    ...prog.prelude,
+    ...prog.cells.flatMap((c, i) => [
+      ...marker(i),
+      ...c.defs,
+      ...okStmts(c).map((s) => s.code),
+    ]),
+  ].join('\n');
+  const displayCode = [
+    ...prog.prelude,
+    ...prog.cells.flatMap((c, i) => [
+      ...marker(i),
+      ...c.defs,
+      ...okStmts(c).flatMap((s) =>
+        s.display === undefined || s.defines
+          ? s.display === undefined
+            ? [`e = ${s.code}`]
+            : [s.code]
+          : [s.code, `e = ${s.display}`],
+      ),
+    ]),
+  ].join('\n');
+  return { code, displayCode };
 }
 
 // Kicks the engine boot (~4s cold) before an expression is actually
