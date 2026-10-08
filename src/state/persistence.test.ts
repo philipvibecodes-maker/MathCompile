@@ -244,6 +244,7 @@ describe('prefs', () => {
       showPlumbing: true,
       importAll: false,
       pairTuple: 'matrix',
+      stats: false,
       fadeMs: 150,
       debounceMs: 600,
       fadeInMs: 150,
@@ -258,6 +259,7 @@ describe('prefs', () => {
       showPlumbing: true,
       importAll: false,
       pairTuple: 'matrix',
+      stats: false,
       fadeMs: 150,
       debounceMs: 600,
       fadeInMs: 150,
@@ -274,7 +276,12 @@ describe('prefs', () => {
         pinnedHelp: 'solve',
         hiddenHelp: [1, 'greek'],
         showPlumbing: 42,
+<<<<<<< HEAD
         pairTuple: 'tuple',
+||||||| parent of 67b6d84 (Cover the stats pref in the prefs round-trip test)
+=======
+        stats: 'on',
+>>>>>>> 67b6d84 (Cover the stats pref in the prefs round-trip test)
       }),
     });
     expect(loadPrefs()).toEqual({
@@ -285,7 +292,12 @@ describe('prefs', () => {
       hiddenHelp: ['greek'],
       showPlumbing: undefined,
       importAll: undefined,
+<<<<<<< HEAD
       pairTuple: undefined,
+||||||| parent of 67b6d84 (Cover the stats pref in the prefs round-trip test)
+=======
+      stats: undefined,
+>>>>>>> 67b6d84 (Cover the stats pref in the prefs round-trip test)
     });
   });
 
