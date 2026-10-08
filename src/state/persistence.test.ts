@@ -117,6 +117,7 @@ describe('prefs', () => {
       guideOpen: false,
       showPlumbing: true,
       importAll: false,
+      stats: false,
       fadeMs: 150,
       debounceMs: 600,
       fadeInMs: 150,
@@ -128,6 +129,7 @@ describe('prefs', () => {
       guideOpen: false,
       showPlumbing: true,
       importAll: false,
+      stats: false,
       fadeMs: 150,
       debounceMs: 600,
       fadeInMs: 150,
@@ -142,6 +144,7 @@ describe('prefs', () => {
         target: 'cobol',
         guideOpen: 'nope',
         showPlumbing: 42,
+        stats: 'on',
       }),
     });
     expect(loadPrefs()).toEqual({
@@ -150,6 +153,7 @@ describe('prefs', () => {
       guideOpen: undefined,
       showPlumbing: undefined,
       importAll: undefined,
+      stats: undefined,
     });
   });
 
