@@ -48,6 +48,10 @@ interface EvalRequest {
 type WorkerMessage =
   | { type: 'ready' }
   | { type: 'init-error'; error: string }
+  // A lazy package download started/finished — the eval watchdog on the
+  // main thread tolerates these like it tolerates the engine boot.
+  | { type: 'pkg-loading' }
+  | { type: 'pkg-loaded' }
   | { id: number; ok: true; rows: unknown }
   | { id: number; ok: false; error: string };
 
@@ -143,12 +147,14 @@ def mc_run(prog_json):
         _ns.update(_snaps[-1]['ns'])
     else:
         _ns['sp'] = sp
-        # The prelude defines clean_and_simplify, the pipeline helper
-        # the statements call — exec brings it into the namespace.
-        try:
-            exec('\\n'.join(prog['prelude']), _ns)
-        except Exception as e:
-            return json.dumps([{'ok': False, 'error': str(e)}])
+    # The prelude defines clean_and_simplify plus any lazy stats imports
+    # (scipy/numpy) the statements need. It execs every run, not just the
+    # first — a stats cell below an already-evaluated one must still get
+    # its imports, since the rewind only skips cells, never bindings.
+    try:
+        exec('\\n'.join(prog['prelude']), _ns)
+    except Exception as e:
+        return json.dumps([{'ok': False, 'error': str(e)}])
     for cell in cells[div:]:
         try:
             rows = _mc_run_cell(cell, _ns)
@@ -164,6 +170,25 @@ def mc_run(prog_json):
 `;
 
 let boot: Promise<PyodideLike> | undefined;
+// scipy/numpy aren't part of the base payload (scipy adds ~17 MB of
+// wheels) — programs whose prelude carries the imports trigger this
+// lazy one-time-per-package load; everything else never pays for it.
+const extra = new Map<string, Promise<void>>();
+
+async function ensurePkg(py: PyodideLike, pkg: string): Promise<void> {
+  let p = extra.get(pkg);
+  if (p === undefined) {
+    p = py.loadPackage([pkg]);
+    extra.set(pkg, p);
+  }
+  try {
+    await p;
+  } catch (e) {
+    // A failed fetch retries on the next eval.
+    extra.delete(pkg);
+    throw e;
+  }
+}
 
 async function bootEngine(): Promise<PyodideLike> {
   importScripts(`${PYODIDE_BASE}pyodide.js`);
@@ -201,6 +226,30 @@ scope.onmessage = (e) => {
   const { id, program } = e.data;
   void ensureEngine()
     .then(async (py) => {
+      // A stats cell's prelude carries the scipy/numpy imports — pull
+      // the wheels on first use (scipy pulls numpy+openblas itself).
+      // The load signals keep the caller's watchdog from firing on a
+      // slow download.
+      const loadPkg = async (name: string) => {
+        scope.postMessage({ type: 'pkg-loading' });
+        try {
+          await ensurePkg(py, name).catch(() => {
+            throw new Error(`failed to load ${name}`);
+          });
+        } finally {
+          scope.postMessage({ type: 'pkg-loaded' });
+        }
+      };
+      // Package hints live in the prelude (stats builtins) or inline in
+      // emitted code — a `\python{import scipy.stats}` block puts its
+      // import in a statement, not the prelude.
+      const programSrc =
+        program.prelude.join('\n') +
+        program.cells
+          .flatMap((c) => [...c.defs, ...c.statements.map((s) => s.code)])
+          .join('\n');
+      if (programSrc.includes('scipy')) await loadPkg('scipy');
+      if (programSrc.includes('numpy')) await loadPkg('numpy');
       // The program travels inside the python source as a quoted literal —
       // a shared globals slot would race when evals overlap.
       const call = `mc_run(${JSON.stringify(JSON.stringify(program))})`;

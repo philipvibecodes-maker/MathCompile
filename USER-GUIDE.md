@@ -381,6 +381,103 @@ matching SymPy calls. Other number-theory words work like `totient`
 via `\mathrm{name}` — `mobius`, `nextprime`, `factorint` — as long
 as the name is a plain word.
 
+### Statistics
+
+The calculator speaks a set of `scipy.stats` calls, typed as upright
+words `\mathrm{name}(args)`. The first stats cell in a session loads
+the scipy engine on top of SymPy (about a second more before the row
+lands); cells without stats names aren't affected.
+
+#### Distributions
+
+A distribution call is `<name><method>` — `normcdf`, `binompmf`,
+`tppf`. Available distributions: `norm`, `t`, `chi2`, `expon`,
+`uniform`, `beta`, `gamma`, `lognorm`, `cauchy`, `f` (continuous) and
+`binom`, `nbinom`, `poisson`, `geom`, `hypergeom` (discrete).
+Methods: `pdf`/`pmf`, `cdf`, `ppf`, `sf`, `isf`, `mean`, `var`, `std`,
+`median`, `stats`, `moment`, `interval`, `rvs`, and `fit` (continuous
+only). Distribution parameters come after the point and can be left
+off to get scipy's defaults — `\mathrm{normcdf}(x)` is the standard
+normal.
+
+| You want | Type | Renders |
+| --- | --- | --- |
+| Density of N(0,1) at x | `\mathrm{normpdf}(x)` | \(\mathrm{normpdf}(x)\) → `st.norm.pdf(x)` |
+| Normal CDF, mean μ, sd σ | `\mathrm{normcdf}(x,\mu,\sigma)` | \(\mathrm{normcdf}(x,\mu,\sigma)\) → `st.norm.cdf(x, mu, sigma)` |
+| Inverse CDF (quantile) | `\mathrm{tppf}(0.975,9)` | \(\mathrm{tppf}(0.975,9)\) → `st.t.ppf(0.975, 9)` |
+| Upper-tail probability | `\mathrm{normsf}(2)` | \(\mathrm{normsf}(2)\) → `st.norm.sf(2)` |
+| Dist. mean / var / std | `\mathrm{binomvar}(10,0.5)` | \(\mathrm{binomvar}(10,0.5)\) → `st.binom.var(10, 0.5)` |
+| Dist. central interval | `\mathrm{tinterval}(0.95,9)` | \(\mathrm{tinterval}(0.95,9)\) → `st.t.interval(0.95, 9)` |
+| Random draws | `\mathrm{normrvs}(5)` | \(\mathrm{normrvs}(5)\) → `st.norm.rvs(size=5)` |
+| Fit a dist. to data | `\mathrm{normfit}([1,2,3,4])` | \(\mathrm{normfit}(...)\) → `st.norm.fit(list(...))` |
+
+#### Sample statistics
+
+The data argument is a list `[1,2,3]`, a set `{1,2,3}`, or a name the
+cell already bound (`d = [1,2,3]` then `\mathrm{ttest}(d,0)`).
+
+| You want | Type | Renders |
+| --- | --- | --- |
+| Sample mean | `\mathrm{smean}(d)` | \(\mathrm{smean}(d)\) → `np.mean(list(d))` |
+| Median | `\mathrm{median}(d)` | \(\mathrm{median}(d)\) → `np.median(list(d))` |
+| Sample variance / sd | `\mathrm{svar}(d)`, `\mathrm{sstd}(d)` | \(\mathrm{svar}(d)\) → `np.var(list(d), ddof=1)` |
+| Std. error of the mean | `\mathrm{sem}(d)` | \(\mathrm{sem}(d)\) → `st.sem(list(d))` |
+| Skewness / kurtosis | `\mathrm{skew}(d)`, `\mathrm{kurtosis}(d)` | \(\mathrm{skew}(d)\) → `st.skew(list(d))` |
+| Interquartile range | `\mathrm{iqr}(d)` | \(\mathrm{iqr}(d)\) → `st.iqr(list(d))` |
+| Geometric / harmonic mean | `\mathrm{gmean}(d)`, `\mathrm{hmean}(d)` | \(\mathrm{gmean}(d)\) → `st.gmean(list(d))` |
+| Summary tuple | `\mathrm{describe}(d)` | \(\mathrm{describe}(d)\) → `st.describe(list(d))` |
+| Z-scores | `\mathrm{zscore}(d)` | \(\mathrm{zscore}(d)\) → `st.zscore(list(d))` |
+| One-sample t-test | `\mathrm{ttest}(d,0)` | \(\mathrm{ttest}(d,0)\) → `st.ttest_1samp(list(d), 0)` |
+| Conf. interval of mean | `\mathrm{meanconf}(d)` / `(d,0.99)` | \(\mathrm{meanconf}(d)\) → `mc_mean_ci(d, 0.95)` |
+
+#### Comparing samples and hypothesis tests
+
+Two-sample tests take two data operands; the multi-sample tests take
+two or more (`friedman` needs at least three). Everything prints as a
+`(statistic, p-value)` tuple unless noted.
+
+| You want | Type | Renders |
+| --- | --- | --- |
+| Independent-samples t-test | `\mathrm{ttestind}(d,e)` | \(\mathrm{ttestind}(d,e)\) → `st.ttest_ind(list(d), list(e))` |
+| Paired t-test | `\mathrm{ttestrel}(d,e)` | \(\mathrm{ttestrel}(d,e)\) → `st.ttest_rel(list(d), list(e))` |
+| Mann-Whitney U | `\mathrm{mannwhitneyu}(d,e)` | \(\mathrm{mannwhitneyu}(d,e)\) → `st.mannwhitneyu(list(d), list(e))` |
+| Wilcoxon signed-rank | `\mathrm{wilcoxon}(d,e)` | \(\mathrm{wilcoxon}(d,e)\) → `st.wilcoxon(list(d), list(e))` |
+| Two-sample KS | `\mathrm{ks2samp}(d,e)` | \(\mathrm{ks2samp}(d,e)\) → `st.ks_2samp(list(d), list(e))` |
+| Correlations | `\mathrm{pearsonr}` / `\mathrm{spearmanr}` / `\mathrm{kendalltau}` `(x,y)` | \(\mathrm{pearsonr}(x,y)\) → `st.pearsonr(list(x), list(y))` |
+| Equal-variance tests | `\mathrm{levene}` / `\mathrm{bartlett}` / `\mathrm{fligner}` `(d,e)` | \(\mathrm{levene}(d,e)\) → `st.levene(list(d), list(e))` |
+| One-way ANOVA | `\mathrm{foneway}(d,e,...)` | \(\mathrm{foneway}(d,e)\) → `st.f_oneway(list(d), list(e))` |
+| Friedman test | `\mathrm{friedman}(d,e,f)` | \(\mathrm{friedman}(d,e,f)\) → `st.friedmanchisquare(...)` |
+| Normality tests | `\mathrm{shapiro}` / `\mathrm{normaltest}` / `\mathrm{jarquebera}` / `\mathrm{skewtest}` / `\mathrm{kurtosistest}` `(d)` | \(\mathrm{shapiro}(d)\) → `st.shapiro(list(d))` |
+| Fit against a distribution | `\mathrm{kstest}(d)` / `\mathrm{anderson}(d)` | \(\mathrm{kstest}(d)\) → `st.kstest(list(d), 'norm')` |
+| Chi-square goodness of fit | `\mathrm{chisquare}(obs,exp?)` | \(\mathrm{chisquare}(obs)\) → `st.chisquare(list(obs))` |
+| Binomial test | `\mathrm{binomtest}(k,n,p?)` | \(\mathrm{binomtest}(3,10,0.5)\) → `st.binomtest(3, 10, 0.5)` |
+
+Worth knowing:
+
+- `\mathrm{smean}` rather than `\mathrm{mean}` — `mean(x)` already
+  prints the expectation symbol \( \bar{x} \).
+- Sample `svar`/`sstd` are the unbiased versions (`ddof=1`).
+- `pdf` on a discrete distribution (or `pmf` on a continuous one) is
+  an error — the message names the right method.
+- `fit` exists only for the continuous distributions.
+- `\mathrm{meanconf}` emits a small `mc_mean_ci` helper into the
+  generating code — it wraps `st.t.interval` around the sample mean.
+- `\mathrm{ttestind}` (independent) vs `\mathrm{ttestrel}` (paired)
+  mirror scipy's `ttest_ind`/`ttest_rel`; `\mathrm{ttest}` stays the
+  one-sample test.
+- `\mathrm{kstest}`/`\mathrm{anderson}` test against `'norm'` by
+  default; a second arg names another scipy distribution —
+  `\mathrm{kstest}(d,\mathrm{expon})`.
+- `\mathrm{chisquare}`'s expected counts must sum to the observed
+  total (scipy rescales nothing).
+- `\mathrm{anderson}` and `\mathrm{binomtest}` print their full
+  result objects rather than a plain tuple.
+- `\mathrm{bartlett}` float-coerces its samples in the emitted code —
+  scipy raises on integer-typed data.
+- Results are scipy result objects — the `statistic`/`pvalue` fields
+  print as a pair; a `NaN` pair from a too-small sample is scipy's
+  own answer, not a compile error.
+
 ## Output targets
 
 Pick a target from the **Output** menu in the header.

@@ -201,3 +201,35 @@ reference multiplies), upright word names (`\mathrm{foo}(x)`,
 (`\sin(x)`, `\sin^{-1}(x)` → `asin`), `f'(x)`, `f^{(2)}(x)` (nth
 derivative), `(x \mapsto x^2)(3)`, and names bound by `\text{def}`/
 `f := x \mapsto …` in arithmetic position (`f + 1` → `f(x) + 1`).
+
+## Statistics (calculator target)
+
+`\mathrm{<dist><method>}(args)` resolves to scipy.stats calls —
+`src/compile/stats.ts`. Dists: `norm t chi2 expon uniform beta gamma
+lognorm cauchy f` (continuous) and `binom nbinom poisson geom
+hypergeom` (discrete, `pmf` not `pdf`). Methods: `pdf pmf cdf ppf sf
+isf mean var std median stats moment interval rvs fit` (`fit`
+continuous only). One-sample functions take a data list:
+
+```
+smean smedian median svar var sstd std smin smax
+sem skew kurtosis iqr gmean hmean describe zscore ttest meanconf
+```
+
+Two-sample and correlation tests take two data lists; the multi-sample
+tests take two or more (`friedman` ≥3). `kstest`/`anderson` take an
+optional second arg — a scipy distribution name (default `'norm'`).
+`chisquare` takes observed plus optional expected counts; `binomtest`
+takes scalar `k, n, p?`.
+
+```
+ttestind ttestrel mannwhitneyu wilcoxon ks2samp
+pearsonr spearmanr kendalltau
+levene bartlett fligner foneway friedman
+shapiro normaltest jarquebera skewtest kurtosistest
+kstest anderson chisquare binomtest
+```
+
+Using any of them adds the `import scipy.stats as st` /
+`import numpy as np` lines to the emitted program and makes the worker
+lazy-load the scipy wheels.

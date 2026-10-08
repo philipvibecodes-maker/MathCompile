@@ -41,8 +41,9 @@ test('header shows the commands button, smart mode sits above the input column',
   await expect(header.locator('.option-checkbox input')).toHaveCount(0);
   await expect(header.locator('.palette-button')).toBeVisible();
   const colField = page.locator('.col-field');
-  await expect(colField.locator('.option-checkbox input')).toHaveCount(1);
+  await expect(colField.locator('.option-checkbox input')).toHaveCount(2);
   await expect(colField).toContainText('Smart mode');
+  await expect(colField).toContainText('Statistics');
 });
 
 test('output select sits at the right end of the output column', async ({
@@ -90,7 +91,9 @@ test('target select offers all codegen targets, calc+python enabled', async ({
 test('smart mode checkbox drives the math-field autoCommands option', async ({
   page,
 }) => {
-  const box = page.locator('.option-checkbox input');
+  const box = page
+    .locator('.option-checkbox', { hasText: 'Smart mode' })
+    .locator('input');
   await expect(box).toBeChecked();
   expect(await smartModeOn(page)).toBe(true);
   await box.click();

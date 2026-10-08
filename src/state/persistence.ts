@@ -22,6 +22,7 @@ export interface Prefs {
   guideOpen?: boolean;
   showPlumbing?: boolean;
   importAll?: boolean;
+  stats?: boolean;
   fadeMs?: number;
   debounceMs?: number;
   fadeInMs?: number;
@@ -45,6 +46,7 @@ export function loadPrefs(): Prefs {
         typeof p.showPlumbing === 'boolean' ? p.showPlumbing : undefined,
       importAll:
         typeof p.importAll === 'boolean' ? p.importAll : undefined,
+      stats: typeof p.stats === 'boolean' ? p.stats : undefined,
       fadeMs: typeof p.fadeMs === 'number' ? p.fadeMs : undefined,
       debounceMs: typeof p.debounceMs === 'number' ? p.debounceMs : undefined,
       fadeInMs: typeof p.fadeInMs === 'number' ? p.fadeInMs : undefined,

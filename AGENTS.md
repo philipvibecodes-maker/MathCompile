@@ -111,6 +111,10 @@ and empty blocks serialize as `{ }`.
 - `target === 'calculator'` renders `CalcOutput` per cell: nerdamer
   interim rows (dimmed, no `code`) until the Pyodide/SymPy worker is
   ready, then one result row per top-level statement.
+- `src/compile/stats.ts` holds the scipy.stats/numpy builtins
+  (`\mathrm{normcdf}(x)` → `st.norm.cdf(x)`): codegen resolves the
+  flat `<dist><method>` names before the generic call tier and marks
+  the prelude; the worker lazy-loads the wheels on first stats use.
 - The worksheet prefix compiles via `compileCellsForCalc` — the shared
   pipeline, not a second parser — so the worker only exec/evals Python.
   Cells share one namespace in order (a `def g` or `a = 5` above is in

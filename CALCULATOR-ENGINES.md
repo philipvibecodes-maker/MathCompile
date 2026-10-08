@@ -103,6 +103,18 @@ The ~3s CPU floor (SymPy import) is irreducible — hence `prewarm()` on
 the Output dropdown's pointerdown/focus (the worker self-boots on spawn)
 and the nerdamer interim below.
 
+### scipy (stats builtins) — lazy-loaded
+
+`src/compile/stats.ts` maps `\mathrm{normcdf}(x)`-style names to
+`scipy.stats`/`numpy` calls and marks the cell's prelude with the
+matching import. The worker reads that marker and calls
+`loadPackage(['scipy'])` (or `['numpy']`) on first use — measured
+cold-load cost (fresh context, `perf/measure-scipy.mjs`, median of 3):
+sympy-only total ~3.96s vs sympy+scipy ~5.25s, i.e. **~+1.3s (+33%)**
+on first stats use; scipy drags in numpy + libopenblas ≈ 17.6 MB of
+wheels vs ~4.5 MB for the sympy chain. Cells that never touch a stats
+name pay nothing; a failed fetch retries on the next eval.
+
 ## nerdamer interim — coverage and gaps
 
 `nerdamer@1.1.13` is dynamically imported (`import('nerdamer/all')`) —

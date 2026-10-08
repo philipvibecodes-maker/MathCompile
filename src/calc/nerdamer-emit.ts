@@ -14,6 +14,7 @@
 
 import { firstFreeCapital } from '../compile/codegen';
 import { isDiffMark, unquote, type MathJson } from '../compile/ir';
+import { isStatsName } from '../compile/stats';
 // nerdamer spellings come from the same registry codegen reads — the
 // interim can't drift from the real engine's name tables.
 import {
@@ -496,6 +497,10 @@ function emit(node: MathJson | undefined, ctx: Ctx): string | null {
       // keeps unknown calls symbolic, so `tr(A)` still displays.
       if (args.length === 0 || !isStr(args[0])) return null;
       const name = unquote(args[0]) ?? args[0];
+      // scipy.stats builtins — nerdamer reads the unknown multi-letter
+      // call as a product (`normcdf(1.96)` -> 1.96*normcdf). No interim
+      // row is better than a misleading one.
+      if (isStatsName(name)) return '';
       const ts = subs(args.slice(1));
       return ts === null || ts === '' ? ts : `${nameText(name)}(${ts.join(', ')})`;
     }
