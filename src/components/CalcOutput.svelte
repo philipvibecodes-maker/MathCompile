@@ -28,8 +28,9 @@
   // Per-cell opt-in to the generated-code block at the end of the cell.
   let showCode = $state(false);
   // The emitted program for this cell; displayCode is the same program
-  // with the `e = ...` display-plumbing capture lines inlined (the
-  // settings menu's plumbing toggle picks between them).
+  // with the `e = ...` display-plumbing capture lines inlined for
+  // expression statements (the settings menu's plumbing toggle picks
+  // between them).
   let cellCode = $state('');
   let cellDisplayCode = $state('');
   // Folded body of the clean_and_simplify helper block in the code block.

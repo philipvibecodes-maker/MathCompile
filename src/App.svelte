@@ -420,7 +420,7 @@
                           aria-hidden="true"
                         >
                           Extra code MathCompile adds to capture each
-                          statement's value for rendering (the "e = …"
+                          expression's value for rendering (the "e = …"
                           lines). Not part of the calculation — hidden
                           by default.
                         </span>

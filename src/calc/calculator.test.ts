@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { compileCellForCalc, compileCellsForCalc } from '../compile/codegen';
 import { normalizeIR, parseCellLatex } from '../compile/ir';
 import { interimConstNames, irToNerdamer } from './nerdamer-emit';
-import { interimEvaluate } from './calculator.svelte.ts';
+import { interimEvaluate, shownPrograms } from './calculator.svelte.ts';
 
 // latex statement -> nerdamer input through the shared pipeline —
 // '' is a poisoned row, null falls back to nerdamer's latex reader.
@@ -50,7 +50,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
       expect.stringContaining('def clean_and_simplify'),
     ]);
     expect(prog.statements).toEqual([
-      { code: 'a = 5', display: F('sp.Eq(sp.Symbol("a"), 5)') },
+      { code: 'a = 5', display: F('sp.Eq(sp.Symbol("a"), 5)'), defines: true },
     ]);
   });
 
@@ -60,6 +60,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
       {
         code: 'def f(x):\n    return x**2',
         display: F('(lambda x: sp.Eq(sp.Function("f")(x), x**2))(sp.Symbol("x"))'),
+        defines: true,
       },
     ]);
   });
@@ -1144,3 +1145,41 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
   });
 });
 
+
+describe('shownPrograms (generating-code block assembly)', () => {
+  it('marks definition statements, not expressions', () => {
+    const prog = calcAll(
+      'a = 5',
+      '\\text{def} f(x) = x^2',
+      '\\text{def} g(y)',
+      'f: x \\mapsto x^2',
+      'a + 1',
+    );
+    expect(
+      prog.cells.flatMap((c) => c.statements).map((s) => s.defines ?? false),
+    ).toEqual([true, true, true, true, false]);
+  });
+
+  it('never shows the e = capture line for defs/assignments', () => {
+    const prog = calcAll('a = 5', '\\text{def} f(x) = x^2', 'a + 1');
+    const { code, displayCode } = shownPrograms(prog);
+    // Non-plumbing shows no capture lines at all.
+    expect(code).not.toContain('e = clean_and_simplify');
+    // Plumbing swaps expressions for their capture — the definition
+    // displays just echo the statement, so no `e = …` line exists for
+    // them even here.
+    expect(displayCode).toContain('e = clean_and_simplify(a + 1)');
+    expect(displayCode).toContain('a = 5');
+    expect(displayCode).toContain('def f(x):');
+    expect(displayCode).not.toContain('sp.Eq(sp.Symbol("a"), 5)');
+    expect(displayCode).not.toContain('sp.Function("f")');
+  });
+
+  it('keeps the e = capture for non-definition displays', () => {
+    // A \python body's trailing expression echoes a value, not a
+    // definition — its capture still shows under plumbing.
+    const prog = calcAll('\\python{x = 3\nx * 2}');
+    const { displayCode } = shownPrograms(prog);
+    expect(displayCode).toContain('e = clean_and_simplify(x * 2)');
+  });
+});

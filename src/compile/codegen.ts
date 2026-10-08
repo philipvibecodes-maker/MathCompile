@@ -2630,6 +2630,10 @@ interface StatementOut {
    * and this evals for the row (e.g. `a = 5` shows `a = 5`). Undefined
    * means the emitted code itself is the display expression. */
   display?: string;
+  /** The statement binds a name (Assign/Def/Declare) — its `display`
+   * echoes the definition itself, so the shown program drops its
+   * `e = …` capture line even in the plumbing view. */
+  defines?: boolean;
 }
 
 interface CellBody {
@@ -2935,6 +2939,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
         display: `${sp}Eq(${sp}Tuple(${members
           .map((m) => `${sp}Symbol(${JSON.stringify(m)})`)
           .join(', ')}), ${rhs})`,
+        defines: true,
       };
     }
     const name = isStr(node[1]) ? node[1] : 'result';
@@ -2964,6 +2969,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     return {
       lines: [`${pyIdent(name)} = ${rhs}`],
       display: assignDisplay(sp, name, rhs, matrixRhs || setRhs),
+      defines: true,
     };
   }
   // `\text{def} f(x)` — a declaration without a body: f binds an
@@ -2983,6 +2989,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
           : `${sp}Function(${JSON.stringify(name)})(${params
               .map((p) => `${sp}Symbol(${JSON.stringify(p)})`)
               .join(', ')})`,
+      defines: true,
     };
   }
   if (h === 'Def') {
@@ -3011,6 +3018,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     return {
       lines: [`def ${pyIdent(name)}(${idents}):`, `    return ${body}`],
       display,
+      defines: true,
     };
   }
   // `f: x ↦ body` — the colon names the lambda's result; bind it (like
@@ -3035,6 +3043,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       return {
         lines: [`${pyIdent(name)} = ${rhs}`],
         display: assignDisplay(sp, name, rhs),
+        defines: true,
       };
     }
   }
@@ -3053,6 +3062,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     return {
       lines: [`${pyIdent(name)} = ${rhs}`],
       display: assignDisplay(sp, name, rhs),
+      defines: true,
     };
   }
   // `\python{ ... }` — verbatim user source. It execs in the python
@@ -3288,6 +3298,10 @@ export interface CalcStatement {
   /** When set, `code` execs first, then this evals for the row's value.
    * Absent = `code` evals directly for the row. */
   display?: string;
+  /** The statement binds a name (assign/def/declare) — the shown
+   * program never inlines its `e = <display>` capture line, even in
+   * the plumbing view (the display just echoes the definition). */
+  defines?: boolean;
   /** Set when the statement itself failed to emit — reported as an
    * error row in place so the cell keeps written order. */
   error?: string;
@@ -3390,6 +3404,7 @@ function compileCellInScope(
           ? calcEval(out.lines[0])
           : out.lines.join('\n'),
       display: out.display === undefined ? undefined : calcEval(out.display),
+      defines: out.defines,
       error,
       // Line anchors only matter where an error points back at input.
       ...(error !== undefined ? { line } : {}),
