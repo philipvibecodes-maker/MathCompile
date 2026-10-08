@@ -940,21 +940,34 @@ class Emitter {
     const h = off === 2 ? n[1] : headOf(n);
     if (h === 'Set' || h === 'FiniteSet') return n.length > off;
     // A bare `List` (`[0,1]`) emits a python list — finite, iterable.
-    if (h === 'List') return n.length > off;
+    // A Matrix literal iterates its elements — a paren tuple is one.
+    if (h === 'List' || h === 'Matrix') return n.length > off;
     if (h === 'Union' || h === 'Intersection')
       return n.slice(off).every((a) => this.isFiniteSet(a));
     return false;
   }
 
-  /** The member operand of Element/NotElement: a `(x, y)` tuple needs
-   * `sp.Tuple` — the `List` emission `[x, y]` isn't a SymPy Expr and
-   * Function/Contains raise TypeError on it. */
-  private emitMember(member: MathJson): string {
-    if (isHead(member, 'List'))
-      return `${this.sp}Tuple(${member
-        .slice(1)
-        .map((a) => this.emit(a))
-        .join(', ')})`;
+  /** The member operand of Element/NotElement (and a FiniteSet
+   * element): a `(x, y)` tuple needs `sp.Tuple` — the `List` emission
+   * `[x, y]` isn't a SymPy Expr and Function/Contains raise TypeError
+   * on it. A paren-tuple Matrix gets the same treatment — matrices
+   * aren't Basic/hashable. A 2-element paren tuple emits the open
+   * interval it is. */
+  emitMember(member: MathJson): string {
+    const tuple = (els: MathJson[]): string =>
+      `${this.sp}Tuple(${els.map((a) => this.emit(a)).join(', ')})`;
+    if (isHead(member, 'List')) return tuple(member.slice(1));
+    if (isHead(member, 'Matrix')) {
+      const rows: MathJson[] =
+        member.length === 2 && isHead(member[1], 'List')
+          ? (member[1] as MathJson[]).slice(1)
+          : (member as MathJson[]).slice(1);
+      const els = (r: MathJson): MathJson[] =>
+        isHead(r, 'List') ? (r as MathJson[]).slice(1) : [r];
+      return rows.length === 1
+        ? tuple(els(rows[0]))
+        : `${this.sp}Tuple(${rows.map((r) => tuple(els(r))).join(', ')})`;
+    }
     return this.emit(member);
   }
 
@@ -963,8 +976,15 @@ class Emitter {
    * Complement compute instead of raising TypeError on bare Symbols. */
   private setArg(n: MathJson): string {
     if (this.isSetish(n)) return this.emit(n);
-    // A python list can't nest inside FiniteSet's args — splat it.
-    if (isHead(n, 'List') || (isStr(n) && this.scope.kinds.listNames.has(n)))
+    // A python list or matrix can't nest inside FiniteSet's args —
+    // splat it (a paren tuple's elements are the set members).
+    if (
+      isHead(n, 'List') ||
+      isHead(n, 'Matrix') ||
+      (isStr(n) &&
+        (this.scope.kinds.listNames.has(n) ||
+          this.scope.kinds.matrixNames.has(n)))
+    )
       return `${this.sp}FiniteSet(*${this.emit(n)})`;
     return `${this.sp}FiniteSet(${this.emit(n)})`;
   }
@@ -1513,7 +1533,7 @@ class Emitter {
             ];
         }
         return [
-          `${this.sp}FiniteSet(${args.map((a) => this.emit(a)).join(', ')})`,
+          `${this.sp}FiniteSet(${args.map((a) => this.emitMember(a)).join(', ')})`,
           PREC_ATOM,
         ];
       }
@@ -2938,7 +2958,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
         lines: [`${idents} = ${rhs}`],
         display: `${sp}Eq(${sp}Tuple(${members
           .map((m) => `${sp}Symbol(${JSON.stringify(m)})`)
-          .join(', ')}), ${rhs})`,
+          .join(', ')}), ${emitter.emitMember(node[2])}, evaluate=False)`,
         defines: true,
       };
     }

@@ -729,12 +729,14 @@ const FIXTURES: {
     ],
   },
   {
-    // (x, y) \in \mathbb{R}^2 — the member is a Tuple (a python list
-    // isn't a SymPy arg) and S.Reals**2 is a real ProductSet.
+    // (x, y) is the open interval — a 2-element paren tuple behaves
+    // like one, so the membership asks whether the interval is an
+    // element of the real plane (evaluates False; ⊆ would be the
+    // subset question).
     latex: '(x, y) \\in \\mathbb{R}^{2}',
     expectedPython: [
       "x, y = sp.symbols('x y')",
-      'sp.Contains(sp.Tuple(x, y), sp.S.Reals**2)',
+      'sp.Contains(sp.Interval(x, y, left_open=True, right_open=True), sp.S.Reals**2)',
     ],
   },
   {
@@ -909,6 +911,95 @@ const FIXTURES: {
     // sp.Eq([x,y],[1,2]) which SympifyError'd on the python lists.
     latex: '(x,y) = (1,2)',
     expectedPython: ['x, y = [1, 2]'],
+  },
+  {
+    // A paren tuple with 3+ elements is a 1×n row matrix — the same
+    // shape a one-row pmatrix literal lowers to.
+    latex: '(a,b,c)',
+    expectedPython: [
+      "a, b, c = sp.symbols('a b c')",
+      'sp.Matrix([[a, b, c]])',
+    ],
+  },
+  {
+    // An assigned tuple binds a matrix name — later statements take
+    // matrix-op paths.
+    latex: 'v = (a,b,c)',
+    expectedPython: [
+      "a, b, c = sp.symbols('a b c')",
+      'v = sp.Matrix([[a, b, c]])',
+    ],
+  },
+  {
+    // A 2-element paren tuple is the open interval — same Interval
+    // node CE mints for `x \in (a,b)`.
+    latex: '(a,b)',
+    expectedPython: [
+      "a, b = sp.symbols('a b')",
+      'sp.Interval(a, b, left_open=True, right_open=True)',
+    ],
+  },
+  {
+    // A bracket list is not a tuple — stays a python list.
+    latex: '[a,b,c]',
+    expectedPython: [
+      "a, b, c = sp.symbols('a b c')",
+      '[a, b, c]',
+    ],
+  },
+  {
+    // A bare comma list (no parens) stays a python list — CE marks it
+    // with a ',' delimiter rather than '(,)'.
+    latex: 'a,b,c',
+    expectedPython: [
+      "a, b, c = sp.symbols('a b c')",
+      '[a, b, c]',
+    ],
+  },
+  {
+    // (x,y,z) = (a,b,c): the paren-tuple rhs still unpacks from its
+    // element list.
+    latex: '(x,y,z) = (a,b,c)',
+    expectedPython: [
+      "a, b, c = sp.symbols('a b c')",
+      'x, y, z = [a, b, c]',
+    ],
+  },
+  {
+    // (a,b,c)^T transposes the row matrix — previously SympifyError'd
+    // on the python list.
+    latex: '(a,b,c)^T',
+    expectedPython: [
+      "a, b, c = sp.symbols('a b c')",
+      'sp.Matrix([[a, b, c]]).T',
+    ],
+  },
+  {
+    // A tuple member of a finite-domain membership splats its elements
+    // — x ∈ (a,b,c) reads as x ∈ {a,b,c}.
+    latex: 'x \\in (a,b,c)',
+    expectedPython: [
+      "x, a, b, c = sp.symbols('x a b c')",
+      'sp.Contains(x, sp.FiniteSet(*sp.Matrix([[a, b, c]])))',
+    ],
+  },
+  {
+    // A juxtaposed tuple keeps its matrix value — u·(a,b,c) is scalar
+    // times row matrix, not u·a·b·c.
+    latex: 'u \\cdot (a,b,c)',
+    expectedPython: [
+      "u, a, b, c = sp.symbols('u a b c')",
+      'u * sp.Matrix([[a, b, c]])',
+    ],
+  },
+  {
+    // Juxtaposition multiplies by the tuple's value: f(x,y) is f times
+    // the open interval, not f·x·y.
+    latex: 'f(x,y)',
+    expectedPython: [
+      "f, x, y = sp.symbols('f x y')",
+      'f * sp.Interval(x, y, left_open=True, right_open=True)',
+    ],
   },
   {
     // \widehat{AB}: CE reads the decoration as Arc(A,B); previously the

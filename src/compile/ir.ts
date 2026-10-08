@@ -475,6 +475,17 @@ function delimiterArgs(delim: MathJson): MathJson[] {
 const isDelimiterGroup = (v: MathJson): v is MathJson[] =>
   isArray(v) && (head(v) === 'Delimiter' || head(v) === 'Delimiters');
 
+// `(a, b, …)` — a paren-delimited comma list is a tuple: two elements
+// are the open interval, longer ones a 1×n row matrix. CE records the
+// delimiters in the marker arg: '(,)' is parens; a bare `a,b` Sequence
+// carries ',' and stays a List.
+const isParenTuple = (v: MathJson): v is MathJson[] =>
+  isDelimiterGroup(v) &&
+  isArray(v[1]) &&
+  head(v[1]) === 'Sequence' &&
+  isString(v[2]) &&
+  unquote(v[2]) === '(,)';
+
 // TeX spacing commands CE wraps in nodes (`\,` -> HorizontalSpacing).
 // They carry no value — dropped from implicit-multiplication chains so
 // `x\,y` stays `x * y` instead of leaking `sp.HorizontalSpacing`.
@@ -696,7 +707,17 @@ function normalizeStatementEqual(
         ? (members as string[])
         : null;
     })();
-    if (tuple) return mkAssign(['List', ...tuple]);
+    if (tuple) {
+      // A paren-tuple rhs unpacks from its element list — the tuple's
+      // own value (Interval/Matrix) isn't destructure-iterable for a
+      // 2-element open interval.
+      const unpackRhs = isParenTuple(rhs)
+        ? (['List', ...delimiterArgs(rhs).map(normalizeExpr)] as MathJson)
+        : normalizeExpr(rhs);
+      return isArray(unpackRhs) && head(unpackRhs) === 'Assign'
+        ? ['Block', unpackRhs, ['Assign', ['List', ...tuple], unpackRhs[1]]]
+        : ['Assign', ['List', ...tuple], unpackRhs];
+    }
     // `\text{def} f(x) = body` — the marker restores the function-def
     // reading; a bare `f(x) = body` is now an ordinary equation
     // (f·x = body, parens multiply like everywhere else).
@@ -1143,9 +1164,11 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
             return ['Apply', firstNorm, ...mid, ...callArgs];
         }
       }
-      // Fold `()` groups into the factor list — `f(x,y)` reads as f·x·y.
+      // Fold `()` groups into the factor list — `f(x)` reads as f·x. A
+      // paren tuple keeps its own value (an open interval at two
+      // elements, a row matrix beyond): `f(x,y)` is f·(x,y), not f·x·y.
       const flatItems = items.flatMap((n): MathJson[] =>
-        isDelimiterGroup(n) ? delimiterArgs(n) : [n],
+        isDelimiterGroup(n) && !isParenTuple(n) ? delimiterArgs(n) : [n],
       );
       // `\iint f dx dy` / `\iiint` — a single sign binds only the FIRST
       // differential; the rest land as `d v` pairs in the juxtaposition.
@@ -1506,10 +1529,24 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
   {
     name: 'delimiter-unwrap',
     // Parenthesized group — CE wraps (a+b) as ["Delimiters", inner, ...];
-    // keep the inner expression.
-    why: 'Delimiter/Delimiters unwrap to the grouped expression',
+    // keep the inner expression. A paren tuple lowers to its tuple
+    // value: 2 elements to the open Interval, more to a 1×n row Matrix.
+    why: 'Delimiter/Delimiters unwrap to the grouped expression; a paren tuple folds to Interval (2) or row Matrix (n)',
+
     when: (h) => h === 'Delimiters' || h === 'Delimiter',
-    rewrite: (node, ctx) => ctx.norm(node[1], ctx.atStatement),
+    rewrite: (node, ctx) => {
+      if (!isParenTuple(node)) return ctx.norm(node[1], ctx.atStatement);
+      const els = (node[1] as MathJson[])
+        .slice(1)
+        .map((n) => ctx.norm(n));
+      // A 2-tuple is the open interval — the same Interval node CE mints
+      // for `x \in (a,b)`.
+      if (els.length === 2)
+        return ['Interval', ['Open', els[0]], ['Open', els[1]]];
+      // Longer tuples are 1×n row matrices — the shape a one-row
+      // \begin{pmatrix} literal lowers to.
+      return ['Matrix', ['List', ['List', ...els]]];
+    },
   },
   {
     name: 'assign-chain',
