@@ -69,6 +69,14 @@ describe('plot statement calc codegen', () => {
     });
     expect(prog.statements[0].code).toBe('_mc_plot(x**2)');
   });
+
+  it('\\text{plot} g(x) applies the declared g — it is not g·x', () => {
+    const prog = compileCellsForCalc([
+      { json: parseCellLatex('\\text{def} g(x) = x^2') },
+      { json: parseCellLatex('\\text{plot} g(x)') },
+    ]);
+    expect(prog.cells[1].statements[0].code).toBe('_mc_plot(g(x))');
+  });
 });
 
 describe('plot statement python codegen', () => {

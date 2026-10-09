@@ -1,43 +1,55 @@
 <script lang="ts">
   // Renders one `\text{plot}` row's sampled payload. plotly.js (~1MB
   // min) is dynamically imported on first mount so worksheets without
-  // plots never pay for it.
+  // plots never pay for it; `Plotly.react` re-diffs on every payload
+  // change so edits re-render the figure in place.
   import { onMount } from 'svelte';
+  import type PlotlyT from 'plotly.js-dist-min';
   import type { PlotData } from './types';
   import { plotFigure } from './figures';
 
   let { plot }: { plot: PlotData } = $props();
 
   let el = $state<HTMLDivElement | undefined>();
+  let Plotly = $state<typeof PlotlyT | undefined>();
   let failed = $state('');
+
+  const CONFIG = {
+    displaylogo: false,
+    responsive: true,
+    modeBarButtonsToRemove: ['toImage'],
+    scrollZoom: true,
+  };
 
   onMount(() => {
     let alive = true;
-    const render = async () => {
-      try {
-        const { default: Plotly } = await import('plotly.js-dist-min');
-        if (!alive || !el) return;
-        const { traces, layout } = plotFigure(plot);
-        await Plotly.newPlot(
-          el,
-          traces,
-          { ...layout, autosize: true },
-          {
-            displaylogo: false,
-            responsive: true,
-            modeBarButtonsToRemove: ['toImage'],
-            scrollZoom: true,
-          },
-        );
-      } catch (e) {
+    import('plotly.js-dist-min')
+      .then((m) => {
+        if (alive) Plotly = m.default;
+      })
+      .catch((e) => {
         if (alive) failed = e instanceof Error ? e.message : String(e);
-      }
-    };
-    render();
+      });
     return () => {
       alive = false;
-      if (el) import('plotly.js-dist-min').then((m) => m.default.purge(el!));
+      if (el && Plotly) Plotly.purge(el);
     };
+  });
+
+  $effect(() => {
+    // `plot` is read synchronously so every payload swap re-renders —
+    // rows are keyed by index, so without this the figure would keep
+    // showing whatever was evaluated when the row first mounted.
+    const p = plot;
+    const target = el;
+    const P = Plotly;
+    if (!target || !P) return;
+    const { traces, layout } = plotFigure(p);
+    P.react(target, traces, { ...layout, autosize: true }, CONFIG).catch(
+      (e) => {
+        failed = e instanceof Error ? e.message : String(e);
+      },
+    );
   });
 </script>
 
