@@ -1,0 +1,16 @@
+/* Shared bench shell — identical framing for both backends so painted-area
+ * differences belong to the engines, not the page. */
+body {
+  margin: 8px;
+  font-family: system-ui, sans-serif;
+}
+
+math-field {
+  display: block;
+  width: 620px;
+  min-height: 24px;
+  margin: 4px 0;
+  padding: 4px 6px;
+  border: 1px solid #999;
+  font-size: 18px;
+}

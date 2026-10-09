@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:perf": "playwright test -c playwright.perf.config.ts",
+    "test:perf:editor": "playwright test -c playwright.editor-perf.config.ts",
     "docs:pdf": "node scripts/build-reference-pdf.mjs"
   },
   "devDependencies": {
@@ -20,6 +21,7 @@
     "@tsconfig/svelte": "^5.0.8",
     "@types/node": "^24.13.3",
     "marked": "^18.0.14",
+    "mathlive": "^0.111.0",
     "oxlint": "^1.81.0",
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",
