@@ -1600,6 +1600,65 @@ describe('worksheet matrix tracking', () => {
   });
 });
 
+describe('pair-tuple mode', () => {
+  const compile = (latex: string, pairTuple?: 'interval' | 'matrix') =>
+    compileWorksheet([{ json: parseCellLatex(latex) }], 'python', {
+      importAll: false,
+      pairTuple,
+    }).cellLines[0].slice(1); // drop the import line
+
+  it('(a,b) is the open interval by default, the 1×2 matrix in matrix mode', () => {
+    expect(compile('(a,b)')).toEqual([
+      "a, b = sp.symbols('a b')",
+      'sp.Interval(a, b, left_open=True, right_open=True)',
+    ]);
+    expect(compile('(a,b)', 'interval')).toEqual(compile('(a,b)'));
+    expect(compile('(a,b)', 'matrix')).toEqual([
+      "a, b = sp.symbols('a b')",
+      'sp.Matrix([[a, b]])',
+    ]);
+    // 3+-element tuples are row matrices in both modes.
+    expect(compile('(a,b,c)', 'matrix')).toEqual(compile('(a,b,c)'));
+  });
+
+  it('v = (a,b) binds the matrix in matrix mode', () => {
+    expect(compile('v = (a,b)', 'matrix')).toEqual([
+      "a, b = sp.symbols('a b')",
+      'v = sp.Matrix([[a, b]])',
+    ]);
+  });
+
+  it('x ∈ (a,b) reads as membership in the matrix elements in matrix mode', () => {
+    expect(compile('x \\in (a,b)', 'matrix')).toEqual([
+      "x, a, b = sp.symbols('x a b')",
+      'sp.Contains(x, sp.FiniteSet(*sp.Matrix([[a, b]])))',
+    ]);
+    // A closed [a,b] interval is unaffected by the mode — same
+    // assuming-block emission as in interval mode.
+    expect(compile('x \\in [a,b]', 'matrix')).toEqual(
+      compile('x \\in [a,b]'),
+    );
+  });
+
+  it('(x,y) ∈ ℝ² is point membership again in matrix mode', () => {
+    expect(compile('(x,y) \\in \\mathbb{R}^2', 'matrix')).toEqual([
+      "x, y = sp.symbols('x y')",
+      'sp.Contains(sp.Tuple(x, y), sp.S.Reals**2)',
+    ]);
+  });
+
+  it('(x,y) = (1,2) still unpacks in matrix mode', () => {
+    expect(compile('(x,y) = (1,2)', 'matrix')).toEqual(['x, y = [1, 2]']);
+  });
+
+  it('f(x,y) multiplies by the matrix — no Symbol*Interval TypeError', () => {
+    expect(compile('f(x,y)', 'matrix')).toEqual([
+      "f, x, y = sp.symbols('f x y')",
+      'f * sp.Matrix([[x, y]])',
+    ]);
+  });
+});
+
 describe('latexToStatementStrings', () => {
   it('splits \\displaylines rows at depth 0', () => {
     expect(latexToStatementStrings('\\displaylines{ a = 1 \\\\ b = a + 2 }')).toEqual([

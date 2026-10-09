@@ -1,6 +1,10 @@
 import type { FieldHandle } from '../editor/attach-field';
 import type { TargetId } from '../compile/targets';
-import { parseCellLatex, type MathJson } from '../compile/ir';
+import {
+  parseCellLatex,
+  type MathJson,
+  type PairTupleMode,
+} from '../compile/ir';
 import {
   installFlushOnHide,
   loadCells,
@@ -65,6 +69,9 @@ export class AppStore {
   // Python output mode: `from sympy import *` (default, bare names) vs
   // `import sympy as sp` (sp.-qualified).
   importAll = $state(loadPrefs().importAll ?? true);
+  // `(a,b)` lowers to the open interval (default) or a 1×2 row matrix —
+  // longer tuples are row matrices either way.
+  pairTuple = $state<PairTupleMode>(loadPrefs().pairTuple ?? 'interval');
   // Animation knobs (persisted prefs). fadeMs drives code-line fades
   // (also exported as --fade-ms for CSS mount animations); debounceMs
   // delays issue overlays until typing pauses; fadeInMs/fadeOutMs are

@@ -476,9 +476,10 @@ const isDelimiterGroup = (v: MathJson): v is MathJson[] =>
   isArray(v) && (head(v) === 'Delimiter' || head(v) === 'Delimiters');
 
 // `(a, b, …)` — a paren-delimited comma list is a tuple: two elements
-// are the open interval, longer ones a 1×n row matrix. CE records the
-// delimiters in the marker arg: '(,)' is parens; a bare `a,b` Sequence
-// carries ',' and stays a List.
+// are the open interval (or a 1×2 row matrix in pair-matrix mode),
+// longer ones a 1×n row matrix. CE records the delimiters in the
+// marker arg: '(,)' is parens; a bare `a,b` Sequence carries ',' and
+// stays a List.
 const isParenTuple = (v: MathJson): v is MathJson[] =>
   isDelimiterGroup(v) &&
   isArray(v[1]) &&
@@ -752,9 +753,19 @@ function normalizeStatementEqual(
 // rules (and ultimately the KNOWN_HEADS passthrough / `call` hatch),
 // mirroring an `if` whose inner test failed and fell through the chain.
 
+// How a two-element paren tuple `(a,b)` lowers: the open interval
+// (default) or a 1×2 row matrix. Plumbed from the settings pref; three
+// or more elements always lower to a row matrix either way.
+export type PairTupleMode = 'interval' | 'matrix';
+export interface NormalizeOptions {
+  pairTuple?: PairTupleMode;
+}
+
 interface NormalizeCtx {
   /** Names declared callable by statements seen so far, in cell order. */
   declaredFns: Set<string>;
+  /** The 2-element paren-tuple lowering for this pass. */
+  pairTuple: PairTupleMode;
   /** True when the node sits in statement position (a top-level child of
    *  a Block, or the cell's single statement). */
   atStatement: boolean;
@@ -1539,14 +1550,43 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
       const els = (node[1] as MathJson[])
         .slice(1)
         .map((n) => ctx.norm(n));
-      // A 2-tuple is the open interval — the same Interval node CE mints
-      // for `x \in (a,b)`.
-      if (els.length === 2)
+      // A 2-tuple is the open interval by default — the same Interval
+      // node CE mints for `x \in (a,b)` — or the row matrix in
+      // pair-matrix mode.
+      if (els.length === 2 && ctx.pairTuple !== 'matrix')
         return ['Interval', ['Open', els[0]], ['Open', els[1]]];
-      // Longer tuples are 1×n row matrices — the shape a one-row
-      // \begin{pmatrix} literal lowers to.
+      // Longer tuples (and pairs in pair-matrix mode) are 1×n row
+      // matrices — the shape a one-row \begin{pmatrix} literal lowers to.
       return ['Matrix', ['List', ['List', ...els]]];
     },
+  },
+  {
+    name: 'open-interval-pair',
+    // In pair-matrix mode `(a,b)` means the row matrix everywhere, so
+    // the Interval node CE mints for `x \in (a,b)` membership — and
+    // the one intervalBind makes for `v = (a,b)` — lowers to the same
+    // 1×2 matrix. Closed `[a,b]` intervals carry no Open marks and
+    // stay intervals.
+    why: 'pair-matrix mode lowers Interval(Open,Open) to the 1×2 row matrix',
+    when: (h, node, ctx) =>
+      ctx.pairTuple === 'matrix' &&
+      h === 'Interval' &&
+      node.length === 3 &&
+      isArray(node[1]) &&
+      head(node[1]) === 'Open' &&
+      isArray(node[2]) &&
+      head(node[2]) === 'Open',
+    rewrite: (node, ctx) => [
+      'Matrix',
+      [
+        'List',
+        [
+          'List',
+          ctx.norm((node[1] as MathJson[])[1]),
+          ctx.norm((node[2] as MathJson[])[1]),
+        ],
+      ],
+    ],
   },
   {
     name: 'assign-chain',
@@ -1638,6 +1678,7 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
 export function normalizeIR(
   json: MathJson | undefined,
   declaredFns?: Set<string>,
+  opts: NormalizeOptions = {},
 ): NormResult {
   const issues: Issue[] = [];
   const pushIssue = (severity: Issue['severity'], message: string) => {
@@ -1825,6 +1866,7 @@ export function normalizeIR(
 
     const ctx: NormalizeCtx = {
       declaredFns,
+      pairTuple: opts.pairTuple ?? 'interval',
       atStatement,
       allowNothing,
       asName,

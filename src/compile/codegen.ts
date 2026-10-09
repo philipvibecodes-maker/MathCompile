@@ -16,7 +16,12 @@
 // targets is future work.
 
 import type { Issue, MathJson, NormResult } from './ir';
-import { isDiffMark, normalizeIR, unquote } from './ir';
+import {
+  isDiffMark,
+  normalizeIR,
+  unquote,
+  type NormalizeOptions,
+} from './ir';
 import { CALC_RUNTIME_PY } from './calc-runtime';
 // The name tables below are derived views over the notation registry —
 // each name lives once in src/compile/notation.ts.
@@ -3113,7 +3118,7 @@ function findStatementHeads(node: MathJson, found: Set<string>): void {
   for (const child of node.slice(1)) findStatementHeads(child, found);
 }
 
-export interface CompileOptions {
+export interface CompileOptions extends NormalizeOptions {
   /** Emit `from sympy import *` and unqualified sympy names (default).
    * `false` emits `import sympy as sp` with `sp.` qualifiers. */
   importAll?: boolean;
@@ -3130,7 +3135,7 @@ export function compileWorksheet(
   const importLine = qualified
     ? 'import sympy as sp'
     : 'from sympy import *';
-  const perCell = cells.map((c) => normalizeIR(c.json));
+  const perCell = cells.map((c) => normalizeIR(c.json, undefined, opts));
   const issues: Issue[] = perCell.flatMap((r, i) =>
     r.issues.map((iss) => ({
       ...iss,
@@ -3467,6 +3472,7 @@ function compileCellInScope(
 // in later cells stay invisible to the cells above them.
 export function compileCellsForCalc(
   cells: CellInput[],
+  opts: NormalizeOptions = {},
 ): CalcWorksheetProgram {
   const scope = new Scope(
     true,
@@ -3486,7 +3492,11 @@ export function compileCellsForCalc(
       // The shared declaredFns set both seeds this cell's normalize
       // (a `g(4)` below a `\def g` is a call, not juxtaposition) and
       // collects the names this cell declares for the cells below it.
-      const { ir, issues } = normalizeIR(cell.json, scope.decls.declaredFns);
+      const { ir, issues } = normalizeIR(
+        cell.json,
+        scope.decls.declaredFns,
+        opts,
+      );
       if (ir === undefined)
         return { defs: [], statements: [], issues, statementLines: [] };
       return compileCellInScope(ir, issues, scope);
@@ -3497,8 +3507,11 @@ export function compileCellsForCalc(
 // Compile a single cell for the calculator target — the standalone
 // equivalent of compileCellsForCalc([cell]), with the cell's decls
 // folded into the prelude (a self-contained program).
-export function compileCellForCalc(cell: CellInput): CalcProgram {
-  const { ir, issues } = normalizeIR(cell.json);
+export function compileCellForCalc(
+  cell: CellInput,
+  opts: NormalizeOptions = {},
+): CalcProgram {
+  const { ir, issues } = normalizeIR(cell.json, undefined, opts);
   if (ir === undefined)
     return { prelude: [], statements: [], issues, statementLines: [] };
   const scope = new Scope(
