@@ -88,4 +88,15 @@ export const CALC_RUNTIME_PY = `def clean_and_simplify(val):  # display cleanup
         except Exception:
             return val
 
-    return mc_order(mc_simplify(mc_doit(val)))`;
+    return mc_order(mc_simplify(mc_doit(val)))
+
+
+def _mc_plot(value):  # plot marker
+    """Tag a value as a plot request.
+
+    The 'plot' statement emits _mc_plot(<expr>). The returned dict is a
+    marker, not a result — the calculator's engine samples the
+    expression's signature and renders it. Outside the engine it just
+    carries the expression in its 'expr' slot.
+    """
+    return {'__mcplot__': True, 'expr': value}`;
