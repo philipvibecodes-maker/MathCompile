@@ -262,6 +262,24 @@ test('typed \\tr expands to \\mathrm{tr}', async ({ page }) => {
   expect(await value(page)).toBe('\\mathrm{tr}\\left(A\\right)');
 });
 
+// \D is an insertion alias — it expands to \text{D}, the upright mark
+// the compiler reads as the total-derivative operator.
+test('typed \\D expands to \\text{D}', async ({ page }) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\D', { delay: 60 });
+  await page.keyboard.press('Enter');
+  expect(await value(page)).toBe('\\text{D}');
+});
+
+// \gradient is an insertion alias — it expands to the \nabla sign the
+// compiler lowers to a Gradient node.
+test('typed \\gradient expands to \\nabla', async ({ page }) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\gradient', { delay: 60 });
+  await page.keyboard.press('Enter');
+  expect(await value(page)).toBe('\\nabla');
+});
+
 // \widehat aliases \hat (wide variant): parses and renders the hat.
 test('\\widehat parses and renders as a hat', async ({ page }) => {
   const mf = page.locator('math-field').first();

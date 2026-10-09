@@ -234,6 +234,48 @@ export const LATEX_RULES: LatexRule[] = [
       ['\\partial_x y', '\\frac{\\partial}{\\partial x} y'],
     ],
   },
+  {
+    name: 'd-total-alias',
+    why: '\\D is the insertion alias for the total-derivative operator — '
+      + 'in the field it expands to \\text{D} atoms, so this rewrite only '
+      + 'covers a \\D that reaches the parser anyway (pasted latex, '
+      + 'stored cells from before the alias). A plain D stays a symbol.',
+    applies: /\\D(?![a-zA-Z])/,
+    rewrite: (s) =>
+      s.replace(/(?<!\\)((?:\\\\)*)\\D(?![a-zA-Z])/g, '$1\\text{D}'),
+    tests: [
+      ['\\frac{\\D f}{\\D x}', '\\frac{\\text{D} f}{\\text{D} x}'],
+      ['\\D_x f', '\\text{D}_x f'],
+      ['\\Delta', '\\Delta'],
+      // backslash-run parity: an even count means the slashes are row
+      // separators and "D" is literal text.
+      ['x\\\\D y', 'x\\\\D y'],
+      ['x\\\\\\D y', 'x\\\\\\text{D} y'],
+    ],
+  },
+  {
+    name: 'nabla-gradient',
+    why: '\\nabla/\\gradient spell the gradient operator — CE has no '
+      + 'latex for it, so they rewrite to \\operatorname{grad} which the '
+      + 'normalizer folds to a Gradient node. \\nabla\\cdot/\\times '
+      + '(div/curl), \\nabla^2 (laplacian) and \\nabla_v stay '
+      + 'unsupported-command errors — only the gradient reading exists.',
+    applies: /\\(?:nabla|gradient)(?![a-zA-Z])/,
+    rewrite: (s) =>
+      s.replace(
+        /(?<!\\)((?:\\\\)*)\\(?:nabla|gradient)(?![a-zA-Z])(?!\s*(?:\\cdot|\\times|\^|_))/g,
+        '$1\\operatorname{grad}',
+      ),
+    tests: [
+      ['\\nabla f', '\\operatorname{grad} f'],
+      ['\\gradient f', '\\operatorname{grad} f'],
+      ['\\nabla \\cdot F', '\\nabla \\cdot F'],
+      ['\\nabla^2 f', '\\nabla^2 f'],
+      ['\\nablas', '\\nablas'],
+      ['x\\\\nabla y', 'x\\\\nabla y'],
+      ['x\\\\\\nabla y', 'x\\\\\\operatorname{grad} y'],
+    ],
+  },
 ];
 
 const ruleByName = new Map(LATEX_RULES.map((r) => [r.name, r]));
@@ -288,6 +330,8 @@ export const PRE_PARSE_RULES = [
   'limits-hints',
   'thin-space',
   'partial-subscript',
+  'd-total-alias',
+  'nabla-gradient',
 ];
 
 // Display form for the output column: unwrapped like outputLatex, with

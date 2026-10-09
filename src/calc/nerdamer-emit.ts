@@ -462,6 +462,13 @@ function emit(node: MathJson | undefined, ctx: Ctx): string | null {
         ? `diff(${fx}, ${xv}, ${n})`
         : `diff(${fx}, ${xv}, ${n}+${nested})`;
     }
+    case 'TotalD':
+    case 'Gradient':
+      // \frac{\D f}{\D x} / \nabla f — nerdamer has no
+      // dependent-variable or array-derivative semantics; a guessed
+      // diff(f(x), x) / grad(...) row would be wrong. No interim is
+      // better than a wrong one.
+      return null;
     case 'Apply': {
       const callee = args[0];
       if (isHead(callee, 'InverseFunction')) {

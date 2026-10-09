@@ -737,6 +737,45 @@ export const NOTATION: Notation[] = [
       + 'atoms — there is no D command in the field',
   },
   {
+    name: 'TotalD',
+    heads: ['TotalD'],
+    commands: ['D'],
+    spellings: ['\\frac{\\D f}{\\D x}', '\\D_x f', '\\frac{\\D}{\\D x} f'],
+    probes: [
+      { latex: '\\frac{\\D f}{\\D x}', expect: 'sp.diff(f(x), x)' },
+      {
+        latex: '\\frac{\\D(xy)}{\\D t}',
+        expect: 'sp.diff(x(t) * y(t), t)',
+      },
+    ],
+    completion: {
+      name: 'D',
+      hint: 'total derivative',
+      preview: '\\frac{\\D }{\\D x}',
+    },
+    note: '\\D is an insertion alias for \\text{D} — every free symbol '
+      + 'in the body differentiates through the chain rule',
+  },
+  {
+    name: 'Gradient',
+    heads: ['Gradient'],
+    commands: ['nabla', 'gradient'],
+    spellings: ['\\nabla f', '\\gradient f', '\\operatorname{grad} f'],
+    probes: [
+      {
+        latex: '\\nabla (x^2+y^2)',
+        expect: 'sp.derive_by_array(x**2 + y**2, [x, y])',
+      },
+    ],
+    completion: {
+      name: 'gradient',
+      hint: 'gradient ∇',
+      preview: '\\nabla f',
+    },
+    note: '\\nabla/\\gradient lower to \\operatorname{grad} — '
+      + '\\nabla\\cdot/\\times/\\nabla^2 stay unsupported-command errors',
+  },
+  {
     name: 'Def',
     heads: ['Def'],
     commands: ['def'],

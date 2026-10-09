@@ -13042,6 +13042,46 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds.tr = function () {
         return new TrAlias('\\mathrm{tr}', h('span', { class: 'mq-roman' }, [h.text('tr')]), 'tr', 'tr');
     };
+    //======================================================================
+    //  \D — insertion alias for \text{D} (total derivative)
+    //======================================================================
+    // Typing `\D` expands to a \text{D} TextBlock — an upright "D" the
+    // compiler reads as the total-derivative operator (\frac{\D f}{\D x},
+    // \D_x f); a plain italic D stays an ordinary symbol. `\D` isn't a real
+    // LaTeX command, so pasted latex canonicalizes to \text{D} on the next
+    // save — the same insertion-time expansion \def and \tr use.
+    var TotalDAlias = /** @class */ (function (_super) {
+        __extends(TotalDAlias, _super);
+        function TotalDAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        TotalDAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{D}');
+        };
+        return TotalDAlias;
+    }(MQSymbol));
+    LatexCmds.D = function () {
+        return new TotalDAlias('\\text{D}', h('span', { class: 'mq-text-mode' }, [h.text('D')]), 'D', 'total derivative');
+    };
+    //======================================================================
+    //  \gradient — insertion alias for \nabla
+    //======================================================================
+    // Typing `\gradient` expands to the \nabla sign the compiler lowers to
+    // a gradient (\nabla f) — a pasted `\gradient` renders the same ∇ glyph
+    // and serializes as \nabla.
+    var GradientAlias = /** @class */ (function (_super) {
+        __extends(GradientAlias, _super);
+        function GradientAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        GradientAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\nabla ');
+        };
+        return GradientAlias;
+    }(MQSymbol));
+    LatexCmds.gradient = function () {
+        return new GradientAlias('\\nabla ', h('span', {}, [h.entityText('&nabla;')]), '∇', 'gradient');
+    };
     // Triple-quoted strings come first — docstrings span lines and must not get
     // keyword/call coloring on their contents.
     var PY_TOKEN_RE = /("""[\s\S]*?"""|'''[\s\S]*?'''|'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*")|(#[^\n]*)|(\b(?:and|as|assert|async|await|break|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|not|or|pass|raise|return|try|while|with|yield|True|False)\b)|(\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|([A-Za-z_]\w*(?=\s*\())/g;

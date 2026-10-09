@@ -36,12 +36,18 @@ export const COMPLETIONS: CompletionItem[] = [
   { name: 'sum', hint: 'summation', preview: '\\sum_{k=1}^{n}' },
   { name: 'prod', hint: 'product', preview: '\\prod_{k=1}^{n}' },
   { name: 'lim', hint: 'limit', preview: '\\lim_{x\\to 0}' },
+  // `\D` and `\gradient` are insertion aliases — they expand to
+  // `\text{D}` and `\nabla`; the items come from their registry
+  // entries. `D` must outrank 'derivative' — Enter accepts the first
+  // prefix match, and a typed `\D` means the total derivative.
+  fromRegistry('D'),
   {
     name: 'derivative',
     hint: 'd/dx operator',
     preview: '\\frac{d }{d x}',
   },
   { name: 'partial', hint: 'partial derivative', preview: '\\partial' },
+  fromRegistry('gradient'),
   { name: 'binom', hint: 'binomial coefficient', preview: '\\binom{n}{k}' },
   { name: 'pmatrix', hint: 'matrix', preview: '\\pmatrix{a&b\\\\c&d}' },
   { name: 'begin', hint: 'environment (pmatrix, cases, …)' },
