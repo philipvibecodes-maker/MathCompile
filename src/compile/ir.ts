@@ -244,9 +244,12 @@ const hasTotalDMark = (v: MathJson): boolean =>
   isTotalDMark(v) || (isArray(v) && v.some((c) => hasTotalDMark(c)));
 
 // Fold the `\D` (`\text{D}`) operator inside a juxtaposition — runs on
-// the RAW factor list since norming would unquote the mark: `\D_x f`,
-// `\D_x^2 f`, `\frac{\D f}{\D x} g`, `\frac{\D}{\D x} f`, and the bare
-// `\D f` (missing variable — codegen flags it).
+// the RAW factor list since norming would unquote the mark. The
+// notation is asymmetric: bare `\D f` / `\D(f)` is the TOTAL
+// derivative — the Jacobian, which takes no variable — while `\D_x f`
+// is a PARTIAL in x and folds to the ordinary D head. `\frac{\D}{\D}`
+// is not the notation: it still folds to TotalD with a variable so
+// codegen can flag it.
 const foldTotalD = (
   rawArgs: MathJson[],
   ctx: NormalizeCtx,
@@ -257,7 +260,8 @@ const foldTotalD = (
       ? ctx.norm(parts[0])
       : (['Multiply', ...parts.map((n) => ctx.norm(n))] as MathJson);
   const first = rawArgs[0];
-  // `\D_x f` / `\D_x^2 f` — the variable rides the mark's subscript.
+  // `\D_x f` / `\D_x^2 f` — a PARTIAL in x: the ordinary D head, so
+  // other symbols stay constants.
   const sub =
     isArray(first) &&
     head(first) === 'Subscript' &&
@@ -275,19 +279,16 @@ const foldTotalD = (
         : null;
   if (sub !== null && rawArgs.length > 1)
     return sub.order !== undefined
-      ? [
-          'TotalD',
-          bodyOf(rawArgs.slice(1)),
-          normVar(sub.x),
-          ctx.norm(sub.order),
-        ]
-      : ['TotalD', bodyOf(rawArgs.slice(1)), normVar(sub.x)];
-  // `\D f` / `\D^2 f` — a bare mark: an operator missing its variable.
+      ? ['D', bodyOf(rawArgs.slice(1)), normVar(sub.x), ctx.norm(sub.order)]
+      : ['D', bodyOf(rawArgs.slice(1)), normVar(sub.x)];
+  // `\D f` / `\D^2 f` — a bare mark: the TOTAL derivative (Jacobian),
+  // no variable. 'Nothing' holds the var slot so a following slot can
+  // carry the order without colliding with the fraction form's var.
   const dp = totalDPower(first);
   if (dp.is && rawArgs.length > 1)
     return dp.order !== undefined
       ? ['TotalD', bodyOf(rawArgs.slice(1)), 'Nothing', ctx.norm(dp.order)]
-      : ['TotalD', bodyOf(rawArgs.slice(1)), 'Nothing'];
+      : ['TotalD', bodyOf(rawArgs.slice(1))];
   // A `\frac{\D f}{\D x}` factor — the same two placements as the
   // d-quotient fold.
   for (let i = 0; i < rawArgs.length; i++) {
@@ -1482,8 +1483,10 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
   {
     name: 'total-d-quotient',
     // A standalone `\frac{\D f}{\D x}` — the 'D'-marked quotient, read
-    // on the raw children before norming unquotes the marks.
-    why: 'a \\text{D}-quotient Divide folds to TotalD(body, x[, order])',
+    // on the raw children before norming unquotes the marks. Not the
+    // total-derivative notation; folds to TotalD(body, x) so codegen
+    // flags it and emits the plausible partial.
+    why: 'a \\text{D}-quotient Divide folds to TotalD(body, x[, order]) — flagged',
     when: (h, node) => h === 'Divide' && node.length === 3,
     rewrite: (node, ctx) => {
       const q = tdQuotient(node[1], node[2]);

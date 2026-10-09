@@ -170,48 +170,49 @@ const FIXTURES: {
     ],
   },
   {
-    // `\D` — the total derivative: free symbols in the body become
-    // functions of the variable so the chain rule differentiates
-    // through. `\text{D}` is what the field stores after the alias.
-    latex: '\\frac{\\text{D}y}{\\text{D}x}',
-    expectedIR: ['TotalD', 'y', 'x'],
+    // `\D f` — the TOTAL derivative: the Jacobian, which takes no
+    // variable. `\text{D}` is what the field stores after the alias.
+    latex: '\\D f',
+    expectedIR: ['TotalD', 'f'],
     expectedPython: [
       'x = sp.Symbol("x")',
-      'y = sp.Function("y")',
-      'sp.diff(y(x), x)',
+      'f = sp.Function("f")',
+      'sp.derive_by_array(f(x), [x])',
     ],
   },
   {
-    latex: '\\frac{\\D f}{\\D x}',
-    expectedIR: ['TotalD', 'f', 'x'],
+    latex: '\\D(x*y)',
+    expectedIR: ['TotalD', ['Multiply', 'x', 'y']],
+    expectedPython: [
+      "x, y = sp.symbols('x y')",
+      'sp.derive_by_array(x * y, [x, y])',
+    ],
+  },
+  {
+    // `\D^2 f` — the second total derivative: a nested Jacobian (the
+    // Hessian for a scalar field).
+    latex: '\\D^2 f',
+    expectedIR: ['TotalD', 'f', 'Nothing', 2],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+      'sp.derive_by_array(sp.derive_by_array(f(x), [x]), [x])',
+    ],
+  },
+  {
+    // `\D_x f` — a PARTIAL in x: folds to the ordinary D head, so other
+    // symbols stay constants. Confusing notation, but that is how it is.
+    latex: '\\D_x f',
+    expectedIR: ['D', 'f', 'x'],
     expectedPython: [
       'x = sp.Symbol("x")',
       'f = sp.Function("f")',
       'sp.diff(f(x), x)',
-    ],
-  },
-  {
-    latex: '\\frac{\\D}{\\D x}f',
-    expectedIR: ['TotalD', 'f', 'x'],
-    expectedPython: [
-      'x = sp.Symbol("x")',
-      'f = sp.Function("f")',
-      'sp.diff(f(x), x)',
-    ],
-  },
-  {
-    latex: '\\D_t(xy)',
-    expectedIR: ['TotalD', ['Multiply', 'x', 'y'], 't'],
-    expectedPython: [
-      't = sp.Symbol("t")',
-      'x = sp.Function("x")',
-      'y = sp.Function("y")',
-      'sp.diff(x(t) * y(t), t)',
     ],
   },
   {
     latex: '\\D_x^2 f',
-    expectedIR: ['TotalD', 'f', 'x', 2],
+    expectedIR: ['D', 'f', 'x', 2],
     expectedPython: [
       'x = sp.Symbol("x")',
       'f = sp.Function("f")',
@@ -219,10 +220,41 @@ const FIXTURES: {
     ],
   },
   {
-    latex: '\\D f',
-    expectedIR: ['TotalD', 'f', 'Nothing'],
-    expectedPython: ['f = sp.Symbol("f")'],
-    issues: ['total derivative needs a variable'],
+    latex: '\\D_t(x*y)',
+    expectedIR: ['D', ['Multiply', 'x', 'y'], 't'],
+    expectedPython: [
+      "x, y, t = sp.symbols('x y t')",
+      'sp.diff(x * y, t)',
+    ],
+  },
+  {
+    // `\frac{\D f}{\D x}` — not the total-derivative notation: flagged
+    // as an error, so the statement itself is dropped.
+    latex: '\\frac{\\text{D}y}{\\text{D}x}',
+    expectedIR: ['TotalD', 'y', 'x'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+    ],
+    issues: ['not the notation'],
+  },
+  {
+    latex: '\\frac{\\D f}{\\D x}',
+    expectedIR: ['TotalD', 'f', 'x'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+    ],
+    issues: ['not the notation'],
+  },
+  {
+    latex: '\\frac{\\D}{\\D x}f',
+    expectedIR: ['TotalD', 'f', 'x'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+    ],
+    issues: ['not the notation'],
   },
   {
     // `\nabla`/`\gradient` lower to `\operatorname{grad}` pre-parse;

@@ -683,23 +683,25 @@ export const NOTATION: Notation[] = [
   },
   {
     name: 'TotalD',
-    heads: ['TotalD'],
+    heads: ['TotalD', 'D'],
     commands: ['D'],
-    spellings: ['\\frac{\\D f}{\\D x}', '\\D_x f', '\\frac{\\D}{\\D x} f'],
+    spellings: ['\\D f', '\\D(f)', '\\D_x f'],
     probes: [
-      { latex: '\\frac{\\D f}{\\D x}', expect: 'sp.diff(f(x), x)' },
+      { latex: '\\D f', expect: 'sp.derive_by_array(f(x), [x])' },
       {
-        latex: '\\frac{\\D(xy)}{\\D t}',
-        expect: 'sp.diff(x(t) * y(t), t)',
+        latex: '\\D(x*y)',
+        expect: 'sp.derive_by_array(x * y, [x, y])',
       },
+      { latex: '\\D_x f', expect: 'sp.diff(f(x), x)' },
     ],
     completion: {
       name: 'D',
       hint: 'total derivative',
-      preview: '\\frac{\\D }{\\D x}',
+      preview: '\\D f',
     },
-    note: '\\D is an insertion alias for \\text{D} — every free symbol '
-      + 'in the body differentiates through the chain rule',
+    note: '\\D is an insertion alias for \\text{D} — the bare mark is '
+      + 'the total derivative (the Jacobian, no variable); \\D_x f is '
+      + 'the partial in x; \\frac{\\D}{\\D} is not the notation',
   },
   {
     name: 'Gradient',
