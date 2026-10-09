@@ -1,21 +1,19 @@
+import { ComputeEngine } from '@cortex-js/compute-engine';
 import {
   collectDeclared,
   compileCellsForCalc,
+  firstFreeCapital,
+  freeNames,
   type CalcWorksheetProgram,
 } from '../compile/codegen';
 import {
-  latexToStatementStrings,
+  isDiffMark,
   normalizeIR,
   parseCellLatex,
   type Issue,
   type MathJson,
   type NormalizeOptions,
 } from '../compile/ir';
-import {
-  interimConstNames,
-  irToNerdamer,
-  leaf,
-} from './nerdamer-emit';
 import { arcTrigNames } from './result-latex';
 
 export interface CalcRowOk {
@@ -296,71 +294,309 @@ export function prewarm(): void {
   ensureWorker();
 }
 
-let nerdamerP: Promise<typeof import('nerdamer/all')> | undefined;
+const isArr = (v: MathJson | undefined): v is MathJson[] => Array.isArray(v);
+const headOf = (v: MathJson | undefined): string | undefined =>
+  isArr(v) && typeof v[0] === 'string' ? v[0] : undefined;
 
-// Instant best-effort results while the SymPy engine boots: nerdamer
-// evaluates the translated expression in ~ms, so dimmed answers show
-// immediately — including calculus (integrate/defint/diff/sum/product/
-// limit emitted by nerdamer-emit off the same normalized IR the real
-// engine reads). One interim row per \\ row, matching the real engine's
-// row-per-statement shape. Statements the IR emitter doesn't cover fall
-// back to nerdamer's own latex reader (`leaf`); a statement that can't
-// produce a real value produces no row. Dynamically imported so
-// nerdamer's ~440KB never enters the main bundle.
+// Heads the interim can't evaluate honestly — boxing them produces
+// \mathrm{<head>}(…) junk latex. Per the silent-empty convention they
+// stay dimmed until SymPy lands, like unreadable statements did before.
+const SKIP_HEADS = new Set([
+  'Error',
+  'call',
+  'Apply',
+  'Declare',
+  'Def',
+  'IntegerRange',
+  // \min_{x}/\max_{x} bound-extrema heads — CE can't evaluate them and
+  // would echo a \mathrm{Minimum}(body, var) guess.
+  'Minimum',
+  'Maximum',
+  // \python{...} cells parse to PythonSource — boxing it echoes
+  // PythonSource(...) junk.
+  'PythonSource',
+]);
+const hasHead = (n: MathJson): boolean =>
+  isArr(n) && (SKIP_HEADS.has(headOf(n) ?? '') || n.slice(1).some(hasHead));
+// \text{def} markers surface as the quoted 'def' string in the raw IR.
+const hasDef = (n: MathJson): boolean =>
+  n === "'def'" || (isArr(n) && n.some(hasDef));
+
+// CE's serializer emits names MathQuill doesn't know (they'd render as
+// italic letters) — map them to the plain forms.
+const cleanLatex = (s: string): string =>
+  s
+    .replaceAll('\\exponentialE', 'e')
+    .replaceAll('\\imaginaryI', 'i')
+    .replaceAll('\\lparen', '(')
+    .replaceAll('\\rparen', ')')
+    .replaceAll('\\lvert', '|')
+    .replaceAll('\\rvert', '|')
+    .replaceAll('\\vert', '|')
+    .replaceAll('\\lVert', '\\|')
+    .replaceAll('\\rVert', '\\|')
+    .replaceAll('\\Vert', '\\|');
+
+// Constant-of-integration naming, mirroring codegen's nextConstName:
+// first capital absent from the used-name set — C, else D, E, … — via
+// codegen's shared firstFreeCapital. `used` is seeded by the caller with
+// the names bound above the cell plus every name token inside it (the
+// same reservation codegen's constNames seeding makes), so a `C = …`
+// elsewhere can't collide. The allocation order across cells is still
+// cell-local — an estimate edge.
+const takeConstFrom = (used: Set<string>): (() => string) =>
+  () => firstFreeCapital(used);
+
+// Wrap every boundless Integrate in Add(…, letter) so the interim shows
+// the same constants codegen emits. Raw shape ['Integrate', body, 'v']
+// is indefinite (a Limits var slot marks the definite form), and nesting
+// handles iterated integrals like codegen's per-level +C
+// (∬x dxdy → x²y/2 + C·y + D, not … + C).
+const addConstants = (n: MathJson, next: () => string): MathJson => {
+  if (!isArr(n)) return n;
+  const kids = n.slice(1).map((k) => addConstants(k, next));
+  if (
+    headOf(n) === 'Integrate' &&
+    kids.length === 2 &&
+    typeof kids[1] === 'string'
+  )
+    return ['Add', [n[0], ...kids], next()];
+  return [n[0], ...kids];
+};
+
+// `\int x^2\text{d}x` — CE leaves an upright `\text{d}` differential
+// as a `d·x` factor pair inside the integrand instead of marking the
+// var slot: flat (`Multiply(x², d, x)`) or nested in the last factor's
+// args (`x\sin x\,dx` → `Sin(Multiply(x, d, x))`). Peel pairs wherever
+// they sit — the same peel codegen's integral emitter does before
+// emitting sp.integrate — and let the names fill the var slot.
+const peelDiffs = (node: MathJson): { node: MathJson; names: string[] } => {
+  const stripTail = (
+    factors: MathJson[],
+  ): { factors: MathJson[]; names: string[] } => {
+    const out = [...factors];
+    const names: string[] = [];
+    while (
+      out.length >= 2 &&
+      isDiffMark(out[out.length - 2]) &&
+      typeof out[out.length - 1] === 'string'
+    ) {
+      names.unshift(out.pop() as string);
+      out.pop();
+    }
+    return { factors: out, names };
+  };
+  const walk = (n: MathJson): { node: MathJson; names: string[] } => {
+    if (isArr(n) && (headOf(n) === 'Multiply' || headOf(n) === 'InvisibleOperator')) {
+      const r = stripTail(n.slice(1));
+      if (r.names.length > 0)
+        return r.factors.length === 1
+          ? { node: r.factors[0], names: r.names }
+          : r.factors.length > 1
+            ? { node: ['Multiply', ...r.factors] as MathJson, names: r.names }
+            : { node: n, names: [] };
+      const last = r.factors[r.factors.length - 1];
+      const inner = walk(last);
+      if (inner.names.length > 0) {
+        const factors = [...r.factors];
+        factors[factors.length - 1] = inner.node;
+        return { node: ['Multiply', ...factors] as MathJson, names: inner.names };
+      }
+      return { node: n, names: [] };
+    }
+    if (isArr(n) && n.length >= 2)
+      for (let i = n.length - 1; i >= 1; i--) {
+        const inner = walk(n[i]);
+        if (inner.names.length > 0) {
+          const out = [...n];
+          out[i] = inner.node;
+          return { node: out as MathJson, names: inner.names };
+        }
+      }
+    return { node: n, names: [] };
+  };
+  return walk(node);
+};
+
+// Normalized bounds shape: ['Limits', v, lo, hi] with 'Nothing' slots.
+// 'Nothing' in the var slot means no differential was written — infer
+// the var from the peeled differentials first, then from the body's
+// single free name (codegen's freeNames, which skips constants like Pi).
+// Both bounds 'Nothing' = indefinite; a lone 'Nothing' bound is a real
+// error on the engine, so the interim poisons (null propagates up).
+// Extra peeled names are iterated-integral variables — codegen emits
+// sp.integrate(body, v, y, …), mirrored here as nested Integrates.
+const repairBounds = (n: MathJson): MathJson | null => {
+  if (!isArr(n)) return n;
+  const h = headOf(n);
+  if ((h === 'Integrate' || h === 'Sum' || h === 'Product') && n.length === 3) {
+    let body = repairBounds(n[1]);
+    if (body === null) return null;
+    const spec = n[2];
+    const peeled = peelDiffs(body);
+    // A `dv` pair under a sum/product is a real-engine error
+    // ("did you mean \int") — poison instead of guessing.
+    if (h !== 'Integrate' && peeled.names.length > 0) return null;
+    body = peeled.node;
+    const infer = (): MathJson | null => {
+      const free = freeNames(body);
+      return free.length === 1 ? free[0] : null;
+    };
+    // vars in innermost-first order → nested op nodes
+    const nest = (vars: MathJson[], slot: (v: MathJson) => MathJson) => {
+      let cur: MathJson = [h, body, slot(vars[0])];
+      for (const e of vars.slice(1)) cur = [h, cur, slot(e)];
+      return cur;
+    };
+    if (spec === 'Nothing') {
+      const names = [...peeled.names];
+      const v = names.shift() ?? infer();
+      return v === null ? null : nest([v, ...names], (x) => x);
+    }
+    if (isArr(spec) && (headOf(spec) === 'Limits' || headOf(spec) === 'Tuple')) {
+      const [, sv, lo, hi] = spec;
+      const loN = lo === 'Nothing';
+      const hiN = hi === 'Nothing';
+      if (loN !== hiN) return null;
+      const names =
+        sv === 'Nothing' ? [...peeled.names] : peeled.names.filter((nm) => nm !== sv);
+      const v = sv === 'Nothing' ? (names.shift() ?? infer()) : sv;
+      if (typeof v !== 'string') return null;
+      const slot = (x: MathJson): MathJson => (loN ? x : ['Limits', x, lo, hi]);
+      return nest([v, ...names], slot);
+    }
+    return [h, body, spec];
+  }
+  const kids = n.slice(1).map(repairBounds);
+  return kids.includes(null) ? null : [n[0], ...(kids as MathJson[])];
+};
+
+// The relation heads cellBody recognizes inside a `\text{where}` block —
+// a condition run followed by the body.
+const RELATION_HEADS = new Set([
+  'Equal',
+  'NotEqual',
+  'Less',
+  'LessEqual',
+  'Greater',
+  'GreaterEqual',
+  'NotLess',
+  'NotGreater',
+  'NotLessEqual',
+  'NotGreaterEqual',
+  'Element',
+  'NotElement',
+  'Subset',
+  'SubsetEqual',
+  'Superset',
+  'SupersetEqual',
+  'IdenticallyEqual',
+  'Congruent',
+]);
+const isRelation = (n: MathJson): boolean => RELATION_HEADS.has(headOf(n) ?? '');
+
+const evalStatement = (
+  stmt: MathJson,
+  ce: ComputeEngine,
+  nextConst: () => string,
+): CalcRow | null => {
+  if (hasDef(stmt) || hasHead(stmt)) return null;
+  const repaired = repairBounds(stmt);
+  if (repaired === null) return null;
+  const h = headOf(repaired);
+  // `name = rhs` binds in this worksheet — evaluate the Assign so the
+  // name resolves in the rows below, and show `name = value` like the
+  // real engine's Eq display. Non-name lhs (x+1 = 2, (x,y) = …) falls
+  // through to plain evaluation.
+  if (
+    isArr(repaired) &&
+    (h === 'Assign' || h === 'Equal') &&
+    repaired.length === 3 &&
+    typeof repaired[1] === 'string'
+  ) {
+    const val = ce
+      .box(['Assign', repaired[1], addConstants(repaired[2], nextConst)] as never)
+      .evaluate()
+      .evaluate();
+    const latex = cleanLatex(`${repaired[1]}=${val.latex}`);
+    return latex === `${repaired[1]}=` ? null : { ok: true as const, latex };
+  }
+  // A second evaluate() resolves integrals nested inside an outer one —
+  // CE's first pass only evaluates the outermost sign.
+  const latex = cleanLatex(
+    ce
+      .box(addConstants(repaired, nextConst) as never)
+      .evaluate()
+      .evaluate().latex,
+  );
+  return latex === '' || /Nothing|Error/.test(latex)
+    ? null
+    : { ok: true as const, latex };
+};
+
+// Instant best-effort results while the SymPy engine boots: the same
+// parse + normalize the compiler feeds on (`parseCellLatex` →
+// `normalizeIR` — chained Equal flattens, `name = rhs` becomes Assign,
+// \text{def} becomes a Def head), evaluated in a pushed scope — one
+// interim row per statement row the real engine emits, matching its
+// row-per-statement shape. ~ms per cell and no lazy chunk — CE is
+// already in the main bundle for the compiler.
 export async function interimEvaluate(
   latex: string,
   priorLatex: string[] = [],
   opts: NormalizeOptions = {},
 ): Promise<CalcRow[]> {
   try {
-    const nerdamer = (await (nerdamerP ??= import('nerdamer/all'))).default;
-    // latexToStatementStrings tracks environment depth — a plain
-    // /\\\\/ split would break every interim row for a cell holding a
-    // matrix (its \\ row separators look like statement breaks).
-    const stmts = latexToStatementStrings(latex);
-    const norm = normalizeIR(parseCellLatex(latex), undefined, opts);
+    const ir = normalizeIR(parseCellLatex(latex), undefined, opts).ir;
+    if (ir === undefined) return [];
+    const block = isArr(ir) && headOf(ir) === 'Block' ? ir.slice(1) : [ir];
+    // Expand statement groups the way cellBody does: a `\text{where}`
+    // block arrives condition-first — emit the body row before its
+    // conditions; a nested Block (chain-assign x := y := 5) lists its
+    // statements in order.
+    const statements = block.flatMap((n): MathJson[] => {
+      if (!isArr(n)) return [n];
+      const h = headOf(n);
+      if (h === 'Block') return n.slice(1);
+      if (h !== 'WhereBlock') return [n];
+      const kids = n.slice(1);
+      return kids.length > 1 &&
+        kids.slice(0, -1).every(isRelation) &&
+        !isRelation(kids[kids.length - 1])
+        ? [kids[kids.length - 1], ...kids.slice(0, -1)]
+        : kids;
+    });
     // The real engine shares one namespace down the worksheet, so a
     // `C = …` above reserves the letter for constants of integration —
-    // interim picks letters off the same declared-name set.
-    const reserved = new Set<string>();
-    const scratch = new Set<string>();
+    // seed from the same declared-name set, plus every name token in
+    // this cell (heads included — the reservation allNames makes for
+    // codegen) so `+ C` never collides.
+    const used = new Set<string>();
+    const declaredFns = new Set<string>();
     for (const l of priorLatex) {
       const n = normalizeIR(parseCellLatex(l), undefined, opts);
-      if (n.ir !== undefined) collectDeclared(n.ir, reserved, scratch);
+      if (n.ir !== undefined) collectDeclared(n.ir, used, declaredFns);
     }
-    const nodes =
-      norm.ir === undefined
-        ? []
-        : Array.isArray(norm.ir) && norm.ir[0] === 'Block'
-          ? norm.ir.slice(1)
-          : [norm.ir];
-    // An error the normalizer already flagged poisons that row — the
-    // real engine drops the statement, so a guessed interim would
-    // mislead.
-    const poisoned = new Set(
-      norm.issues
-        .filter((i) => i.severity === 'error')
-        .map((i) => i.line ?? 0),
-    );
-    const takeConst = interimConstNames(norm.ir, reserved);
-    return nodes
-      .map((node, i): CalcRow | null => {
-        if (poisoned.has(i)) return null;
+    const reserve = (n: MathJson | undefined): void => {
+      if (typeof n === 'string') used.add(n);
+      else if (isArr(n)) for (const c of n) reserve(c);
+    };
+    reserve(ir);
+    // Fresh engine per call — CE `Assign` bindings survive popScope on
+    // a shared engine (verified: pushScope → Assign → popScope still
+    // evaluates the name), so a reused singleton would leak `name = rhs`
+    // rows into every other cell's interim.
+    const engine = new ComputeEngine();
+    const nextConst = takeConstFrom(used);
+    // `name = rhs` binds inside the per-call engine — a row below sees
+    // it (a = 5 \\ a+1 → 6) and nothing leaks into other cells or
+    // later evals.
+    return statements
+      .map((s): CalcRow | null => {
         try {
-          const input = irToNerdamer(node, takeConst) ?? leaf(stmts[i] ?? '', nerdamer);
-          if (input === '') return null;
-          const tex = arcTrigNames(
-            // MathQuill doesn't need \limits — bounds render under/over
-            // anyway. nerdamer writes inverse trig as \mathrm{atan},
-            // which MathQuill renders "a tan"; arcTrigNames maps to arc-.
-            nerdamer(input)
-              .toTeX()
-              .replaceAll('\\limits', ''),
-          );
-          return tex === '' ? null : ({ ok: true as const, latex: tex });
+          return evalStatement(s, engine, nextConst);
         } catch {
-          // A statement nerdamer can't read (an environment, a CE-only
-          // command) shouldn't sink the other rows' interim results.
+          // A statement CE can't read shouldn't sink the other rows.
           return null;
         }
       })

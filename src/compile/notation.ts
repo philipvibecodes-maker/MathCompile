@@ -68,11 +68,6 @@ export interface Notation {
   /** Latex the printer should show for the CE leaf name
    *  ('epsilonSymbol' -> \varepsilon). */
   display?: string;
-  /** nerdamer emission name for the interim calculator engine — the
-   *  same role `sympy` plays for codegen. */
-  nerdamer?: string;
-  /** nerdamer name when a head sits inside InverseFunction. */
-  nerdamerInverse?: string;
   /** Palette completion generated for this notation's insertion alias. */
   completion?: { name: string; hint?: string; preview?: string };
   /** Alternate latex spellings that normalize to this notation's
@@ -95,7 +90,6 @@ export const NOTATION: Notation[] = [
     heads: ['Sqrt'],
     sympy: 'sqrt',
     commands: ['sqrt'],
-    nerdamer: 'sqrt',
     spellings: ['\\sqrt{x}', '\\sqrt x'],
     probes: [{ latex: '\\sqrt{x}', expect: 'sp.sqrt(x)' }],
   },
@@ -104,22 +98,19 @@ export const NOTATION: Notation[] = [
     name: 'Abs',
     heads: ['Abs'],
     sympy: 'Abs',
-    nerdamer: 'abs',
     spellings: ['|x|', '\\left|x\\right|', '\\operatorname{abs}(x)'],
   },
-  { name: 'Sign', heads: ['Sign'], sympy: 'sign', nerdamer: 'sign' },
+  { name: 'Sign', heads: ['Sign'], sympy: 'sign' },
   {
     name: 'Floor',
     heads: ['Floor'],
     sympy: 'floor',
-    nerdamer: 'floor',
     spellings: ['\\lfloor x\\rfloor', '\\operatorname{floor}(x)'],
   },
   {
     name: 'Ceil',
     heads: ['Ceil'],
     sympy: 'ceiling',
-    nerdamer: 'ceil',
     spellings: ['\\lceil x\\rceil', '\\operatorname{ceil}(x)'],
   },
   {
@@ -128,7 +119,6 @@ export const NOTATION: Notation[] = [
     sympy: 'Min',
     minArgs: 1,
     commands: ['min'],
-    nerdamer: 'min',
     spellings: ['\\min(a,b)', '\\operatorname{min}(a,b)'],
     probes: [{ latex: '\\min(a,b)', expect: 'sp.Min(a, b)' }],
   },
@@ -138,19 +128,16 @@ export const NOTATION: Notation[] = [
     sympy: 'Max',
     minArgs: 1,
     commands: ['max'],
-    nerdamer: 'max',
     spellings: ['\\max(a,b)', '\\operatorname{max}(a,b)'],
   },
   // \min_{x} f / \max_{x} f — the underscript forms lower to
-  // sp.minimum/sp.maximum in codegen. No nerdamer spelling: min/max are
-  // pointwise there and would compare body against bound var.
+  // sp.minimum/sp.maximum in codegen.
   { name: 'Minimum', heads: ['Minimum'] },
   { name: 'Maximum', heads: ['Maximum'] },
   {
     name: 'Factorial',
     heads: ['Factorial'],
     sympy: 'factorial',
-    nerdamer: 'factorial',
     probes: [{ latex: 'n!', expect: 'sp.factorial(n)' }],
   },
   {
@@ -159,7 +146,7 @@ export const NOTATION: Notation[] = [
     callSympy: 'factorial2',
     note: 'x!! — a call-position name only, never a canonical head',
   },
-  { name: 'Gamma', heads: ['Gamma'], sympy: 'gamma', nerdamer: 'gamma' },
+  { name: 'Gamma', heads: ['Gamma'], sympy: 'gamma' },
   {
     name: 'Binomial',
     heads: ['Binomial'],
@@ -182,7 +169,6 @@ export const NOTATION: Notation[] = [
     sympy: 'gcd',
     minArgs: 2,
     commands: ['gcd'],
-    nerdamer: 'gcd',
     spellings: ['\\gcd(6,8)', '\\operatorname{gcd}(6,8)'],
     probes: [{ latex: '\\gcd(6,8)', expect: 'sp.gcd(6, 8)' }],
   },
@@ -191,14 +177,12 @@ export const NOTATION: Notation[] = [
     heads: ['LCM'],
     sympy: 'lcm',
     minArgs: 2,
-    nerdamer: 'lcm',
   },
   {
     name: 'Mod',
     heads: ['Mod'],
     sympy: 'Mod',
     minArgs: 2,
-    nerdamer: 'mod',
     probes: [{ latex: 'x \\bmod y', expect: 'sp.Mod(x, y)' }],
   },
   {
@@ -207,7 +191,6 @@ export const NOTATION: Notation[] = [
     sympy: 'exp',
     inverse: 'log',
     commands: ['exp'],
-    nerdamer: 'exp',
     spellings: ['\\exp(x)', '\\exp x'],
   },
   {
@@ -216,7 +199,6 @@ export const NOTATION: Notation[] = [
     sympy: 'log',
     inverse: 'exp',
     commands: ['ln'],
-    nerdamer: 'log',
     spellings: ['\\ln(x)', '\\ln x'],
   },
   {
@@ -236,8 +218,6 @@ export const NOTATION: Notation[] = [
     sympy: 'sin',
     inverse: 'asin',
     commands: ['sin'],
-    nerdamer: 'sin',
-    nerdamerInverse: 'asin',
     spellings: ['\\sin(x)', '\\sin x'],
     probes: [{ latex: '\\sin^{-1}(x)', expect: 'sp.asin(x)' }],
   },
@@ -247,8 +227,6 @@ export const NOTATION: Notation[] = [
     sympy: 'cos',
     inverse: 'acos',
     commands: ['cos'],
-    nerdamer: 'cos',
-    nerdamerInverse: 'acos',
     spellings: ['\\cos(x)', '\\cos x'],
   },
   {
@@ -257,8 +235,6 @@ export const NOTATION: Notation[] = [
     sympy: 'tan',
     inverse: 'atan',
     commands: ['tan'],
-    nerdamer: 'tan',
-    nerdamerInverse: 'atan',
     spellings: ['\\tan(x)', '\\tan x'],
   },
   {
@@ -267,8 +243,6 @@ export const NOTATION: Notation[] = [
     sympy: 'sec',
     inverse: 'asec',
     commands: ['sec'],
-    nerdamer: 'sec',
-    nerdamerInverse: 'asec',
     spellings: ['\\sec(x)', '\\sec x'],
   },
   {
@@ -277,8 +251,6 @@ export const NOTATION: Notation[] = [
     sympy: 'csc',
     inverse: 'acsc',
     commands: ['csc'],
-    nerdamer: 'csc',
-    nerdamerInverse: 'acsc',
     spellings: ['\\csc(x)', '\\csc x'],
   },
   {
@@ -287,8 +259,6 @@ export const NOTATION: Notation[] = [
     sympy: 'cot',
     inverse: 'acot',
     commands: ['cot'],
-    nerdamer: 'cot',
-    nerdamerInverse: 'acot',
     spellings: ['\\cot(x)', '\\cot x'],
   },
   {
@@ -297,8 +267,6 @@ export const NOTATION: Notation[] = [
     sympy: 'sinh',
     inverse: 'asinh',
     commands: ['sinh'],
-    nerdamer: 'sinh',
-    nerdamerInverse: 'asinh',
     spellings: ['\\sinh(x)', '\\sinh x'],
   },
   {
@@ -307,8 +275,6 @@ export const NOTATION: Notation[] = [
     sympy: 'cosh',
     inverse: 'acosh',
     commands: ['cosh'],
-    nerdamer: 'cosh',
-    nerdamerInverse: 'acosh',
     spellings: ['\\cosh(x)', '\\cosh x'],
   },
   {
@@ -317,8 +283,6 @@ export const NOTATION: Notation[] = [
     sympy: 'tanh',
     inverse: 'atanh',
     commands: ['tanh'],
-    nerdamer: 'tanh',
-    nerdamerInverse: 'atanh',
     spellings: ['\\tanh(x)', '\\tanh x'],
   },
   {
@@ -326,8 +290,6 @@ export const NOTATION: Notation[] = [
     heads: ['Coth'],
     sympy: 'coth',
     inverse: 'acoth',
-    nerdamer: 'coth',
-    nerdamerInverse: 'acoth',
     spellings: ['\\coth(x)', '\\coth x'],
   },
   {
@@ -335,8 +297,6 @@ export const NOTATION: Notation[] = [
     heads: ['Sech'],
     sympy: 'sech',
     inverse: 'asech',
-    nerdamer: 'sech',
-    nerdamerInverse: 'asech',
     spellings: ['\\sech(x)', '\\sech x'],
   },
   {
@@ -344,8 +304,6 @@ export const NOTATION: Notation[] = [
     heads: ['Csch'],
     sympy: 'csch',
     inverse: 'acsch',
-    nerdamer: 'csch',
-    nerdamerInverse: 'acsch',
     spellings: ['\\csch(x)', '\\csch x'],
   },
   {
@@ -353,7 +311,6 @@ export const NOTATION: Notation[] = [
     heads: ['Arcsin'],
     sympy: 'asin',
     commands: ['arcsin'],
-    nerdamer: 'asin',
     spellings: ['\\arcsin(x)', '\\arcsin x', '\\operatorname{asin}(x)'],
   },
   {
@@ -361,7 +318,6 @@ export const NOTATION: Notation[] = [
     heads: ['Arccos'],
     sympy: 'acos',
     commands: ['arccos'],
-    nerdamer: 'acos',
     spellings: ['\\arccos(x)', '\\arccos x', '\\operatorname{acos}(x)'],
   },
   {
@@ -369,32 +325,28 @@ export const NOTATION: Notation[] = [
     heads: ['Arctan'],
     sympy: 'atan',
     commands: ['arctan'],
-    nerdamer: 'atan',
     spellings: ['\\arctan(x)', '\\arctan x', '\\operatorname{atan}(x)'],
   },
-  { name: 'Arcsec', heads: ['Arcsec'], sympy: 'asec', nerdamer: 'asec' },
-  { name: 'Arccsc', heads: ['Arccsc'], sympy: 'acsc', nerdamer: 'acsc' },
-  { name: 'Arccot', heads: ['Arccot'], sympy: 'acot', nerdamer: 'acot' },
+  { name: 'Arcsec', heads: ['Arcsec'], sympy: 'asec' },
+  { name: 'Arccsc', heads: ['Arccsc'], sympy: 'acsc' },
+  { name: 'Arccot', heads: ['Arccot'], sympy: 'acot' },
   {
     name: 'Arcsinh',
     heads: ['Arcsinh'],
     sympy: 'asinh',
     callTier: true,
-    nerdamer: 'asinh',
   },
   {
     name: 'Arccosh',
     heads: ['Arccosh'],
     sympy: 'acosh',
     callTier: true,
-    nerdamer: 'acosh',
   },
   {
     name: 'Arctanh',
     heads: ['Arctanh'],
     sympy: 'atanh',
     callTier: true,
-    nerdamer: 'atanh',
   },
   {
     name: 'Arsinh',
@@ -412,7 +364,6 @@ export const NOTATION: Notation[] = [
     heads: ['Conjugate'],
     sympy: 'conjugate',
     callTier: true,
-    nerdamer: 'conjugate',
     probes: [{ latex: '\\overline{z}', expect: 'sp.conjugate(z)' }],
     note: '\\overline{z}',
   },
@@ -422,7 +373,6 @@ export const NOTATION: Notation[] = [
     sympy: 're',
     callTier: true,
     display: '\\Re',
-    nerdamer: 'realpart',
     spellings: [
       '\\operatorname{Re}(z)',
       '\\Re(z)',
@@ -436,7 +386,6 @@ export const NOTATION: Notation[] = [
     sympy: 'im',
     callTier: true,
     display: '\\Im',
-    nerdamer: 'imagpart',
     spellings: [
       '\\operatorname{Im}(z)',
       '\\Im(z)',
@@ -452,7 +401,6 @@ export const NOTATION: Notation[] = [
     heads: ['Arg', 'Argument'],
     sympy: 'arg',
     callTier: true,
-    nerdamer: 'arg',
     spellings: [
       '\\operatorname{Arg}(z)',
       '\\arg(z)',
@@ -540,24 +488,21 @@ export const NOTATION: Notation[] = [
     callTier: true,
     callSympy: 'primepi',
     commands: ['pi'],
-    nerdamer: 'pi',
     note: '\\pi(n) reads as the prime-counting function — the call maps '
       + 'to primepi while the leaf stays pi',
   },
-  { name: 'ExponentialE', constant: 'E', ceConstant: true, nerdamer: 'e' },
-  { name: 'ImaginaryUnit', constant: 'I', ceConstant: true, nerdamer: 'i' },
+  { name: 'ExponentialE', constant: 'E', ceConstant: true },
+  { name: 'ImaginaryUnit', constant: 'I', ceConstant: true },
   {
     name: 'PositiveInfinity',
     constant: 'oo',
     ceConstant: true,
     commands: ['infty'],
-    nerdamer: 'Infinity',
   },
   {
     name: 'NegativeInfinity',
     constant: '-oo',
     ceConstant: true,
-    nerdamer: '-Infinity',
   },
   { name: 'EulerGamma', constant: 'EulerGamma', ceConstant: true },
   { name: 'CatalansConstant', constant: 'Catalan', ceConstant: true },
@@ -1058,26 +1003,4 @@ export const CE_CONSTANTS = new Set(
   NOTATION.filter((n) => n.ceConstant).map((n) => n.name),
 );
 
-// — nerdamer-emit views (the interim engine's spellings) —
 
-export const NERDAMER_FUNCS: Record<string, string> = Object.fromEntries(
-  NOTATION.flatMap((n) =>
-    n.nerdamer === undefined
-      ? []
-      : headsOf(n).map((h) => [h, n.nerdamer as string] as const),
-  ),
-);
-export const NERDAMER_INVERSE_FUNCS: Record<string, string> =
-  Object.fromEntries(
-    NOTATION.flatMap((n) =>
-      n.nerdamerInverse === undefined
-        ? []
-        : headsOf(n).map((h) => [h, n.nerdamerInverse as string] as const),
-    ),
-  );
-export const NERDAMER_CONSTANTS: Record<string, string> =
-  Object.fromEntries(
-    NOTATION.filter(
-      (n) => n.constant !== undefined && n.nerdamer !== undefined,
-    ).map((n) => [n.name, n.nerdamer as string] as const),
-  );

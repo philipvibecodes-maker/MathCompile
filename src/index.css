@@ -941,7 +941,7 @@ body {
   color: var(--faint);
 }
 
-/* Tag under dimmed interim rows: the shown answer is a nerdamer
+/* Tag under dimmed interim rows: the shown answer is a Compute Engine
    estimate, not the SymPy result that replaces it. */
 .calc-interim {
   font-size: 11px;

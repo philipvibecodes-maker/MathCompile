@@ -2683,7 +2683,7 @@ interface CellBody {
 // Free symbol names inside an expression — used to infer the variable of
 // an integral written without a differential. Constants, the CE 'Nothing'
 // marker, and callee names (f in f(t), call heads) don't count.
-function freeNames(node: MathJson, acc = new Set<string>()): string[] {
+export function freeNames(node: MathJson, acc = new Set<string>()): string[] {
   if (isStr(node)) {
     if (!CONSTANTS[node] && node !== 'Nothing' && !node.startsWith("'"))
       acc.add(node);
@@ -2730,8 +2730,8 @@ function allNames(node: MathJson, acc: Set<string>): void {
 // The next constant-of-integration letter: first capital not in `used`
 // (C, else D, E, …). `used` is mutated — the returned letter is claimed.
 // Exhausted alphabet falls back to reusing C — nothing else is left to
-// give. Shared with the interim nerdamer emitter so both engines pick
-// the same letter for the same cell.
+// give. Shared with the interim engine so both pick the same letter
+// for the same cell.
 export function firstFreeCapital(used: Set<string>): string {
   for (let code = 'C'.charCodeAt(0); code <= 'Z'.charCodeAt(0); code++) {
     const name = String.fromCharCode(code);

@@ -21,7 +21,7 @@
 
   let rows = $state<CalcRow[]>([]);
   let pending = $state(false);
-  // True while the shown rows came from the nerdamer interim engine —
+  // True while the shown rows came from the interim engine —
   // they're estimates, so the UI marks them until SymPy rows land.
   let interim = $state(false);
   let failed = $state('');
@@ -101,7 +101,7 @@
     failed = '';
     const timer = setTimeout(() => {
       if (mine !== seq) return;
-      // While the engine boots, show nerdamer's instant best-effort
+      // While the engine boots, show CE's instant best-effort
       // result — rendered dimmed since the real eval is still pending.
       // The `pending` guard keeps a late interim from overwriting real
       // rows that already landed.
@@ -270,7 +270,7 @@
       {#if interim}
         <span
           class="calc-interim"
-          title="Estimate from the interim engine (nerdamer) — replaced by the SymPy result once the engine finishes loading."
+          title="Estimate from the interim engine (Compute Engine) — replaced by the SymPy result once the engine finishes loading."
           >estimate · SymPy still loading</span
         >
       {/if}
