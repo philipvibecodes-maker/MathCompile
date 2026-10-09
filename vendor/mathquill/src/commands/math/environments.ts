@@ -533,8 +533,9 @@ class CellGrid extends MathCommand {
   }
 
   // Force-delete the row containing `cell`, discarding its content —
-  // unlike deleteCell, which only removes a fully-empty row. A grid
-  // keeps at least one row. Returns the cell to focus, or undefined.
+  // unlike deleteCell, which only removes a fully-empty row. Returns
+  // the cell to focus, or undefined on the last row — the caller then
+  // deletes the whole matrix.
   deleteRow(currentCell: MatrixCell): MatrixCell | undefined {
     var rows = this.cellRows(),
       blocks = this.cells,
@@ -568,8 +569,8 @@ class CellGrid extends MathCommand {
   }
 
   // Force-delete the column containing `cell`, discarding its content.
-  // A grid keeps at least one column. Returns the cell to focus, or
-  // undefined.
+  // Returns the cell to focus, or undefined on the last column — the
+  // caller then deletes the whole matrix.
   deleteColumn(currentCell: MatrixCell): MatrixCell | undefined {
     var rows = this.cellRows(),
       blocks = this.cells,
@@ -700,7 +701,13 @@ class CellGrid extends MathCommand {
     cursor.clearSelection();
     cursor.endSelection();
     var cellToFocus = this[method](cell);
-    if (!cellToFocus) return;
+    if (!cellToFocus) {
+      // Last row/column: the delete removes the matrix itself —
+      // unwrap the grid like the last-cell backspace path does
+      // (contents stay inline, delimiters go).
+      cursor.unwrapGramp();
+      return;
+    }
     this.finalizeTree();
     this.bubble(function (node) {
       node.reflow();

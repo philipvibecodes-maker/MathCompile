@@ -244,15 +244,16 @@ suite('environments', function () {
       assert.equal(mq.latex(), '\\begin{matrix}bz\\\\d\\end{matrix}');
     });
 
-    test('Ctrl-Shift-Backspace/Ctrl-Shift-Del refuse on the last row or column', function () {
+    test('Ctrl-Shift-Backspace/Ctrl-Shift-Del on the last row or column delete the matrix', function () {
       mq.latex('\\begin{matrix}a&b\\end{matrix}');
       mq.moveToLeftEnd().keystroke('Right');
-      mq.keystroke('Ctrl-Shift-Backspace'); // one row: no-op
-      assert.equal(mq.latex(), '\\begin{matrix}a&b\\end{matrix}');
-      mq.keystroke('Ctrl-Shift-Del'); // delete col 0 -> single column
-      assert.equal(mq.latex(), '\\begin{matrix}b\\end{matrix}');
-      mq.keystroke('Ctrl-Shift-Del'); // one column: no-op
-      assert.equal(mq.latex(), '\\begin{matrix}b\\end{matrix}');
+      mq.keystroke('Ctrl-Shift-Backspace'); // one row: unwraps to inline
+      assert.equal(mq.latex(), 'ab');
+
+      mq.latex('\\begin{matrix}a\\\\b\\end{matrix}');
+      mq.moveToLeftEnd().keystroke('Right');
+      mq.keystroke('Ctrl-Shift-Del'); // one column: unwraps to inline
+      assert.equal(mq.latex(), 'ab');
     });
 
     test('inside \\displaylines the delete shortcuts keep word-delete', function () {
