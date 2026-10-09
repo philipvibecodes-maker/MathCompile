@@ -503,7 +503,9 @@ export function parseCellLatex(latex: string): MathJson | undefined {
     } catch {
       return ['Error', `'parse-failed'`] as MathJson;
     }
-    return intervalBind(s, TEXT_FOR.test(s) ? forToComprehension(j) : j);
+    return bracketIntervals(
+      intervalBind(s, TEXT_FOR.test(s) ? forToComprehension(j) : j),
+    );
     })
     .filter((n): n is MathJson => n !== undefined);
   if (parsed.length === 0) return undefined;
@@ -650,6 +652,49 @@ const isParenTuple = (v: MathJson): v is MathJson[] =>
   head(v[1]) === 'Sequence' &&
   isString(v[2]) &&
   unquote(v[2]) === '(,)';
+
+// `[a,b]` in expression position is the same closed interval the
+// `v = [a,b]` binding reads and the Interval CE mints on its own in
+// set context (`x \in [a,b]`, `[a,b)`). Every raw 2-element List is a
+// bracket pair — `\{…\}` parses as Set, paren pairs carry a Delimiter
+// spec — so each becomes Interval; 3+-element Lists stay sequences.
+// Two shapes keep their List nodes: Matrix rows are structural, and a
+// destructuring bind (`[x,y] = [1,2]`) needs a real iterable list.
+const bracketIntervals = (n: MathJson): MathJson => {
+  if (!isArray(n)) return n;
+  const h = head(n);
+  if (h === 'Matrix') return n;
+  if (h === 'List' && n.length === 3)
+    return ['Interval', bracketIntervals(n[1]), bracketIntervals(n[2])];
+  const lhs = n[1];
+  const rhs = n[2];
+  // Destructure target like `[x,y]` / `(x,y)` — the same member check
+  // normalize's Equal fold uses to pick tuple unpacking.
+  const members = isDelimiterGroup(lhs)
+    ? delimiterArgs(lhs)
+    : isArray(lhs) && (head(lhs) === 'List' || head(lhs) === 'Sequence')
+      ? lhs.slice(1)
+      : null;
+  if (
+    (h === 'Equal' || h === 'Assign') &&
+    Array.isArray(members) &&
+    members.length > 1 &&
+    members.every(isSymbolString)
+  ) {
+    // Keep the rhs List's own head so `x, y = [1, 2]` stays unpackable
+    // (Interval isn't iterable), but still rewrite lists inside it.
+    const walked =
+      isArray(rhs) && head(rhs) === 'List' && rhs.length === 3
+        ? ([
+            'List',
+            bracketIntervals(rhs[1]),
+            bracketIntervals(rhs[2]),
+          ] as MathJson)
+        : bracketIntervals(rhs);
+    return [h, lhs, walked] as MathJson;
+  }
+  return [h, ...n.slice(1).map(bracketIntervals)] as MathJson;
+};
 
 // TeX spacing commands CE wraps in nodes (`\,` -> HorizontalSpacing).
 // They carry no value — dropped from implicit-multiplication chains so
