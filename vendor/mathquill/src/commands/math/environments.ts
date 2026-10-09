@@ -773,6 +773,9 @@ class CellGrid extends MathCommand {
 }
 
 class MatrixCell extends MathBlock {
+  // MATHCOMPILE: marks the block as a visual line container for
+  // Home/End (see Controller_keystroke::lineBlock).
+  lineCell = true;
   row: number;
 
   constructor(row: number, parent?: CellGrid, replaces?: MathBlock[]) {

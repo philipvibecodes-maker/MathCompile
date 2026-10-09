@@ -542,6 +542,10 @@
 }
 .mq-math-mode .mq-displaylines > table {
   border-spacing: 0 3px;
+  margin-top: -3px;
+}
+.mq-math-mode .mq-displaylines > table > tr:first-child > td {
+  padding-top: 0;
 }
 .mq-math-mode .mq-displaylines > table > tr > td {
   padding-left: 0;

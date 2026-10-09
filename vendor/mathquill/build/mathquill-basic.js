@@ -2117,6 +2117,9 @@ var __assign = (this && this.__assign) || function () {
     }(Fragment));
     var ControllerBase = /** @class */ (function () {
         function ControllerBase(root, container, options) {
+            // MATHCOMPILE: >0 while a programmatic latex() (load/restore) is in
+            // flight \u2014 the undo history rebases instead of recording (undo.ts).
+            this.suspendHistory = 0;
             this.isMouseSelecting = false;
             this.textareaEventListeners = {};
             this.id = root.id;
@@ -2152,6 +2155,11 @@ var __assign = (this && this.__assign) || function () {
                 else
                     handler(mq);
             }
+            // MATHCOMPILE: 'edit' is the last handler the root reflow fires,
+            // after the mutation lands \u2014 the undo history's after-change
+            // signal (services/undo.ts).
+            if (name === 'edit')
+                this.noteEdited();
         };
         ControllerBase.onNotify = function (f) {
             ControllerBase.notifyees.push(f);
@@ -2262,6 +2270,9 @@ var __assign = (this && this.__assign) || function () {
         ControllerBase.prototype.scrollHoriz = function () { };
         ControllerBase.prototype.selectionChanged = function () { };
         ControllerBase.prototype.setOverflowClasses = function () { };
+        // MATHCOMPILE: overridden by the undo layer (services/undo.ts)
+        ControllerBase.prototype.noteEdited = function () { };
+        ControllerBase.prototype.rebaseHistory = function () { };
         ControllerBase.notifyees = [];
         return ControllerBase;
     }());
@@ -3555,10 +3566,13 @@ var __assign = (this && this.__assign) || function () {
                 case 'Shift-Esc':
                     ctrlr.escapeDir(L, key, e);
                     return;
-                // End -> move to the end of the current block.
+                // End -> move to the end of the current visual line: the
+                // innermost grid cell (\displaylines row, matrix cell), or the
+                // root block in a single-line field.
                 case 'End':
-                    ctrlr.notify('move').cursor.insAtRightEnd(cursor.parent);
-                    ctrlr.aria.queue('end of').queue(cursor.parent, true);
+                    var endBlock = ctrlr.lineBlock();
+                    ctrlr.notify('move').cursor.insAtRightEnd(endBlock);
+                    ctrlr.aria.queue('end of').queue(endBlock, true);
                     break;
                 // Ctrl-End -> move all the way to the end of the root block.
                 case 'Ctrl-End':
@@ -3569,18 +3583,19 @@ var __assign = (this && this.__assign) || function () {
                         .queue(ctrlr.root)
                         .queue(ctrlr.ariaPostLabel);
                     break;
-                // Shift-End -> select to the end of the current block.
+                // Shift-End -> select to the end of the current line.
                 case 'Shift-End':
-                    ctrlr.selectToBlockEndInDir(R);
+                    ctrlr.selectToLineEndInDir(R);
                     break;
                 // Ctrl-Shift-End -> select all the way to the end of the root block.
                 case 'Ctrl-Shift-End':
                     ctrlr.selectToRootEndInDir(R);
                     break;
-                // Home -> move to the start of the current block.
+                // Home -> move to the start of the current visual line.
                 case 'Home':
-                    ctrlr.notify('move').cursor.insAtLeftEnd(cursor.parent);
-                    ctrlr.aria.queue('beginning of').queue(cursor.parent, true);
+                    var homeBlock = ctrlr.lineBlock();
+                    ctrlr.notify('move').cursor.insAtLeftEnd(homeBlock);
+                    ctrlr.aria.queue('beginning of').queue(homeBlock, true);
                     break;
                 // Ctrl-Home -> move all the way to the start of the root block.
                 case 'Ctrl-Home':
@@ -3591,9 +3606,9 @@ var __assign = (this && this.__assign) || function () {
                         .queue(ctrlr.root)
                         .queue(ctrlr.ariaPostLabel);
                     break;
-                // Shift-Home -> select to the start of the current block.
+                // Shift-Home -> select to the start of the current line.
                 case 'Shift-Home':
-                    ctrlr.selectToBlockEndInDir(L);
+                    ctrlr.selectToLineEndInDir(L);
                     break;
                 // Ctrl-Shift-Home -> select all the way to the start of the root block.
                 case 'Ctrl-Shift-Home':
@@ -3658,6 +3673,16 @@ var __assign = (this && this.__assign) || function () {
                 case 'Meta-A':
                 case 'Ctrl-A':
                     ctrlr.selectAll();
+                    break;
+                // MATHCOMPILE: undo/redo \u2014 snapshot history (services/undo.ts).
+                case 'Meta-Z':
+                case 'Ctrl-Z':
+                    ctrlr.undo();
+                    break;
+                case 'Meta-Shift-Z':
+                case 'Ctrl-Shift-Z':
+                case 'Ctrl-Y':
+                    ctrlr.redo();
                     break;
                 // These remaining hotkeys are only of benefit to people running screen readers.
                 case 'Ctrl-Alt-Up': // speak parent block that has focus
@@ -3767,17 +3792,47 @@ var __assign = (this && this.__assign) || function () {
         Controller_keystroke.prototype.escapeDir = function (dir, _key, e) {
             prayDirection(dir);
             var cursor = this.cursor;
+            // MATHCOMPILE: a caret in the dir-edge cell of a grid that fills
+            // the root (\displaylines) can't step out to the root edge \u2014
+            // Cursor::rootEdgeEnd snaps it back \u2014 so it counts as root-level
+            // for Tab/Shift-Tab: no preventDefault, and the browser default
+            // leaves the field exactly like a single-line cell.
+            var atFieldEdge = cursor.parent === this.root || this.atRootFillingCellEdge(dir);
             // only prevent default of Tab if not in the root editable
-            if (cursor.parent !== this.root)
+            if (!atFieldEdge)
                 e === null || e === void 0 ? void 0 : e.preventDefault();
             // want to be a noop if in the root editable (in fact, Tab has an unrelated
             // default browser action if so)
-            if (cursor.parent === this.root)
+            if (atFieldEdge)
                 return;
             cursor.clearSelection();
             cursor.parent.moveOutOf(dir, cursor);
             cursor.controller.aria.alert();
             return this.notify('move');
+        };
+        // MATHCOMPILE: the caret sits in the dir-edge cell of a grid that
+        // fills the whole root \u2014 that cell is the field edge this direction.
+        Controller_keystroke.prototype.atRootFillingCellEdge = function (dir) {
+            var edge = this.root.getEnd(L);
+            if (!edge ||
+                edge !== this.root.getEnd(R) ||
+                !edge.fillsRootEdge)
+                return false;
+            var parent = this.cursor.parent;
+            return parent.parent === edge && !parent[dir];
+        };
+        // MATHCOMPILE: the innermost ancestor block that frames a visual
+        // line \u2014 a grid cell (<td>, flagged lineCell) or, failing that, the
+        // root block. Home/End and Shift-Home/Shift-End target it so the
+        // keys mean "line start/end" at any nesting depth.
+        Controller_keystroke.prototype.lineBlock = function () {
+            var block = this.cursor.parent;
+            while (block.parent &&
+                !block.lineCell &&
+                block !== this.root) {
+                block = block.parent;
+            }
+            return block;
         };
         Controller_keystroke.prototype.moveDir = function (dir) {
             prayDirection(dir);
@@ -4061,19 +4116,33 @@ var __assign = (this && this.__assign) || function () {
             return this.selectDir(R);
         };
         Controller_keystroke.prototype.selectAll = function () {
+            var _this = this;
             this.notify('move');
             var cursor = this.cursor;
             cursor.insAtRightEnd(this.root);
             this.withIncrementalSelection(function (selectDir) {
-                while (cursor[L])
+                // MATHCOMPILE: stepping out of a root-filling grid
+                // (\displaylines) snaps the caret back into the edge cell, so
+                // march until the far edge and stop when a step makes no
+                // progress \u2014 otherwise select-all only covers the last line.
+                while (cursor[L] || cursor.parent !== _this.root) {
+                    var parent = cursor.parent, l = cursor[L], r = cursor[R];
                     selectDir(L);
+                    if (cursor.parent === parent && cursor[L] === l && cursor[R] === r)
+                        break;
+                }
             });
         };
-        Controller_keystroke.prototype.selectToBlockEndInDir = function (dir) {
+        Controller_keystroke.prototype.selectToLineEndInDir = function (dir) {
             var cursor = this.cursor;
+            var lineBlock = this.lineBlock();
             this.withIncrementalSelection(function (selectDir) {
-                while (cursor[dir])
+                while (cursor[dir] || cursor.parent !== lineBlock) {
+                    var parent = cursor.parent, l = cursor[L], r = cursor[R];
                     selectDir(dir);
+                    if (cursor.parent === parent && cursor[L] === l && cursor[R] === r)
+                        break;
+                }
             });
         };
         Controller_keystroke.prototype.selectToRootEndInDir = function (dir) {
@@ -4081,7 +4150,12 @@ var __assign = (this && this.__assign) || function () {
             var cursor = this.cursor;
             this.withIncrementalSelection(function (selectDir) {
                 while (cursor[dir] || cursor.parent !== _this.root) {
+                    var parent = cursor.parent, l = cursor[L], r = cursor[R];
                     selectDir(dir);
+                    // same root-filling-grid stall as selectAll \u2014 without this
+                    // Ctrl-Shift-Home/End loops forever inside the edge cell.
+                    if (cursor.parent === parent && cursor[L] === l && cursor[R] === r)
+                        break;
                 }
             });
         };
@@ -4584,15 +4658,24 @@ var __assign = (this && this.__assign) || function () {
         Controller_latex.prototype.renderLatexMath = function (latex) {
             var cursor = this.cursor;
             var root = this.root;
-            this.notify('replace');
-            cursor.clearSelection();
-            var oldLatex = this.exportLatex();
-            if (!root.getEnd(L) || !root.getEnd(R) || oldLatex !== latex) {
-                this.updateLatexMathEfficiently(latex, oldLatex) ||
-                    this.renderLatexMathFromScratch(latex);
-                this.updateMathspeak();
+            // MATHCOMPILE: programmatic latex() (load/hydrate/undo restore)
+            // rebases the undo history instead of recording a step (undo.ts).
+            this.suspendHistory++;
+            try {
+                this.notify('replace');
+                cursor.clearSelection();
+                var oldLatex = this.exportLatex();
+                if (!root.getEnd(L) || !root.getEnd(R) || oldLatex !== latex) {
+                    this.updateLatexMathEfficiently(latex, oldLatex) ||
+                        this.renderLatexMathFromScratch(latex);
+                    this.updateMathspeak();
+                }
+                cursor.insAtRightEnd(root);
             }
-            cursor.insAtRightEnd(root);
+            finally {
+                this.suspendHistory--;
+            }
+            this.rebaseHistory();
         };
         Controller_latex.prototype.renderLatexText = function (latex) {
             var _c;
@@ -4694,6 +4777,134 @@ var __assign = (this && this.__assign) || function () {
             uncleanEndIndex: uncleanEndIndex
         };
     }
+    // index of `node` among its parent's children (left-sibling count)
+    function childIndex(node) {
+        var i = 0;
+        for (var s = node.parent.getEnd(L); s && s !== node; s = s[R])
+            i++;
+        return i;
+    }
+    // [i0..ik, offset]: indices descending from the root to the caret's
+    // block, then the caret's left-sibling count within that block.
+    function caretPath(cursor) {
+        var offset = 0;
+        for (var n = cursor[L]; n; n = n[L])
+            offset++;
+        var path = [offset];
+        for (var node = cursor.parent; node.parent; node = node.parent) {
+            path.unshift(childIndex(node));
+        }
+        return path;
+    }
+    function nthChild(node, index) {
+        var child = node.getEnd(L);
+        for (var i = 0; i < index && child; i++)
+            child = child[R];
+        return child;
+    }
+    function restoreCaretPath(ctrlr, path) {
+        var cursor = ctrlr.cursor;
+        var block = ctrlr.root;
+        for (var i = 0; i < path.length - 1; i++) {
+            var child = nthChild(block, path[i]);
+            if (!child)
+                return cursor.insAtRightEnd(ctrlr.root);
+            block = child;
+        }
+        var at = nthChild(block, path[path.length - 1]);
+        if (at)
+            cursor.insLeftOf(at);
+        else
+            cursor.insAtRightEnd(block);
+    }
+    var Controller_undo = /** @class */ (function (_super) {
+        __extends(Controller_undo, _super);
+        function Controller_undo() {
+            var _this = _super !== null && _super.apply(this, arguments) || this;
+            _this.undoStack = [];
+            _this.redoStack = [];
+            _this.burstOpen = false;
+            _this.burstAt = 0;
+            return _this;
+        }
+        Controller_undo.prototype.undoSnapshot = function () {
+            return { latex: this.exportLatex(), caret: caretPath(this.cursor) };
+        };
+        // After-change signal (ControllerBase.handle('edit')). The stack
+        // keeps the state *before* each change: on the first edit of a burst
+        // the previous baseline is pushed; later edits in the burst only
+        // advance the baseline.
+        Controller_undo.prototype.noteEdited = function () {
+            if (this.suspendHistory)
+                return;
+            var cur = this.undoSnapshot();
+            var last = this.lastEdit;
+            if (!last || cur.latex === last.latex) {
+                this.lastEdit = cur;
+                return;
+            }
+            var now = Date.now();
+            if (!this.burstOpen || now - this.burstAt > 1000) {
+                this.undoStack.push(last);
+                this.redoStack.length = 0;
+            }
+            this.lastEdit = cur;
+            this.burstAt = now;
+            this.burstOpen = true;
+        };
+        // Programmatic latex() calls (load, hydration, undo/redo restore)
+        // rebase silently instead of pushing a step. renderLatexMath wraps
+        // itself in suspendHistory, so this runs after the render lands.
+        Controller_undo.prototype.rebaseHistory = function () {
+            this.lastEdit = this.undoSnapshot();
+            this.burstOpen = false;
+        };
+        Controller_undo.prototype.breakUndoBurst = function () {
+            this.burstOpen = false;
+        };
+        Controller_undo.prototype.undo = function () {
+            var entry = this.undoStack.pop();
+            if (!entry) {
+                this.aria.alert('nothing to undo');
+                return;
+            }
+            this.burstOpen = false;
+            if (this.lastEdit)
+                this.redoStack.push(this.lastEdit);
+            this.restoreHistoryEntry(entry);
+            this.aria.alert('undone');
+        };
+        Controller_undo.prototype.redo = function () {
+            var entry = this.redoStack.pop();
+            if (!entry) {
+                this.aria.alert('nothing to redo');
+                return;
+            }
+            this.burstOpen = false;
+            if (this.lastEdit)
+                this.undoStack.push(this.lastEdit);
+            this.restoreHistoryEntry(entry);
+            this.aria.alert('redone');
+        };
+        Controller_undo.prototype.restoreHistoryEntry = function (entry) {
+            this.suspendHistory++;
+            try {
+                this.renderLatexMath(entry.latex);
+            }
+            finally {
+                this.suspendHistory--;
+            }
+            this.lastEdit = entry;
+            restoreCaretPath(this.getControllerSelf(), entry.caret);
+            this.cursor.show();
+        };
+        return Controller_undo;
+    }(Controller_latex));
+    ControllerBase.onNotify(function (cursor, e) {
+        // A caret move or selection ends the edit-coalescing window.
+        if (e === 'move' || e === 'select' || e === 'upDown')
+            cursor.controller.breakUndoBurst();
+    });
     /********************************************************
      * Deals with mouse events for clicking, drag-to-select
      *******************************************************/
@@ -4855,7 +5066,7 @@ var __assign = (this && this.__assign) || function () {
             return this;
         };
         return Controller_mouse;
-    }(Controller_latex));
+    }(Controller_undo));
     function findControllerRoot(node) {
         while (node) {
             if (ControllerBase.isControllerRoot(node)) {

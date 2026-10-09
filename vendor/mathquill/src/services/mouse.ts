@@ -35,7 +35,7 @@ var cancelSelectionOnEdit:
   });
 })();
 
-class Controller_mouse extends Controller_latex {
+class Controller_mouse extends Controller_undo {
   private handleMouseDown = (e: MouseEvent) => {
     const rootElement = closest(
       e.target as HTMLElement | null,

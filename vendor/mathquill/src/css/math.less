@@ -566,6 +566,14 @@
 
     > table {
       border-spacing: 0 3px;
+      // border-spacing pads above the first row as well — pull the
+      // table back up (and drop the first row's top padding) so line 1
+      // doesn't shift down when a single-line cell goes multi-line.
+      margin-top: -3px;
+    }
+
+    > table > tr:first-child > td {
+      padding-top: 0;
     }
 
     > table > tr > td {

@@ -92,6 +92,13 @@ New files:
   `extractPythonBlocks` in `src/compile/ir.ts` mirrors); the
   serializer emits raw code when balanced, else braces/backslashes
   escaped.
+- `src/services/undo.ts` (in `BASE_SOURCES` between `latex.ts` and
+  `mouse.ts`) — Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y (and Cmd variants) undo
+  history for editable fields: a snapshot stack of `{latex, caret
+  path}` fed by the `'edit'` reflow signal (see controller.ts), with
+  ~1s typing coalescing, burst-break on caret moves/selections, and
+  suspend-and-rebase around programmatic `latex()` calls — loads and
+  restores never become undo steps.
 
 Inline `// MATHCOMPILE:` edits, by file:
 
@@ -175,8 +182,10 @@ Inline `// MATHCOMPILE:` edits, by file:
   in `\displaylines`) and `dIsDerivative`/`limStartsWithArrow`/
   `matrixDimensionsMenu` on `v1.Config` typings.
 - `src/css/math.less` — styles for the additions: `.mq-matrix`/
-  `.mq-displaylines` (with zero horizontal indent so line 1 doesn't
-  shift when a second line is added), display-mode comma spacing
+  `.mq-displaylines` (with zero horizontal indent, plus negative
+  `margin-top` and a `padding-top: 0` first row canceling
+  border-spacing's top pad so line 1 doesn't shift at all when a
+  second line is added), display-mode comma spacing
   (`.mq-comma` thin space after), script fonts, boxes/braces/cancels/
   extensible arrows/delimiters, `\bra`/`\ket`, the
   boundless-integral sibling supsub rules, and `.mq-limit` (the
@@ -196,7 +205,16 @@ Inline `// MATHCOMPILE:` edits, by file:
   the field edges: `insDirOf`/`insAtDirEnd` re-descend to the first
   line's start / last line's end instead of leaving the caret beside
   the vertically-centered block (`Cursor::rootEdgeEnd`, keyed off
-  `DisplayLines.fillsRootEdge`).
+  `DisplayLines.fillsRootEdge`). `Cursor::reanchorIfStranded`
+  re-parks the caret at the root's left edge when its parent is
+  detached or its links no longer line up — deleting a selection that
+  covers a root-filling grid's cells used to strand the caret inside
+  the disowned subtree (typing wrote nowhere); `deleteSelection`
+  calls it directly.
+- `src/tree.ts` — `createDir` calls `cursor.reanchorIfStranded()`
+  before `adopt` so the same stranded-caret case can't trip
+  `prayWellFormed` on inserts that replaced the selection via
+  `replaceSelection`/`disown` instead of `deleteSelection`.
 - `src/commands/math/advancedSymbols.ts` — also: `\mapsto` is a
   `bindBinaryOperator` (relation spacing like `\to`), not a
   `VanillaSymbol`.
@@ -207,7 +225,31 @@ Inline `// MATHCOMPILE:` edits, by file:
   inside a `\python` block inserts a `\n` into the source instead of
   splitting a `\displaylines` row (covers programmatic
   `typedText('\n')`/`insertLineBreak()`; real keypresses are swallowed
-  by the block's own `keystroke`).
+  by the block's own `keystroke`). Also: `MatrixCell` carries a
+  `lineCell` flag marking grid cells as visual line containers for
+  Home/End.
+- `src/services/keystroke.ts` — "standard textbook" keys on multi-line
+  cells: Home/End (and Shift-) go to the visual line edges — the
+  innermost grid cell (`lineCell`) or the root block — instead of the
+  innermost syntax block; Tab/Shift-Tab in the far-edge cell of a
+  root-filling grid (`\displaylines`) falls through to the browser
+  default like the root case, so the keys leave the field instead of
+  trapping in the snap-back loop; `selectAll`/`selectToRootEndInDir`
+  break their selectOutOf march when a step makes no progress — the
+  root-edge snap used to make Ctrl+A cover only the last line and
+  Ctrl-Shift-Home/End loop forever; Ctrl-Z/Ctrl-Shift-Z/Ctrl-Y (and
+  Meta-) dispatch undo/redo to `services/undo.ts`.
+- `src/controller.ts` — `handle('edit')` routes to
+  `Controller::noteEdited` (the undo history's after-change signal);
+  `suspendHistory` flag plus `noteEdited`/`rebaseHistory` no-op hooks
+  on `ControllerBase`, overridden by the undo layer.
+- `src/services/latex.ts` — `renderLatexMath` wraps itself in
+  `suspendHistory` and calls `rebaseHistory()` afterward so every
+  programmatic latex load (hydration, `mq.latex()`, undo/redo restore)
+  silently rebases the history instead of recording a step.
+- `src/services/mouse.ts` — `Controller_mouse extends Controller_undo`
+  (the undo layer slots between `latex` and `mouse` in the service
+  chain).
 - `src/services/mouse.ts` + `src/cursor.ts` — `Controller_mouse.seek`
   stashes the click's clientY on the cursor (`cursor.seekClientY`) so
   seek implementations that hit-test rendered lines (`PythonBlock`'s
@@ -215,8 +257,9 @@ Inline `// MATHCOMPILE:` edits, by file:
 - `Makefile` — `extraCommands.ts` + `environments.ts` added to
   `SOURCES_FULL` (in that order: environments calls
   `boundlessIntegral()` from extraCommands), `pythonBlock.ts` between
-  them (environments' line-break path references it), and
-  `extraCommands.ts` to `SOURCES_BASIC`.
+  them (environments' line-break path references it),
+  `extraCommands.ts` to `SOURCES_BASIC`, and `services/undo.ts` to
+  `BASE_SOURCES` between `latex.ts` and `mouse.ts`.
 
 Boundless-integral note: `LatexCmds.iint`/`∬` and `LatexCmds.antid`
 produce a leaf `MQSymbol` (bare ∫ glyph) instead of the
@@ -227,8 +270,9 @@ SupSub on demand (or from parsing `\iint_{a}^{b}`), and `.mq-int`
 sibling-supsub rules keep the bound styling. `\antid` is an insertion
 alias: the app maps it to `\int` at compile time (CE has no `\antid`).
 
-Coverage: `test/unit/environments.test.js` (mocha; run `make test` then
-open `test/unit.html`, or run `npx playwright test e2e/vendor.spec.ts`
+Coverage: `test/unit/environments.test.js` and
+`test/unit/undo.test.js` (mocha; run `make test` then open
+`test/unit.html`, or run `npx playwright test e2e/vendor.spec.ts`
 at the repo root to run the whole vendor suite headlessly).
 
 ### Rebuilding
