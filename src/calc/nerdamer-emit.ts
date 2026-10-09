@@ -329,6 +329,22 @@ function emit(node: MathJson | undefined, ctx: Ctx): string | null {
       const ts = subs(args);
       return ts === null || ts === '' ? ts : `[${ts.join(', ')}]`;
     }
+    case 'Matrix': {
+      // Rows arrive as a single List-of-Lists arg (same shape as
+      // \begin{pmatrix}); a paren tuple is a one-row Matrix and emits
+      // the bare vector `[a, b, c]`.
+      const rows =
+        args.length === 1 && isHead(args[0], 'List')
+          ? args[0].slice(1)
+          : args;
+      const texts = rows.map((r) =>
+        subs(isHead(r, 'List') ? r.slice(1) : [r]),
+      );
+      if (texts.some((t) => t === null)) return null;
+      if (texts.some((t) => t === '')) return '';
+      const vecs = (texts as string[]).map((t) => `[${t}]`);
+      return vecs.length === 1 ? vecs[0] : `matrix(${vecs.join(', ')})`;
+    }
     case 'Integrate': {
       const lim = isHead(args[1], 'Limits') ? args[1].slice(1) : null;
       const rawBody = unwrapLambda(args[0]);

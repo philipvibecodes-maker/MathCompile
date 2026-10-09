@@ -1,5 +1,6 @@
 import type { Cell } from './store.svelte';
 import { TARGETS, type TargetId } from '../compile/targets';
+import type { PairTupleMode } from '../compile/ir';
 
 export const CELLS_STORAGE_KEY = 'mathcompile-cells';
 export const PREFS_STORAGE_KEY = 'mathcompile-prefs';
@@ -22,6 +23,7 @@ export interface Prefs {
   guideOpen?: boolean;
   showPlumbing?: boolean;
   importAll?: boolean;
+  pairTuple?: PairTupleMode;
   fadeMs?: number;
   debounceMs?: number;
   fadeInMs?: number;
@@ -45,6 +47,10 @@ export function loadPrefs(): Prefs {
         typeof p.showPlumbing === 'boolean' ? p.showPlumbing : undefined,
       importAll:
         typeof p.importAll === 'boolean' ? p.importAll : undefined,
+      pairTuple:
+        p.pairTuple === 'interval' || p.pairTuple === 'matrix'
+          ? p.pairTuple
+          : undefined,
       fadeMs: typeof p.fadeMs === 'number' ? p.fadeMs : undefined,
       debounceMs: typeof p.debounceMs === 'number' ? p.debounceMs : undefined,
       fadeInMs: typeof p.fadeInMs === 'number' ? p.fadeInMs : undefined,
