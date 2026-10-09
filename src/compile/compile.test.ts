@@ -170,14 +170,15 @@ const FIXTURES: {
     ],
   },
   {
-    // `\D f` — the TOTAL derivative: the Jacobian, which takes no
-    // variable. `\text{D}` is what the field stores after the alias.
+    // `\D f` — the TOTAL derivative: takes no variable; for a scalar
+    // field of x it is plain `diff`. `\text{D}` is what the field
+    // stores after the alias.
     latex: '\\D f',
     expectedIR: ['TotalD', 'f'],
     expectedPython: [
       'x = sp.Symbol("x")',
       'f = sp.Function("f")',
-      'sp.derive_by_array(f(x), [x])',
+      'sp.diff(f(x), x)',
     ],
   },
   {
@@ -185,18 +186,17 @@ const FIXTURES: {
     expectedIR: ['TotalD', ['Multiply', 'x', 'y']],
     expectedPython: [
       "x, y = sp.symbols('x y')",
-      'sp.derive_by_array(x * y, [x, y])',
+      'sp.Matrix([x * y]).jacobian([x, y])',
     ],
   },
   {
-    // `\D^2 f` — the second total derivative: a nested Jacobian (the
-    // Hessian for a scalar field).
+    // `\D^2 f` — the second total derivative.
     latex: '\\D^2 f',
     expectedIR: ['TotalD', 'f', 'Nothing', 2],
     expectedPython: [
       'x = sp.Symbol("x")',
       'f = sp.Function("f")',
-      'sp.derive_by_array(sp.derive_by_array(f(x), [x]), [x])',
+      'sp.diff(f(x), x, 2)',
     ],
   },
   {

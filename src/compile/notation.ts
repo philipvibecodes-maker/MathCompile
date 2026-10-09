@@ -687,10 +687,10 @@ export const NOTATION: Notation[] = [
     commands: ['D'],
     spellings: ['\\D f', '\\D(f)', '\\D_x f'],
     probes: [
-      { latex: '\\D f', expect: 'sp.derive_by_array(f(x), [x])' },
+      { latex: '\\D f', expect: 'sp.diff(f(x), x)' },
       {
         latex: '\\D(x*y)',
-        expect: 'sp.derive_by_array(x * y, [x, y])',
+        expect: 'sp.Matrix([x * y]).jacobian([x, y])',
       },
       { latex: '\\D_x f', expect: 'sp.diff(f(x), x)' },
     ],
