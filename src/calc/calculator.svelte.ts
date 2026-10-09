@@ -12,6 +12,7 @@ import {
   parseCellLatex,
   type Issue,
   type MathJson,
+  type NormalizeOptions,
 } from '../compile/ir';
 import { arcTrigNames } from './result-latex';
 
@@ -147,10 +148,11 @@ function ensureWorker(): Worker {
 // rejects surface as error rows without a worker round-trip.
 export function evaluate(
   cells: { latex: string; json?: MathJson }[],
+  opts: NormalizeOptions = {},
 ): Promise<CalcResult> {
   let prog: ReturnType<typeof compileCellsForCalc>;
   try {
-    prog = compileCellsForCalc(cells);
+    prog = compileCellsForCalc(cells, opts);
   } catch (e) {
     // The compiler reports issues instead of throwing — a hard throw
     // must still not leave the cell stuck on '…' forever.
@@ -536,9 +538,10 @@ const evalStatement = (
 export async function interimEvaluate(
   latex: string,
   priorLatex: string[] = [],
+  opts: NormalizeOptions = {},
 ): Promise<CalcRow[]> {
   try {
-    const ir = normalizeIR(parseCellLatex(latex)).ir;
+    const ir = normalizeIR(parseCellLatex(latex), undefined, opts).ir;
     if (ir === undefined) return [];
     const block = isArr(ir) && headOf(ir) === 'Block' ? ir.slice(1) : [ir];
     // Expand statement groups the way cellBody does: a `\text{where}`
@@ -565,7 +568,7 @@ export async function interimEvaluate(
     const used = new Set<string>();
     const declaredFns = new Set<string>();
     for (const l of priorLatex) {
-      const n = normalizeIR(parseCellLatex(l));
+      const n = normalizeIR(parseCellLatex(l), undefined, opts);
       if (n.ir !== undefined) collectDeclared(n.ir, used, declaredFns);
     }
     const reserve = (n: MathJson | undefined): void => {
