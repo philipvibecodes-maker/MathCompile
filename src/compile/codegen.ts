@@ -18,6 +18,21 @@
 import type { Issue, MathJson, NormResult } from './ir';
 import { isDiffMark, normalizeIR, unquote } from './ir';
 import { CALC_RUNTIME_PY } from './calc-runtime';
+// The name tables below are derived views over the notation registry —
+// each name lives once in src/compile/notation.ts.
+import {
+  CALL_RENAMES,
+  CE_DISPLAY_NAMES,
+  CONSTANTS,
+  INVERSE_FUNCS,
+  LEAF_SETS,
+  MATRIX_METHODS,
+  SET_CONSTRAINTS,
+  SETISH_SYMBOLS,
+  SP_BUILTIN_CALL,
+  SP_FUNCS,
+  SP_FUNC_MIN_ARGS,
+} from './notation';
 
 export interface CellInput {
   json?: MathJson;
@@ -65,9 +80,31 @@ const RESERVED_IDENTS = new Set([
   'clean_and_simplify',
 ]);
 
+// CE tags font-styled letters with a per-piece suffix: `\mathrm{a}` ->
+// `a_upright`, `\mathbf{x}` -> `x_bold`, `a_{\mathrm{i}}` -> `a_i_upright`.
+// Rewrite each tagged piece to the latex command's prefix so the python
+// identifier reads like what was typed — `mathrm_a`, `x_mathrm_i`,
+// `mathrm_a_mathrm_i` for `\mathrm{a}_{\mathrm{i}}`.
+const FONT_TAG_CMD: Record<string, string> = {
+  upright: 'mathrm',
+  italic: 'mathit',
+  bold: 'mathbf',
+  calligraphic: 'mathcal',
+  script: 'mathscr',
+  sansserif: 'mathsf',
+  monospace: 'mathtt',
+  fraktur: 'mathfrak',
+};
+const FONT_TAG =
+  /(^|_)([A-Za-z]+)_(upright|italic|bold|calligraphic|script|sansserif|monospace|fraktur)(?=_|$)/g;
+
 // Mangle an arbitrary symbol name (e.g. `a_{n+1}`) into a valid python
 // identifier that consistently refers to that symbol.
 function pyIdent(name: string): string {
+  name = name.replace(
+    FONT_TAG,
+    (_, lead, piece, tag) => `${lead}${FONT_TAG_CMD[tag]}_${piece}`,
+  );
   if (RESERVED_IDENTS.has(name)) return `${name}_`;
   if (/^[A-Za-z_]\w*$/.test(name) && !PY_KEYWORDS.has(name)) return name;
   // Prime ticks are meaningful (x' is a distinct variable, not x) —
@@ -82,143 +119,16 @@ function pyIdent(name: string): string {
   return out;
 }
 
-// CE constants -> SymPy names (unqualified — the `sp.` prefix is applied
-// per-emission via the emitter's `sp` getter so `from sympy import *`
-// mode emits bare names). `True`/`False` are Python builtins and stay
-// unqualified in both modes.
-const CONSTANTS: Record<string, string> = {
-  Pi: 'pi',
-  ExponentialE: 'E',
-  ImaginaryUnit: 'I',
-  PositiveInfinity: 'oo',
-  NegativeInfinity: '-oo',
-  EulerGamma: 'EulerGamma',
-  CatalansConstant: 'Catalan',
-  GoldenRatio: 'GoldenRatio',
-  EmptySet: 'EmptySet',
-  // \mathbb{...} number sets — CE symbol names -> the S.* set objects.
-  // 'Primes' (\mathbb{P}) and 'PositiveNumbers' (\mathbb{R}_+) have no
-  // S.* constant — they're special-cased in `inner` to emit
-  // ConditionSet/Interval.open expressions instead.
-  RealNumbers: 'S.Reals',
-  ComplexNumbers: 'S.Complexes',
-  RationalNumbers: 'S.Rationals',
-  Integers: 'S.Integers',
-  NonNegativeIntegers: 'S.Naturals0',
-  PositiveIntegers: 'S.Naturals',
-  True: 'True',
-  False: 'False',
-};
-
-// \mathbb{S}^{+/-/_+/_-}-style leaf sets CE emits as plain symbol names
-// (CONSTANTS can only hold one-segment S.* names — these are intervals
-// or integer intersections). Templates are functions of the `sp.`
-// qualifier so names can't drift out of qualification.
-const LEAF_SETS: Record<string, (sp: string) => string> = {
-  PositiveNumbers: (sp) => `${sp}Interval.open(0, ${sp}oo)`,
-  NegativeNumbers: (sp) => `${sp}Interval.open(-${sp}oo, 0)`,
-  NonNegativeNumbers: (sp) => `${sp}Interval(0, ${sp}oo)`,
-  NonPositiveNumbers: (sp) => `${sp}Interval(-${sp}oo, 0)`,
-  PositiveIntegers: (sp) => `${sp}S.Naturals`,
-  NonNegativeIntegers: (sp) => `${sp}S.Naturals0`,
-  NegativeIntegers: (sp) =>
-    `${sp}Intersection(${sp}S.Integers, ${sp}Interval.open(-${sp}oo, 0))`,
-  NonPositiveIntegers: (sp) =>
-    `${sp}Intersection(${sp}S.Integers, ${sp}Interval(-${sp}oo, 0))`,
-};
-
-// Known function heads -> the SymPy function name to call.
-const SP_FUNCS: Record<string, string> = {
-  Sqrt: 'sqrt',
-  Root: 'root',
-  Abs: 'Abs',
-  Sign: 'sign',
-  Floor: 'floor',
-  Ceil: 'ceiling',
-  Min: 'Min',
-  Max: 'Max',
-  Factorial: 'factorial',
-  Gamma: 'gamma',
-  Binomial: 'binomial',
-  GCD: 'gcd',
-  LCM: 'lcm',
-  Mod: 'Mod',
-  Exp: 'exp',
-  Ln: 'log',
-  Sin: 'sin', Cos: 'cos', Tan: 'tan',
-  Sec: 'sec', Csc: 'csc', Cot: 'cot',
-  Sinh: 'sinh', Cosh: 'cosh', Tanh: 'tanh',
-  Coth: 'coth', Sech: 'sech', Csch: 'csch',
-  Arcsin: 'asin', Arccos: 'acos', Arctan: 'atan',
-  Arcsec: 'asec', Arccsc: 'acsc', Arccot: 'acot',
-  Arcsinh: 'asinh', Arccosh: 'acosh', Arctanh: 'atanh',
-  Conjugate: 'conjugate', Re: 're', Im: 'im', Arg: 'arg',
-  // `\Re`/`\Im`/`\arg`/`\operatorname{erf}` parse to these CE heads —
-  // `sp.Real`/`sp.Imaginary`/`sp.Argument`/`sp.Erf` don't exist and
-  // each produced a 'has no attribute' error row.
-  Real: 're', Imaginary: 'im', Argument: 'arg', Erf: 'erf',
-};
-
 // Statement-position heads that only lower to Python.
 const STATEMENT_HEADS = new Set([
   'Assign', 'Def', 'Declare', 'Block', 'WhereBlock', 'Which', 'Piecewise',
+  'PythonSource',
 ]);
 const CMP_NESTABLE_HEADS = new Set([
   'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
 ]);
 const STATEMENT_CALL_HEADS = new Set(['solve', 'Solve', 'piecewise', 'Piecewise']);
 
-// `call` heads that are real SymPy functions — keep emitting `sp.<name>`
-// for them. Every other applied unknown name (f(x), \operatorname{foo}(x))
-// becomes a worksheet Function def instead: `sp.f(x)` raised
-// AttributeError ('module sympy has no attribute f') at eval time.
-const SP_BUILTIN_CALL = new Set(
-  (
-    'erf erfc erfi erfinv erfcinv Ei expint Si Ci Shi Chi li Li zeta ' +
-    'lerchphi polylog digamma trigamma polygamma loggamma beta betainc ' +
-    'lowergamma uppergamma LambertW besselj bessely besseli besselk ' +
-    'hankel1 hankel2 jn yn airyai airybi airyaiprime airybiprime ' +
-    'marcumq fresnels fresnelc hyper meijerg appellf1 legendre ' +
-    'assoc_legendre hermite hermite_prob chebyshevt chebyshevu ' +
-    'gegenbauer jacobi laguerre assoc_laguerre fibonacci lucas ' +
-    'tribonacci bernoulli euler bell catalan harmonic genocchi ' +
-    'partition primepi mobius totient reduced_totient divisor_sigma ' +
-    'nextprime prevprime prime isprime factorint divisors ' +
-    'divisor_count proper_divisor_count primefactors integer_nthroot ' +
-    'cbrt gcdex ' +
-    'legendre_symbol jacobi_symbol kronecker_symbol rf ff factorial2 ' +
-    'subfactorial Piecewise ' +
-    'sign ceiling conjugate arg re im ' +
-    'gcd lcm binomial sqrt floor factorial ' +
-    'asinh acosh atanh acoth asech acsch ' +
-    'solve solveset linsolve nonlinsolve simplify factor expand cancel ' +
-    'collect apart together trigsimp expand_trig powsimp nsimplify ' +
-    'radsimp ratsimp fraction limit series residue solve_linear ' +
-    'diff integrate summation product '
-  ).split(' '),
-);
-
-// Minimum arity for SP_FUNCS entries — a lone `\gcd(10)` or `a\bmod`
-// otherwise emits a call SymPy raises TypeError on at eval time.
-const SP_FUNC_MIN_ARGS: Record<string, number> = {
-  gcd: 2,
-  lcm: 2,
-  Mod: 2,
-  binomial: 2,
-  root: 1,
-  Min: 1,
-  Max: 1,
-};
-
-// Nodes that provably emit a SymPy Set — used to gate Element/Union/
-// Complement emission (those raise TypeError on plain Symbols).
-const SETISH_SYMBOLS = new Set([
-  'EmptySet', 'RealNumbers', 'ComplexNumbers', 'RationalNumbers',
-  'Integers', 'NonNegativeIntegers', 'NonPositiveIntegers',
-  'PositiveIntegers', 'NegativeIntegers', 'Primes',
-  'PositiveNumbers', 'NegativeNumbers',
-  'NonNegativeNumbers', 'NonPositiveNumbers',
-]);
 // Set-valued operator heads — setish only when every operand is too
 // (Subsets/Supersets are predicates, not sets, so they don't appear here).
 const SETISH_OP_HEADS = new Set([
@@ -236,140 +146,110 @@ const BOOLISH_HEADS = new Set([
   'Equivalent',
 ]);
 
-// Domain a leaf membership implies for its symbol: `x \in \mathbb{R}`
-// constructs `x = Symbol('x', real=True)` when x is first defined.
-// `kwargs` go to the Symbol constructor, `preds` are the Q-predicate
-// names for a `with assuming(...)` block (compound sets only — leaf
-// sets don't need one once the Symbol carries the assumption).
-const SET_CONSTRAINTS: Record<string, { kwargs: string[]; preds: string[] }> = {
-  RealNumbers: { kwargs: ['real=True'], preds: ['real'] },
-  ComplexNumbers: { kwargs: ['complex=True'], preds: ['complex'] },
-  RationalNumbers: { kwargs: ['rational=True'], preds: ['rational'] },
-  Integers: { kwargs: ['integer=True'], preds: ['integer'] },
-  NonNegativeIntegers: {
-    kwargs: ['integer=True', 'nonnegative=True'],
-    preds: ['integer', 'nonnegative'],
-  },
-  Primes: { kwargs: ['prime=True'], preds: ['prime'] },
-  PositiveIntegers: {
-    kwargs: ['integer=True', 'positive=True'],
-    preds: ['integer', 'positive'],
-  },
-  PositiveNumbers: {
-    kwargs: ['positive=True'],
-    preds: ['positive'],
-  },
-};
-
-// CE head names that exist in SymPy under a different spelling —
-// `call` resolves these to `sp.<mapped>` rather than a declared
-// worksheet function.
-const CALL_RENAMES: Record<string, string> = {
-  Factorial2: 'factorial2',
-  Set: 'FiniteSet',
-  Erf: 'erf',
-  Erfc: 'erfc',
-  // CE emits these heads that SymPy has lowercase/different spellings
-  // for — \overline{z} (Conjugate), \Re/\Im/\arg (Real/Imaginary/
-  // Argument), x^* (Superstar, the conjugate/adjoint). The lowercase
-  // \operatorname{im} is deliberately NOT renamed: "im" is the image
-  // of a function, not sp.im.
-  Conjugate: 'conjugate',
-  Re: 're',
-  Im: 'im',
-  Arg: 'arg',
-  Real: 're',
-  Imaginary: 'im',
-  Argument: 'arg',
-  Superstar: 'Adjoint',
-  // \operatorname{arsinh} etc. — CE calls these Arsinh/… but sympy's
-  // are a-prefixed; the bare name displays `Arsinh(x)` unevaluated.
-  Arsinh: 'asinh', Arcosh: 'acosh', Artanh: 'atanh',
-  Arcsinh: 'asinh', Arccosh: 'acosh', Arctanh: 'atanh',
-  // Combinatorics/number-theory operator notations with exactly one
-  // reading: \operatorname{nCk}(n,k) = C(n,k), nPr/perm = P(n,k) =
-  // falling factorial, π(n) = the prime-counting function. Bare Greek
-  // letters (σ(x), μ(n)…) stay Function stubs — they can be user-
-  // defined functions, not necessarily the arithmetic functions.
-  nCk: 'binomial',
-  nCr: 'binomial',
-  nPr: 'ff',
-  perm: 'ff',
-  Pi: 'primepi',
-};
-
-// \sin^{-1}(x) etc.: CE wraps the base name as ['InverseFunction', 'Sin'].
-const INVERSE_FUNCS: Record<string, string> = {
-  Sin: 'asin', Cos: 'acos', Tan: 'atan',
-  Sec: 'asec', Csc: 'acsc', Cot: 'acot',
-  Sinh: 'asinh', Cosh: 'acosh', Tanh: 'atanh',
-  Coth: 'acoth', Sech: 'asech', Csch: 'acsch',
-  Exp: 'log', Ln: 'exp', Log: 'exp',
-};
-
-interface Scope {
+// Emission scope — the name tables codegen carries plus the issue sink.
+// The trackers are grouped by what they answer, not into one map: their
+// lifetimes genuinely differ (worksheet vs cell vs call-stack) and a
+// naive merge would alias them. All mutation goes through the facade
+// methods below — reads stay direct field access — so multi-tracker
+// updates like Assign's value rebind are a single transition.
+class Scope {
   /** `import sympy as sp` mode: emit `sp.` qualifiers. With
    * `from sympy import *` (the default) names emit unqualified. */
   qualified: boolean;
-  /** Names defined by Assign/Def anywhere in the worksheet (pre-scan;
-   * distinguishes worksheet functions from the sp.<head> escape hatch). */
-  declared: Set<string>;
-  /** Pre-scanned subset of `declared` bound by a function def (`f(x)=…`,
-   * `f: x↦…`) — lets `f^{(n)}` read as a derivative before the def emits. */
-  declaredFns: Set<string>;
-  /** Names bound so far in emission order (Assign/Def targets plus every
-   * name that has had a `= sp.Symbol`/`sp.Function` line emitted). */
-  defined: Set<string>;
-  /** Python-local bound names (Def params) while inside a def body. */
-  bound: Set<string>;
-  /** Operator-bound variables while inside a Sum/Product/Integrate/Limit
-   * (`i` in \sum_{i}) — a bound `i` stays an ordinary Symbol instead of
-   * resolving to the imaginary unit. */
-  lambdaBound: Set<string>;
-  /** Names used as matrices (\det A, \operatorname{tr}(A)) ->
-   * `sp.MatrixSymbol` def lines. */
-  matrices: Map<string, string>;
-  /** Assigned names whose value is a matrix (`A = [[..]]`, `B = A`) —
-   * usable as matrices by `.det()`/`.norm()` etc., and an Eq display
-   * for these collapses to literal False. */
-  matrixNames: Set<string>;
-  /** Assigned names whose value is a set (`A = \{1,2\}`) — later set
-   * ops take them as operands directly, not FiniteSet(A) singletons. */
-  setNames: Set<string>;
-  /** Assigned names whose value is enumerable-finite (`A = \{1,2\}`,
-   * `B = A`, `C = {1,2} \cup {3}`) — a quantifier `∀x ∈ A` can fold to
-   * `And(*(p.subs(x, e) for e in A))` instead of an unevaluated
-   * symbolic Implies. */
-  finiteNames: Set<string>;
-  /** Assigned names whose value is a python list (`B = [0,1]` — a
-   * `List` IR node, not a sympy Set) — set ops must splat it
-   * (`sp.FiniteSet(*B)`); `FiniteSet(B)` raises TypeError. */
-  listNames: Set<string>;
-  /** Free symbol name -> emitted python identifier, insertion-ordered.
-   * A def line is emitted in the cell where the name is first needed. */
-  symbols: Map<string, string>;
-  /** Names used as functions (f'(x), Apply callees) -> sp.Function lines. */
-  functions: Map<string, string>;
-  /** Argument list recorded for a function name at its decl/call site
-   * (`\dot{x}` -> `x` of `t`, `dy/dx` of `x`, `def f(x,y)`, `f(x)`). A
-   * bare Function name in operand position (a call arg, arithmetic)
-   * raises TypeError, so later references emit the applied form `f(x)`. */
-  fnArgs: Map<string, MathJson[]>;
-  /** Function names currently emitting their applied form — guards
-   * `f`/`g` mutual-reference cycles (`f` in g's args, `g` in f's). */
-  emitting: Set<string>;
-  /** Dependent variables — names declared as functions through
-   * derivative notation (`\dot{x}`, `D(x,t)`, `y'`, `f^{(n)}`). A bare
-   * reference is the value `x(t)`, never the unapplied function —
-   * they're exempt from callArg's eta-expansion (`f(x)` in
-   * `\dot{x} = f(x)` emits `f(x(t))`, not `f(Lambda(t, x(t)))`). */
-  depVars: Set<string>;
-  /** Symbol kwargs inferred from memberships (`x \in \mathbb{R}` ->
-   * `real=True`) applied to this cell's Symbol def lines. */
-  assumptions: Map<string, Set<string>>;
-  /** Names whose membership pins them to a matrix space
-   * (`A \in \mathbb{R}^{2\times2}`) -> emitted `sp.MatrixSymbol` dims. */
-  matrixDims: Map<string, [string, string]>;
+  /** Name-binding facts — who is declared and who is bound so far.
+   * Worksheet-lifetime under compileCellsForCalc (one scope threads
+   * down the cells); cell-lifetime under compileWorksheet (a fresh
+   * scope per cell). */
+  readonly decls: {
+    /** Names defined by Assign/Def anywhere in the worksheet
+     * (pre-scan; distinguishes worksheet functions from the sp.<head>
+     * escape hatch). */
+    declared: Set<string>;
+    /** Pre-scanned subset of `declared` bound by a function def
+     * (`f(x)=…`, `f: x↦…`) — lets `f^{(n)}` read as a derivative
+     * before the def emits. */
+    declaredFns: Set<string>;
+    /** Names bound so far in emission order (Assign/Def targets plus
+     * every name that has had a `= sp.Symbol`/`sp.Function` line
+     * emitted). */
+    defined: Set<string>;
+  };
+  /** Emission bookkeeping — minted python identifiers and transient
+   * emission state. The ident maps share the scope's lifetime;
+   * `bound`/`lambdaBound`/`emitting` are call-stack-lifetime — swapped
+   * wholesale (save/restore) by withBound/withBoundOnly/
+   * withLambdaBound/withEmitting, never mutated in place — and
+   * `constNames` accumulates over the scope's lifetime. */
+  readonly emit: {
+    /** Free symbol name -> emitted python identifier,
+     * insertion-ordered. A def line is emitted in the cell where the
+     * name is first needed. */
+    symbols: Map<string, string>;
+    /** Names used as functions (f'(x), Apply callees) ->
+     * sp.Function lines. */
+    functions: Map<string, string>;
+    /** Names used as matrices (\det A, \operatorname{tr}(A)) ->
+     * `sp.MatrixSymbol` def lines. */
+    matrices: Map<string, string>;
+    /** Argument list recorded for a function name at its decl/call
+     * site (`\dot{x}` -> `x` of `t`, `dy/dx` of `x`, `def f(x,y)`,
+     * `f(x)`). A bare Function name in operand position (a call arg,
+     * arithmetic) raises TypeError, so later references emit the
+     * applied form `f(x)`. */
+    fnArgs: Map<string, MathJson[]>;
+    /** Python-local bound names (Def params) while inside a def body.
+     * Call-stack-lifetime: see withBound/withBoundOnly. */
+    bound: Set<string>;
+    /** Operator-bound variables while inside a
+     * Sum/Product/Integrate/Limit (`i` in \sum_{i}) — a bound `i` stays
+     * an ordinary Symbol instead of resolving to the imaginary unit.
+     * Call-stack-lifetime: see withLambdaBound. */
+    lambdaBound: Set<string>;
+    /** Function names currently emitting their applied form — guards
+     * `f`/`g` mutual-reference cycles (`f` in g's args, `g` in f's).
+     * Call-stack-lifetime: see withEmitting. */
+    emitting: Set<string>;
+    /** Names reserved for constants of integration — cellBody seeds
+     * it with every name the cell uses so `C` (then D, E, …) never
+     * collides. Each indefinite integral takes and reserves the next
+     * free capital. */
+    constNames: Set<string>;
+  };
+  /** Value-kind typing — what a bound name's value IS. Same
+   * worksheet-vs-cell lifetime as `decls`. */
+  readonly kinds: {
+    /** Assigned names whose value is a matrix (`A = [[..]]`, `B = A`) —
+     * usable as matrices by `.det()`/`.norm()` etc., and an Eq display
+     * for these collapses to literal False. */
+    matrixNames: Set<string>;
+    /** Assigned names whose value is a set (`A = \{1,2\}`) — later set
+     * ops take them as operands directly, not FiniteSet(A) singletons. */
+    setNames: Set<string>;
+    /** Assigned names whose value is enumerable-finite (`A = \{1,2\}`,
+     * `B = A`, `C = {1,2} \cup {3}`) — a quantifier `∀x ∈ A` can fold
+     * to `And(*(p.subs(x, e) for e in A))` instead of an unevaluated
+     * symbolic Implies. */
+    finiteNames: Set<string>;
+    /** Assigned names whose value is a python list (`B = [0,1]` — a
+     * `List` IR node, not a sympy Set) — set ops must splat it
+     * (`sp.FiniteSet(*B)`); `FiniteSet(B)` raises TypeError. */
+    listNames: Set<string>;
+    /** Dependent variables — names declared as functions through
+     * derivative notation (`\dot{x}`, `D(x,t)`, `y'`, `f^{(n)}`). A
+     * bare reference is the value `x(t)`, never the unapplied
+     * function — they're exempt from callArg's eta-expansion (`f(x)`
+     * in `\dot{x} = f(x)` emits `f(x(t))`, not
+     * `f(Lambda(t, x(t)))`). */
+    depVars: Set<string>;
+    /** Symbol kwargs inferred from memberships
+     * (`x \in \mathbb{R}` -> `real=True`) applied to this cell's
+     * Symbol def lines. */
+    assumptions: Map<string, Set<string>>;
+    /** Names whose membership pins them to a matrix space
+     * (`A \in \mathbb{R}^{2\times2}`) -> emitted `sp.MatrixSymbol`
+     * dims. */
+    matrixDims: Map<string, [string, string]>;
+  };
   issues: Issue[];
   /** Unprefixed issues bucketed per cell (parallel to the inputs). */
   cellIssues: Issue[][];
@@ -377,29 +257,207 @@ interface Scope {
   cell: number;
   /** Errors flagged during this cell's emission — a statement that bumps
    * it is dropped instead of emitting `sp.Error(...)`/`None` fragments. */
-  errorCount: number;
-  /** Names reserved for constants of integration — cellBody seeds it with
-   * every name the cell uses so `C` (then D, E, …) never collides. Each
-   * indefinite integral takes and reserves the next free capital. */
-  constNames: Set<string>;
-  flag(severity: Issue['severity'], message: string): void;
+  errorCount = 0;
+
+  constructor(
+    qualified: boolean,
+    declared: Set<string>,
+    declaredFns: Set<string>,
+    matrixNames: Set<string>,
+    issues: Issue[],
+    cellIssues: Issue[][],
+    cell: number,
+  ) {
+    this.qualified = qualified;
+    this.decls = { declared, declaredFns, defined: new Set() };
+    this.emit = {
+      symbols: new Map(),
+      functions: new Map(),
+      matrices: new Map(),
+      fnArgs: new Map(),
+      bound: new Set(),
+      lambdaBound: new Set(),
+      emitting: new Set(),
+      constNames: new Set(),
+    };
+    this.kinds = {
+      matrixNames,
+      setNames: new Set(),
+      finiteNames: new Set(),
+      listNames: new Set(),
+      depVars: new Set(),
+      assumptions: new Map(),
+      matrixDims: new Map(),
+    };
+    this.issues = issues;
+    this.cellIssues = cellIssues;
+    this.cell = cell;
+  }
+
+  flag(severity: Issue['severity'], message: string): void {
+    if (severity === 'error') this.errorCount += 1;
+    this.issues.push({
+      severity,
+      message: this.cell > 0 ? `cell ${this.cell}: ${message}` : message,
+    });
+    if (this.cell > 0)
+      this.cellIssues[this.cell - 1].push({ severity, message });
+  }
+
+  // ---- facade mutations -------------------------------------------------
+
+  /** Pre-scan a cell's IR for the names its statements bind: every
+   * Assign/Def target into `decls.declared`/`declaredFns`, and the
+   * names whose last assignment is matrix-valued into
+   * `kinds.matrixNames`. */
+  scanDecls(ir: MathJson): void {
+    collectDeclared(ir, this.decls.declared, this.decls.declaredFns);
+    collectMatrices(ir, this.kinds.matrixNames);
+  }
+
+  /** `name` is bound from this point in emission order — Assign/Def
+   * targets and names whose decl lines just emitted. */
+  markDefined(name: string): void {
+    this.decls.defined.add(name);
+  }
+
+  markDefinedAll(names: Iterable<string>): void {
+    for (const name of names) this.markDefined(name);
+  }
+
+  /** `f = x \mapsto …` (and friends) mark the name callable in the
+   * pre-scan sense so a later `f(…)` call-folds like a def'd name. */
+  declareFn(name: string): void {
+    this.decls.declaredFns.add(name);
+  }
+
+  /** Claim `name` as a function — the Def/Declare/colon-def binding
+   * transition: bound, minted a `functions` ident, and (with params)
+   * the arg list a later bare `f` emits applied. */
+  claimFunction(name: string, params: MathJson[] = []): void {
+    this.decls.defined.add(name);
+    this.emit.functions.set(name, pyIdent(name));
+    if (params.length > 0) this.emit.fnArgs.set(name, params);
+  }
+
+  /** Record an applied call's argument list — a later bare `f` operand
+   * emits `f(<args>)` (an unapplied UndefinedFunction operand raises
+   * TypeError). */
+  noteCallArgs(name: string, args: MathJson[]): void {
+    if (args.length > 0) this.emit.fnArgs.set(name, args);
+  }
+
+  /** Mark `name` a dependent variable (derivative-notation decls:
+   * `\dot{x}`, `y'`, `f^{(n)}`, `D(f,x)`) — `fnArgs` and `depVars`
+   * move together: the name reads as the applied `x(t)` ever after. */
+  noteDepVar(name: string, args: MathJson[]): void {
+    this.emit.fnArgs.set(name, args);
+    this.kinds.depVars.add(name);
+  }
+
+  /** Bind `name` to an assigned value — the whole transition in one
+   * place: bound, every value-kind set refreshed to the RHS's typing
+   * (a rebind to a scalar drops stale kind entries), and function
+   * residue cleared (`fnArgs`/`depVars`) since the name is a value now
+   * — later references emit `x`, not `x(t)`. `functions` deliberately
+   * keeps its entry: it still carries a pending `x = sp.Function` decl
+   * line for statements that applied the name before this Assign. */
+  bindAssigned(
+    name: string,
+    value: { matrix: boolean; set: boolean; finite: boolean; list: boolean },
+  ): void {
+    this.decls.defined.add(name);
+    for (const [names, on] of [
+      [this.kinds.matrixNames, value.matrix],
+      [this.kinds.setNames, value.set],
+      [this.kinds.finiteNames, value.finite],
+      [this.kinds.listNames, value.list],
+    ] as const) {
+      if (on) names.add(name);
+      else names.delete(name);
+    }
+    this.emit.fnArgs.delete(name);
+    this.kinds.depVars.delete(name);
+  }
+
+  /** Membership-derived Symbol kwargs accumulate for a
+   * first-referenced name (`x \in \mathbb{R}` before any def ->
+   * `real=True`). */
+  assume(member: string, kwargs: Iterable<string>): void {
+    const acc = this.kinds.assumptions.get(member) ?? new Set<string>();
+    for (const k of kwargs) acc.add(k);
+    this.kinds.assumptions.set(member, acc);
+  }
+
+  /** `A \in \mathbb{R}^{m\times n}` pins the member to emitted
+   * `sp.MatrixSymbol` dims — the membership is the only place the
+   * member's shape is stated. */
+  pinMatrixDims(member: string, dims: [string, string]): void {
+    this.kinds.matrixDims.set(member, dims);
+  }
+
+  /** Reserve every name a cell uses so constants of integration mint
+   * only free capitals (`C`, else `D`, `E`, …). */
+  reserveConstNames(ir: MathJson): void {
+    allNames(ir, this.emit.constNames);
+    for (const name of this.decls.declared) this.emit.constNames.add(name);
+  }
+
+  // ---- call-stack bindings (save/restore — never in-place) ---------
+
+  /** Run `fn` with `vars` added to the Python-local bound set
+   * (lambda params). Restored on return — including a throw. */
+  withBound<T>(vars: readonly string[], fn: () => T): T {
+    if (vars.length === 0) return fn();
+    const saved = this.emit.bound;
+    this.emit.bound = new Set([...saved, ...vars]);
+    try {
+      return fn();
+    } finally {
+      this.emit.bound = saved;
+    }
+  }
+
+  /** Run `fn` with `vars` as the WHOLE bound set — a `def f(x,y)`
+   * param list shadows outer bindings wholesale, not cumulatively. */
+  withBoundOnly<T>(vars: readonly string[], fn: () => T): T {
+    const saved = this.emit.bound;
+    this.emit.bound = new Set(vars);
+    try {
+      return fn();
+    } finally {
+      this.emit.bound = saved;
+    }
+  }
+
+  /** Run `fn` with `vars` added to the operator-bound set
+   * (Sum/Product/Integrate/Limit/D variables — a bound `i` stays an
+   * ordinary Symbol instead of resolving to the imaginary unit). */
+  withLambdaBound<T>(vars: readonly string[], fn: () => T): T {
+    if (vars.length === 0) return fn();
+    const saved = this.emit.lambdaBound;
+    this.emit.lambdaBound = new Set([...saved, ...vars]);
+    try {
+      return fn();
+    } finally {
+      this.emit.lambdaBound = saved;
+    }
+  }
+
+  /** Cycle guard for the applied-form emit: `name` counts as emitting
+   * for `fn`'s duration so a second hop (`f` in g's args, `g` in f's)
+   * doesn't recurse. */
+  withEmitting<T>(name: string, fn: () => T): T {
+    this.emit.emitting.add(name);
+    try {
+      return fn();
+    } finally {
+      this.emit.emitting.delete(name);
+    }
+  }
 }
 
 const isArr = (v: MathJson | undefined): v is MathJson[] => Array.isArray(v);
-// Matrix word ops emitted as method calls (`\mathrm{trace}(A)` ->
-// `(A).trace()`); CE may capitalize `tr` -> `Trace`.
-const MATRIX_METHODS: Record<string, string> = {
-  trace: 'trace()',
-  Trace: 'trace()',
-  tr: 'trace()',
-  rank: 'rank()',
-  eigenvals: 'eigenvals()',
-  eigenvects: 'eigenvects()',
-  inverse: 'inv()',
-  transpose: 'T',
-  norm: 'norm()',
-};
-
 const isStr = (v: MathJson | undefined): v is string => typeof v === 'string';
 const headOf = (v: MathJson | undefined): string | undefined =>
   isArr(v) && isStr(v[0]) ? v[0] : undefined;
@@ -473,33 +531,6 @@ const stripZeroSuffix = (s: string): string | undefined =>
       ? s.slice(0, -2)
       : undefined;
 
-// CE leaf names that don't print like the latex the user typed —
-// `\varepsilon` mints `Symbol("epsilonSymbol")`, showing the word
-// "epsilonSymbol". Map to a latex name the printer renders as the
-// intended glyph.
-const CE_DISPLAY_NAMES: Record<string, string> = {
-  epsilonSymbol: '\\varepsilon',
-  finalSigma: '\\varsigma',
-  piSymbol: '\\varpi',
-  thetaSymbol: '\\vartheta',
-  rhoSymbol: '\\varrho',
-  kappaSymbol: '\\varkappa',
-  digamma: '\\digamma',
-  ell: '\\ell',
-  // `hbar` not `\hbar` — sympy's printer knows the name and emits
-  // `\hbar`; a literal `\hbar` name is accent-split to `\bar{\h}`.
-  hBar: 'hbar',
-  bet: '\\beth',
-  gimel: '\\gimel',
-  daleth: '\\daleth',
-  aleph: '\\aleph',
-  weierstrass: '\\wp',
-  // \Re/\Im alone — as leaves these are set names, not the function
-  // heads re()/im() they spell when called.
-  Real: '\\Re',
-  Imaginary: '\\Im',
-};
-
 // Python precedence levels for parenthesization.
 const PREC_LOW = 0; // expression statements, call args
 const PREC_ADD = 10;
@@ -524,7 +555,7 @@ class Emitter {
   private matrixRef(node: MathJson | undefined): boolean {
     return (
       isStr(node) &&
-      (this.scope.matrixNames.has(node) || this.scope.matrixDims.has(node))
+      (this.scope.kinds.matrixNames.has(node) || this.scope.kinds.matrixDims.has(node))
     );
   }
 
@@ -532,7 +563,7 @@ class Emitter {
    * returns the dim or null. An explicit `I_n = …` binding wins
    * (`defined` covers assign/def targets). */
   private identityDim(node: MathJson | undefined): string | null {
-    if (!isStr(node) || this.scope.defined.has(node)) return null;
+    if (!isStr(node) || this.scope.decls.defined.has(node)) return null;
     const m = /^I_(\d+)$/.exec(node);
     return m ? m[1] : null;
   }
@@ -549,7 +580,7 @@ class Emitter {
       node,
       (name) =>
         this.matrixRef(name) ||
-        (minted && this.scope.matrices.has(name)) ||
+        (minted && this.scope.emit.matrices.has(name)) ||
         this.identityDim(name) !== null,
     );
   }
@@ -594,9 +625,9 @@ class Emitter {
       return `${rows.length}, ${cols}`;
     }
     if (isStr(node)) {
-      const dim = this.scope.matrixDims.get(node);
+      const dim = this.scope.kinds.matrixDims.get(node);
       if (dim) return `${dim[0]}, ${dim[1]}`;
-      if (this.scope.matrixNames.has(node))
+      if (this.scope.kinds.matrixNames.has(node))
         return `*${this.emit(node)}.shape`;
     }
     return null;
@@ -617,10 +648,10 @@ class Emitter {
     // disambiguate deterministically by first-seen order.
     let n = 2;
     const used = (v: string) =>
-      this.scope.symbols.has(v) ||
-      [...this.scope.symbols.values()].includes(v) ||
-      [...this.scope.functions.values()].includes(v) ||
-      [...this.scope.matrices.values()].includes(v);
+      this.scope.emit.symbols.has(v) ||
+      [...this.scope.emit.symbols.values()].includes(v) ||
+      [...this.scope.emit.functions.values()].includes(v) ||
+      [...this.scope.emit.matrices.values()].includes(v);
     while (used(ident)) ident = `${pyIdent(name)}_${n++}`;
     map.set(name, ident);
     return ident;
@@ -632,18 +663,18 @@ class Emitter {
     // `i = …` assignment keeps it an ordinary symbol.
     if (
       name === 'i' &&
-      !this.scope.defined.has(name) &&
-      !this.scope.bound.has(name)
+      !this.scope.decls.defined.has(name) &&
+      !this.scope.emit.bound.has(name)
     ) {
-      return this.scope.lambdaBound.has(name)
-        ? this.alloc(this.scope.symbols, name)
+      return this.scope.emit.lambdaBound.has(name)
+        ? this.alloc(this.scope.emit.symbols, name)
         : `${this.sp}I`;
     }
-    if (this.scope.bound.has(name)) return pyIdent(name);
-    if (this.scope.functions.has(name)) {
-      const ident = this.scope.functions.get(name)!;
-      const argNodes = this.scope.fnArgs.get(name);
-      if (argNodes === undefined || this.scope.emitting.has(name))
+    if (this.scope.emit.bound.has(name)) return pyIdent(name);
+    if (this.scope.emit.functions.has(name)) {
+      const ident = this.scope.emit.functions.get(name)!;
+      const argNodes = this.scope.emit.fnArgs.get(name);
+      if (argNodes === undefined || this.scope.emit.emitting.has(name))
         return ident;
       // Bare function name in arithmetic position (`f + 1`) — emit the
       // applied form `f(x)` recorded at the decl/call site: the pointwise
@@ -651,36 +682,34 @@ class Emitter {
       // position (`g(f)`, `sin(f)`) is handled in applyArgs, which emits
       // the unapplied eta form `sp.Lambda(x, f(x))`. The emitting guard
       // breaks f/g mutual-reference cycles on the second hop.
-      this.scope.emitting.add(name);
-      try {
-        return `${ident}(${argNodes.map((a) => this.emit(a)).join(', ')})`;
-      } finally {
-        this.scope.emitting.delete(name);
-      }
+      return this.scope.withEmitting(
+        name,
+        () => `${ident}(${argNodes.map((a) => this.emit(a)).join(', ')})`,
+      );
     }
-    if (this.scope.defined.has(name)) return pyIdent(name);
+    if (this.scope.decls.defined.has(name)) return pyIdent(name);
     // `v^T A v` — `v` was claimed by the matrix tier (Transpose), so a
     // later bare `v` is the SAME name, not a new symbol: reuse the
     // MatrixSymbol ident instead of minting `v_2`.
-    if (this.scope.matrices.has(name))
-      return this.scope.matrices.get(name)!;
+    if (this.scope.emit.matrices.has(name))
+      return this.scope.emit.matrices.get(name)!;
     const idDim = this.identityDim(name);
     if (idDim) return `${this.sp}eye(${idDim})`;
-    return this.alloc(this.scope.symbols, name);
+    return this.alloc(this.scope.emit.symbols, name);
   }
 
   // A name used as a function (f in f'(x)) needs sp.Function, not
   // sp.symbols — symbols aren't callable.
   private fn(name: string): string {
-    if (this.scope.defined.has(name)) {
+    if (this.scope.decls.defined.has(name)) {
       // `x = 5` then `\dot{x}` — the name is already a bound value;
       // `x(t)` raises TypeError at exec. Def'd/lambda-bound names stay
       // callable (call-fold).
-      if (!this.scope.declaredFns.has(name))
+      if (!this.scope.decls.declaredFns.has(name))
         this.scope.flag('error', `${name} is bound to a value — not callable`);
       return pyIdent(name);
     }
-    return this.alloc(this.scope.functions, name);
+    return this.alloc(this.scope.emit.functions, name);
   }
 
   // Whether a name reads as a function for `^{(n)}` derivative notation:
@@ -689,9 +718,9 @@ class Emitter {
   // A name bound as a variable (symbol, assign target) is not.
   private isFunctionish(name: string): boolean {
     return (
-      this.scope.functions.has(name) ||
-      this.scope.declaredFns.has(name) ||
-      (!this.scope.symbols.has(name) && !this.scope.defined.has(name))
+      this.scope.emit.functions.has(name) ||
+      this.scope.decls.declaredFns.has(name) ||
+      (!this.scope.emit.symbols.has(name) && !this.scope.decls.defined.has(name))
     );
   }
 
@@ -699,10 +728,10 @@ class Emitter {
   // of a bare Symbol raises in the worker. Names already bound (an
   // earlier `A = …` assignment) reuse their own ident instead.
   private mat(name: string): string {
-    if (this.scope.defined.has(name)) return pyIdent(name);
+    if (this.scope.decls.defined.has(name)) return pyIdent(name);
     const dim = this.identityDim(name);
     if (dim) return `${this.sp}eye(${dim})`;
-    return this.alloc(this.scope.matrices, name);
+    return this.alloc(this.scope.emit.matrices, name);
   }
 
   // Emit the argument of a matrix-valued op (det/trace): a bare
@@ -711,11 +740,11 @@ class Emitter {
   private matrixArg(node: MathJson, op: string): string | null {
     if (!isStr(node)) return this.emit(node, PREC_ATOM);
     if (
-      this.scope.symbols.has(node) ||
-      this.scope.functions.has(node) ||
-      (this.scope.defined.has(node) &&
-        !this.scope.matrixNames.has(node) &&
-        !this.scope.matrixDims.has(node))
+      this.scope.emit.symbols.has(node) ||
+      this.scope.emit.functions.has(node) ||
+      (this.scope.decls.defined.has(node) &&
+        !this.scope.kinds.matrixNames.has(node) &&
+        !this.scope.kinds.matrixDims.has(node))
     ) {
       this.scope.flag('error', `${op} needs a matrix — ${node} is a scalar here`);
       return this.emit(node, PREC_ATOM);
@@ -812,8 +841,8 @@ class Emitter {
   private assumeFrom(member: MathJson, set: MathJson): void {
     if (
       !isStr(member) ||
-      this.scope.defined.has(member) ||
-      this.scope.bound.has(member)
+      this.scope.decls.defined.has(member) ||
+      this.scope.emit.bound.has(member)
     )
       return;
     if (
@@ -824,14 +853,12 @@ class Emitter {
       (set[2] as MathJson[]).slice(1).every((e) => this.isPosInt(e))
     ) {
       const dims = (set[2] as MathJson[]).slice(1) as number[];
-      this.scope.matrixDims.set(member, [String(dims[0]), String(dims[1])]);
+      this.scope.pinMatrixDims(member, [String(dims[0]), String(dims[1])]);
       return;
     }
     const c = this.constraintsFor(set);
     if (!c) return;
-    const acc = this.scope.assumptions.get(member) ?? new Set<string>();
-    for (const k of c.kwargs) acc.add(k);
-    this.scope.assumptions.set(member, acc);
+    this.scope.assume(member, c.kwargs);
   }
 
   /** `with ...assuming(...):` header for compound memberships like
@@ -844,9 +871,9 @@ class Emitter {
     const c = this.constraintsFor(set);
     if (!c?.assuming) return null;
     const ident =
-      this.scope.bound.has(member) || this.scope.defined.has(member)
+      this.scope.emit.bound.has(member) || this.scope.decls.defined.has(member)
         ? pyIdent(member)
-        : (this.scope.symbols.get(member) ?? pyIdent(member));
+        : (this.scope.emit.symbols.get(member) ?? pyIdent(member));
     const preds = c.preds.map((p) => `${this.sp}Q.${p}(${ident})`);
     const joined =
       preds.length === 1 ? preds[0] : preds.map((p) => `(${p})`).join(' & ');
@@ -858,7 +885,7 @@ class Emitter {
    * Recursive: `A \cap B` on plain symbols isn't setish either (the op
    * would emit a Function stub that Contains still rejects). */
   isSetish(n: MathJson | undefined): boolean {
-    if (isStr(n)) return SETISH_SYMBOLS.has(n) || this.scope.setNames.has(n);
+    if (isStr(n)) return SETISH_SYMBOLS.has(n) || this.scope.kinds.setNames.has(n);
     if (!isArr(n)) return false;
     const h = headOf(n);
     // \{1,2\} can arrive call-wrapped (['call', 'Set', ...]) when the
@@ -907,7 +934,7 @@ class Emitter {
    * `for e in <these>` terminates. Intervals and the number sets are
    * NOT finite even though they're setish (infinite iteration). */
   isFiniteSet(n: MathJson | undefined): boolean {
-    if (isStr(n)) return this.scope.finiteNames.has(n);
+    if (isStr(n)) return this.scope.kinds.finiteNames.has(n);
     if (!isArr(n)) return false;
     const off = headOf(n) === 'call' ? 2 : 1;
     const h = off === 2 ? n[1] : headOf(n);
@@ -937,7 +964,7 @@ class Emitter {
   private setArg(n: MathJson): string {
     if (this.isSetish(n)) return this.emit(n);
     // A python list can't nest inside FiniteSet's args — splat it.
-    if (isHead(n, 'List') || (isStr(n) && this.scope.listNames.has(n)))
+    if (isHead(n, 'List') || (isStr(n) && this.scope.kinds.listNames.has(n)))
       return `${this.sp}FiniteSet(*${this.emit(n)})`;
     return `${this.sp}FiniteSet(${this.emit(n)})`;
   }
@@ -982,7 +1009,7 @@ class Emitter {
   private unknownCall(h: string, args: MathJson[]): [string, number] {
     this.scope.flag('note', `unknown head "${h}" — emitted as ${h}(...)`);
     const fnArgs = args.filter((a) => a !== h);
-    if (fnArgs.length > 0) this.scope.fnArgs.set(h, fnArgs);
+    this.scope.noteCallArgs(h, fnArgs);
     return [
       `${this.fn(h)}(${args.map((a) => this.callArg(a)).join(', ')})`,
       PREC_ATOM,
@@ -998,14 +1025,13 @@ class Emitter {
   private callArg(a: MathJson): string {
     if (
       isStr(a) &&
-      this.scope.functions.has(a) &&
-      !this.scope.depVars.has(a) &&
-      !this.scope.emitting.has(a)
+      this.scope.emit.functions.has(a) &&
+      !this.scope.kinds.depVars.has(a) &&
+      !this.scope.emit.emitting.has(a)
     ) {
-      const argNodes = this.scope.fnArgs.get(a);
+      const argNodes = this.scope.emit.fnArgs.get(a);
       if (argNodes !== undefined) {
-        this.scope.emitting.add(a);
-        try {
+        return this.scope.withEmitting(a, () => {
           // A literal call site (`f(2)`) recorded non-symbol args that
           // can't be Lambda params — synthesize bound names of the same
           // arity instead of falling back to `f(2)`.
@@ -1013,10 +1039,8 @@ class Emitter {
             ? argNodes.map((x) => this.emit(x))
             : argNodes.map((_, i) => `${this.sp}Symbol("x${i === 0 ? '' : i}")`);
           const sig = params.length === 1 ? params[0] : `(${params.join(', ')})`;
-          return `${this.sp}Lambda(${sig}, ${this.scope.functions.get(a)!}(${params.join(', ')}))`;
-        } finally {
-          this.scope.emitting.delete(a);
-        }
+          return `${this.sp}Lambda(${sig}, ${this.scope.emit.functions.get(a)!}(${params.join(', ')}))`;
+        });
       }
     }
     return this.emit(a);
@@ -1331,10 +1355,7 @@ class Emitter {
         const [body, v, dom] = args;
         // The index var is bound inside the body — a bound `i` stays a
         // Symbol instead of resolving to sp.I (same as Sum/Integrate).
-        const savedBound = this.scope.lambdaBound;
-        if (isStr(v))
-          this.scope.lambdaBound = new Set([...savedBound, v]);
-        const out = ((): [string, number] => {
+        return this.scope.withLambdaBound(isStr(v) ? [v] : [], () => {
           // SymPy's minimum/maximum can't bound an undefined function's
           // range — call/Apply bodies raise NotImplementedError at eval.
           if (isHead(body, 'call') || isHead(body, 'Apply'))
@@ -1376,9 +1397,7 @@ class Emitter {
             `${this.sp}${fn}(${this.emit(body)}, ${this.emit(v)}, ${this.emit(dom)})`,
             PREC_ATOM,
           ];
-        })();
-        this.scope.lambdaBound = savedBound;
-        return out;
+        });
       }
       case 'Supremum':
       case 'Infimum':
@@ -1591,44 +1610,49 @@ class Emitter {
         return [`${this.sp}Piecewise(${pieces})`, PREC_ATOM];
       }
       case 'D': {
-        // \frac{d}{dx} f and partials both parse to D(f, x[, n]).
-        const savedBound = this.scope.lambdaBound;
-        if (isStr(args[1]))
-          this.scope.lambdaBound = new Set([...savedBound, args[1]]);
-        // \frac{df}{dx} — a bare name as the body is a function of the
-        // variable, not an independent symbol: `diff(f, x)` would
-        // evaluate to 0. Emit `diff(f(x), x)` -> Derivative(f(x), x).
-        let f: string;
-        if (
-          isStr(args[0]) &&
-          args[0] !== args[1] &&
-          !this.scope.defined.has(args[0])
-        ) {
-          f = `${this.fn(args[0])}(${this.emit(args[1])})`;
-          this.scope.fnArgs.set(args[0], [args[1]]);
-          this.scope.depVars.add(args[0]);
-        } else {
-          f = this.emit(args[0]);
-          // `\dot{x}` after `x = 5` — sp.diff(5, t) evaluates to 0, so
-          // the emitted equation silently says `0 = rhs` instead of a
-          // derivative; flag rather than emit a plausible falsehood.
-          if (
-            isStr(args[0]) &&
-            this.scope.defined.has(args[0]) &&
-            !this.scope.declaredFns.has(args[0])
-          )
-            this.scope.flag(
-              'error',
-              `${args[0]} is bound to a value — cannot differentiate`,
-            );
-        }
-        const x = this.emit(args[1]);
-        const out: [string, number] =
-          args.length >= 3
-            ? [`${this.sp}diff(${f}, ${x}, ${this.emit(args[2])})`, PREC_ATOM]
-            : [`${this.sp}diff(${f}, ${x})`, PREC_ATOM];
-        this.scope.lambdaBound = savedBound;
-        return out;
+        // \frac{d}{dx} f and partials both parse to D(f, x[, n]). The
+        // variable is bound for the body's emission (a bound `i` stays
+        // a symbol instead of resolving to sp.I).
+        return this.scope.withLambdaBound(
+          isStr(args[1]) ? [args[1]] : [],
+          (): [string, number] => {
+            // \frac{df}{dx} — a bare name as the body is a function of
+            // the variable, not an independent symbol: `diff(f, x)`
+            // would evaluate to 0. Emit `diff(f(x), x)` ->
+            // Derivative(f(x), x).
+            let f: string;
+            if (
+              isStr(args[0]) &&
+              args[0] !== args[1] &&
+              !this.scope.decls.defined.has(args[0])
+            ) {
+              f = `${this.fn(args[0])}(${this.emit(args[1])})`;
+              this.scope.noteDepVar(args[0], [args[1]]);
+            } else {
+              f = this.emit(args[0]);
+              // `\dot{x}` after `x = 5` — sp.diff(5, t) evaluates to 0,
+              // so the emitted equation silently says `0 = rhs` instead
+              // of a derivative; flag rather than emit a plausible
+              // falsehood.
+              if (
+                isStr(args[0]) &&
+                this.scope.decls.defined.has(args[0]) &&
+                !this.scope.decls.declaredFns.has(args[0])
+              )
+                this.scope.flag(
+                  'error',
+                  `${args[0]} is bound to a value — cannot differentiate`,
+                );
+            }
+            const x = this.emit(args[1]);
+            return args.length >= 3
+              ? [
+                  `${this.sp}diff(${f}, ${x}, ${this.emit(args[2])})`,
+                  PREC_ATOM,
+                ]
+              : [`${this.sp}diff(${f}, ${x})`, PREC_ATOM];
+          },
+        );
       }
       case 'Apply': {
         const callee = args[0];
@@ -1686,10 +1710,7 @@ class Emitter {
           // raises TypeError).
           if (isStr(f)) {
             const fvars = argNodes.filter((a) => isStr(a) && a !== f);
-            if (fvars.length > 0) {
-              this.scope.fnArgs.set(f, fvars);
-              this.scope.depVars.add(f);
-            }
+            if (fvars.length > 0) this.scope.noteDepVar(f, fvars);
           }
           const applied = (list: string[]) =>
             fname !== null
@@ -1740,7 +1761,7 @@ class Emitter {
         // Record the application so a later bare `f` in operand
         // position emits `f(<args>)` (UndefinedFunction operands raise).
         const fnArgs = args.slice(1).filter((a) => a !== callee);
-        if (fnArgs.length > 0) this.scope.fnArgs.set(callee, fnArgs);
+        this.scope.noteCallArgs(callee, fnArgs);
         return [
           `${calleeText}(${args.slice(1).map((a) => this.emit(a)).join(', ')})`,
           PREC_ATOM,
@@ -1755,10 +1776,7 @@ class Emitter {
         const name = isStr(args[0])
           ? `${this.fn(args[0])}(${arg})`
           : this.emit(args[0], PREC_ATOM);
-        if (isStr(args[0])) {
-          this.scope.fnArgs.set(args[0], ['x']);
-          this.scope.depVars.add(args[0]);
-        }
+        if (isStr(args[0])) this.scope.noteDepVar(args[0], ['x']);
         const n =
           isNum(args[1]) && numText(args[1]) !== '1'
             ? `, ${numText(args[1])}`
@@ -1772,8 +1790,8 @@ class Emitter {
         // `x**2`, same as `5^{(2)}` → 25.
         if (
           isStr(args[0]) &&
-          !this.scope.functions.has(args[0]) &&
-          !this.scope.declaredFns.has(args[0])
+          !this.scope.emit.functions.has(args[0]) &&
+          !this.scope.decls.declaredFns.has(args[0])
         ) {
           const order =
             args[1] === undefined
@@ -1791,8 +1809,7 @@ class Emitter {
           // `x^{(2)}` can't differentiate `x(x)` by `x` — the var must
           // differ from the callee name.
           const v = this.sym(args[0] === 'x' ? 't' : 'x');
-          this.scope.fnArgs.set(args[0], [args[0] === 'x' ? 't' : 'x']);
-          this.scope.depVars.add(args[0]);
+          this.scope.noteDepVar(args[0], [args[0] === 'x' ? 't' : 'x']);
           if (args[1] !== undefined && !isNum(args[1])) {
             // Same wasm-crashing (v, n) tuple as the applied path.
             this.scope.flag(
@@ -1820,17 +1837,18 @@ class Emitter {
         // like operator-bound names: `i \mapsto i^2` binds a plain
         // Symbol — `Lambda(sp.I, …)` can't take the imaginary constant.
         const rawParams = args.slice(1).map((p) => (isStr(p) ? p : 'x'));
-        const saved = this.scope.bound;
-        const savedLambda = this.scope.lambdaBound;
-        this.scope.lambdaBound = new Set([...savedLambda, ...rawParams]);
-        const params = rawParams.map((p) => this.sym(p));
-        this.scope.bound = new Set([...saved, ...rawParams]);
-        const body = this.emit(args[0]);
-        this.scope.bound = saved;
-        this.scope.lambdaBound = savedLambda;
-        const sig =
-          params.length === 1 ? params[0] : `(${params.join(', ')})`;
-        return [`${this.sp}Lambda(${sig}, ${body})`, PREC_LOW];
+        // lambdaBound pushes before the params' idents mint (a param
+        // named `i` stays a plain Symbol); `bound` pushes after, so the
+        // minted names themselves aren't treated as already-bound.
+        return this.scope.withLambdaBound(rawParams, () => {
+          const params = rawParams.map((p) => this.sym(p));
+          return this.scope.withBound(rawParams, () => {
+            const body = this.emit(args[0]);
+            const sig =
+              params.length === 1 ? params[0] : `(${params.join(', ')})`;
+            return [`${this.sp}Lambda(${sig}, ${body})`, PREC_LOW];
+          });
+        });
       }
       case 'Integrate': {
         const { body: parsedBody, params } = unwrapLambda(args[0]);
@@ -1881,7 +1899,7 @@ class Emitter {
           for (let i = 0; i < factors.length; i++) {
             const a = factors[i];
             const b = factors[i + 1];
-            if (isStr(a) && this.scope.functions.has(a) && isStr(b)) {
+            if (isStr(a) && this.scope.emit.functions.has(a) && isStr(b)) {
               out.push(['call', a, b]);
               i++;
             } else out.push(a);
@@ -1975,9 +1993,6 @@ class Emitter {
         }
         // The integration variable is bound for the body's emission (a
         // bound `i` stays a symbol instead of resolving to sp.I).
-        const savedBound = this.scope.lambdaBound;
-        if (isStr(v))
-          this.scope.lambdaBound = new Set([...savedBound, v, ...extraVars]);
         const finish = (): [string, number] => {
           const hasLo = !missing(lo);
           const hasHi = !missing(hi);
@@ -2025,9 +2040,10 @@ class Emitter {
           const indefinite = `${this.sp}integrate(${this.emit(body)}, ${this.emit(v)})`;
           return [`${indefinite} + ${constTerm()}`, PREC_ADD];
         };
-        const out = finish();
-        this.scope.lambdaBound = savedBound;
-        return out;
+        return this.scope.withLambdaBound(
+          isStr(v) ? [v, ...extraVars] : [],
+          finish,
+        );
       }
       case 'Sum':
       case 'Product': {
@@ -2055,9 +2071,10 @@ class Emitter {
         }
         // The index variable is bound for the body's emission (a bound
         // `i` stays a symbol instead of resolving to sp.I).
-        const savedBound = this.scope.lambdaBound;
-        if (limits && isStr(limits[0]) && !missing(limits[0]))
-          this.scope.lambdaBound = new Set([...savedBound, limits[0]]);
+        const boundVars =
+          limits && isStr(limits[0]) && !missing(limits[0])
+            ? [limits[0]]
+            : [];
         // SymPy has no boundless/partial Sum or Product form — every
         // shape except a complete (var, lo, hi) tuple raises ValueError.
         // Flag like the integral's half-bound case and drop the row.
@@ -2083,9 +2100,7 @@ class Emitter {
             PREC_ATOM,
           ];
         };
-        const out = finish();
-        this.scope.lambdaBound = savedBound;
-        return out;
+        return this.scope.withLambdaBound(boundVars, finish);
       }
       case 'Limit': {
         // ["Limit", ["Function", body, x], value] or
@@ -2104,15 +2119,10 @@ class Emitter {
                 ? '+'
                 : '-'
               : '+-';
-          const savedBound = this.scope.lambdaBound;
-          if (isStr(v))
-            this.scope.lambdaBound = new Set([...savedBound, v]);
-          const out: [string, number] = [
+          return this.scope.withLambdaBound(isStr(v) ? [v] : [], () => [
             `${this.sp}limit(${this.emit(body)}, ${this.emit(v)}, ${this.emit(args[1])}, dir='${dir}')`,
             PREC_ATOM,
-          ];
-          this.scope.lambdaBound = savedBound;
-          return out;
+          ]);
         }
         if (args.length >= 3)
           return [
@@ -2228,7 +2238,7 @@ class Emitter {
         // bare name already declared as a matrix elsewhere.
         if (isHead(args[0], 'Matrix') || this.identityDim(args[0]))
           return [`(${this.emit(args[0])}).norm()`, PREC_ATOM];
-        if (this.matrixRef(args[0]) || (isStr(args[0]) && this.scope.matrices.has(args[0])))
+        if (this.matrixRef(args[0]) || (isStr(args[0]) && this.scope.emit.matrices.has(args[0])))
           return [`(${this.emit(args[0])}).norm()`, PREC_ATOM];
         return [`${this.sp}Abs(${this.emit(args[0])})`, PREC_ATOM];
       case 'Divides':
@@ -2324,7 +2334,7 @@ class Emitter {
           const a = args[1];
           const concrete =
             isHead(a, 'Matrix') ||
-            (isStr(a) && this.scope.matrixNames.has(a));
+            (isStr(a) && this.scope.kinds.matrixNames.has(a));
           if (!concrete)
             this.scope.flag(
               'error',
@@ -2476,7 +2486,7 @@ class Emitter {
         // complex conjugate.
         if (name === 'Superstar' && args.length === 2) {
           const a = args[1];
-          if (isStr(a) && this.scope.matrices.has(a))
+          if (isStr(a) && this.scope.emit.matrices.has(a))
             return [
               `${this.sp}Adjoint(${this.matrixArg(a, '*') ?? 'None'})`,
               PREC_ATOM,
@@ -2491,9 +2501,7 @@ class Emitter {
         // `\delta_{ij}` — index positions keep `i` an ordinary symbol;
         // the global free-`i` rule would emit the imaginary unit.
         if (name === 'KroneckerDelta' && args.length === 3) {
-          const savedBound = this.scope.lambdaBound;
-          this.scope.lambdaBound = new Set([...savedBound, 'i']);
-          try {
+          return this.scope.withLambdaBound(['i'], () => {
             const rendered = args
               .slice(1)
               .map((a) => this.emit(a))
@@ -2501,10 +2509,8 @@ class Emitter {
             return [
               `${this.sp}KroneckerDelta(${rendered})`,
               PREC_ATOM,
-            ];
-          } finally {
-            this.scope.lambdaBound = savedBound;
-          }
+            ] as [string, number];
+          });
         }
         const rendered = args
           .slice(1)
@@ -2558,13 +2564,13 @@ class Emitter {
           ];
         if (CALL_RENAMES[name])
           return [`${this.sp}${CALL_RENAMES[name]}(${rendered})`, PREC_ATOM];
-        if (this.scope.declared.has(name) || !SP_BUILTIN_CALL.has(name)) {
+        if (this.scope.decls.declared.has(name) || !SP_BUILTIN_CALL.has(name)) {
           // Record the application so a later bare `f` in operand
           // position emits `f(<args>)` — an UndefinedFunction operand
           // raises TypeError (the name itself as arg is filtered so
           // self-reference can't recurse).
           const fnArgs = args.slice(1).filter((a) => a !== name);
-          if (fnArgs.length > 0) this.scope.fnArgs.set(name, fnArgs);
+          this.scope.noteCallArgs(name, fnArgs);
           return [`${this.fn(name)}(${rendered})`, PREC_ATOM];
         }
         return [`${this.sp}${pyIdent(name)}(${rendered})`, PREC_ATOM];
@@ -2624,6 +2630,10 @@ interface StatementOut {
    * and this evals for the row (e.g. `a = 5` shows `a = 5`). Undefined
    * means the emitted code itself is the display expression. */
   display?: string;
+  /** The statement binds a name (Assign/Def/Declare) — its `display`
+   * echoes the definition itself, so the shown program drops its
+   * `e = …` capture line even in the plumbing view. */
+  defines?: boolean;
 }
 
 interface CellBody {
@@ -2692,18 +2702,26 @@ function allNames(node: MathJson, acc: Set<string>): void {
   if (isArr(node)) for (const child of node) allNames(child, acc);
 }
 
-// The next constant of integration: first capital letter not used by the
-// cell or bound elsewhere in the worksheet (C, else D, E, …). Exhausted
-// alphabet falls back to reusing C — nothing else is left to give.
-function nextConstName(scope: Scope): string {
+// The next constant-of-integration letter: first capital not in `used`
+// (C, else D, E, …). `used` is mutated — the returned letter is claimed.
+// Exhausted alphabet falls back to reusing C — nothing else is left to
+// give. Shared with the interim engine so both pick the same letter
+// for the same cell.
+export function firstFreeCapital(used: Set<string>): string {
   for (let code = 'C'.charCodeAt(0); code <= 'Z'.charCodeAt(0); code++) {
     const name = String.fromCharCode(code);
-    if (!scope.constNames.has(name)) {
-      scope.constNames.add(name);
+    if (!used.has(name)) {
+      used.add(name);
       return name;
     }
   }
   return 'C';
+}
+
+// The next constant of integration: first capital letter not used by the
+// cell or bound elsewhere in the worksheet (C, else D, E, …).
+function nextConstName(scope: Scope): string {
+  return firstFreeCapital(scope.emit.constNames);
 }
 
 // Emit one normalized cell IR into defs + per-statement lines. Cells are
@@ -2714,11 +2732,10 @@ function nextConstName(scope: Scope): string {
 function cellBody(ir: MathJson, scope: Scope): CellBody {
   const emitter = new Emitter(scope);
   const sp = scope.qualified ? 'sp.' : '';
-  const preDefined = new Set(scope.defined);
+  const preDefined = new Set(scope.decls.defined);
   // Reserve the cell's own names (and worksheet Assign/Def targets) so
   // constants of integration start at the first free capital.
-  allNames(ir, scope.constNames);
-  for (const name of scope.declared) scope.constNames.add(name);
+  scope.reserveConstNames(ir);
   // `\text{where}`-style blocks arrive condition-first: `x² where x>0`
   // parses as WhereBlock(Gt, x²) — a single written statement CE split
   // internally (parseCellLatex tags them). Emit the body row before its
@@ -2763,19 +2780,19 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   });
 
   // Names first needed in this cell (not already bound in earlier ones).
-  const newSyms = [...scope.symbols].filter(([raw]) => !preDefined.has(raw));
+  const newSyms = [...scope.emit.symbols].filter(([raw]) => !preDefined.has(raw));
   // Function-bound names (Def/`f:`) sit in `functions` for call-fold
   // detection but declare themselves — no `sp.Function` def for them.
-  const newFns = [...scope.functions].filter(
-    ([raw]) => !preDefined.has(raw) && !scope.declaredFns.has(raw),
+  const newFns = [...scope.emit.functions].filter(
+    ([raw]) => !preDefined.has(raw) && !scope.decls.declaredFns.has(raw),
   );
-  const newMats = [...scope.matrices].filter(
+  const newMats = [...scope.emit.matrices].filter(
     ([raw]) => !preDefined.has(raw),
   );
   const newNames = new Set(
     [...newSyms, ...newFns, ...newMats].map(([raw]) => raw),
   );
-  for (const raw of newNames) scope.defined.add(raw);
+  scope.markDefinedAll(newNames);
 
   const defs: string[] = [];
   // `simple` names are already valid identifiers — they go in one grouped
@@ -2785,15 +2802,15 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   const simple = newSyms.filter(
     ([raw, ident]) =>
       raw === ident &&
-      !scope.assumptions.has(raw) &&
-      !scope.matrixDims.has(raw) &&
+      !scope.kinds.assumptions.has(raw) &&
+      !scope.kinds.matrixDims.has(raw) &&
       CE_DISPLAY_NAMES[raw] === undefined,
   );
   const fancy = newSyms.filter(
     ([raw, ident]) =>
       raw !== ident ||
-      scope.assumptions.has(raw) ||
-      scope.matrixDims.has(raw) ||
+      scope.kinds.assumptions.has(raw) ||
+      scope.kinds.matrixDims.has(raw) ||
       CE_DISPLAY_NAMES[raw] !== undefined,
   );
   if (simple.length === 1)
@@ -2803,8 +2820,8 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
       `${simple.map(([, ident]) => ident).join(', ')} = ${sp}symbols('${simple.map(([raw]) => raw).join(' ')}')`,
     );
   for (const [raw, ident] of fancy) {
-    const dim = scope.matrixDims.get(raw);
-    const kw = scope.assumptions.get(raw);
+    const dim = scope.kinds.matrixDims.get(raw);
+    const kw = scope.kinds.assumptions.get(raw);
     if (dim)
       defs.push(
         `${ident} = ${sp}MatrixSymbol(${JSON.stringify(raw)}, ${dim[0]}, ${dim[1]})`,
@@ -2851,6 +2868,44 @@ function emitExprStatement(node: MathJson, emitter: Emitter): StatementOut {
   return { lines: [line] };
 }
 
+// A `\python` body's last line can be an expression — eval it and show
+// the value (REPL lane), like the trailing line at a python prompt.
+// Returns undefined for statement-ending bodies (they echo the source):
+// statement keywords, assignments, `;` chains, suite members (indented
+// or `\`-continued), and unbalanced brackets — the conservative check
+// keeps a partial expression from replacing the source with a
+// SyntaxError row.
+const PY_STMT_LINE_RE =
+  /^[ \t]*(def|class|import|from|if|elif|else|for|while|try|except|finally|with|return|raise|assert|del|global|nonlocal|pass|break|continue|yield)\b/;
+// `=` that isn't part of ==, !=, <=, >=, :=, +=, **=, … — assignment
+// lines exec but aren't eval'able expressions.
+const PY_ASSIGN_RE = /(?<![=<>!:+\-*/%&|^~@])=(?![=>])/;
+
+function trailingPythonExpr(code: string): string | undefined {
+  const lines = code.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (line === '' || line.startsWith('#')) continue;
+    if (
+      lines[i - 1]?.trimEnd().endsWith('\\') || // glued to the line above
+      /^\s/.test(lines[i]) || // suite member, not a top-level line
+      PY_STMT_LINE_RE.test(line) ||
+      PY_ASSIGN_RE.test(line) ||
+      line.includes(';') ||
+      /[+\-*/%&|^~@<>=,\\]$/.test(line)
+    )
+      return undefined;
+    let depth = 0;
+    for (const c of line) {
+      if (c === '(' || c === '[' || c === '{') depth++;
+      else if (c === ')' || c === ']' || c === '}') depth--;
+      if (depth < 0) return undefined;
+    }
+    return depth === 0 ? line : undefined;
+  }
+  return undefined;
+}
+
 // `a = 5` shows `a = 5` — a fresh Symbol for the target renders the raw
 // name (`x_{1}` shows subscripted, not `x_1`). Matrix/set RHSs need
 // evaluate=False: Eq(Symbol, Matrix|FiniteSet) collapses to literal False.
@@ -2876,7 +2931,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     // (x, y) = (1, 2) — python tuple-unpack; every member binds.
     if (isHead(node[1], 'List')) {
       const members = node[1].slice(1).filter(isStr);
-      for (const m of members) emitter.scope.defined.add(m);
+      for (const m of members) emitter.scope.markDefined(m);
       if (emitter.scope.errorCount > before) return { lines: [] };
       const idents = members.map(pyIdent).join(', ');
       return {
@@ -2884,13 +2939,14 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
         display: `${sp}Eq(${sp}Tuple(${members
           .map((m) => `${sp}Symbol(${JSON.stringify(m)})`)
           .join(', ')}), ${rhs})`,
+        defines: true,
       };
     }
     const name = isStr(node[1]) ? node[1] : 'result';
     // `f = x \mapsto body` binds a callable — later `f(…)` call-folds
     // like a def'd name instead of flagging a bound-value call.
     if (isStr(node[1]) && isHead(node[2], 'Function'))
-      emitter.scope.declaredFns.add(node[1]);
+      emitter.scope.declareFn(node[1]);
     // Matrix-valued by shape, not by emitted text — `I_2` emits
     // `sp.eye(2)`, `B = A^T` emits `Transpose`, and Eq(Symbol, <matrix>)
     // collapses to literal False without evaluate=False.
@@ -2899,28 +2955,21 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     const finiteRhs = emitter.isFiniteSet(node[2]);
     const listRhs =
       isHead(node[2], 'List') ||
-      (isStr(node[2]) && emitter.scope.listNames.has(node[2]));
-    if (isStr(node[1])) {
-      emitter.scope.defined.add(name);
-      if (matrixRhs) emitter.scope.matrixNames.add(name);
-      else emitter.scope.matrixNames.delete(name);
-      if (setRhs) emitter.scope.setNames.add(name);
-      else emitter.scope.setNames.delete(name);
-      if (finiteRhs) emitter.scope.finiteNames.add(name);
-      else emitter.scope.finiteNames.delete(name);
-      if (listRhs) emitter.scope.listNames.add(name);
-      else emitter.scope.listNames.delete(name);
-      // A rebound name is a value now, not the earlier Function —
-      // later references emit `x`, not `x(t)`. The `functions` entry
-      // stays: it carries the pending `x = sp.Function` def line for
-      // earlier statements that applied it.
-      emitter.scope.fnArgs.delete(name);
-      emitter.scope.depVars.delete(name);
-    }
+      (isStr(node[2]) && emitter.scope.kinds.listNames.has(node[2]));
+    if (isStr(node[1]))
+      // One transition: bound + all value-kind sets refreshed + the
+      // name's function residue cleared (see bindAssigned).
+      emitter.scope.bindAssigned(name, {
+        matrix: matrixRhs,
+        set: setRhs,
+        finite: finiteRhs,
+        list: listRhs,
+      });
     if (emitter.scope.errorCount > before) return { lines: [] };
     return {
       lines: [`${pyIdent(name)} = ${rhs}`],
       display: assignDisplay(sp, name, rhs, matrixRhs || setRhs),
+      defines: true,
     };
   }
   // `\text{def} f(x)` — a declaration without a body: f binds an
@@ -2930,9 +2979,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     const params = isHead(node[2], 'List')
       ? node[2].slice(1).filter(isStr)
       : [];
-    emitter.scope.defined.add(name);
-    emitter.scope.functions.set(name, pyIdent(name));
-    if (params.length > 0) emitter.scope.fnArgs.set(name, params);
+    emitter.scope.claimFunction(name, params);
     return {
       lines: [`${pyIdent(name)} = ${sp}Function(${JSON.stringify(name)})`],
       // Zero params: show `f` (the function itself), not `f()`.
@@ -2942,22 +2989,20 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
           : `${sp}Function(${JSON.stringify(name)})(${params
               .map((p) => `${sp}Symbol(${JSON.stringify(p)})`)
               .join(', ')})`,
+      defines: true,
     };
   }
   if (h === 'Def') {
     const name = isStr(node[1]) ? node[1] : 'f';
     const params =
       isHead(node[2], 'List') ? node[2].slice(1).filter(isStr) : [];
-    const saved = emitter.scope.bound;
-    emitter.scope.bound = new Set(params);
     const before = emitter.scope.errorCount;
-    const body = emitter.emit(node[3]);
-    emitter.scope.bound = saved;
-    emitter.scope.defined.add(name);
-    emitter.scope.functions.set(name, pyIdent(name));
+    const body = emitter.scope.withBoundOnly(params, () =>
+      emitter.emit(node[3]),
+    );
     // A later bare `f` in operand position emits `f(<params>)` — an
     // unapplied function object raises TypeError as an operand.
-    if (params.length > 0) emitter.scope.fnArgs.set(name, params);
+    emitter.scope.claimFunction(name, params);
     if (emitter.scope.errorCount > before) return { lines: [] };
     const idents = params.map(pyIdent).join(', ');
     // `f(x) = body` rendered via an undefined function — the def'd python
@@ -2973,6 +3018,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     return {
       lines: [`def ${pyIdent(name)}(${idents}):`, `    return ${body}`],
       display,
+      defines: true,
     };
   }
   // `f: x ↦ body` — the colon names the lambda's result; bind it (like
@@ -2992,13 +3038,12 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       const sig = isStr(typed[3]) ? typed[3] : 'x';
       const before = emitter.scope.errorCount;
       const rhs = emitter.emit(['Function', node[1], sig]);
-      emitter.scope.defined.add(name);
-      emitter.scope.functions.set(name, pyIdent(name));
-      emitter.scope.fnArgs.set(name, [sig]);
+      emitter.scope.claimFunction(name, [sig]);
       if (emitter.scope.errorCount > before) return { lines: [] };
       return {
         lines: [`${pyIdent(name)} = ${rhs}`],
         display: assignDisplay(sp, name, rhs),
+        defines: true,
       };
     }
   }
@@ -3011,15 +3056,24 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     const name = node[2];
     const before = emitter.scope.errorCount;
     const rhs = emitter.emit(node[3]);
-    emitter.scope.defined.add(name);
-    emitter.scope.functions.set(name, pyIdent(name));
     const colonParams = node[3].slice(2).filter(isStr);
-    if (colonParams.length > 0) emitter.scope.fnArgs.set(name, colonParams);
+    emitter.scope.claimFunction(name, colonParams);
     if (emitter.scope.errorCount > before) return { lines: [] };
     return {
       lines: [`${pyIdent(name)} = ${rhs}`],
       display: assignDisplay(sp, name, rhs),
+      defines: true,
     };
+  }
+  // `\python{ ... }` — verbatim user source. It execs in the python
+  // target's program or the calculator's shared namespace. When the
+  // last line is an expression, the row displays its value (REPL
+  // lane — `\python{f(9)}` shows 10); statement-ending bodies echo the
+  // source that ran.
+  if (h === 'PythonSource') {
+    const code = isStr(node[1]) ? node[1] : '';
+    if (code.trim() === '') return { lines: [] };
+    return { lines: [code], display: trailingPythonExpr(code) ?? JSON.stringify(code) };
   }
   if (h === 'Block' || h === 'WhereBlock')
     return {
@@ -3126,7 +3180,7 @@ export function compileWorksheet(
     collectDeclared(r.ir, new Set(), cellDeclaredFns);
     return cellStatements(
       r.ir,
-      buildScope(
+      new Scope(
         qualified,
         declared,
         cellDeclaredFns,
@@ -3162,8 +3216,10 @@ export function compileWorksheet(
 
 // Names bound by Assign/Def anywhere in the IR (pre-scan). Distinguishes
 // worksheet-declared calls (`f(x)` when `f` is defined here) from the
-// `sp.<head>` escape hatch.
-function collectDeclared(
+// `sp.<head>` escape hatch. Exported for the interim engine, which
+// reserves the same declared names when allocating constants of
+// integration so its letters match the real program's.
+export function collectDeclared(
   ir: MathJson,
   declared: Set<string>,
   declaredFns: Set<string>,
@@ -3229,51 +3285,6 @@ function collectMatrices(ir: MathJson, matrixNames: Set<string>): void {
   collect(ir);
 }
 
-function buildScope(
-  qualified: boolean,
-  declared: Set<string>,
-  declaredFns: Set<string>,
-  matrixNames: Set<string>,
-  issues: Issue[],
-  cellIssues: Issue[][],
-  cell: number,
-): Scope {
-  return {
-    qualified,
-    declared,
-    declaredFns,
-    matrixNames,
-    defined: new Set(),
-    bound: new Set(),
-    lambdaBound: new Set(),
-    matrices: new Map(),
-    setNames: new Set(),
-    finiteNames: new Set(),
-    listNames: new Set(),
-    symbols: new Map(),
-    functions: new Map(),
-    fnArgs: new Map(),
-    emitting: new Set(),
-    depVars: new Set(),
-    issues,
-    cellIssues,
-    cell,
-    errorCount: 0,
-    constNames: new Set(),
-    assumptions: new Map(),
-    matrixDims: new Map(),
-    flag(severity, message) {
-      if (severity === 'error') this.errorCount += 1;
-      this.issues.push({
-        severity,
-        message: this.cell > 0 ? `cell ${this.cell}: ${message}` : message,
-      });
-      if (this.cell > 0)
-        this.cellIssues[this.cell - 1].push({ severity, message });
-    },
-  };
-}
-
 // `emit` flags a dropped Error node with this generic message; the
 // normalizer already issued the real diagnostic, so the placeholder is
 // marker-only — the python overlay renders it as a ! icon (never text)
@@ -3287,6 +3298,10 @@ export interface CalcStatement {
   /** When set, `code` execs first, then this evals for the row's value.
    * Absent = `code` evals directly for the row. */
   display?: string;
+  /** The statement binds a name (assign/def/declare) — the shown
+   * program never inlines its `e = <display>` capture line, even in
+   * the plumbing view (the display just echoes the definition). */
+  defines?: boolean;
   /** Set when the statement itself failed to emit — reported as an
    * error row in place so the cell keeps written order. */
   error?: string;
@@ -3347,8 +3362,7 @@ function compileCellInScope(
   issues: Issue[],
   scope: Scope,
 ): CalcCellProgram {
-  collectDeclared(ir, scope.declared, scope.declaredFns);
-  collectMatrices(ir, scope.matrixNames);
+  scope.scanDecls(ir);
   scope.issues = issues;
   scope.errorCount = 0;
   const { defs, parts } = cellBody(ir, scope);
@@ -3390,6 +3404,7 @@ function compileCellInScope(
           ? calcEval(out.lines[0])
           : out.lines.join('\n'),
       display: out.display === undefined ? undefined : calcEval(out.display),
+      defines: out.defines,
       error,
       // Line anchors only matter where an error points back at input.
       ...(error !== undefined ? { line } : {}),
@@ -3433,7 +3448,7 @@ function compileCellInScope(
 export function compileCellsForCalc(
   cells: CellInput[],
 ): CalcWorksheetProgram {
-  const scope = buildScope(
+  const scope = new Scope(
     true,
     new Set<string>(),
     new Set<string>(),
@@ -3451,7 +3466,7 @@ export function compileCellsForCalc(
       // The shared declaredFns set both seeds this cell's normalize
       // (a `g(4)` below a `\def g` is a call, not juxtaposition) and
       // collects the names this cell declares for the cells below it.
-      const { ir, issues } = normalizeIR(cell.json, scope.declaredFns);
+      const { ir, issues } = normalizeIR(cell.json, scope.decls.declaredFns);
       if (ir === undefined)
         return { defs: [], statements: [], issues, statementLines: [] };
       return compileCellInScope(ir, issues, scope);
@@ -3466,7 +3481,7 @@ export function compileCellForCalc(cell: CellInput): CalcProgram {
   const { ir, issues } = normalizeIR(cell.json);
   if (ir === undefined)
     return { prelude: [], statements: [], issues, statementLines: [] };
-  const scope = buildScope(
+  const scope = new Scope(
     true,
     new Set<string>(),
     new Set<string>(),

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { compileCellForCalc, compileCellsForCalc } from '../compile/codegen';
 import { parseCellLatex } from '../compile/ir';
-import { interimEvaluate } from './calculator.svelte.ts';
+import { interimEvaluate, shownPrograms } from './calculator.svelte.ts';
 const calc = (latex: string) => compileCellForCalc({ json: parseCellLatex(latex) });
 const calcAll = (...latexs: string[]) =>
   compileCellsForCalc(latexs.map((latex) => ({ json: parseCellLatex(latex) })));
@@ -40,7 +40,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
       expect.stringContaining('def clean_and_simplify'),
     ]);
     expect(prog.statements).toEqual([
-      { code: 'a = 5', display: F('sp.Eq(sp.Symbol("a"), 5)') },
+      { code: 'a = 5', display: F('sp.Eq(sp.Symbol("a"), 5)'), defines: true },
     ]);
   });
 
@@ -50,6 +50,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
       {
         code: 'def f(x):\n    return x**2',
         display: F('(lambda x: sp.Eq(sp.Function("f")(x), x**2))(sp.Symbol("x"))'),
+        defines: true,
       },
     ]);
   });
@@ -1048,6 +1049,18 @@ describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
     expect(latex).toContain('D');
   });
 
+  it('evaluates a boundless \\iint as an iterated integrate', async () => {
+    // CE parses \iint natively — the `d v` pairs park on the Integrate
+    // body and the emitter nests an integrate per level, +C each.
+    const rows = await interimEvaluate('\\iint x\\,dx\\,dy');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].ok).toBe(true);
+    const latex = (rows[0] as { latex?: string }).latex ?? '';
+    expect(latex).toContain('x^2');
+    expect(latex).toContain('C');
+    expect(latex).toContain('D');
+  });
+
   it('keeps the one-row-per-statement shape of the real engine', async () => {
     const rows = await interimEvaluate('1+1\\\\ 2+3');
     expect(rows).toEqual([
@@ -1064,7 +1077,7 @@ describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
   });
 
   it('does not let one bad row sink the others', async () => {
-    // A matrix row can't be nerdamer-evaluated — the plain rows around
+    // A matrix row can't be CE-evaluated — the plain rows around
     // it must still get interim results.
     const rows = await interimEvaluate('1+1\\\\ x+1');
     expect(rows).toEqual([
@@ -1122,14 +1135,6 @@ describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
     expect((rows[0] as { latex?: string }).latex ?? '').toContain('\\pi');
   });
 
-  it('seeds constants of integration from worksheet names', async () => {
-    // With C bound in an earlier cell the integral takes D, matching
-    // codegen's worksheet-wide constNames.
-    const rows = await interimEvaluate('\\int x dx', 'C=5\\\\ x');
-    expect(rows[0].ok).toBe(true);
-    expect((rows[0] as { latex?: string }).latex ?? '').toContain('D');
-  });
-
   it('evaluates a matrix literal row', async () => {
     const rows = await interimEvaluate(
       '\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}',
@@ -1143,5 +1148,89 @@ describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
     // evaluated honestly — no row rather than a wrong one.
     expect(await interimEvaluate('\\text{def} g(x)=x^{2}\\\\ g(3)')).toEqual([]);
   });
+
+  it('groups power bases — (2^3)^2 is 64, -2^2 squares the group', async () => {
+    expect((await interimEvaluate('\\left(2^3\\right)^2'))[0])
+      .toEqual({ ok: true, latex: '64' });
+    expect((await interimEvaluate('\\left(-2\\right)^{2}'))[0])
+      .toEqual({ ok: true, latex: '4' });
+  });
+
+  it('evaluates \\log like codegen — base 10', async () => {
+    const latex = (await interimEvaluate('\\log(100)'))[0] as { latex?: string };
+    expect(latex.latex).toBe('2');
+  });
+
+  it('keeps the binomial quotient atomic under division', async () => {
+    const latex = (await interimEvaluate('1/\\binom{5}{2}'))[0] as { latex?: string };
+    expect(latex.latex).toBe('\\frac{1}{10}');
+  });
+
+  it('shows no interim for extrema over a bound variable', async () => {
+    // min(body, x) would compare the wrong operands — no row is better.
+    expect(await interimEvaluate('\\min_{x}x^2')).toEqual([]);
+    expect(await interimEvaluate('\\max_{x}x^2')).toEqual([]);
+  });
+
+  it('evaluates one-sided limits in the right direction', async () => {
+    // CE reads the direction superscript — a wrong-sided or two-sided
+    // guess would contradict the real engine.
+    expect(await interimEvaluate('\\lim_{x\\to 0^{-}}\\frac{1}{x}')).toEqual([
+      { ok: true, latex: '-\\infty' },
+    ]);
+    expect(await interimEvaluate('\\lim_{x\\to 0^{+}}\\frac{1}{x}')).toEqual([
+      { ok: true, latex: '\\infty' },
+    ]);
+  });
+
+  it('reserves declared names from cells above for + C letters', async () => {
+    // With `C = 7` bound above, the real engine picks D for the
+    // constant of integration — interim must match.
+    const rows = await interimEvaluate('\\int x dx', ['C = 7']);
+    const latex = (rows[0] as { latex?: string }).latex ?? '';
+    expect(latex).toContain('D');
+    expect(latex).not.toContain('C');
+    // Unrelated names don't reserve letters.
+    const rows2 = await interimEvaluate('\\int x dx', ['a = 7']);
+    expect((rows2[0] as { latex?: string }).latex ?? '').toContain('C');
+  });
 });
 
+
+describe('shownPrograms (generating-code block assembly)', () => {
+  it('marks definition statements, not expressions', () => {
+    const prog = calcAll(
+      'a = 5',
+      '\\text{def} f(x) = x^2',
+      '\\text{def} g(y)',
+      'f: x \\mapsto x^2',
+      'a + 1',
+    );
+    expect(
+      prog.cells.flatMap((c) => c.statements).map((s) => s.defines ?? false),
+    ).toEqual([true, true, true, true, false]);
+  });
+
+  it('never shows the e = capture line for defs/assignments', () => {
+    const prog = calcAll('a = 5', '\\text{def} f(x) = x^2', 'a + 1');
+    const { code, displayCode } = shownPrograms(prog);
+    // Non-plumbing shows no capture lines at all.
+    expect(code).not.toContain('e = clean_and_simplify');
+    // Plumbing swaps expressions for their capture — the definition
+    // displays just echo the statement, so no `e = …` line exists for
+    // them even here.
+    expect(displayCode).toContain('e = clean_and_simplify(a + 1)');
+    expect(displayCode).toContain('a = 5');
+    expect(displayCode).toContain('def f(x):');
+    expect(displayCode).not.toContain('sp.Eq(sp.Symbol("a"), 5)');
+    expect(displayCode).not.toContain('sp.Function("f")');
+  });
+
+  it('keeps the e = capture for non-definition displays', () => {
+    // A \python body's trailing expression echoes a value, not a
+    // definition — its capture still shows under plumbing.
+    const prog = calcAll('\\python{x = 3\nx * 2}');
+    const { displayCode } = shownPrograms(prog);
+    expect(displayCode).toContain('e = clean_and_simplify(x * 2)');
+  });
+});

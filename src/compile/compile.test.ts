@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { parseCellLatex, normalizeIR, latexToStatementStrings } from './ir';
-import { compileWorksheet } from './codegen';
+import {
+  parseCellLatex,
+  normalizeIR,
+  latexToStatementStrings,
+  extractPythonBlocks,
+  NORMALIZE_RULES,
+} from './ir';
+import { compileWorksheet, compileCellForCalc } from './codegen';
 
 // Fixture triples per the IR spec: latex -> normalized IR -> generated
 // SymPy. `expectedPython` is the *cell's* def + statement lines in the
@@ -425,6 +431,47 @@ const FIXTURES: {
     // Accent marks denote distinct variables: \hat{x} -> x_hat.
     latex: '\\hat{x} + \\vec{v}',
     expectedPython: ["x_hat, v_vec = sp.symbols('x_hat v_vec')", 'x_hat + v_vec'],
+  },
+  {
+    // Font-styled letters mint latex-style prefixes: CE tags the letter
+    // `a_upright`; the python variable reads `mathrm_a` while the
+    // Symbol's own name keeps the CE form.
+    latex: '\\mathrm{a}',
+    expectedPython: ['mathrm_a = sp.Symbol("a_upright")'],
+  },
+  {
+    latex: '\\mathrm{a} + \\mathbf{x} + \\mathcal{A}',
+    expectedPython: [
+      'mathrm_a = sp.Symbol("a_upright")',
+      'mathbf_x = sp.Symbol("x_bold")',
+      'mathcal_A = sp.Symbol("A_calligraphic")',
+      'mathrm_a + mathbf_x + mathcal_A',
+    ],
+  },
+  {
+    latex: '\\mathit{u} + \\mathscr{s} + \\mathsf{v} + \\mathtt{w} + \\mathfrak{k}',
+    expectedPython: [
+      'mathit_u = sp.Symbol("u_italic")',
+      'mathscr_s = sp.Symbol("s_script")',
+      'mathsf_v = sp.Symbol("v_sansserif")',
+      'mathtt_w = sp.Symbol("w_monospace")',
+      'mathfrak_k = sp.Symbol("k_fraktur")',
+      'mathit_u + mathscr_s + mathsf_v + mathtt_w + mathfrak_k',
+    ],
+  },
+  {
+    // The tag is per name piece: `a_{\mathrm{i}}` -> `a_i_upright`.
+    latex: 'a_{\\mathrm{i}}',
+    expectedPython: ['a_mathrm_i = sp.Symbol("a_i_upright")'],
+  },
+  {
+    latex: '\\mathrm{a}_{\\mathrm{i}}',
+    expectedPython: ['mathrm_a_mathrm_i = sp.Symbol("a_upright_i_upright")'],
+  },
+  {
+    // Font names bind like any symbol — \mathrm{a} = 5 assigns mathrm_a.
+    latex: '\\mathrm{a} = 5',
+    expectedPython: ['mathrm_a = 5'],
   },
   {
     latex: '\\|v\\|',
@@ -1543,6 +1590,44 @@ describe('normalizeIR', () => {
   });
 });
 
+describe('NORMALIZE_RULES', () => {
+  it('rule names are unique', () => {
+    const names = NORMALIZE_RULES.map((r) => r.name);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  // Coverage probe: wrap every rule's `when` to record which folds fire
+  // across the fixture corpus, then warn on rules that never fire. A
+  // dormant rule is worth a look — dead folds should be deleted, not
+  // carried (warning only: a rule can also legitimately be e2e-only).
+  it('warns on rules that never fire across the fixture corpus', () => {
+    const fired = new Set<string>();
+    const unwrapped = NORMALIZE_RULES.map((r) => r.when);
+    NORMALIZE_RULES.forEach((r, i) => {
+      r.when = (h, n, c) => {
+        const hit = unwrapped[i](h, n, c);
+        if (hit) fired.add(r.name);
+        return hit;
+      };
+    });
+    try {
+      for (const fx of FIXTURES) normalizeIR(parseCellLatex(fx.latex));
+    } finally {
+      NORMALIZE_RULES.forEach((r, i) => {
+        r.when = unwrapped[i];
+      });
+    }
+    const dormant = NORMALIZE_RULES.filter((r) => !fired.has(r.name)).map(
+      (r) => r.name,
+    );
+    if (dormant.length > 0)
+      console.warn(
+        `normalize rules that never fire across FIXTURES: ${dormant.join(', ')}`,
+      );
+    expect(fired.size).toBeGreaterThan(0);
+  });
+});
+
 describe('SymPy codegen fixtures', () => {
   for (const fx of FIXTURES) {
     it(`compiles ${fx.latex}`, () => {
@@ -1916,5 +2001,121 @@ describe('target gating', () => {
     );
     expect(out.ok).toBe(false);
     expect(out.issues.some((i) => i.message.includes('Piecewise'))).toBe(true);
+  });
+});
+
+describe('\\python{...} source blocks', () => {
+  it('lifts the body out before latex rules and the \\\\ splitter', () => {
+    // \\, braces and newlines inside a \python body are code, not
+    // row separators — the statements around it still split normally.
+    expect(
+      latexToStatementStrings(
+        'a = 1 \\\\ \\python{d = {"k": 1}\nprint(d)} \\\\ b = 2',
+      ),
+    ).toEqual(['a = 1', '\\mcpsnippet{0}', 'b = 2']);
+  });
+
+  it('unescapes \\{ \\} \\\\ in the body and preserves everything else', () => {
+    // body in latex: s = "a\}b" \\n" — the \} escape keeps the close-brace
+    // inside, \\ decodes to one backslash
+    const { latex, snippets } = extractPythonBlocks(
+      '\\python{s = "a\\}b" \\\\n"}',
+    );
+    expect(latex).toBe('\\mcpsnippet{0}');
+    expect(snippets).toEqual(['s = "a}b" \\n"']);
+  });
+
+  it('extracts each block in document order', () => {
+    const { latex, snippets } = extractPythonBlocks(
+      '\\python{x = 1} + \\python{y = 2}',
+    );
+    expect(latex).toBe('\\mcpsnippet{0} + \\mcpsnippet{1}');
+    expect(snippets).toEqual(['x = 1', 'y = 2']);
+  });
+
+  it('parseCellLatex emits a PythonSource node carrying the code', () => {
+    const j = parseCellLatex('\\python{x = 1}');
+    expect(j).toEqual(['PythonSource', 'x = 1']);
+    // normalization leaves the statement alone (structural head)
+    const { ir } = normalizeIR(j);
+    expect(ir).toEqual(['PythonSource', 'x = 1']);
+  });
+
+  it('a python statement among math statements stays in order', () => {
+    const j = parseCellLatex('a = 1 \\\\ \\python{print(a)}');
+    expect(Array.isArray(j) && j[0]).toBe('Block');
+    expect((j as unknown[])[2]).toEqual(['PythonSource', 'print(a)']);
+  });
+
+  it('compileWorksheet emits the source verbatim', () => {
+    const out = compileWorksheet(
+      [{ json: parseCellLatex('\\python{x = 1\nprint(x)}') }],
+      'python',
+      { importAll: false },
+    );
+    expect(out.cellLines[0]).toEqual([
+      'import sympy as sp',
+      'x = 1\nprint(x)',
+    ]);
+    expect(out.issues).toEqual([]);
+  });
+
+  it('compileCellForCalc execs the source and echoes it as the row', () => {
+    const out = compileCellForCalc({
+      json: parseCellLatex('\\python{x = 1\ny = x + 1}'),
+    });
+    expect(out.statements).toEqual([
+      {
+        code: 'x = 1\ny = x + 1',
+        // a statement-ending body — the row shows the code that ran
+        display: `clean_and_simplify(${JSON.stringify('x = 1\ny = x + 1')})`,
+      },
+    ]);
+  });
+
+  it('a trailing expression displays its value, not the source', () => {
+    // REPL lane — the body's last expression evals in the exec'd
+    // namespace: a def above makes f(9) answer 10.
+    const out = compileCellForCalc({
+      json: parseCellLatex(
+        '\\python{def f(x):\n    return x + 1\nf(9)}',
+      ),
+    });
+    expect(out.statements).toEqual([
+      {
+        code: 'def f(x):\n    return x + 1\nf(9)',
+        display: 'clean_and_simplify(f(9))',
+      },
+    ]);
+  });
+
+  it('an expression after statements displays its value', () => {
+    const out = compileCellForCalc({
+      json: parseCellLatex('\\python{x = 3\nx * 2}'),
+    });
+    expect(out.statements[0].display).toBe('clean_and_simplify(x * 2)');
+  });
+
+  it('statement-ending bodies still echo the source', () => {
+    // keyword-ending, assignment-ending, and suite-member endings
+    for (const body of [
+      'x = 1\ny = 2',
+      'def f(x):\n    return x + 1',
+      'if True:\n    y = 1',
+    ]) {
+      const out = compileCellForCalc({
+        json: parseCellLatex(`\\python{${body}}`),
+      });
+      expect(out.statements[0].display).toBe(
+        `clean_and_simplify(${JSON.stringify(body)})`,
+      );
+    }
+  });
+
+  it('an empty \\python{} parses to no statement at all', () => {
+    expect(parseCellLatex('\\python{}')).toBeUndefined();
+    const out = compileCellForCalc({ json: parseCellLatex('\\python{}') });
+    expect(out.statements).toEqual([]);
+    expect(out.issues).toEqual([]);
   });
 });

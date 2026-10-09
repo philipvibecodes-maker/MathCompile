@@ -51,6 +51,7 @@ src/
     calculator.worker.ts  Pyodide + SymPy in a classic worker; exec/evals
                           the emitted program (mc_run)
     result-latex.ts      output latex touch-ups (a-trig -> arc-)
+
     python-highlight.ts   tiny tokenizer for the generating-code block
   editor/
     mathquill.ts      imports the vendored build + CSS; exports mq3 + types
@@ -281,5 +282,22 @@ repo Settings → Pages → Source = "GitHub Actions".
 
 ## Codegraph
 
-`.codegraph/` is git-ignored and machine-local. Run `codegraph init` to
-build an index for this checkout.
+Use CodeGraph ([`@colbymchenry/codegraph`](https://www.npmjs.com/package/@colbymchenry/codegraph))
+for code navigation before falling back to grep: who calls a symbol, what it
+calls, and how an area fits together.
+
+- MCP tool, when configured: `codegraph_explore`.
+- CLI: `codegraph callers <symbol>`, `codegraph callees <symbol>`,
+  `codegraph node <symbol>` (source + caller/callee trail),
+  `codegraph explore <query...>`, `codegraph impact <symbol>`.
+- Not installed? `npx -y @colbymchenry/codegraph <command>` works too.
+
+`.codegraph/` is git-ignored and machine-local. `codegraph init` builds the
+index for this checkout (about 5 s); `codegraph sync` refreshes it after edits.
+
+For Devin Local/CLI: this repo commits `.devin/mcp_config.json` (the
+`codegraph` server — `codegraph serve --mcp`, project root taken from the
+client's `rootUri`) and allows `mcp__codegraph__*` in `.devin/config.json`,
+so no per-call approval prompt. Personal overrides go in
+`.devin/mcp_config.local.json` / `.devin/config.local.json` (gitignored by
+Devin's convention, though `config.local.json` is currently tracked here).

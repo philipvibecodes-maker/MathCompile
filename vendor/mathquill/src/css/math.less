@@ -120,6 +120,21 @@
     }
   }
 
+  // MATHCOMPILE: keep the slot box on the block holding the caret. An
+  // empty block is invisible in every command — focus() strips
+  // .mq-empty, so \mathrm{ } collapsed to a zero-width span and looked
+  // like a no-op. A non-empty block gets the box only when the command
+  // renders no boundary around its input — font/text wrappers like
+  // \mathrm, \mathbf and \text{ } (.mq-font/.mq-bf/.mq-text-mode);
+  // scripts, fraction slots and roots already show their structure.
+  // The root block and quiet delimiters show everything, the command
+  // input has a border, and <td> blocks are grid cells (a
+  // \displaylines row would paint the whole line).
+  .mq-hasCursor:has(> .mq-cursor:only-child):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input),
+  .mq-hasCursor:has(> .mq-cursor):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):is(.mq-font, .mq-bf, .mq-text-mode) {
+    background: rgba(0, 0, 0, 0.2);
+  }
+
   &.mq-empty {
     background: transparent;
   }
@@ -135,6 +150,31 @@
     margin: 0 -0.1em;
 
     min-width: 1ex;
+  }
+
+  // MATHCOMPILE: \python{...} — the delimiters are pseudo content so the
+  // code stays one plain editable text node; mq-empty overrides are needed
+  // because .mq-empty:after would otherwise blank the closing brace.
+  .mq-python {
+    font-family: monospace, Symbola, serif;
+    white-space: pre-wrap;
+
+    &:before {
+      content: '\\python{';
+      color: #8a8a8a;
+    }
+    &:after {
+      content: '}';
+      color: #8a8a8a;
+    }
+    &.mq-empty:before {
+      visibility: visible;
+      content: '\\python{';
+    }
+    &.mq-empty:after {
+      visibility: visible;
+      content: '}';
+    }
   }
 
   .mq-font {
@@ -245,10 +285,18 @@
     font-family: monospace, Symbola, serif;
   }
 
-  // MATHCOMPILE: \mathcal/\mathscr/\mathfrak
+  // MATHCOMPILE: \mathcal/\mathscr/\mathfrak. KaTeX_Caligraphic (bundled
+  // woff2) maps A-Z to script shapes; chars it lacks (lowercase, digits)
+  // fall through to the body fonts like LaTeX's \mathcal. The glyphs
+  // are already script-slanted, so italic is suppressed to avoid
+  // synthetic oblique (lowercase shows upright rather than italic).
   .mq-caligraphic {
-    font-family: 'Lucida Calligraphy', 'Apple Chancery', cursive, Symbola,
-      serif;
+    font-family: 'KaTeX_Caligraphic', Symbola, serif;
+    font-style: normal;
+    var,
+    i {
+      font-style: normal;
+    }
   }
 
   .mq-fraktur {

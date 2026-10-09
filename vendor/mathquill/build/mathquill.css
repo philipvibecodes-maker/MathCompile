@@ -30,6 +30,10 @@
   src: url(fonts/Symbola.eot);
   src: local('Symbola Regular'), local('Symbola'), url(fonts/Symbola.woff2) format('woff2'), url(fonts/Symbola.woff) format('woff'), url(fonts/Symbola.ttf) format('truetype'), url(fonts/Symbola.svg#Symbola) format('svg');
 }
+@font-face {
+  font-family: 'KaTeX_Caligraphic';
+  src: local('KaTeX_Caligraphic Regular'), local('KaTeX_Caligraphic'), url(fonts/KaTeX_Caligraphic-Regular.woff2) format('woff2');
+}
 .mq-editable-field {
   display: -moz-inline-box;
   display: inline-block;
@@ -91,6 +95,21 @@
 .mq-editable-field.mq-text-mode {
   overflow-x: auto;
   overflow-y: hidden;
+}
+::highlight(mq-py-kw) {
+  color: #a626a4;
+}
+::highlight(mq-py-str) {
+  color: #50a14f;
+}
+::highlight(mq-py-comment) {
+  color: #8a8a8a;
+}
+::highlight(mq-py-num) {
+  color: #986801;
+}
+::highlight(mq-py-call) {
+  color: #4078f2;
 }
 .mq-root-block,
 .mq-math-mode .mq-root-block {
@@ -200,6 +219,10 @@
 .mq-math-mode .mq-empty.mq-quiet-delimiter {
   background: transparent;
 }
+.mq-math-mode .mq-hasCursor:has(> .mq-cursor:only-child):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input),
+.mq-math-mode .mq-hasCursor:has(> .mq-cursor):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):is(.mq-font, .mq-bf, .mq-text-mode) {
+  background: rgba(0, 0, 0, 0.2);
+}
 .mq-math-mode.mq-empty {
   background: transparent;
 }
@@ -212,6 +235,26 @@
   padding: 0 0.1em;
   margin: 0 -0.1em;
   min-width: 1ex;
+}
+.mq-math-mode .mq-python {
+  font-family: monospace, Symbola, serif;
+  white-space: pre-wrap;
+}
+.mq-math-mode .mq-python:before {
+  content: '\\python{';
+  color: #8a8a8a;
+}
+.mq-math-mode .mq-python:after {
+  content: '}';
+  color: #8a8a8a;
+}
+.mq-math-mode .mq-python.mq-empty:before {
+  visibility: visible;
+  content: '\\python{';
+}
+.mq-math-mode .mq-python.mq-empty:after {
+  visibility: visible;
+  content: '}';
 }
 .mq-math-mode .mq-font {
   font: 1em 'Times New Roman', Symbola, serif;
@@ -296,7 +339,12 @@
   font-family: monospace, Symbola, serif;
 }
 .mq-math-mode .mq-caligraphic {
-  font-family: 'Lucida Calligraphy', 'Apple Chancery', cursive, Symbola, serif;
+  font-family: 'KaTeX_Caligraphic', Symbola, serif;
+  font-style: normal;
+}
+.mq-math-mode .mq-caligraphic var,
+.mq-math-mode .mq-caligraphic i {
+  font-style: normal;
 }
 .mq-math-mode .mq-fraktur {
   font-family: 'Old English Text MT', 'UnifrakturMaguntia', fantasy, Symbola, serif;

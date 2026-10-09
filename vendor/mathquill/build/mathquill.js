@@ -33,6 +33,15 @@ var __assign = (this && this.__assign) || function () {
     };
     return __assign.apply(this, arguments);
 };
+var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
+    if (pack || arguments.length === 2) for (var i = 0, l = from.length, ar; i < l; i++) {
+        if (ar || !(i in from)) {
+            if (!ar) ar = Array.prototype.slice.call(from, 0, i);
+            ar[i] = from[i];
+        }
+    }
+    return to.concat(ar || Array.prototype.slice.call(from));
+};
 (function () {
     var _hasSpacingBug;
     function hasSpacingBug() {
@@ -1736,6 +1745,10 @@ var __assign = (this && this.__assign) || function () {
              * point in that node when moving up and down among blocks.
              */
             _this_1.upDownCache = {};
+            // MATHCOMPILE: the clientY of an in-flight mouse seek \u2014 seek()
+            // implementations that hit-test rendered lines (PythonBlock) read it;
+            // Controller_mouse.seek sets and clears it around node.seek().
+            _this_1.seekClientY = undefined;
             _this_1.cursorElement = h('span', { class: 'mq-cursor' }, [h.text(U_ZERO_WIDTH_SPACE)]);
             _this_1._domFrag = domFrag();
             _this_1.controller = controller;
@@ -4411,7 +4424,7 @@ var __assign = (this && this.__assign) || function () {
             return;
         };
         Controller_latex.prototype.updateLatexMathEfficiently = function (latex, oldLatex) {
-            var _c, _d, _e, _f;
+            var _c, _d, _f, _g;
             // Note, benchmark/update.html is useful for measuring the
             // performance of renderLatexMathEfficiently
             var root = this.root;
@@ -4514,7 +4527,7 @@ var __assign = (this && this.__assign) || function () {
             // remove the extra digits at the end
             if (oldDigits.length > newDigits.length) {
                 charNode = oldCharNodes[newDigits.length - 1];
-                root.setEnds((_e = {}, _e[L] = root.getEnd(L), _e[R] = charNode, _e));
+                root.setEnds((_f = {}, _f[L] = root.getEnd(L), _f[R] = charNode, _f));
                 charNode[R] = 0;
                 for (i = oldDigits.length - 1; i >= commonLength; i--) {
                     oldCharNodes[i].domFrag().remove();
@@ -4536,7 +4549,7 @@ var __assign = (this && this.__assign) || function () {
                     newNode[R] = 0;
                     var newNodeL = newNode[L];
                     newNodeL[R] = newNode;
-                    root.setEnds((_f = {}, _f[L] = root.getEnd(L), _f[R] = newNode, _f));
+                    root.setEnds((_g = {}, _g[L] = root.getEnd(L), _g[R] = newNode, _g));
                 }
                 root.domFrag().oneElement().appendChild(frag);
             }
@@ -4841,7 +4854,11 @@ var __assign = (this && this.__assign) || function () {
             // target was selection span, otherwise target will have no parent and will
             // seek from root, which is less accurate (e.g. fraction)
             cursor.clearSelection().show();
+            // MATHCOMPILE: ride the click's clientY on the cursor so seek()
+            // implementations that hit-test rendered lines (PythonBlock) can use it.
+            cursor.seekClientY = _clientY;
             node.seek(clientX, cursor);
+            cursor.seekClientY = undefined;
             this.scrollHoriz(); // before .selectFrom when mouse-selecting, so
             // always hits no-selection case in scrollHoriz and scrolls slower
             return this;
@@ -5042,7 +5059,7 @@ var __assign = (this && this.__assign) || function () {
             this.setTabindex(tabindex);
         };
         Controller.prototype.setTabindex = function (tabindex) {
-            var _c, _d, _e, _f, _g;
+            var _c, _d, _f, _g, _h;
             if (tabindex === this.previousTabindex || !this.textarea)
                 return;
             this.previousTabindex = tabindex;
@@ -5051,13 +5068,13 @@ var __assign = (this && this.__assign) || function () {
                 (_d = this.textarea) === null || _d === void 0 ? void 0 : _d.setAttribute('aria-hidden', 'true');
             }
             else {
-                (_e = this.textarea) === null || _e === void 0 ? void 0 : _e.removeAttribute('aria-hidden');
+                (_f = this.textarea) === null || _f === void 0 ? void 0 : _f.removeAttribute('aria-hidden');
             }
             if (tabindex >= 0) {
-                (_f = this.mathspeakSpan) === null || _f === void 0 ? void 0 : _f.setAttribute('aria-hidden', 'true');
+                (_g = this.mathspeakSpan) === null || _g === void 0 ? void 0 : _g.setAttribute('aria-hidden', 'true');
             }
             else {
-                (_g = this.mathspeakSpan) === null || _g === void 0 ? void 0 : _g.removeAttribute('aria-hidden');
+                (_h = this.mathspeakSpan) === null || _h === void 0 ? void 0 : _h.removeAttribute('aria-hidden');
             }
         };
         Controller.prototype.selectionChanged = function () {
@@ -6741,12 +6758,72 @@ var __assign = (this && this.__assign) || function () {
         X: 0x1d54f,
         Y: 0x1d550
     };
+    // MATHCOMPILE: Pending `\name{arg}` input for the typed path, the
+    // arg-entry twin of EnvSpecInput \u2014 used by \mathbb and \mathcal so a
+    // typed font command shows its literal `\name{arg}` text and resolves
+    // on `}`/Enter/Tab by re-parsing `\name{arg}` via writeLatex, landing
+    // on the same node a paste produces. For \mathbb this also fixes a
+    // deletion: its parser maps `{X}` to a glyph leaf, so createLeftOf
+    // was a no-op and `\mathbb` + any non-letter vanished wholesale.
+    var FontArgInput = /** @class */ (function (_super) {
+        __extends(FontArgInput, _super);
+        function FontArgInput(name) {
+            var _this_1 = _super.call(this, '\\' + name, new DOMView(1, function (blocks) {
+                return h('span', { class: 'mq-non-leaf' }, [
+                    h.text('\\' + name + '{'),
+                    h.block('span', {}, blocks[0]),
+                    h.text('}')
+                ]);
+            })) || this;
+            _this_1.name = name;
+            return _this_1;
+        }
+        FontArgInput.prototype.createBlocks = function () {
+            _super.prototype.createBlocks.call(this);
+            var input = this;
+            var argBlock = this.getEnd(L);
+            var resolve = function (cursor) {
+                var arg = argBlock.latex();
+                input.remove();
+                if (input[R])
+                    cursor.insLeftOf(input[R]);
+                else
+                    cursor.insAtRightEnd(input.parent);
+                cursor.parent.writeLatex(cursor.show(), '\\' + input.name + '{' + arg + '}');
+            };
+            var origWrite = argBlock.write;
+            argBlock.write = function (cursor, ch) {
+                if (ch === '}') {
+                    resolve(cursor);
+                    return;
+                }
+                origWrite.call(this, cursor, ch);
+            };
+            var origKeystroke = argBlock.keystroke;
+            argBlock.keystroke = function (key, e, ctrlr) {
+                if (key === 'Enter' || key === 'Tab') {
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    resolve(ctrlr.cursor);
+                    return;
+                }
+                return origKeystroke.call(this, key, e, ctrlr);
+            };
+        };
+        return FontArgInput;
+    }(MathCommand));
     LatexCmds.mathbb = /** @class */ (function (_super) {
         __extends(class_5, _super);
         function class_5() {
             return _super !== null && _super.apply(this, arguments) || this;
         }
-        class_5.prototype.createLeftOf = function (_cursor) { };
+        // MATHCOMPILE: the typed path calls createLeftOf with no arg text to
+        // parse \u2014 open the pending input instead of discarding the command.
+        class_5.prototype.createLeftOf = function (cursor) {
+            var input = new FontArgInput('mathbb');
+            if (this.replacedFragment)
+                input.replaces(this.replacedFragment);
+            input.createLeftOf(cursor);
+        };
         class_5.prototype.numBlocks = function () {
             return 1;
         };
@@ -9969,7 +10046,7 @@ var __assign = (this && this.__assign) || function () {
         }
         // Parser-only command: typing '\textcolor' in the command input
         // can't supply a color argument, so typed insertion is a no-op
-        // (same convention as \operatorname / \mathbb).
+        // (same convention as \operatorname).
         class_17.prototype.createLeftOf = function () { };
         class_17.prototype.numBlocks = function () {
             return 1;
@@ -11748,6 +11825,11 @@ var __assign = (this && this.__assign) || function () {
                     var cmd = input.renderCommand(cursor);
                     // TODO needs tests
                     cursor.controller.aria.queue(cmd.mathspeak({ createdLeftOf: cursor }));
+                    // MATHCOMPILE: the `{` that opens a \python block is its visible
+                    // delimiter, not source text \u2014 swallow it instead of writing it
+                    // into the code.
+                    if (cmd instanceof PythonBlock && ch === '{')
+                        return;
                     if (ch !== '\\' || !this.isEmpty())
                         cursor.parent.write(cursor, ch);
                     else
@@ -11853,8 +11935,25 @@ var __assign = (this && this.__assign) || function () {
     //======================================================================
     //  Fonts (\mathcal \mathfrak \boldsymbol \mathbfit \u2026)
     //======================================================================
+    // MATHCOMPILE: typed \mathcal opens the pending `\mathcal{arg}` input
+    // like \mathbb \u2014 before, it rendered an invisible-boundary Style block
+    // and `}` just hopped out, so the typed command looked nothing like its
+    // latex. Parse/serialize still land on the plain Style node; the
+    // script shapes come from the KaTeX_Caligraphic webfont in math.less.
     LatexCmds.mathcal = function () {
-        return new Style('\\mathcal', 'span', { class: 'mq-caligraphic mq-font' }, 'Calligraphic Font');
+        return new (/** @class */ (function (_super) {
+            __extends(class_25, _super);
+            function class_25() {
+                return _super.call(this, '\\mathcal', 'span', { class: 'mq-caligraphic mq-font' }, 'Calligraphic Font') || this;
+            }
+            class_25.prototype.createLeftOf = function (cursor) {
+                var input = new FontArgInput('mathcal');
+                if (this.replacedFragment)
+                    input.replaces(this.replacedFragment);
+                input.createLeftOf(cursor);
+            };
+            return class_25;
+        }(Style)))();
     };
     LatexCmds.mathscr = function () {
         return new Style('\\mathscr', 'span', { class: 'mq-caligraphic mq-font' }, 'Script Font');
@@ -11892,8 +11991,8 @@ var __assign = (this && this.__assign) || function () {
     // \colorbox{color}{math} \u2014 a filled box around content; the color arg is
     // raw text like \textcolor's, emitted back verbatim.
     LatexCmds.colorbox = /** @class */ (function (_super) {
-        __extends(class_25, _super);
-        function class_25() {
+        __extends(class_26, _super);
+        function class_26() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.color = '';
             _this_1.model = '';
@@ -11902,11 +12001,11 @@ var __assign = (this && this.__assign) || function () {
         // Parser-only command: typing '\colorbox' in the command input can't
         // supply a color argument, so typed insertion is a no-op (same
         // convention as \textcolor).
-        class_25.prototype.createLeftOf = function () { };
-        class_25.prototype.numBlocks = function () {
+        class_26.prototype.createLeftOf = function () { };
+        class_26.prototype.numBlocks = function () {
             return 1;
         };
-        class_25.prototype.parser = function () {
+        class_26.prototype.parser = function () {
             var _this_1 = this;
             var self = this;
             return Parser.optWhitespace
@@ -11926,7 +12025,7 @@ var __assign = (this && this.__assign) || function () {
                 return _super.prototype.parser.call(_this_1);
             });
         };
-        class_25.prototype.latexRecursive = function (ctx) {
+        class_26.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
             ctx.uncleanedLatex +=
                 '\\colorbox' +
@@ -11938,15 +12037,15 @@ var __assign = (this && this.__assign) || function () {
             ctx.uncleanedLatex += '}';
             this.checkCursorContextClose(ctx);
         };
-        class_25.prototype.isStyleBlock = function () {
+        class_26.prototype.isStyleBlock = function () {
             return true;
         };
-        return class_25;
+        return class_26;
     }(MathCommand));
     // \fcolorbox{frame}{bg}{math} \u2014 framed + filled box; two raw color args.
     LatexCmds.fcolorbox = /** @class */ (function (_super) {
-        __extends(class_26, _super);
-        function class_26() {
+        __extends(class_27, _super);
+        function class_27() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.frameColor = '';
             _this_1.bgColor = '';
@@ -11956,11 +12055,11 @@ var __assign = (this && this.__assign) || function () {
         // Parser-only command: typing '\fcolorbox' in the command input can't
         // supply color arguments, so typed insertion is a no-op (same
         // convention as \textcolor).
-        class_26.prototype.createLeftOf = function () { };
-        class_26.prototype.numBlocks = function () {
+        class_27.prototype.createLeftOf = function () { };
+        class_27.prototype.numBlocks = function () {
             return 1;
         };
-        class_26.prototype.parser = function () {
+        class_27.prototype.parser = function () {
             var _this_1 = this;
             var self = this;
             var colorGroup = Parser.string('{')
@@ -11991,7 +12090,7 @@ var __assign = (this && this.__assign) || function () {
                 return _super.prototype.parser.call(_this_1);
             });
         };
-        class_26.prototype.latexRecursive = function (ctx) {
+        class_27.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
             ctx.uncleanedLatex +=
                 '\\fcolorbox' +
@@ -12005,15 +12104,15 @@ var __assign = (this && this.__assign) || function () {
             ctx.uncleanedLatex += '}';
             this.checkCursorContextClose(ctx);
         };
-        class_26.prototype.isStyleBlock = function () {
+        class_27.prototype.isStyleBlock = function () {
             return true;
         };
-        return class_26;
+        return class_27;
     }(MathCommand));
     // \href{url}{math} \u2014 link wrapper; the url arg is raw text.
     LatexCmds.href = /** @class */ (function (_super) {
-        __extends(class_27, _super);
-        function class_27() {
+        __extends(class_28, _super);
+        function class_28() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.url = '';
             return _this_1;
@@ -12021,11 +12120,11 @@ var __assign = (this && this.__assign) || function () {
         // Parser-only command: typing '\href' in the command input can't
         // supply a url argument, so typed insertion is a no-op (same
         // convention as \textcolor).
-        class_27.prototype.createLeftOf = function () { };
-        class_27.prototype.numBlocks = function () {
+        class_28.prototype.createLeftOf = function () { };
+        class_28.prototype.numBlocks = function () {
             return 1;
         };
-        class_27.prototype.parser = function () {
+        class_28.prototype.parser = function () {
             var _this_1 = this;
             var self = this;
             return Parser.optWhitespace
@@ -12040,14 +12139,14 @@ var __assign = (this && this.__assign) || function () {
                 return _super.prototype.parser.call(_this_1);
             });
         };
-        class_27.prototype.latexRecursive = function (ctx) {
+        class_28.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
             ctx.uncleanedLatex += '\\href{' + this.url + '}{';
             this.blocks[0].latexRecursive(ctx);
             ctx.uncleanedLatex += '}';
             this.checkCursorContextClose(ctx);
         };
-        return class_27;
+        return class_28;
     }(MathCommand));
     // \fbox/\framebox \u2014 boxed frames; \nicefrac canonicalizes to \frac.
     LatexCmds.fbox = function () {
@@ -12059,8 +12158,8 @@ var __assign = (this && this.__assign) || function () {
     // SOURCES_BASIC too, so the mathquill-basic bundle can use it)
     function bindOptBracketCmd(ctrlSeq, maxOpt, speak) {
         return /** @class */ (function (_super) {
-            __extends(class_28, _super);
-            function class_28() {
+            __extends(class_29, _super);
+            function class_29() {
                 var _this_1 = _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
                     return h('span', { class: 'mq-non-leaf' }, [
                         h.block('span', {}, blocks[0])
@@ -12069,7 +12168,7 @@ var __assign = (this && this.__assign) || function () {
                 _this_1.optText = '';
                 return _this_1;
             }
-            class_28.prototype.parser = function () {
+            class_29.prototype.parser = function () {
                 var self = this;
                 return Parser.regex(new RegExp('^(?:\\[[^\\]]*\\]){0,' + maxOpt + '}'))
                     .then(function (opt) {
@@ -12082,14 +12181,14 @@ var __assign = (this && this.__assign) || function () {
                     return self;
                 });
             };
-            class_28.prototype.latexRecursive = function (ctx) {
+            class_29.prototype.latexRecursive = function (ctx) {
                 this.checkCursorContextOpen(ctx);
                 ctx.uncleanedLatex += this.ctrlSeq + this.optText + '{';
                 this.blocks[0].latexRecursive(ctx);
                 ctx.uncleanedLatex += '}';
                 this.checkCursorContextClose(ctx);
             };
-            return class_28;
+            return class_29;
         }(MathCommand));
     }
     // \framebox keeps optional [width][pos] args like \makebox.
@@ -12109,8 +12208,8 @@ var __assign = (this && this.__assign) || function () {
     // \overset{label}{base} stacks a small label above; \underset below;
     // \stackrel is the plain-TeX name for \overset
     LatexCmds.overset = /** @class */ (function (_super) {
-        __extends(class_29, _super);
-        function class_29() {
+        __extends(class_30, _super);
+        function class_30() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.ctrlSeq = '\\overset';
             _this_1.domView = new DOMView(2, function (blocks) {
@@ -12121,12 +12220,12 @@ var __assign = (this && this.__assign) || function () {
             });
             return _this_1;
         }
-        return class_29;
+        return class_30;
     }(MathCommand));
     LatexCmds.stackrel = LatexCmds.overset;
     LatexCmds.underset = /** @class */ (function (_super) {
-        __extends(class_30, _super);
-        function class_30() {
+        __extends(class_31, _super);
+        function class_31() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.ctrlSeq = '\\underset';
             _this_1.domView = new DOMView(2, function (blocks) {
@@ -12137,7 +12236,7 @@ var __assign = (this && this.__assign) || function () {
             });
             return _this_1;
         }
-        return class_30;
+        return class_31;
     }(MathCommand));
     //======================================================================
     //  Modular arithmetic (\pmod \pod \bmod \mod)
@@ -12388,8 +12487,8 @@ var __assign = (this && this.__assign) || function () {
     function bindArrowLabelCmd(ctrlSeq, arrow) {
         return function () {
             return new (/** @class */ (function (_super) {
-                __extends(class_31, _super);
-                function class_31() {
+                __extends(class_32, _super);
+                function class_32() {
                     return _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
                         return h('span', { class: 'mq-non-leaf mq-overunderset' }, [
                             h.block('span', { class: 'mq-overscript' }, blocks[0]),
@@ -12397,7 +12496,7 @@ var __assign = (this && this.__assign) || function () {
                         ]);
                     })) || this;
                 }
-                class_31.prototype.parser = function () {
+                class_32.prototype.parser = function () {
                     var self = this;
                     return latexMathParser.optBlock
                         .then(function (optBlock) {
@@ -12412,7 +12511,7 @@ var __assign = (this && this.__assign) || function () {
                         .or(_super.prototype.parser.call(this))
                         .or(Parser.succeed(new VanillaSymbol(ctrlSeq + ' ', h.text(arrow), ctrlSeq.slice(1))));
                 };
-                return class_31;
+                return class_32;
             }(MathCommand)))();
         };
     }
@@ -12738,8 +12837,8 @@ var __assign = (this && this.__assign) || function () {
     function bindOverlapCmd(ctrlSeq, cls, optRegex) {
         return function () {
             return new (/** @class */ (function (_super) {
-                __extends(class_32, _super);
-                function class_32() {
+                __extends(class_33, _super);
+                function class_33() {
                     var _this_1 = _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
                         return h('span', { class: 'mq-non-leaf ' + cls }, [
                             h.block('span', {}, blocks[0])
@@ -12750,7 +12849,7 @@ var __assign = (this && this.__assign) || function () {
                 }
                 // An overlap command with no following block degrades to a bare
                 // \name leaf instead of failing the parse.
-                class_32.prototype.parser = function () {
+                class_33.prototype.parser = function () {
                     var self = this;
                     return (optRegex
                         ? Parser.regex(new RegExp('^' + optRegex))
@@ -12767,14 +12866,14 @@ var __assign = (this && this.__assign) || function () {
                     })
                         .or(Parser.succeed(new VanillaSymbol(ctrlSeq + ' ', h.text(ctrlSeq), ctrlSeq.replace(/\\/g, ''))));
                 };
-                class_32.prototype.latexRecursive = function (ctx) {
+                class_33.prototype.latexRecursive = function (ctx) {
                     this.checkCursorContextOpen(ctx);
                     ctx.uncleanedLatex += this.ctrlSeq + this.optText + '{';
                     this.blocks[0].latexRecursive(ctx);
                     ctx.uncleanedLatex += '}';
                     this.checkCursorContextClose(ctx);
                 };
-                return class_32;
+                return class_33;
             }(MathCommand)))();
         };
     }
@@ -12943,6 +13042,385 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.tr = function () {
         return new TrAlias('\\mathrm{tr}', h('span', { class: 'mq-roman' }, [h.text('tr')]), 'tr', 'tr');
     };
+    // Triple-quoted strings come first \u2014 docstrings span lines and must not get
+    // keyword/call coloring on their contents.
+    var PY_TOKEN_RE = /("""[\s\S]*?"""|'''[\s\S]*?'''|'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*")|(#[^\n]*)|(\b(?:and|as|assert|async|await|break|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|not|or|pass|raise|return|try|while|with|yield|True|False)\b)|(\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|([A-Za-z_]\w*(?=\s*\())/g;
+    var PY_TOKEN_CLASSES = [
+        'str',
+        'comment',
+        'kw',
+        'num',
+        'call',
+    ];
+    function pyTokenRanges(code) {
+        var ranges = [];
+        PY_TOKEN_RE.lastIndex = 0;
+        var m;
+        while ((m = PY_TOKEN_RE.exec(code)) !== null) {
+            for (var g = 1; g <= PY_TOKEN_CLASSES.length; g++) {
+                if (m[g] === undefined)
+                    continue;
+                ranges.push({
+                    start: m.index,
+                    end: m.index + m[g].length,
+                    cls: PY_TOKEN_CLASSES[g - 1],
+                });
+                break;
+            }
+        }
+        return ranges;
+    }
+    // A Range covering chars [start,end) of el's concatenated text, across
+    // however many DOM text nodes the pieces are currently split into.
+    function textRangeForOffsets(el, s, e) {
+        var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        var acc = 0;
+        var node;
+        var sNode;
+        var sOff = 0;
+        while ((node = walker.nextNode())) {
+            var len = node.data.length;
+            if (sNode === undefined && s <= acc + len) {
+                sNode = node;
+                sOff = s - acc;
+            }
+            if (e <= acc + len) {
+                if (sNode === undefined)
+                    return undefined;
+                var range = document.createRange();
+                range.setStart(sNode, sOff);
+                range.setEnd(node, e - acc);
+                return range;
+            }
+            acc += len;
+        }
+        return undefined;
+    }
+    // Rebuild every `mq-py-*` Highlight in the document: the highlight registry
+    // is global and registry.set replaces a whole named highlight, so a
+    // per-block refresh would drop the other fields' ranges.
+    function refreshPythonHighlights() {
+        var css = window.CSS;
+        var registry = css && css.highlights;
+        var HighlightCtor = window.Highlight;
+        if (!registry ||
+            typeof registry.set !== 'function' ||
+            typeof HighlightCtor !== 'function')
+            return;
+        var ranges = {};
+        var codeEls = document.querySelectorAll('.mq-python');
+        for (var i = 0; i < codeEls.length; i++) {
+            var el = codeEls[i];
+            var code = el.textContent || '';
+            var tokens = pyTokenRanges(code);
+            for (var t = 0; t < tokens.length; t++) {
+                var tok = tokens[t];
+                var range = textRangeForOffsets(el, tok.start, tok.end);
+                if (!range)
+                    continue;
+                (ranges[tok.cls] || (ranges[tok.cls] = [])).push(range);
+            }
+        }
+        for (var c = 0; c < PY_TOKEN_CLASSES.length; c++) {
+            var cls = PY_TOKEN_CLASSES[c];
+            registry.set('mq-py-' + cls, new (HighlightCtor.bind.apply(HighlightCtor, __spreadArray([void 0], (ranges[cls] || []), false)))());
+        }
+    }
+    // Serialize the code body for latex(): source that is brace-balanced and
+    // backslash-free stays raw (the readable common case); anything else gets
+    // \ { } escaped so the balanced scan in PYTHON_BODY can't stop early and
+    // the pair round-trips byte-exact.
+    function escapePythonBody(code) {
+        if (code.indexOf('\\') === -1) {
+            var depth = 0;
+            var balanced = true;
+            for (var i = 0; i < code.length; i++) {
+                var c = code[i];
+                if (c === '{')
+                    depth++;
+                else if (c === '}')
+                    depth--;
+                if (depth < 0) {
+                    balanced = false;
+                    break;
+                }
+            }
+            if (balanced && depth === 0)
+                return code;
+        }
+        return code
+            .replace(/\\/g, '\\\\')
+            .replace(/\{/g, '\\{')
+            .replace(/\}/g, '\\}');
+    }
+    // The \python body after the opening `{`: raw source scanned to the
+    // depth-0 `}` that closes it. `\{`, `\}` and `\\` are the literal escapes
+    // escapePythonBody emits; an unclosed body takes the rest of the stream so
+    // one bad latex string can't blank the field.
+    var PYTHON_BODY = new Parser(function (stream, onSuccess, _onFailure) {
+        var depth = 1;
+        for (var i = 0; i < stream.length; i++) {
+            var c = stream[i];
+            if (c === '\\') {
+                i++;
+                continue;
+            }
+            if (c === '{')
+                depth++;
+            else if (c === '}') {
+                depth--;
+                if (depth === 0)
+                    return onSuccess(stream.slice(i + 1), stream.slice(0, i));
+            }
+        }
+        return onSuccess('', stream);
+    });
+    var PythonBlock = /** @class */ (function (_super) {
+        __extends(PythonBlock, _super);
+        function PythonBlock() {
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.ctrlSeq = '\\python';
+            _this_1.ariaLabel = 'Python block';
+            _this_1.mathspeakTemplate = ['Python', 'EndPython'];
+            return _this_1;
+        }
+        PythonBlock.prototype.parser = function () {
+            var block = this;
+            return Parser.optWhitespace
+                .then(Parser.string('{'))
+                .then(PYTHON_BODY)
+                .map(function (body) {
+                var code = body.replace(/\\([{}\\])/g, '$1');
+                if (code !== '')
+                    new TextPiece(code).adopt(block, 0, 0);
+                return block;
+            });
+        };
+        PythonBlock.prototype.html = function () {
+            var out = h('span', { class: 'mq-text-mode mq-python' }, [
+                h.text(this.textContents()),
+            ]);
+            this.setDOM(out);
+            NodeBase.linkElementByCmdNode(out, this);
+            // Bind the left-end piece to the code text node: upstream leaves
+            // TextPieces DOM-less until a fuse binds them, and appendText on an
+            // unbound piece throws.
+            var endsL = this.getEnd(L);
+            if (endsL instanceof TextPiece && endsL.domFrag().isEmpty())
+                endsL.setDOM(out.childNodes[0]);
+            return out;
+        };
+        PythonBlock.prototype.latexRecursive = function (ctx) {
+            this.checkCursorContextOpen(ctx);
+            // Always emit the wrapper so an empty block round-trips as \python{}.
+            ctx.uncleanedLatex += '\\python{';
+            ctx.uncleanedLatex += escapePythonBody(this.textContents());
+            ctx.uncleanedLatex += '}';
+            this.checkCursorContextClose(ctx);
+        };
+        // --- editing -----------------------------------------------------------
+        // Every character \u2014 `$` included \u2014 is plain text in a source block.
+        PythonBlock.prototype.write = function (cursor, ch) {
+            cursor.show().deleteSelection();
+            var cursorL = cursor[L];
+            if (!cursorL)
+                new TextPiece(ch).createLeftOf(cursor);
+            else if (cursorL instanceof TextPiece)
+                cursorL.appendText(ch);
+            this.bubble(function (node) {
+                node.reflow();
+                return undefined;
+            });
+            cursor.controller.aria.alert(ch);
+        };
+        PythonBlock.prototype.keystroke = function (key, e, ctrlr) {
+            var cursor = ctrlr.cursor;
+            switch (key) {
+                // Enter is a newline in the source, not a line break in the field \u2014
+                // preventing the keydown default keeps the keypress -> typedText('\n')
+                // -> handle('enter') -> insertLineBreak path from firing too.
+                case 'Enter':
+                    this.write(cursor, '\n');
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    ctrlr.notify('edit');
+                    ctrlr.scrollHoriz();
+                    return;
+                case 'Tab':
+                    this.write(cursor, '\t');
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    ctrlr.notify('edit');
+                    ctrlr.scrollHoriz();
+                    return;
+                case 'Home': {
+                    var text = this.textContents();
+                    this.placeCaret(text.lastIndexOf('\n', this.caretOffset(cursor) - 1) + 1, cursor);
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    ctrlr.scrollHoriz();
+                    return;
+                }
+                case 'End': {
+                    var endText = this.textContents();
+                    var nextBreak = endText.indexOf('\n', this.caretOffset(cursor));
+                    this.placeCaret(nextBreak === -1 ? endText.length : nextBreak, cursor);
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    ctrlr.scrollHoriz();
+                    return;
+                }
+            }
+            return _super.prototype.keystroke.call(this, key, e, ctrlr);
+        };
+        // Up/Down step between source lines; at the edge line they return true so
+        // the moveUpDown bubble continues to the root's upOutOf/downOutOf and the
+        // field emits its move-out (cell hop) event as usual.
+        PythonBlock.prototype.upOutOf = function (cursor) {
+            return this.verticalMove(L, cursor) ? undefined : true;
+        };
+        PythonBlock.prototype.downOutOf = function (cursor) {
+            return this.verticalMove(R, cursor) ? undefined : true;
+        };
+        // Char offset of the caret within the block's text.
+        PythonBlock.prototype.caretOffset = function (cursor) {
+            var off = 0;
+            for (var n = this.getEnd(L); n && n !== cursor[R]; n = n[R]) {
+                off += n.textStr.length;
+            }
+            return off;
+        };
+        // Fuse pieces and drop the caret at a char offset \u2014 same shape as the
+        // tail of TextBlock.seek. The caret detaches first: fuse prays the
+        // element holds a single text node, and a shown caret span inside it
+        // would be a second child.
+        PythonBlock.prototype.placeCaret = function (offset, cursor) {
+            cursor.hide();
+            var textPc = TextBlockFuseChildren(this);
+            if (!textPc || offset <= 0)
+                cursor.insAtLeftEnd(this);
+            else if (offset >= textPc.textStr.length)
+                cursor.insAtRightEnd(this);
+            else
+                cursor.insLeftOf(textPc.splitRight(offset));
+            cursor.show();
+        };
+        // Move the caret one source line up (dir === L) or down (dir === R),
+        // keeping a goal column across repeats in cursor.upDownCache (cleared on
+        // any non-upDown notify \u2014 the same mechanism arrows into sub/sup use).
+        PythonBlock.prototype.verticalMove = function (dir, cursor) {
+            var text = this.textContents();
+            var caret = this.caretOffset(cursor);
+            var lineStart = text.lastIndexOf('\n', caret - 1) + 1;
+            var col = caret - lineStart;
+            if (dir === L && lineStart === 0)
+                return false;
+            var nextBreak = text.indexOf('\n', caret);
+            if (dir === R && nextBreak === -1)
+                return false;
+            var cacheKey = 'python:' + this.id;
+            var cache = cursor.upDownCache[cacheKey];
+            var goal = typeof cache === 'number' ? cache : col;
+            var target;
+            if (dir === L) {
+                var prevStart = lineStart >= 2 ? text.lastIndexOf('\n', lineStart - 2) + 1 : 0;
+                target = Math.min(prevStart + goal, lineStart - 1);
+            }
+            else {
+                var nextStart = nextBreak + 1;
+                var nextEnd = text.indexOf('\n', nextStart);
+                var nextLen = (nextEnd === -1 ? text.length : nextEnd) - nextStart;
+                target = nextStart + Math.min(goal, nextLen);
+            }
+            cursor.upDownCache[cacheKey] = goal;
+            this.placeCaret(target, cursor);
+            return true;
+        };
+        PythonBlock.prototype.seek = function (clientX, cursor) {
+            cursor.hide();
+            var el;
+            if (!this.domFrag().isEmpty())
+                el = this.domFrag().oneElement();
+            var placed = false;
+            // Multi-line source needs the click's rendered position, not a flat
+            // width guess: caretRangeFromPoint maps (x, y) to the nearest text
+            // position, which the Range below converts to a char offset.
+            var caretFromPoint = document.caretRangeFromPoint;
+            if (el &&
+                cursor.seekClientY !== undefined &&
+                typeof caretFromPoint === 'function') {
+                try {
+                    var point = caretFromPoint.call(document, clientX, cursor.seekClientY);
+                    if (point && el.contains(point.startContainer)) {
+                        var before = document.createRange();
+                        before.selectNodeContents(el);
+                        before.setEnd(point.startContainer, point.startOffset);
+                        this.placeCaret(before.toString().length, cursor);
+                        placed = true;
+                    }
+                }
+                catch (_e) {
+                    // fall through to the flat-width approximation
+                }
+            }
+            if (!placed && el) {
+                var textPc = TextBlockFuseChildren(this);
+                if (!textPc)
+                    return;
+                var textNode = el.childNodes[0];
+                if (textNode && textNode.nodeType === 3) {
+                    var range = document.createRange();
+                    range.selectNodeContents(textNode);
+                    var rects = range.getClientRects();
+                    if (rects.length === 1) {
+                        var left = rects[0].left;
+                        var width = rects[0].width;
+                        var approx = Math.round(((clientX - left) / width) * textPc.textStr.length);
+                        this.placeCaret(approx, cursor);
+                    }
+                    else {
+                        cursor.insAtLeftEnd(this);
+                    }
+                }
+            }
+            cursor.show();
+            // Anticursor bookkeeping, identical to TextBlock.seek \u2014 needed so
+            // mouse-drag selection anchors inside the block.
+            if (!cursor.anticursor) {
+                var cursorL = cursor[L];
+                this.anticursorPosition =
+                    cursorL && cursorL.textStr.length;
+            }
+            else if (cursor.anticursor.parent === this) {
+                var cursorL = cursor[L];
+                var cursorPosition = cursorL && cursorL.textStr.length;
+                if (this.anticursorPosition === cursorPosition) {
+                    cursor.anticursor = Anticursor.fromCursor(cursor);
+                }
+                else {
+                    if (this.anticursorPosition < cursorPosition) {
+                        var newTextPc = cursorL.splitRight(this.anticursorPosition);
+                        cursor[L] = newTextPc;
+                    }
+                    else {
+                        var cursorR = cursor[R];
+                        var newTextPc = cursorR.splitRight(this.anticursorPosition - cursorPosition);
+                    }
+                    cursor.anticursor = new Anticursor(this, newTextPc[L], newTextPc);
+                }
+            }
+        };
+        PythonBlock.prototype.blur = function (cursor) {
+            MathBlock.prototype.blur.call(this, cursor);
+            if (!cursor)
+                return;
+            // An empty block stays \u2014 \python{} is a real cell (the delimiters are
+            // visible chrome, so nothing reads as missing), unlike \text which
+            // self-removes.
+            TextBlockFuseChildren(this);
+        };
+        PythonBlock.prototype.reflow = function () {
+            refreshPythonHighlights();
+        };
+        return PythonBlock;
+    }(TextBlock));
+    LatexCmds.python = PythonBlock;
     /*************************************************
      * LaTeX environments: \begin{matrix} family and
      * \displaylines{...}, plus insertion-time \derivative.
@@ -12954,8 +13432,8 @@ var __assign = (this && this.__assign) || function () {
      *************************************************/
     var Environments = {};
     LatexCmds.begin = /** @class */ (function (_super) {
-        __extends(class_33, _super);
-        function class_33() {
+        __extends(class_34, _super);
+        function class_34() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.ctrlSeq = '\\begin';
             _this_1.domView = new DOMView(1, function (blocks) {
@@ -12967,7 +13445,7 @@ var __assign = (this && this.__assign) || function () {
             });
             return _this_1;
         }
-        class_33.prototype.createBlocks = function () {
+        class_34.prototype.createBlocks = function () {
             _super.prototype.createBlocks.call(this);
             var beginNode = this;
             var nameBlock = this.getEnd(L);
@@ -13016,7 +13494,7 @@ var __assign = (this && this.__assign) || function () {
                 return origKeystroke.call(this, key, e, ctrlr);
             };
         };
-        class_33.prototype.parser = function () {
+        class_34.prototype.parser = function () {
             var string = Parser.string;
             var regex = Parser.regex;
             return string('{')
@@ -13036,7 +13514,7 @@ var __assign = (this && this.__assign) || function () {
                     .skip(string('\\end{' + env + '}'));
             });
         };
-        return class_33;
+        return class_34;
     }(MathCommand));
     // A MathCommand whose children ("cells") are laid out in a grid:
     // the matrix family (N columns, optional bracket delimiters) and
@@ -14028,6 +14506,15 @@ var __assign = (this && this.__assign) || function () {
         var cursor = ctrlr.cursor;
         if (cursor.selection)
             cursor.deleteSelection();
+        // MATHCOMPILE: inside \python{ ... } Enter is a newline in the source,
+        // not a \displaylines row. Real keypresses never reach here \u2014 the block's
+        // own keystroke('Enter') swallows them \u2014 this covers programmatic
+        // typedText('\n')/insertLineBreak().
+        if (cursor.parent instanceof PythonBlock) {
+            cursor.parent.write(cursor, '\n');
+            ctrlr.notify('edit');
+            return;
+        }
         // Find the line-level block (nearest MatrixCell / root block) and the
         // atom inside it that contains the caret.
         var lineBlock;
@@ -14140,15 +14627,15 @@ var __assign = (this && this.__assign) || function () {
     // and the \begin parser's .skip('\\end{...}') consumes it as the close.
     LatexCmds.end = function () {
         return new (/** @class */ (function (_super) {
-            __extends(class_34, _super);
-            function class_34() {
+            __extends(class_35, _super);
+            function class_35() {
                 var _this_1 = _super.call(this, '\\end', new DOMView(0, function () {
                     return h('span', { class: 'mq-non-leaf' }, [h.text('\\end')]);
                 })) || this;
                 _this_1.env = '';
                 return _this_1;
             }
-            class_34.prototype.parser = function () {
+            class_35.prototype.parser = function () {
                 var self = this;
                 return Parser.string('{')
                     .then(Parser.regex(/^[a-z*]+/i))
@@ -14160,12 +14647,12 @@ var __assign = (this && this.__assign) || function () {
                     return Parser.succeed(self);
                 });
             };
-            class_34.prototype.latexRecursive = function (ctx) {
+            class_35.prototype.latexRecursive = function (ctx) {
                 this.checkCursorContextOpen(ctx);
                 ctx.uncleanedLatex += '\\end{' + this.env + '}';
                 this.checkCursorContextClose(ctx);
             };
-            return class_34;
+            return class_35;
         }(MathCommand)))();
     };
     // \begin{tabular}{spec} \u2014 the text-mode twin of \begin{array}, same

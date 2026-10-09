@@ -14,6 +14,7 @@ no `code` field — the per-cell generating-code block stays SymPy-only.
 - `src/calc/calculator.svelte.ts` — `evaluate()` (real engine),
   `interimEvaluate()` (Compute Engine), `prewarm()`, `calcEngine`
   status rune.
+
 - `src/components/CalcOutput.svelte` — per-cell output; fires
   `interimEvaluate` while `calcEngine.status !== 'ready'`, `evaluate`
   always; interim rows render dimmed via `.pending` and tagged
@@ -125,6 +126,7 @@ trig values. Examples: `\int_{0}^{1}x` → `1/2`, `\int x dx` → `x²/2 + C`,
 `\frac{d}{dx}x^2` → `2x`, `\lim_{x→0} sin x/x` → `1`, `\binom{5}{2}` → `10`.
 First row lands in ~ms, dimmed until SymPy's answer replaces it.
 
+
 ### Interim mechanics (earned, not docs-read)
 
 - **Pushed scope per call**: `engine.pushScope()`/`popScope()` wraps the
@@ -137,10 +139,10 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   assignments.
 - **`+C` per boundless Integrate**: `addConstants` wraps each
   `['Integrate', body, 'v']` (a bare string var slot = indefinite; a
-  `Limits` slot = definite) in `Add(…, letter)`, letters drawn
-  from the same first-free-capital rule as codegen's `nextConstName`,
-  seeded from the whole worksheet's latex so a `C = …` in an earlier
-  cell can't collide.
+  `Limits` slot = definite) in `Add(…, letter)`, letters drawn from
+  codegen's shared `firstFreeCapital` over a used-name set seeded by
+  `collectDeclared` on the cells above plus every name token in this
+  cell — so a `C = …` in an earlier cell can't collide.
 - **`\text{d}` differentials peel out of the integrand**: CE leaves
   `\int x²\text{d}x` as `d·x` factor pairs in the body (flat or nested
   in the last factor's args); `peelDiffs` removes them the way codegen's
@@ -167,6 +169,7 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   `\lparen`/`\rparen` — `cleanLatex` maps them to `e`, `i`, `(`, `)` so
   MathQuill renders the names instead of italicizing the command text.
   `arcTrigNames` isn't needed here — CE already writes `\arcsin`.
+
 
 ## Related incident fixed during this work
 

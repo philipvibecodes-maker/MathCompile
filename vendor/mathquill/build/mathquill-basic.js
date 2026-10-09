@@ -1736,6 +1736,10 @@ var __assign = (this && this.__assign) || function () {
              * point in that node when moving up and down among blocks.
              */
             _this.upDownCache = {};
+            // MATHCOMPILE: the clientY of an in-flight mouse seek \u2014 seek()
+            // implementations that hit-test rendered lines (PythonBlock) read it;
+            // Controller_mouse.seek sets and clears it around node.seek().
+            _this.seekClientY = undefined;
             _this.cursorElement = h('span', { class: 'mq-cursor' }, [h.text(U_ZERO_WIDTH_SPACE)]);
             _this._domFrag = domFrag();
             _this.controller = controller;
@@ -4841,7 +4845,11 @@ var __assign = (this && this.__assign) || function () {
             // target was selection span, otherwise target will have no parent and will
             // seek from root, which is less accurate (e.g. fraction)
             cursor.clearSelection().show();
+            // MATHCOMPILE: ride the click's clientY on the cursor so seek()
+            // implementations that hit-test rendered lines (PythonBlock) can use it.
+            cursor.seekClientY = _clientY;
             node.seek(clientX, cursor);
+            cursor.seekClientY = undefined;
             this.scrollHoriz(); // before .selectFrom when mouse-selecting, so
             // always hits no-selection case in scrollHoriz and scrolls slower
             return this;
@@ -7660,7 +7668,7 @@ var __assign = (this && this.__assign) || function () {
         }
         // Parser-only command: typing '\textcolor' in the command input
         // can't supply a color argument, so typed insertion is a no-op
-        // (same convention as \operatorname / \mathbb).
+        // (same convention as \operatorname).
         class_7.prototype.createLeftOf = function () { };
         class_7.prototype.numBlocks = function () {
             return 1;

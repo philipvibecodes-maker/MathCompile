@@ -1144,6 +1144,24 @@ body {
   color: #61afef;
 }
 
+/* \python{...} input block — CSS Highlight palette matching the .tok-*
+   dark theme above (light defaults live in vendored mathquill.css). */
+:root[data-theme='dark'] ::highlight(mq-py-kw) {
+  color: #c678dd;
+}
+:root[data-theme='dark'] ::highlight(mq-py-str) {
+  color: #98c379;
+}
+:root[data-theme='dark'] ::highlight(mq-py-comment) {
+  color: #6b7a8c;
+}
+:root[data-theme='dark'] ::highlight(mq-py-num) {
+  color: #d19a66;
+}
+:root[data-theme='dark'] ::highlight(mq-py-call) {
+  color: #61afef;
+}
+
 .expr-delete {
   flex: 0 0 28px;
   align-self: flex-start;
@@ -1534,7 +1552,17 @@ body {
   border-color: currentColor;
 }
 
-:root[data-theme='dark'] .mq-math-mode .mq-empty {
+/* Slot box while the caret is inside a block — always for an empty
+   block, and for a non-empty one only when the command hides its input
+   boundary (font/text wrappers: .mq-font/.mq-bf/.mq-text-mode).
+   Mirrors the MATHCOMPILE rule in mathquill's math.less. */
+:root[data-theme='dark'] .mq-math-mode .mq-empty,
+:root[data-theme='dark']
+  .mq-math-mode
+  .mq-hasCursor:has(> .mq-cursor:only-child):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input),
+:root[data-theme='dark']
+  .mq-math-mode
+  .mq-hasCursor:has(> .mq-cursor):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):is(.mq-font, .mq-bf, .mq-text-mode) {
   background: rgba(255, 255, 255, 0.22);
 }
 

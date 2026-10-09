@@ -189,6 +189,68 @@ test('typed \\underset inserts the two-block command', async ({ page }) => {
   expect(await value(page)).toBe('\\underset{ }{ }');
 });
 
+// \mathbb{X} parses to a glyph leaf — it has no editable block, so its
+// typed insertion used to be a no-op that deleted `\mathbb` on the next
+// key. A pending `\mathbb{arg}` input now takes the arg and resolves
+// via writeLatex — the same node a paste produces.
+test('typed \\mathbb{R} produces the glyph leaf', async ({ page }) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\mathbb{R}', { delay: 60 });
+  expect(await value(page)).toBe('\\mathbb{R}');
+  // the leaf renders the double-struck char, not the latex text
+  const text = await mf.evaluate((el) => el.textContent);
+  expect(text).toContain('ℝ');
+});
+
+test('typed \\mathbb{ stays a visible pending input', async ({ page }) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\mathbb{', { delay: 60 });
+  expect(await value(page)).toBe('\\mathbb{ }');
+});
+
+test('typed \\mathbb arg resolves on Enter', async ({ page }) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\mathbb{N', { delay: 60 });
+  await page.keyboard.press('Enter');
+  expect(await value(page)).toBe('\\mathbb{N}');
+});
+
+test('typed \\Bbb resolves to \\mathbb', async ({ page }) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\Bbb{Z}', { delay: 60 });
+  expect(await value(page)).toBe('\\mathbb{Z}');
+});
+
+// \mathcal types through the same pending `\mathcal{arg}` input as
+// \mathbb — literal text while typing, resolving to the Style node a
+// paste produces. Script shapes come from the bundled KaTeX_Caligraphic
+// webfont behind .mq-caligraphic (asserted via computed font, since the
+// glyphs are font-mapped ASCII, not Unicode).
+test('typed \\mathcal{A} produces the calligraphic style node', async ({
+  page,
+}) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\mathcal{', { delay: 60 });
+  expect(await value(page)).toBe('\\mathcal{ }');
+  await mf.pressSequentially('A}', { delay: 60 });
+  expect(await value(page)).toBe('\\mathcal{A}');
+  const cal = mf.locator('.mq-editable-field > .mq-root-block .mq-caligraphic');
+  await expect(cal).toHaveCount(1);
+  await expect(cal).toHaveCSS('font-family', /KaTeX_Caligraphic/);
+});
+
+test('typed \\mathcal arg resolves on Enter and keeps extra letters', async ({
+  page,
+}) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('\\mathcal{BC', { delay: 60 });
+  await page.keyboard.press('Enter');
+  expect(await value(page)).toBe('\\mathcal{BC}');
+  await expect(
+    mf.locator('.mq-editable-field > .mq-root-block .mq-caligraphic'),
+  ).toHaveCount(1);
+});
+
 // \tr is an insertion alias — it expands to \mathrm{tr}, the word-op
 // form the compiler lowers to .trace().
 test('typed \\tr expands to \\mathrm{tr}', async ({ page }) => {

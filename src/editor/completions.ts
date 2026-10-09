@@ -2,6 +2,8 @@
 // real LatexCmds entry in the vendored MathQuill build — inserting
 // `\${name}` via mq.cmd() or the latex command input always resolves.
 // Order is the ranking order: structure and common operators first.
+import { NOTATION } from '../compile/notation';
+
 export interface CompletionItem {
   /** Command name without the backslash — what gets typed and inserted. */
   name: string;
@@ -10,6 +12,16 @@ export interface CompletionItem {
   /** LaTeX rendered as the item's preview. Defaults to `\${name}`. */
   preview?: string;
 }
+
+// Palette items a notation entry carries itself — the item is generated
+// from the registry so the insertion alias stays beside the notation it
+// expands to; ordering stays in this list's hands via placement.
+const fromRegistry = (name: string): CompletionItem => {
+  const item = NOTATION.find((n) => n.completion?.name === name)?.completion;
+  if (item === undefined)
+    throw new Error(`no registry completion named ${name}`);
+  return item;
+};
 
 export const COMPLETIONS: CompletionItem[] = [
   { name: 'frac', hint: 'fraction', preview: '\\frac{a}{b}' },
@@ -34,8 +46,10 @@ export const COMPLETIONS: CompletionItem[] = [
   { name: 'pmatrix', hint: 'matrix', preview: '\\pmatrix{a&b\\\\c&d}' },
   { name: 'begin', hint: 'environment (pmatrix, cases, …)' },
   { name: 'def', hint: 'function definition', preview: '\\text{def} ' },
-  // `\tr` is an insertion alias — it expands to `\mathrm{tr}`.
-  { name: 'tr', hint: 'matrix trace', preview: '\\mathrm{tr} A' },
+  { name: 'python', hint: 'inline Python code', preview: '\\python{x = 1}' },
+  // `\tr` is an insertion alias — it expands to `\mathrm{tr}`; the item
+  // comes from the trace registry entry.
+  fromRegistry('tr'),
   { name: 'matrix', hint: 'matrix grid', preview: '\\begin{matrix}a&b\\\\c&d\\end{matrix}' },
   { name: 'bmatrix', hint: '[ ] matrix', preview: '\\begin{bmatrix}a&b\\\\c&d\\end{bmatrix}' },
   { name: 'Bmatrix', hint: '{ } matrix', preview: '\\begin{Bmatrix}a&b\\\\c&d\\end{Bmatrix}' },
@@ -171,6 +185,7 @@ export const COMPLETIONS: CompletionItem[] = [
   { name: 'mathbb', hint: 'blackboard bold', preview: '\\mathbb{R}' },
   { name: 'mathcal', hint: 'calligraphic', preview: '\\mathcal{F}' },
   { name: 'mathbf', hint: 'bold', preview: '\\mathbf{v}' },
+  { name: 'mathrm', hint: 'upright (roman) text', preview: '\\mathrm{kg}' },
   { name: 'text', hint: 'text mode', preview: '\\text{and}' },
   { name: 'hat', hint: 'accent', preview: '\\hat{x}' },
   { name: 'bar', hint: 'accent', preview: '\\bar{x}' },

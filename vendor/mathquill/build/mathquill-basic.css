@@ -92,6 +92,21 @@
   overflow-x: auto;
   overflow-y: hidden;
 }
+::highlight(mq-py-kw) {
+  color: #a626a4;
+}
+::highlight(mq-py-str) {
+  color: #50a14f;
+}
+::highlight(mq-py-comment) {
+  color: #8a8a8a;
+}
+::highlight(mq-py-num) {
+  color: #986801;
+}
+::highlight(mq-py-call) {
+  color: #4078f2;
+}
 .mq-root-block,
 .mq-math-mode .mq-root-block {
   display: -moz-inline-box;
@@ -200,6 +215,10 @@
 .mq-math-mode .mq-empty.mq-quiet-delimiter {
   background: transparent;
 }
+.mq-math-mode .mq-hasCursor:has(> .mq-cursor:only-child):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input),
+.mq-math-mode .mq-hasCursor:has(> .mq-cursor):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):is(.mq-font, .mq-bf, .mq-text-mode) {
+  background: rgba(0, 0, 0, 0.2);
+}
 .mq-math-mode.mq-empty {
   background: transparent;
 }
@@ -212,6 +231,26 @@
   padding: 0 0.1em;
   margin: 0 -0.1em;
   min-width: 1ex;
+}
+.mq-math-mode .mq-python {
+  font-family: monospace, Symbola, serif;
+  white-space: pre-wrap;
+}
+.mq-math-mode .mq-python:before {
+  content: '\\python{';
+  color: #8a8a8a;
+}
+.mq-math-mode .mq-python:after {
+  content: '}';
+  color: #8a8a8a;
+}
+.mq-math-mode .mq-python.mq-empty:before {
+  visibility: visible;
+  content: '\\python{';
+}
+.mq-math-mode .mq-python.mq-empty:after {
+  visibility: visible;
+  content: '}';
 }
 .mq-math-mode .mq-font {
   font: 1em 'Times New Roman', Symbola, serif;
@@ -501,6 +540,34 @@
 }
 .mq-math-mode .mq-comma {
   padding-right: 0.167em;
+}
+.mq-math-mode .mq-matrix + .mq-supsub,
+.mq-math-mode .mq-matrix + .mq-cursor + .mq-supsub,
+.mq-math-mode .mq-displaylines + .mq-supsub,
+.mq-math-mode .mq-bracket-container + .mq-supsub {
+  display: contents;
+}
+.mq-math-mode .mq-matrix + .mq-supsub > .mq-sup,
+.mq-math-mode .mq-matrix + .mq-cursor + .mq-supsub > .mq-sup,
+.mq-math-mode .mq-displaylines + .mq-supsub > .mq-sup,
+.mq-math-mode .mq-bracket-container + .mq-supsub > .mq-sup {
+  display: inline-block;
+  vertical-align: top;
+  overflow: visible;
+}
+.mq-math-mode .mq-matrix + .mq-supsub:not(.mq-sup-only) > .mq-sup,
+.mq-math-mode .mq-matrix + .mq-cursor + .mq-supsub:not(.mq-sup-only) > .mq-sup,
+.mq-math-mode .mq-displaylines + .mq-supsub:not(.mq-sup-only) > .mq-sup,
+.mq-math-mode .mq-bracket-container + .mq-supsub:not(.mq-sup-only) > .mq-sup {
+  width: 0;
+}
+.mq-math-mode .mq-matrix + .mq-supsub > .mq-sub,
+.mq-math-mode .mq-matrix + .mq-cursor + .mq-supsub > .mq-sub,
+.mq-math-mode .mq-displaylines + .mq-supsub > .mq-sub,
+.mq-math-mode .mq-bracket-container + .mq-supsub > .mq-sub {
+  display: inline-block;
+  float: none;
+  vertical-align: bottom;
 }
 .mq-math-mode .mq-array > span {
   display: block;

@@ -1,5 +1,11 @@
 import { ComputeEngine } from '@cortex-js/compute-engine';
-import { compileCellsForCalc, freeNames } from '../compile/codegen';
+import {
+  collectDeclared,
+  compileCellsForCalc,
+  firstFreeCapital,
+  freeNames,
+  type CalcWorksheetProgram,
+} from '../compile/codegen';
 import {
   isDiffMark,
   normalizeIR,
@@ -32,7 +38,9 @@ export interface CalcResult {
   rows: CalcRow[];
   // The emitted program for the whole cell (prelude + statement code)
   // — shown by the per-cell code block. displayCode is the same program
-  // with the `e = ...` display-plumbing capture lines inlined.
+  // with the `e = ...` display-plumbing capture lines inlined for
+  // expression statements (a definition's display just echoes the
+  // statement, so it never gets a capture line).
   code?: string;
   displayCode?: string;
 }
@@ -173,35 +181,7 @@ export function evaluate(
     // Uncompileable cells show their issues; a cell with none at all
     // (empty, or only notes) shows nothing.
     return Promise.resolve({ rows: issueRows });
-  // The emitted program as one block — prelude, then each cell's decls
-  // and statements in worksheet order (# cell markers only when the
-  // result ran in real context). The plumbing variant swaps expression
-  // statements for their `e = ...` capture lines and adds
-  // `e = <display>` after assignments/defs, mirroring the worker's
-  // exec/eval split.
-  const okStmts = (c: (typeof prog.cells)[number]) =>
-    c.statements.filter((s) => s.error === undefined && s.code !== '');
-  const marker = (i: number) => (prog.cells.length > 1 ? [`# cell ${i + 1}`] : []);
-  const code = [
-    ...prog.prelude,
-    ...prog.cells.flatMap((c, i) => [
-      ...marker(i),
-      ...c.defs,
-      ...okStmts(c).map((s) => s.code),
-    ]),
-  ].join('\n');
-  const displayCode = [
-    ...prog.prelude,
-    ...prog.cells.flatMap((c, i) => [
-      ...marker(i),
-      ...c.defs,
-      ...okStmts(c).flatMap((s) =>
-        s.display === undefined
-          ? [`e = ${s.code}`]
-          : [s.code, `e = ${s.display}`],
-      ),
-    ]),
-  ].join('\n');
+  const { code, displayCode } = shownPrograms(prog);
   // A multi-statement cell keeps its good rows when a sibling statement
   // is broken — and issue rows interleave at their own input line, not
   // at the bottom of the output.
@@ -266,6 +246,44 @@ export function evaluate(
   });
 }
 
+// The emitted program as one block — prelude, then each cell's decls
+// and statements in worksheet order (# cell markers only when more
+// than one cell contributed). The plumbing variant swaps expression
+// statements for their `e = ...` capture lines, mirroring the worker's
+// exec/eval split; a definition's display echoes the statement itself,
+// so its capture line is dropped even in the plumbing view.
+export function shownPrograms(prog: CalcWorksheetProgram): {
+  code: string;
+  displayCode: string;
+} {
+  const okStmts = (c: CalcWorksheetProgram['cells'][number]) =>
+    c.statements.filter((s) => s.error === undefined && s.code !== '');
+  const marker = (i: number) => (prog.cells.length > 1 ? [`# cell ${i + 1}`] : []);
+  const code = [
+    ...prog.prelude,
+    ...prog.cells.flatMap((c, i) => [
+      ...marker(i),
+      ...c.defs,
+      ...okStmts(c).map((s) => s.code),
+    ]),
+  ].join('\n');
+  const displayCode = [
+    ...prog.prelude,
+    ...prog.cells.flatMap((c, i) => [
+      ...marker(i),
+      ...c.defs,
+      ...okStmts(c).flatMap((s) =>
+        s.display === undefined || s.defines
+          ? s.display === undefined
+            ? [`e = ${s.code}`]
+            : [s.code]
+          : [s.code, `e = ${s.display}`],
+      ),
+    ]),
+  ].join('\n');
+  return { code, displayCode };
+}
+
 // Kicks the engine boot (~4s cold) before an expression is actually
 // evaluated — the Output dropdown's pointerdown/focus hooks call this
 // so the wasm+wheels download overlaps the user's menu interaction.
@@ -290,6 +308,10 @@ const SKIP_HEADS = new Set([
   'Declare',
   'Def',
   'IntegerRange',
+  // \min_{x}/\max_{x} bound-extrema heads — CE can't evaluate them and
+  // would echo a \mathrm{Minimum}(body, var) guess.
+  'Minimum',
+  'Maximum',
 ]);
 const hasHead = (n: MathJson): boolean =>
   isArr(n) && (SKIP_HEADS.has(headOf(n) ?? '') || n.slice(1).some(hasHead));
@@ -307,19 +329,14 @@ const cleanLatex = (s: string): string =>
     .replaceAll('\\rparen', ')');
 
 // Constant-of-integration naming, mirroring codegen's nextConstName:
-// first capital absent from the worksheet's latex — C, else D, E, …
-// (codegen reserves names across cells; the interim seeds from the whole
-// worksheet's latex so a `C = …` above can't collide. The allocation
-// order across cells is still cell-local — an estimate edge.)
-const constAllocator = (latex: string): (() => string) => {
-  const used = new Set(latex.match(/[A-Z]/g) ?? []);
-  return () => {
-    const letter =
-      'CDEFGHIJKLMNOPQRSTUVWXYZ'.split('').find((c) => !used.has(c)) ?? 'C';
-    used.add(letter);
-    return letter;
-  };
-};
+// first capital absent from the used-name set — C, else D, E, … — via
+// codegen's shared firstFreeCapital. `used` is seeded by the caller with
+// the names bound above the cell plus every name token inside it (the
+// same reservation codegen's constNames seeding makes), so a `C = …`
+// elsewhere can't collide. The allocation order across cells is still
+// cell-local — an estimate edge.
+const takeConstFrom = (used: Set<string>): (() => string) =>
+  () => firstFreeCapital(used);
 
 // Wrap every boundless Integrate in Add(…, letter) so the interim shows
 // the same constants codegen emits. Raw shape ['Integrate', body, 'v']
@@ -517,7 +534,7 @@ const evalStatement = (
 // already in the main bundle for the compiler.
 export async function interimEvaluate(
   latex: string,
-  worksheetLatex?: string,
+  priorLatex: string[] = [],
 ): Promise<CalcRow[]> {
   try {
     const ir = normalizeIR(parseCellLatex(latex)).ir;
@@ -539,8 +556,24 @@ export async function interimEvaluate(
         ? [kids[kids.length - 1], ...kids.slice(0, -1)]
         : kids;
     });
+    // The real engine shares one namespace down the worksheet, so a
+    // `C = …` above reserves the letter for constants of integration —
+    // seed from the same declared-name set, plus every name token in
+    // this cell (heads included — the reservation allNames makes for
+    // codegen) so `+ C` never collides.
+    const used = new Set<string>();
+    const declaredFns = new Set<string>();
+    for (const l of priorLatex) {
+      const n = normalizeIR(parseCellLatex(l));
+      if (n.ir !== undefined) collectDeclared(n.ir, used, declaredFns);
+    }
+    const reserve = (n: MathJson | undefined): void => {
+      if (typeof n === 'string') used.add(n);
+      else if (isArr(n)) for (const c of n) reserve(c);
+    };
+    reserve(ir);
     const engine = (interimCE ??= new ComputeEngine());
-    const nextConst = constAllocator(worksheetLatex ?? latex);
+    const nextConst = takeConstFrom(used);
     // A pushed scope contains each `name = rhs` binding — a row below
     // sees it (a = 5 \\ a+1 → 6), but nothing leaks into other cells
     // or later evals.
