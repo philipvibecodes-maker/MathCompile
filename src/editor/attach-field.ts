@@ -7,6 +7,7 @@ import {
 import { outputLatex } from '../compile/latex';
 import { attachAutocompleteMenu } from './ac-menu';
 import { attachSymbolPicker } from './ac-picker';
+import { attachMatrixMenu } from './matrix-menu';
 import { readHelpContext, type HelpContext } from './context-help';
 import { SMART_AUTO_COMMANDS } from './smart-commands';
 
@@ -19,6 +20,10 @@ export interface FieldCallbacks {
   // Backspace/Delete pressed while the field holds only a blank line.
   onDeleteOut?: () => void;
   onFocus?: () => void;
+  // Whether this field is still the app's focused cell — gates the
+  // blur-to-nowhere refocus so a cell hop already owned by another
+  // field can't be stolen back.
+  ownsFocus?: () => boolean;
   // Caret context for the help strip under the cell; null when the
   // caret sits in no hint-bearing position (or the field blurs).
   onCaretContext?: (ctx: HelpContext | null) => void;
@@ -69,8 +74,16 @@ export function attachField(
   // must always land the user back in the input.
   const handleFocusOut = (e: FocusEvent) => {
     cb.onCaretContext?.(null);
-    if (e.relatedTarget === null && !pointerRecentlyDown())
-      el.mq?.focus();
+    if (e.relatedTarget !== null || pointerRecentlyDown()) return;
+    // Vimium's Escape blurs to nowhere — but a blur-to-nothing can
+    // also arrive mid-transfer while focus is heading to another cell
+    // (Shift+Enter's new-cell handoff). Defer a tick and only refocus
+    // if focus is still stranded by then.
+    setTimeout(() => {
+      const ae = document.activeElement;
+      const stranded = ae === document.body || ae === el || ae === null;
+      if (stranded && (cb.ownsFocus?.() ?? true)) el.mq?.focus();
+    });
   };
 
   // move-out: hop cells on vertical edges; skip selection extensions
@@ -111,6 +124,7 @@ export function attachField(
 
   const detachAutocomplete = attachAutocompleteMenu(el);
   const detachPicker = attachSymbolPicker(el);
+  const detachMatrixMenu = attachMatrixMenu(el);
 
   return {
     focus: (edge) => el.focus({ edge }),
@@ -164,6 +178,7 @@ export function attachField(
       el.removeEventListener('click', reportContext);
       detachAutocomplete();
       detachPicker();
+      detachMatrixMenu();
     },
   };
 }

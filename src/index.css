@@ -528,6 +528,54 @@ body {
   white-space: nowrap;
 }
 
+/* Matrix dimensions menu, anchored under the caret on a typed
+   matrix-family command — rows/columns numeric inputs. */
+.mc-mat {
+  position: absolute;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px var(--shadow);
+  font-size: 13px;
+  color: var(--text);
+  padding: 5px 8px;
+}
+
+/* display:flex beats the UA [hidden] rule — keep it in sync. */
+.mc-mat[hidden] {
+  display: none;
+}
+
+.mc-mat-dim {
+  width: 3ch;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 4px;
+  text-align: center;
+  outline: none;
+}
+
+.mc-mat-dim:focus {
+  border-color: var(--accent);
+}
+
+.mc-mat-sep {
+  color: var(--muted);
+}
+
+.mc-mat-hint {
+  color: var(--faint);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 /* Output stacked under its input cell — unframed like a notebook
    output; the field above is what carries the cell's border. */
 .cell-output {

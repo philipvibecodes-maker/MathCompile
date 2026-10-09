@@ -77,6 +77,16 @@ CharCmds['\\'] = class LatexCommandInput extends MathCommand {
         // delimiter, not source text — swallow it instead of writing it
         // into the code.
         if (cmd instanceof PythonBlock && ch === '{') return;
+        // MATHCOMPILE: same swallow when a matrix defers to the
+        // dimensions menu — a `\pmatrix{` typed while the menu is open
+        // would leave a stray brace beside the grid the menu inserts.
+        if (
+          ch === '{' &&
+          cmd instanceof CellGrid &&
+          cmd.dimsMenu &&
+          cursor.options.matrixDimensionsMenu
+        )
+          return;
         if (ch !== '\\' || !this.isEmpty()) cursor.parent.write(cursor, ch);
         else cursor.controller.aria.alert();
       }

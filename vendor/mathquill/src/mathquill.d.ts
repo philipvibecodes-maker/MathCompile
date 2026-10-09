@@ -142,6 +142,10 @@ declare namespace MathQuill {
       // MATHCOMPILE: controls \derivative expansion (true → \frac{d#1}{d#2},
       // false → D(#1)); defaults to true.
       dIsDerivative?: boolean;
+      // MATHCOMPILE: typed matrix commands fire 'mq:matrix-request' on the
+      // field's container for the app to ask rows/columns, instead of
+      // inserting a default 2x2 grid.
+      matrixDimensionsMenu?: boolean;
       handlers?: HandlerOptions<BaseMathQuill<$>>;
       askIfShouldIgnoreMousemove?: (
         evt: MouseEvent,

@@ -107,6 +107,9 @@ export class MathFieldElement extends HTMLElement {
     const userHandlers = opts.handlers;
     this._mq = mq3.MathField(this.host, {
       ...opts,
+      // Typed matrix commands defer to the rows/columns menu
+      // (matrix-menu.ts) instead of inserting a default 2x2 grid.
+      matrixDimensionsMenu: true,
       handlers: {
         ...userHandlers,
         edit: (mq) => {

@@ -51,7 +51,9 @@ LatexCmds.begin = class extends MathCommand {
       if (beginNode[R]) cursor.insLeftOf(beginNode[R] as MQNode);
       else cursor.insAtRightEnd(beginNode.parent);
       node.createLeftOf(cursor.show());
-      if (grid && node === (grid as MQNode))
+      // A grid deferred to the matrix-dimensions menu was never
+      // adopted (no parent) — there is no first cell to land in.
+      if (grid && node === (grid as MQNode) && grid.parent)
         cursor.insAtLeftEnd(grid.getEnd(L) as MQNode);
     };
 
@@ -127,6 +129,10 @@ class CellGrid extends MathCommand {
   rowSize = 0;
   gridClass = 'mq-matrix mq-non-leaf';
   cellTextAlign = 'center';
+  // MATHCOMPILE: set on the matrix family — a typed command defers to
+  // the rows/columns menu (matrixDimensionsMenu option) instead of
+  // inserting a default 2x2 grid.
+  dimsMenu = false;
 
   get cells() {
     return (this.blocks || []) as MatrixCell[];
@@ -834,6 +840,8 @@ class MatrixCell extends MathBlock {
 }
 
 class Matrix extends CellGrid {
+  dimsMenu = true;
+
   createBlocks() {
     this.blocks = [
       new MatrixCell(0, this),
@@ -841,6 +849,96 @@ class Matrix extends CellGrid {
       new MatrixCell(1, this),
       new MatrixCell(1, this),
     ];
+  }
+
+  // MATHCOMPILE: with the matrixDimensionsMenu option on, inserting a
+  // matrix-family grid on the typed path fires 'mq:matrix-request' on
+  // the field's container instead of dropping a default 2x2 grid — the
+  // app's menu calls detail.insert(rows, cols) to write the grid (or
+  // nothing on cancel). Parsing and latex()/write() builds cells
+  // directly, so they never reach here.
+  createLeftOf(cursor: Cursor) {
+    const ctrlr = cursor.controller;
+    if (!this.dimsMenu || !ctrlr.options.matrixDimensionsMenu) {
+      return super.createLeftOf(cursor);
+    }
+    const parent = cursor.parent;
+    const left = cursor[L] as NodeRef;
+    const open = this.latexOpen();
+    const close = this.latexClose();
+    const frag = this.replacedFragment;
+    const fragLatex = frag ? frag.fold('', (s, n) => s + n.latex()) : '';
+    // Put the caret back in the gap the command occupied in case focus
+    // moved while the menu was open — this also re-anchors the cursor
+    // element, which can be parked inside the wrapper residue.
+    const restoreCaret = () => {
+      if (left && (left as MQNode).parent === parent)
+        cursor.insRightOf(left as MQNode);
+      else if (!left) cursor.insAtLeftEnd(parent);
+    };
+    // The resolved command input leaves its wrapper behind holding the
+    // blurred selection DOM; remove it once the caret is re-anchored or
+    // it renders as a grayed ghost and swallows DOM writes.
+    const removeResidue = () => {
+      const rootEl = parent.domFrag().oneElement() as
+        | HTMLElement
+        | undefined;
+      rootEl
+        ?.querySelector(':scope > .mq-latex-command-input-wrapper')
+        ?.remove();
+    };
+    ctrlr.container.dispatchEvent(
+      new CustomEvent('mq:matrix-request', {
+        bubbles: true,
+        detail: {
+          env:
+            open.match(/^\\begin\{([a-zA-Z]+)/)?.[1] ?? 'matrix',
+          insert: (rows: number, cols: number) => {
+            // The consumed selection stays referenced on the cursor —
+            // drop it or the next blur's endSelection() re-arms
+            // setTextareaSelection, whose textarea.select() steals
+            // focus back (observed as Shift+Enter landing on this
+            // field instead of the new cell).
+            cursor.clearSelection();
+            restoreCaret();
+            removeResidue();
+            // Reset the textarea's shadow selection state — the flag
+            // armed when the user selected the replaced text would
+            // otherwise survive and make the next keydown's
+            // guardedTextareaSelect steal focus back to this field.
+            ctrlr.setTextareaSelection();
+            const cells = Math.max(1, cols);
+            // A replaced selection goes in the first cell only — the
+            // remaining rows are empty.
+            const empty = new Array(cells).fill('').join('&');
+            const first = [fragLatex]
+              .concat(new Array(cells - 1).fill(''))
+              .join('&');
+            ctrlr.writeLatex(
+              open +
+                [first]
+                  .concat(new Array(Math.max(0, rows - 1)).fill(empty))
+                  .join('\\\\') +
+                close
+            );
+            const grid = cursor[L] as MQNode;
+            if (grid instanceof MathCommand) grid.placeCursor(cursor);
+          },
+          cancel: () => {
+            cursor.clearSelection();
+            restoreCaret();
+            removeResidue();
+            ctrlr.setTextareaSelection();
+            // Restore a replaced selection's text at the gap; without
+            // one, cancel just clears the dead command DOM.
+            if (fragLatex) ctrlr.writeLatex(fragLatex);
+          }
+        }
+      })
+    );
+    // The deferred resolution leaves the input already removed — resync
+    // the edit handler now or the store keeps the raw `\pmatrix`.
+    ctrlr.handle('edit');
   }
 }
 
@@ -912,6 +1010,8 @@ class MatrixEnv extends Matrix {
 // \begin{cases}...\end{cases}: a left-brace grid — cells are
 // left-aligned like real cases blocks (expr & condition columns).
 class Cases extends Matrix {
+  // A case split is not a matrix for the dimensions menu.
+  dimsMenu = false;
   parens = { left: '{' as const, right: null };
   cellTextAlign = 'left';
   latexOpen() {
@@ -1420,7 +1520,8 @@ class EnvSpecInput extends MathCommand {
       if (input[R]) cursor.insLeftOf(input[R] as MQNode);
       else cursor.insAtRightEnd(input.parent);
       grid.createLeftOf(cursor.show());
-      cursor.insAtLeftEnd(grid.getEnd(L) as MQNode);
+      // Same deferred-insert guard as \begin's resolve.
+      if (grid.parent) cursor.insAtLeftEnd(grid.getEnd(L) as MQNode);
     };
 
     const origWrite = argBlock.write;

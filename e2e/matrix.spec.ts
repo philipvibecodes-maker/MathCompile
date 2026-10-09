@@ -58,6 +58,8 @@ test('typed \\cases opens a cases environment', async ({ page }) => {
 test('typed \\array{spec} applies the column spec', async ({ page }) => {
   const mf = cell(page);
   await page.keyboard.type('\\array{cc}');
+  // The grid defers to the dimensions menu; Enter accepts 2x2.
+  await page.keyboard.press('Enter');
   expect(await cellValue(mf)).toBe('\\begin{array}{cc}&\\\\&\\end{array}');
 });
 
