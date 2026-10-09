@@ -457,9 +457,10 @@
       display: block;
     }
 
-    // spread the pair: lift the sup off the sub (lone sups must keep
-    // stock geometry — the margin would drop the baseline under the base)
-    &:not(.mq-sup-only) > .mq-sup {
+    // spread the pair: lift the sup off the sub. The sup is nested
+    // inside .mq-sub in pair DOM (a descendant, not a child), and lone
+    // sups must keep stock geometry — so exclude only sup-only roots.
+    &:not(.mq-sup-only) .mq-sup {
       margin-bottom: 0.15em;
     }
 
