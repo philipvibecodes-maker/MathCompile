@@ -13902,8 +13902,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             return rows;
         };
         // Force-delete the row containing `cell`, discarding its content \u2014
-        // unlike deleteCell, which only removes a fully-empty row. A grid
-        // keeps at least one row. Returns the cell to focus, or undefined.
+        // unlike deleteCell, which only removes a fully-empty row. Returns
+        // the cell to focus, or undefined on the last row \u2014 the caller then
+        // deletes the whole matrix.
         CellGrid.prototype.deleteRow = function (currentCell) {
             var rows = this.cellRows(), blocks = this.cells, row = -1;
             for (var i = 0; i < rows.length; i += 1) {
@@ -13931,8 +13932,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             return focus || blocks[0];
         };
         // Force-delete the column containing `cell`, discarding its content.
-        // A grid keeps at least one column. Returns the cell to focus, or
-        // undefined.
+        // Returns the cell to focus, or undefined on the last column \u2014 the
+        // caller then deletes the whole matrix.
         CellGrid.prototype.deleteColumn = function (currentCell) {
             var rows = this.cellRows(), blocks = this.cells, row = -1, column = -1, columns = 0;
             for (var i = 0; i < rows.length; i += 1) {
@@ -14042,8 +14043,23 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             cursor.clearSelection();
             cursor.endSelection();
             var cellToFocus = this[method](cell);
-            if (!cellToFocus)
+            if (!cellToFocus) {
+                // Last row/column: delete the matrix outright, cells and
+                // all. Anchor the caret to a surviving node FIRST \u2014 pointing it
+                // at the grid leaves cursor[R] dangling into a detached tree,
+                // and the next insert never links into the parent.
+                var parent = this.parent, rightward = this[R];
+                this.remove();
+                if (rightward)
+                    cursor.insLeftOf(rightward);
+                else
+                    cursor.insAtRightEnd(parent);
+                parent.bubble(function (node) {
+                    node.reflow();
+                    return undefined;
+                });
                 return;
+            }
             this.finalizeTree();
             this.bubble(function (node) {
                 node.reflow();
@@ -14165,8 +14181,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         return env;
     }
     Environments.matrix = function () { return new Matrix(); };
-    // \matrix{...} emits the \begin{matrix} env form (like \pmatrix).
-    LatexCmds.matrix = function () { return withBraces(new MatrixEnv()); };
+    // \matrix{...} displays and serializes as \pmatrix \u2014 plain TeX's
+    // paren'd matrix. \begin{matrix} stays the paren-less env.
+    LatexCmds.matrix = function () { return withBraces(new PMatrix()); };
     var PMatrix = /** @class */ (function (_super) {
         __extends(PMatrix, _super);
         function PMatrix() {

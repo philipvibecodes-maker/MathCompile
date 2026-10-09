@@ -533,8 +533,9 @@ class CellGrid extends MathCommand {
   }
 
   // Force-delete the row containing `cell`, discarding its content —
-  // unlike deleteCell, which only removes a fully-empty row. A grid
-  // keeps at least one row. Returns the cell to focus, or undefined.
+  // unlike deleteCell, which only removes a fully-empty row. Returns
+  // the cell to focus, or undefined on the last row — the caller then
+  // deletes the whole matrix.
   deleteRow(currentCell: MatrixCell): MatrixCell | undefined {
     var rows = this.cellRows(),
       blocks = this.cells,
@@ -568,8 +569,8 @@ class CellGrid extends MathCommand {
   }
 
   // Force-delete the column containing `cell`, discarding its content.
-  // A grid keeps at least one column. Returns the cell to focus, or
-  // undefined.
+  // Returns the cell to focus, or undefined on the last column — the
+  // caller then deletes the whole matrix.
   deleteColumn(currentCell: MatrixCell): MatrixCell | undefined {
     var rows = this.cellRows(),
       blocks = this.cells,
@@ -700,7 +701,22 @@ class CellGrid extends MathCommand {
     cursor.clearSelection();
     cursor.endSelection();
     var cellToFocus = this[method](cell);
-    if (!cellToFocus) return;
+    if (!cellToFocus) {
+      // Last row/column: delete the matrix outright, cells and
+      // all. Anchor the caret to a surviving node FIRST — pointing it
+      // at the grid leaves cursor[R] dangling into a detached tree,
+      // and the next insert never links into the parent.
+      var parent = this.parent as MQNode,
+        rightward = this[R] as MQNode;
+      this.remove();
+      if (rightward) cursor.insLeftOf(rightward);
+      else cursor.insAtRightEnd(parent);
+      parent.bubble(function (node) {
+        node.reflow();
+        return undefined;
+      });
+      return;
+    }
     this.finalizeTree();
     this.bubble(function (node) {
       node.reflow();
@@ -834,8 +850,9 @@ function withBraces<T extends CellGrid>(env: T): T {
 }
 
 Environments.matrix = () => new Matrix();
-// \matrix{...} emits the \begin{matrix} env form (like \pmatrix).
-LatexCmds.matrix = () => withBraces(new MatrixEnv());
+// \matrix{...} displays and serializes as \pmatrix — plain TeX's
+// paren'd matrix. \begin{matrix} stays the paren-less env.
+LatexCmds.matrix = () => withBraces(new PMatrix());
 
 class PMatrix extends Matrix {
   parens = { left: '(' as const, right: ')' as const };
