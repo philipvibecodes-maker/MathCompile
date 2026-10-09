@@ -14209,20 +14209,21 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             var frag = this.replacedFragment;
             var fragLatex = frag ? frag.fold('', function (s, n) { return s + n.latex(); }) : '';
             // Put the caret back in the gap the command occupied in case focus
-            // moved while the menu was open.
+            // moved while the menu was open \u2014 this also re-anchors the cursor
+            // element, which can be parked inside the wrapper residue.
             var restoreCaret = function () {
                 if (left && left.parent === parent)
                     cursor.insRightOf(left);
                 else if (!left)
                     cursor.insAtLeftEnd(parent);
             };
-            // A replaced selection's blurred DOM stays inside the resolved
-            // command-input wrapper residue; once its latex is written back in
-            // (or re-parsed into the grid) the orphaned nodes must go, or they
-            // render as a grayed ghost before the grid.
-            var removeGhost = function () {
-                if (frag)
-                    frag.domFrag().remove();
+            // The resolved command input leaves its wrapper behind holding the
+            // blurred selection DOM; remove it once the caret is re-anchored or
+            // it renders as a grayed ghost and swallows DOM writes.
+            var removeResidue = function () {
+                var _c;
+                var rootEl = parent.domFrag().oneElement();
+                (_c = rootEl === null || rootEl === void 0 ? void 0 : rootEl.querySelector(':scope > .mq-latex-command-input-wrapper')) === null || _c === void 0 ? void 0 : _c.remove();
             };
             ctrlr.container.dispatchEvent(new CustomEvent('mq:matrix-request', {
                 bubbles: true,
@@ -14230,6 +14231,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     env: (_d = (_c = open.match(/^\\begin\{([a-zA-Z]+)/)) === null || _c === void 0 ? void 0 : _c[1]) !== null && _d !== void 0 ? _d : 'matrix',
                     insert: function (rows, cols) {
                         restoreCaret();
+                        removeResidue();
                         var cells = Math.max(1, cols);
                         // A replaced selection goes in the first cell only \u2014 the
                         // remaining rows are empty.
@@ -14242,24 +14244,17 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                                 .concat(new Array(Math.max(0, rows - 1)).fill(empty))
                                 .join('\\\\') +
                             close);
-                        removeGhost();
                         var grid = cursor[L];
                         if (grid instanceof MathCommand)
                             grid.placeCursor(cursor);
                     },
                     cancel: function () {
                         restoreCaret();
-                        // Put a replaced selection's own nodes back in the gap \u2014
-                        // the same adopt/insertBefore move the normal path makes
-                        // into the first cell (writeLatex would anchor to the
-                        // cursor element still parked inside the dead wrapper).
-                        if (frag) {
-                            frag.domFrag().removeClass('mq-blur');
-                            frag.adopt(parent, cursor[L], cursor[R]);
-                            frag.domFrag().insertBefore(cursor.domFrag());
-                            cursor.insRightOf(frag.getEnd(R));
-                            parent.bubble(function (n) { return n.reflow(); });
-                        }
+                        removeResidue();
+                        // Restore a replaced selection's text at the gap; without
+                        // one, cancel just clears the dead command DOM.
+                        if (fragLatex)
+                            ctrlr.writeLatex(fragLatex);
                     }
                 }
             }));

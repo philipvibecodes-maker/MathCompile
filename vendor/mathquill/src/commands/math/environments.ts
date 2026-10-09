@@ -869,18 +869,23 @@ class Matrix extends CellGrid {
     const frag = this.replacedFragment;
     const fragLatex = frag ? frag.fold('', (s, n) => s + n.latex()) : '';
     // Put the caret back in the gap the command occupied in case focus
-    // moved while the menu was open.
+    // moved while the menu was open — this also re-anchors the cursor
+    // element, which can be parked inside the wrapper residue.
     const restoreCaret = () => {
       if (left && (left as MQNode).parent === parent)
         cursor.insRightOf(left as MQNode);
       else if (!left) cursor.insAtLeftEnd(parent);
     };
-    // A replaced selection's blurred DOM stays inside the resolved
-    // command-input wrapper residue; once its latex is written back in
-    // (or re-parsed into the grid) the orphaned nodes must go, or they
-    // render as a grayed ghost before the grid.
-    const removeGhost = () => {
-      if (frag) frag.domFrag().remove();
+    // The resolved command input leaves its wrapper behind holding the
+    // blurred selection DOM; remove it once the caret is re-anchored or
+    // it renders as a grayed ghost and swallows DOM writes.
+    const removeResidue = () => {
+      const rootEl = parent.domFrag().oneElement() as
+        | HTMLElement
+        | undefined;
+      rootEl
+        ?.querySelector(':scope > .mq-latex-command-input-wrapper')
+        ?.remove();
     };
     ctrlr.container.dispatchEvent(
       new CustomEvent('mq:matrix-request', {
@@ -890,6 +895,7 @@ class Matrix extends CellGrid {
             open.match(/^\\begin\{([a-zA-Z]+)/)?.[1] ?? 'matrix',
           insert: (rows: number, cols: number) => {
             restoreCaret();
+            removeResidue();
             const cells = Math.max(1, cols);
             // A replaced selection goes in the first cell only — the
             // remaining rows are empty.
@@ -904,23 +910,15 @@ class Matrix extends CellGrid {
                   .join('\\\\') +
                 close
             );
-            removeGhost();
             const grid = cursor[L] as MQNode;
             if (grid instanceof MathCommand) grid.placeCursor(cursor);
           },
           cancel: () => {
             restoreCaret();
-            // Put a replaced selection's own nodes back in the gap —
-            // the same adopt/insertBefore move the normal path makes
-            // into the first cell (writeLatex would anchor to the
-            // cursor element still parked inside the dead wrapper).
-            if (frag) {
-              frag.domFrag().removeClass('mq-blur');
-              frag.adopt(parent, cursor[L] as NodeRef, cursor[R] as NodeRef);
-              frag.domFrag().insertBefore(cursor.domFrag());
-              cursor.insRightOf(frag.getEnd(R) as MQNode);
-              parent.bubble((n) => n.reflow());
-            }
+            removeResidue();
+            // Restore a replaced selection's text at the gap; without
+            // one, cancel just clears the dead command DOM.
+            if (fragLatex) ctrlr.writeLatex(fragLatex);
           }
         }
       })
