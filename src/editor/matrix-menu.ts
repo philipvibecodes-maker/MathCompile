@@ -17,6 +17,9 @@ const DEFAULT_DIM = 2;
 interface MatrixInsertDetail {
   env: string;
   insert: (rows: number, cols: number) => void;
+  // Restores a replaced selection's text at the command's gap; a no-op
+  // when nothing was selected.
+  cancel?: () => void;
 }
 
 const clampDim = (value: string) => {
@@ -56,14 +59,17 @@ export function attachMatrixMenu(field: MathFieldElement) {
   let pending: MatrixInsertDetail | null = null;
 
   const close = (refocus = false) => {
+    const detail = pending;
     wrap.hidden = true;
     pending = null;
+    detail?.cancel?.();
     if (refocus) field.mq?.focus();
   };
 
   const commit = () => {
     const detail = pending;
-    close();
+    wrap.hidden = true;
+    pending = null;
     if (!detail) return;
     detail.insert(clampDim(rows.value), clampDim(cols.value));
     field.mq?.focus();

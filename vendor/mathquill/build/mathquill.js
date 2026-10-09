@@ -14207,22 +14207,34 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             var open = this.latexOpen();
             var close = this.latexClose();
             var frag = this.replacedFragment;
+            var fragLatex = frag ? frag.fold('', function (s, n) { return s + n.latex(); }) : '';
+            // Put the caret back in the gap the command occupied in case focus
+            // moved while the menu was open.
+            var restoreCaret = function () {
+                if (left && left.parent === parent)
+                    cursor.insRightOf(left);
+                else if (!left)
+                    cursor.insAtLeftEnd(parent);
+            };
+            // A replaced selection's blurred DOM stays inside the resolved
+            // command-input wrapper residue; once its latex is written back in
+            // (or re-parsed into the grid) the orphaned nodes must go, or they
+            // render as a grayed ghost before the grid.
+            var removeGhost = function () {
+                if (frag)
+                    frag.domFrag().remove();
+            };
             ctrlr.container.dispatchEvent(new CustomEvent('mq:matrix-request', {
                 bubbles: true,
                 detail: {
                     env: (_d = (_c = open.match(/^\\begin\{([a-zA-Z]+)/)) === null || _c === void 0 ? void 0 : _c[1]) !== null && _d !== void 0 ? _d : 'matrix',
                     insert: function (rows, cols) {
-                        // Put the caret back in the gap the command occupied in
-                        // case focus moved while the menu was open.
-                        if (left && left.parent === parent)
-                            cursor.insRightOf(left);
-                        else if (!left)
-                            cursor.insAtLeftEnd(parent);
+                        restoreCaret();
                         var cells = Math.max(1, cols);
                         // A replaced selection goes in the first cell only \u2014 the
                         // remaining rows are empty.
                         var empty = new Array(cells).fill('').join('&');
-                        var first = [frag ? frag.fold('', function (s, n) { return s + n.latex(); }) : '']
+                        var first = [fragLatex]
                             .concat(new Array(cells - 1).fill(''))
                             .join('&');
                         ctrlr.writeLatex(open +
@@ -14230,12 +14242,22 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                                 .concat(new Array(Math.max(0, rows - 1)).fill(empty))
                                 .join('\\\\') +
                             close);
+                        removeGhost();
                         var grid = cursor[L];
                         if (grid instanceof MathCommand)
                             grid.placeCursor(cursor);
+                    },
+                    cancel: function () {
+                        restoreCaret();
+                        if (fragLatex)
+                            ctrlr.writeLatex(fragLatex);
+                        removeGhost();
                     }
                 }
             }));
+            // The deferred resolution leaves the input already removed \u2014 resync
+            // the edit handler now or the store keeps the raw `\pmatrix`.
+            ctrlr.handle('edit');
         };
         return Matrix;
     }(CellGrid));

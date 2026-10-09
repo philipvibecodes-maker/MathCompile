@@ -867,6 +867,21 @@ class Matrix extends CellGrid {
     const open = this.latexOpen();
     const close = this.latexClose();
     const frag = this.replacedFragment;
+    const fragLatex = frag ? frag.fold('', (s, n) => s + n.latex()) : '';
+    // Put the caret back in the gap the command occupied in case focus
+    // moved while the menu was open.
+    const restoreCaret = () => {
+      if (left && (left as MQNode).parent === parent)
+        cursor.insRightOf(left as MQNode);
+      else if (!left) cursor.insAtLeftEnd(parent);
+    };
+    // A replaced selection's blurred DOM stays inside the resolved
+    // command-input wrapper residue; once its latex is written back in
+    // (or re-parsed into the grid) the orphaned nodes must go, or they
+    // render as a grayed ghost before the grid.
+    const removeGhost = () => {
+      if (frag) frag.domFrag().remove();
+    };
     ctrlr.container.dispatchEvent(
       new CustomEvent('mq:matrix-request', {
         bubbles: true,
@@ -874,16 +889,12 @@ class Matrix extends CellGrid {
           env:
             open.match(/^\\begin\{([a-zA-Z]+)/)?.[1] ?? 'matrix',
           insert: (rows: number, cols: number) => {
-            // Put the caret back in the gap the command occupied in
-            // case focus moved while the menu was open.
-            if (left && (left as MQNode).parent === parent)
-              cursor.insRightOf(left as MQNode);
-            else if (!left) cursor.insAtLeftEnd(parent);
+            restoreCaret();
             const cells = Math.max(1, cols);
             // A replaced selection goes in the first cell only — the
             // remaining rows are empty.
             const empty = new Array(cells).fill('').join('&');
-            const first = [frag ? frag.fold('', (s, n) => s + n.latex()) : '']
+            const first = [fragLatex]
               .concat(new Array(cells - 1).fill(''))
               .join('&');
             ctrlr.writeLatex(
@@ -893,12 +904,21 @@ class Matrix extends CellGrid {
                   .join('\\\\') +
                 close
             );
+            removeGhost();
             const grid = cursor[L] as MQNode;
             if (grid instanceof MathCommand) grid.placeCursor(cursor);
+          },
+          cancel: () => {
+            restoreCaret();
+            if (fragLatex) ctrlr.writeLatex(fragLatex);
+            removeGhost();
           }
         }
       })
     );
+    // The deferred resolution leaves the input already removed — resync
+    // the edit handler now or the store keeps the raw `\pmatrix`.
+    ctrlr.handle('edit');
   }
 }
 
