@@ -1271,3 +1271,45 @@ LatexCmds.tr = () =>
     'tr',
     'tr'
   );
+
+//======================================================================
+//  \D — insertion alias for \text{D} (total derivative)
+//======================================================================
+
+// Typing `\D` expands to a \text{D} TextBlock — an upright "D" the
+// compiler reads as the total-derivative operator (\frac{\D f}{\D x},
+// \D_x f); a plain italic D stays an ordinary symbol. `\D` isn't a real
+// LaTeX command, so pasted latex canonicalizes to \text{D} on the next
+// save — the same insertion-time expansion \def and \tr use.
+class TotalDAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{D}');
+  }
+}
+LatexCmds.D = () =>
+  new TotalDAlias(
+    '\\text{D}',
+    h('span', { class: 'mq-text-mode' }, [h.text('D')]) as HTMLElement,
+    'D',
+    'total derivative'
+  );
+
+//======================================================================
+//  \gradient — insertion alias for \nabla
+//======================================================================
+
+// Typing `\gradient` expands to the \nabla sign the compiler lowers to
+// a gradient (\nabla f) — a pasted `\gradient` renders the same ∇ glyph
+// and serializes as \nabla.
+class GradientAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\nabla ');
+  }
+}
+LatexCmds.gradient = () =>
+  new GradientAlias(
+    '\\nabla ',
+    h('span', {}, [h.entityText('&nabla;')]) as HTMLElement,
+    '∇',
+    'gradient'
+  );

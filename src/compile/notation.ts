@@ -682,6 +682,47 @@ export const NOTATION: Notation[] = [
       + 'atoms — there is no D command in the field',
   },
   {
+    name: 'TotalD',
+    heads: ['TotalD', 'D'],
+    commands: ['D'],
+    spellings: ['\\D f', '\\D(f)', '\\D_x f'],
+    probes: [
+      { latex: '\\D f', expect: 'sp.diff(f(x), x)' },
+      {
+        latex: '\\D(x*y)',
+        expect: 'sp.Matrix([x * y]).jacobian([x, y])',
+      },
+      { latex: '\\D_x f', expect: 'sp.diff(f(x), x)' },
+    ],
+    completion: {
+      name: 'D',
+      hint: 'total derivative',
+      preview: '\\D f',
+    },
+    note: '\\D is an insertion alias for \\text{D} — the bare mark is '
+      + 'the total derivative (the Jacobian, no variable); \\D_x f is '
+      + 'the partial in x; \\frac{\\D}{\\D} is not the notation',
+  },
+  {
+    name: 'Gradient',
+    heads: ['Gradient'],
+    commands: ['nabla', 'gradient'],
+    spellings: ['\\nabla f', '\\gradient f', '\\operatorname{grad} f'],
+    probes: [
+      {
+        latex: '\\nabla (x^2+y^2)',
+        expect: 'sp.derive_by_array(x**2 + y**2, [x, y])',
+      },
+    ],
+    completion: {
+      name: 'gradient',
+      hint: 'gradient ∇',
+      preview: '\\nabla f',
+    },
+    note: '\\nabla/\\gradient lower to \\operatorname{grad} — '
+      + '\\nabla\\cdot/\\times/\\nabla^2 stay unsupported-command errors',
+  },
+  {
     name: 'Def',
     heads: ['Def'],
     commands: ['def'],

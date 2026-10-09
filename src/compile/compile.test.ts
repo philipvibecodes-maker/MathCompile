@@ -170,6 +170,131 @@ const FIXTURES: {
     ],
   },
   {
+    // `\D f` — the TOTAL derivative: takes no variable; for a scalar
+    // field of x it is plain `diff`. `\text{D}` is what the field
+    // stores after the alias.
+    latex: '\\D f',
+    expectedIR: ['TotalD', 'f'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+      'sp.diff(f(x), x)',
+    ],
+  },
+  {
+    latex: '\\D(x*y)',
+    expectedIR: ['TotalD', ['Multiply', 'x', 'y']],
+    expectedPython: [
+      "x, y = sp.symbols('x y')",
+      'sp.Matrix([x * y]).jacobian([x, y])',
+    ],
+  },
+  {
+    // `\D^2 f` — the second total derivative.
+    latex: '\\D^2 f',
+    expectedIR: ['TotalD', 'f', 'Nothing', 2],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+      'sp.diff(f(x), x, 2)',
+    ],
+  },
+  {
+    // `\D_x f` — a PARTIAL in x: folds to the ordinary D head, so other
+    // symbols stay constants. Confusing notation, but that is how it is.
+    latex: '\\D_x f',
+    expectedIR: ['D', 'f', 'x'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+      'sp.diff(f(x), x)',
+    ],
+  },
+  {
+    latex: '\\D_x^2 f',
+    expectedIR: ['D', 'f', 'x', 2],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+      'sp.diff(f(x), x, 2)',
+    ],
+  },
+  {
+    latex: '\\D_t(x*y)',
+    expectedIR: ['D', ['Multiply', 'x', 'y'], 't'],
+    expectedPython: [
+      "x, y, t = sp.symbols('x y t')",
+      'sp.diff(x * y, t)',
+    ],
+  },
+  {
+    // `\frac{\D f}{\D x}` — not the total-derivative notation: flagged
+    // as an error, so the statement itself is dropped.
+    latex: '\\frac{\\text{D}y}{\\text{D}x}',
+    expectedIR: ['TotalD', 'y', 'x'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+    ],
+    issues: ['not the notation'],
+  },
+  {
+    latex: '\\frac{\\D f}{\\D x}',
+    expectedIR: ['TotalD', 'f', 'x'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+    ],
+    issues: ['not the notation'],
+  },
+  {
+    latex: '\\frac{\\D}{\\D x}f',
+    expectedIR: ['TotalD', 'f', 'x'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+    ],
+    issues: ['not the notation'],
+  },
+  {
+    // `\nabla`/`\gradient` lower to `\operatorname{grad}` pre-parse;
+    // a bare-name body reads as a field of one variable like `df/dx`.
+    latex: '\\nabla f',
+    expectedIR: ['Gradient', 'f'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+      'sp.derive_by_array(f(x), [x])',
+    ],
+  },
+  {
+    latex: '\\gradient f',
+    expectedIR: ['Gradient', 'f'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+      'sp.derive_by_array(f(x), [x])',
+    ],
+  },
+  {
+    latex: '\\nabla (x^2+y^2)',
+    expectedIR: [
+      'Gradient',
+      ['Add', ['Power', 'x', 2], ['Power', 'y', 2]],
+    ],
+    expectedPython: [
+      "x, y = sp.symbols('x y')",
+      'sp.derive_by_array(x**2 + y**2, [x, y])',
+    ],
+  },
+  {
+    // `\nabla \cdot F` and `\nabla^2` are divergence/laplacian, not the
+    // gradient — flagged honestly rather than guessed.
+    latex: '\\nabla \\cdot F',
+    expectedPython: ['F = sp.Symbol("F")'],
+    issues: ['unsupported command'],
+  },
+  {
     // A non-name "callee" is juxtaposed factors, not a call — emitting
     // `sqrt(x)(x + 1)` raised 'Pow' object is not callable in the worker.
     latex: '\\sqrt{x}(x+1)',

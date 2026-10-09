@@ -1679,6 +1679,193 @@ class Emitter {
           },
         );
       }
+      case 'TotalD': {
+        // `\D f` — the TOTAL derivative: the best linear approximation
+        // of f at a point, expressed as the Jacobian —
+        // `sp.derive_by_array`. It takes no variable: `\D_x f` is a
+        // partial and folds to the ordinary D path, and the
+        // `\frac{\D}{\D}` spelling is not the notation — flagged, with
+        // the plausible univariate derivative emitted as a fallback.
+        const body = args[0];
+        const v = args[1];
+        if (isStr(v) && !missingArg(v)) {
+          this.scope.flag(
+            'error',
+            '\\frac{\\D}{\\D} is not the notation — write \\D f for the total derivative or \\D_x f for the partial in x',
+          );
+          return this.scope.withLambdaBound([v], (): [string, number] => {
+            let f: string;
+            if (
+              isStr(body) &&
+              body !== v &&
+              !this.scope.decls.defined.has(body)
+            ) {
+              f = `${this.fn(body)}(${this.emit(v)})`;
+              this.scope.noteDepVar(body, [v]);
+            } else {
+              f = this.emit(body);
+            }
+            const x = this.emit(v);
+            return args.length >= 3
+              ? [
+                  `${this.sp}diff(${f}, ${x}, ${this.emit(args[2])})`,
+                  PREC_ATOM,
+                ]
+              : [`${this.sp}diff(${f}, ${x})`, PREC_ATOM];
+          });
+        }
+        // Bare `\D f` / `\D^n f` — the total derivative. `\D` applies to
+        // a function: one variable emits plain `sp.diff(body, v)` —
+        // SymPy differentiates matrices elementwise — and a multivariate
+        // scalar emits the Jacobian `sp.Matrix([body]).jacobian(vars)`.
+        let vars: string[];
+        let bodyIsFn = false;
+        if (isStr(body)) {
+          // `\D f` on a bare name — a field, not a symbol. Its recorded
+          // args define the variables; an undeclared f becomes f(x) —
+          // unless the name IS the variable (`\D x` → `diff(x, x)`),
+          // which must not mark x as a function of anything.
+          if (
+            this.scope.decls.defined.has(body) &&
+            !this.scope.decls.declaredFns.has(body)
+          ) {
+            this.scope.flag(
+              'error',
+              `${body} is bound to a value — not a field`,
+            );
+            return [
+              `${this.sp}diff(${this.emit(body)}, x)`,
+              PREC_ATOM,
+            ];
+          }
+          const recorded = this.scope.emit.fnArgs.get(body);
+          if (recorded !== undefined) {
+            vars = recorded.filter((a): a is string => isStr(a));
+            bodyIsFn = true;
+          } else if (this.scope.emit.matrices.has(body)) {
+            // `\D A` — differentiate the matrix entries: `diff` handles
+            // matrices elementwise.
+            vars = ['x'];
+          } else if (body === 'x') {
+            vars = ['x'];
+          } else {
+            this.fn(body);
+            this.scope.noteDepVar(body, ['x']);
+            vars = ['x'];
+            bodyIsFn = true;
+          }
+        } else {
+          vars = freeNames(body).filter(
+            (n) =>
+              !this.scope.decls.defined.has(n) &&
+              !this.scope.emit.matrices.has(n) &&
+              !this.scope.emit.functions.has(n) &&
+              !this.scope.decls.declaredFns.has(n) &&
+              !this.scope.kinds.depVars.has(n),
+          );
+        }
+        if (vars.length === 0) {
+          this.scope.flag('error', 'total derivative needs a free variable');
+          return [
+            `${this.sp}diff(${this.emit(body)}, x)`,
+            PREC_ATOM,
+          ];
+        }
+        // `\D^n f` — the nth total derivative. A non-integer order flags.
+        let order = 1;
+        const orderNode = v === 'Nothing' ? args[2] : undefined;
+        if (orderNode !== undefined) {
+          const n = typeof orderNode === 'number' ? orderNode : NaN;
+          if (Number.isInteger(n) && n >= 1) {
+            order = n;
+          } else {
+            this.scope.flag(
+              'error',
+              'higher-order total derivative needs a whole-number order',
+            );
+          }
+        }
+        const emitted = this.emit(body);
+        if (vars.length === 1) {
+          const x = this.emit(vars[0]);
+          return [
+            `${this.sp}diff(${emitted}, ${x}${
+              order > 1 ? `, ${order}` : ''
+            })`,
+            PREC_ATOM,
+          ];
+        }
+        // Multivariate — the Jacobian. `sp.Matrix(...).jacobian` needs a
+        // concrete matrix: a scalar body wraps as a 1×1, a matrix
+        // literal differentiates its entries directly.
+        const jac =
+          bodyIsFn || !isArr(body) || headOf(body) !== 'Matrix'
+            ? `${this.sp}Matrix([${emitted}])`
+            : emitted;
+        let out = `${jac}.jacobian([${vars
+          .map((sv) => this.sym(sv))
+          .join(', ')}])`;
+        for (let i = 1; i < order; i++)
+          out = `${out}.jacobian([${vars
+            .map((sv) => this.sym(sv))
+            .join(', ')}])`;
+        return [out, PREC_ATOM];
+      }
+      case 'Gradient': {
+        // `\nabla f` — the gradient: a row of partials over the body's
+        // free variables; `sp.derive_by_array` emits the textbook vector.
+        const body = args[0];
+        let vars: string[];
+        if (isStr(body)) {
+          // ∇f on a bare name — like `\frac{df}{dx}`: a field, not a
+          // symbol. Its recorded args define the variables; an
+          // undeclared f becomes f(x) of one variable.
+          if (
+            this.scope.decls.defined.has(body) &&
+            !this.scope.decls.declaredFns.has(body)
+          ) {
+            this.scope.flag(
+              'error',
+              `${body} is bound to a value — not a scalar field`,
+            );
+            return [
+              `${this.sp}derive_by_array(${this.emit(body)}, [])`,
+              PREC_ATOM,
+            ];
+          }
+          const recorded = this.scope.emit.fnArgs.get(body);
+          if (recorded !== undefined) {
+            vars = recorded.filter((a): a is string => isStr(a));
+          } else {
+            const v = body === 'x' ? 't' : 'x';
+            this.fn(body);
+            this.scope.noteDepVar(body, [v]);
+            vars = [v];
+          }
+        } else {
+          vars = freeNames(body).filter(
+            (n) =>
+              !this.scope.decls.defined.has(n) &&
+              !this.scope.emit.matrices.has(n) &&
+              !this.scope.emit.functions.has(n) &&
+              !this.scope.decls.declaredFns.has(n) &&
+              !this.scope.kinds.depVars.has(n),
+          );
+        }
+        if (vars.length === 0) {
+          this.scope.flag('error', 'gradient needs a free variable');
+          return [
+            `${this.sp}derive_by_array(${this.emit(body)}, [])`,
+            PREC_ATOM,
+          ];
+        }
+        return [
+          `${this.sp}derive_by_array(${this.emit(body)}, [${vars
+            .map((v) => this.sym(v))
+            .join(', ')}])`,
+          PREC_ATOM,
+        ];
+      }
       case 'Apply': {
         const callee = args[0];
         if (isHead(callee, 'InverseFunction')) {

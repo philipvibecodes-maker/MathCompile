@@ -10497,6 +10497,46 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.tr = function () {
         return new TrAlias('\\mathrm{tr}', h('span', { class: 'mq-roman' }, [h.text('tr')]), 'tr', 'tr');
     };
+    //======================================================================
+    //  \D \u2014 insertion alias for \text{D} (total derivative)
+    //======================================================================
+    // Typing `\D` expands to a \text{D} TextBlock \u2014 an upright "D" the
+    // compiler reads as the total-derivative operator (\frac{\D f}{\D x},
+    // \D_x f); a plain italic D stays an ordinary symbol. `\D` isn't a real
+    // LaTeX command, so pasted latex canonicalizes to \text{D} on the next
+    // save \u2014 the same insertion-time expansion \def and \tr use.
+    var TotalDAlias = /** @class */ (function (_super) {
+        __extends(TotalDAlias, _super);
+        function TotalDAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        TotalDAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{D}');
+        };
+        return TotalDAlias;
+    }(MQSymbol));
+    LatexCmds.D = function () {
+        return new TotalDAlias('\\text{D}', h('span', { class: 'mq-text-mode' }, [h.text('D')]), 'D', 'total derivative');
+    };
+    //======================================================================
+    //  \gradient \u2014 insertion alias for \nabla
+    //======================================================================
+    // Typing `\gradient` expands to the \nabla sign the compiler lowers to
+    // a gradient (\nabla f) \u2014 a pasted `\gradient` renders the same \u2207 glyph
+    // and serializes as \nabla.
+    var GradientAlias = /** @class */ (function (_super) {
+        __extends(GradientAlias, _super);
+        function GradientAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        GradientAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\nabla ');
+        };
+        return GradientAlias;
+    }(MQSymbol));
+    LatexCmds.gradient = function () {
+        return new GradientAlias('\\nabla ', h('span', {}, [h.entityText('&nabla;')]), '\u2207', 'gradient');
+    };
     // For backwards compatibility, set up the global MathQuill object as an instance of API interface v1
     if (window.jQuery) {
         MQ1 = getInterface(1);
