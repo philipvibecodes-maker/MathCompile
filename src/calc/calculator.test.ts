@@ -1041,6 +1041,15 @@ describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
     expect((rows[0] as { latex?: string }).latex).toBe('e^{x}');
   });
 
+  it('maps \\vert absolute bars to a pipe MathQuill renders', async () => {
+    // CE emits \ln(\vert x\vert) for integrate(1/x) — MathQuill shows
+    // "vertical bar" literally, so the interim maps it to a plain |.
+    const rows = await interimEvaluate('\\int\\frac{1}{x}dx');
+    const latex = (rows[0] as { latex?: string }).latex ?? '';
+    expect(latex).not.toContain('\\vert');
+    expect(latex).toContain('| x|');
+  });
+
   it('evaluates iterated integrals with per-level constants', async () => {
     const rows = await interimEvaluate('\\int\\int x dxdy');
     expect(rows[0].ok).toBe(true);

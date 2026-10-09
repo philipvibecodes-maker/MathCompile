@@ -329,7 +329,13 @@ const cleanLatex = (s: string): string =>
     .replaceAll('\\exponentialE', 'e')
     .replaceAll('\\imaginaryI', 'i')
     .replaceAll('\\lparen', '(')
-    .replaceAll('\\rparen', ')');
+    .replaceAll('\\rparen', ')')
+    .replaceAll('\\lvert', '|')
+    .replaceAll('\\rvert', '|')
+    .replaceAll('\\vert', '|')
+    .replaceAll('\\lVert', '\\|')
+    .replaceAll('\\rVert', '\\|')
+    .replaceAll('\\Vert', '\\|');
 
 // Constant-of-integration naming, mirroring codegen's nextConstName:
 // first capital absent from the used-name set — C, else D, E, … — via
