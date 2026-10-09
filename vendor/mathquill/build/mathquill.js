@@ -1270,6 +1270,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             var node = this;
             node.html();
             node.domFrag().insDirOf(dir, cursor.domFrag());
+            // MATHCOMPILE: a selection covering a root-filling grid's cells can
+            // leave the caret in a disowned subtree \u2014 anchor it before adopting.
+            cursor.reanchorIfStranded();
             cursor[dir] = node.adopt(cursor.parent, cursor[L], cursor[R]); // TODO - assuming not undefined, could be 0
             return node;
         };
@@ -2051,6 +2054,26 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             selection.remove();
             this.selectionChanged();
             delete this.selection;
+            this.reanchorIfStranded();
+        };
+        // MATHCOMPILE: a selection covering a root-filling grid's cells
+        // (\displaylines) removes or disowns those cells under the caret's
+        // parent and leaves its links stale \u2014 an insert would write into a
+        // detached subtree (or trip prayWellFormed). Re-park at the root's
+        // left edge when the caret's parent element left the root's DOM or
+        // its links no longer line up.
+        Cursor.prototype.reanchorIfStranded = function () {
+            var parent = this.parent, leftward = this[L], rightward = this[R], rootEl = this.controller.root.domFrag().oneElement(), intact = parent &&
+                rootEl.contains(parent.domFrag().oneElement()) &&
+                (leftward
+                    ? leftward.parent === parent && leftward[R] === rightward
+                    : parent.getEnd(L) === rightward) &&
+                (rightward
+                    ? rightward.parent === parent && rightward[L] === leftward
+                    : parent.getEnd(R) === leftward);
+            if (!intact)
+                this.insAtLeftEnd(this.controller.root);
+            return this;
         };
         Cursor.prototype.replaceSelection = function () {
             var seln = this.selection;

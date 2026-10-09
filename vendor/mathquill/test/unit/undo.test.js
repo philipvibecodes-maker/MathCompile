@@ -189,6 +189,20 @@ suite('multi-line cell keys', function () {
     assert.equal(mq.latex(), '');
   });
 
+  test('typing over a whole-cell selection does not strand the caret', function () {
+    // Ctrl-A covers all rows; deleting the selection removes the
+    // displaylines atom too, so the caret must re-park at the root
+    mq.latex('ab');
+    mq.insertLineBreak();
+    mq.typedText('cd');
+    assert.equal(mq.latex(), '\\displaylines{ab\\\\ cd}');
+    mq.keystroke('Ctrl-A');
+    mq.typedText('q');
+    assert.equal(mq.latex(), 'q');
+    mq.typedText('+r');
+    assert.equal(mq.latex(), 'q+r');
+  });
+
   test('Ctrl-Shift-Home/End do not hang inside a multi-line cell', function () {
     mq.latex('\\displaylines{ab\\\\ cd}');
     // used to loop forever via the root-edge snap; now selects back to

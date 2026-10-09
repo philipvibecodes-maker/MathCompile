@@ -189,6 +189,9 @@ class NodeBase {
     var node = this;
     node.html();
     node.domFrag().insDirOf(dir, cursor.domFrag());
+    // MATHCOMPILE: a selection covering a root-filling grid's cells can
+    // leave the caret in a disowned subtree — anchor it before adopting.
+    cursor.reanchorIfStranded();
     cursor[dir] = node.adopt(cursor.parent, cursor[L]!, cursor[R]!); // TODO - assuming not undefined, could be 0
     return node;
   }

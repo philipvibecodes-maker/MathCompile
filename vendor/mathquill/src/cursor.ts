@@ -379,6 +379,32 @@ class Cursor extends Point {
     selection.remove();
     this.selectionChanged();
     delete this.selection;
+
+    this.reanchorIfStranded();
+  }
+
+  // MATHCOMPILE: a selection covering a root-filling grid's cells
+  // (\displaylines) removes or disowns those cells under the caret's
+  // parent and leaves its links stale — an insert would write into a
+  // detached subtree (or trip prayWellFormed). Re-park at the root's
+  // left edge when the caret's parent element left the root's DOM or
+  // its links no longer line up.
+  reanchorIfStranded() {
+    var parent = this.parent,
+      leftward = this[L],
+      rightward = this[R],
+      rootEl = this.controller.root.domFrag().oneElement(),
+      intact =
+        parent &&
+        rootEl.contains(parent.domFrag().oneElement()) &&
+        (leftward
+          ? leftward.parent === parent && leftward[R] === rightward
+          : parent.getEnd(L) === rightward) &&
+        (rightward
+          ? rightward.parent === parent && rightward[L] === leftward
+          : parent.getEnd(R) === leftward);
+    if (!intact) this.insAtLeftEnd(this.controller.root);
+    return this;
   }
   replaceSelection() {
     var seln = this.selection;

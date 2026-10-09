@@ -108,6 +108,21 @@ test('Ctrl+A selects the whole multi-line cell', async ({ page }) => {
   await expect(mf).toHaveJSProperty('value', '');
 });
 
+test('typing over a whole-cell selection replaces it', async ({ page }) => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('x+y', { delay: 20 });
+  await page.keyboard.press('Enter');
+  await mf.pressSequentially('z', { delay: 20 });
+  await page.keyboard.press('ControlOrMeta+A');
+  await mf.pressSequentially('q', { delay: 20 });
+  // the selection covered every line; deleting it removes the
+  // displaylines atom, so the caret must re-park — not strand inside
+  // the detached subtree where typing writes nowhere
+  await expect(mf).toHaveJSProperty('value', 'q');
+  await mf.pressSequentially('+r', { delay: 20 });
+  await expect(mf).toHaveJSProperty('value', 'q+r');
+});
+
 test('Ctrl+Z / Ctrl+Shift+Z undo and redo edits', async ({ page }) => {
   const mf = page.locator('math-field').first();
   await mf.pressSequentially('a+b', { delay: 20 });

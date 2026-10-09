@@ -196,7 +196,16 @@ Inline `// MATHCOMPILE:` edits, by file:
   the field edges: `insDirOf`/`insAtDirEnd` re-descend to the first
   line's start / last line's end instead of leaving the caret beside
   the vertically-centered block (`Cursor::rootEdgeEnd`, keyed off
-  `DisplayLines.fillsRootEdge`).
+  `DisplayLines.fillsRootEdge`). `Cursor::reanchorIfStranded`
+  re-parks the caret at the root's left edge when its parent is
+  detached or its links no longer line up — deleting a selection that
+  covers a root-filling grid's cells used to strand the caret inside
+  the disowned subtree (typing wrote nowhere); `deleteSelection`
+  calls it directly.
+- `src/tree.ts` — `createDir` calls `cursor.reanchorIfStranded()`
+  before `adopt` so the same stranded-caret case can't trip
+  `prayWellFormed` on inserts that replaced the selection via
+  `replaceSelection`/`disown` instead of `deleteSelection`.
 - `src/commands/math/advancedSymbols.ts` — also: `\mapsto` is a
   `bindBinaryOperator` (relation spacing like `\to`), not a
   `VanillaSymbol`.
