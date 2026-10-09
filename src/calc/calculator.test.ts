@@ -950,6 +950,104 @@ describe('codegen edge cases', () => {
   });
 });
 
+describe('function applied to a set emits its image', () => {
+  it('maps a defd function elementwise over a set arg', () => {
+    // f(\{1,2,3\}) is the image {f(1), f(2), f(3)} — f(FiniteSet) would
+    // raise TypeError at exec.
+    const prog = calcAll(
+      '\\text{def} f(x) = x^2',
+      'f\\left(\\{1,2,3\\}\\right)',
+    );
+    expect(prog.cells[1].statements).toEqual([
+      {
+        code: F(
+          'sp.imageset(sp.Lambda(sp.Symbol("_a0"), f(sp.Symbol("_a0"))), sp.FiniteSet(1, 2, 3))',
+        ),
+        display: undefined,
+      },
+    ]);
+  });
+
+  it('maps a call-tier function name elementwise', () => {
+    const p = calc('\\operatorname{foo}\\left(\\{1,2\\}\\right)');
+    expect(p.prelude).toContain('foo = sp.Function("foo")');
+    expect(p.statements[0]?.code).toBe(
+      F(
+        'sp.imageset(sp.Lambda(sp.Symbol("_a0"), foo(sp.Symbol("_a0"))), sp.FiniteSet(1, 2))',
+      ),
+    );
+  });
+
+  it('maps over a set-bound name the same way', () => {
+    const prog = calcAll(
+      'S = \\{1,2,3\\}',
+      '\\text{def} f(x) = x^2',
+      'f\\left(S\\right)',
+    );
+    expect(prog.cells[2].statements[0]?.code).toBe(
+      F('sp.imageset(sp.Lambda(sp.Symbol("_a0"), f(sp.Symbol("_a0"))), S)'),
+    );
+  });
+
+  it('keeps non-set args fixed and maps several sets over their product', () => {
+    const prog = calcAll(
+      '\\text{def} g(x,y) = x + y',
+      'g\\left(\\{1,2\\}, y\\right)',
+      'g\\left(\\{1,2\\}, \\{3,4\\}\\right)',
+    );
+    expect(prog.cells[1].statements[0]?.code).toBe(
+      F(
+        'sp.imageset(sp.Lambda(sp.Symbol("_a0"), g(sp.Symbol("_a0"), y)), sp.FiniteSet(1, 2))',
+      ),
+    );
+    expect(prog.cells[2].statements[0]?.code).toBe(
+      F(
+        'sp.imageset(sp.Lambda((sp.Symbol("_a0"), sp.Symbol("_a1")), g(sp.Symbol("_a0"), sp.Symbol("_a1"))), sp.FiniteSet(1, 2), sp.FiniteSet(3, 4))',
+      ),
+    );
+  });
+
+  it('maps over infinite and compound set args', () => {
+    const prog = calcAll(
+      '\\text{def} f(x) = x^2',
+      'f\\left(\\mathbb{R}\\right)',
+      'f\\left(\\{1,2\\} \\cup \\{3\\}\\right)',
+    );
+    expect(prog.cells[1].statements[0]?.code).toBe(
+      F('sp.imageset(sp.Lambda(sp.Symbol("_a0"), f(sp.Symbol("_a0"))), sp.S.Reals)'),
+    );
+    expect(prog.cells[2].statements[0]?.code).toBe(
+      F(
+        'sp.imageset(sp.Lambda(sp.Symbol("_a0"), f(sp.Symbol("_a0"))), sp.Union(sp.FiniteSet(1, 2), sp.FiniteSet(3)))',
+      ),
+    );
+  });
+
+  it('maps a derivative or lambda callee over the set', () => {
+    const prog = calcAll(
+      '\\text{def} f(x) = x^2',
+      "f'\\left(\\{1,2\\}\\right)",
+      '\\left(x \\mapsto x^2\\right)\\left(\\{3,4\\}\\right)',
+    );
+    expect(prog.cells[1].statements[0]?.code).toBe(
+      F('sp.imageset(sp.Lambda(x, sp.diff(f(x), x)), sp.FiniteSet(1, 2))'),
+    );
+    expect(prog.cells[2].statements[0]?.code).toBe(
+      F(
+        'sp.imageset(sp.Lambda(sp.Symbol("_a0"), sp.Lambda(x, x**2)(sp.Symbol("_a0"))), sp.FiniteSet(3, 4))',
+      ),
+    );
+  });
+
+  it('maps an inverse function over the set', () => {
+    expect(calc('\\sin^{-1}\\left(\\{0,1\\}\\right)').statements[0]?.code).toBe(
+      F(
+        'sp.imageset(sp.Lambda(sp.Symbol("_a0"), sp.asin(sp.Symbol("_a0"))), sp.FiniteSet(0, 1))',
+      ),
+    );
+  });
+});
+
 describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
   it('evaluates arithmetic to its latex form', async () => {
     expect(await interimEvaluate('2+2')).toEqual([{ ok: true, latex: '4' }]);
