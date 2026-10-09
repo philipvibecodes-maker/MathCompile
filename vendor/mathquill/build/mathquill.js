@@ -14230,8 +14230,19 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 detail: {
                     env: (_d = (_c = open.match(/^\\begin\{([a-zA-Z]+)/)) === null || _c === void 0 ? void 0 : _c[1]) !== null && _d !== void 0 ? _d : 'matrix',
                     insert: function (rows, cols) {
+                        // The consumed selection stays referenced on the cursor \u2014
+                        // drop it or the next blur's endSelection() re-arms
+                        // setTextareaSelection, whose textarea.select() steals
+                        // focus back (observed as Shift+Enter landing on this
+                        // field instead of the new cell).
+                        cursor.clearSelection();
                         restoreCaret();
                         removeResidue();
+                        // Reset the textarea's shadow selection state \u2014 the flag
+                        // armed when the user selected the replaced text would
+                        // otherwise survive and make the next keydown's
+                        // guardedTextareaSelect steal focus back to this field.
+                        ctrlr.setTextareaSelection();
                         var cells = Math.max(1, cols);
                         // A replaced selection goes in the first cell only \u2014 the
                         // remaining rows are empty.
@@ -14249,8 +14260,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                             grid.placeCursor(cursor);
                     },
                     cancel: function () {
+                        cursor.clearSelection();
                         restoreCaret();
                         removeResidue();
+                        ctrlr.setTextareaSelection();
                         // Restore a replaced selection's text at the gap; without
                         // one, cancel just clears the dead command DOM.
                         if (fragLatex)

@@ -894,8 +894,19 @@ class Matrix extends CellGrid {
           env:
             open.match(/^\\begin\{([a-zA-Z]+)/)?.[1] ?? 'matrix',
           insert: (rows: number, cols: number) => {
+            // The consumed selection stays referenced on the cursor —
+            // drop it or the next blur's endSelection() re-arms
+            // setTextareaSelection, whose textarea.select() steals
+            // focus back (observed as Shift+Enter landing on this
+            // field instead of the new cell).
+            cursor.clearSelection();
             restoreCaret();
             removeResidue();
+            // Reset the textarea's shadow selection state — the flag
+            // armed when the user selected the replaced text would
+            // otherwise survive and make the next keydown's
+            // guardedTextareaSelect steal focus back to this field.
+            ctrlr.setTextareaSelection();
             const cells = Math.max(1, cols);
             // A replaced selection goes in the first cell only — the
             // remaining rows are empty.
@@ -914,8 +925,10 @@ class Matrix extends CellGrid {
             if (grid instanceof MathCommand) grid.placeCursor(cursor);
           },
           cancel: () => {
+            cursor.clearSelection();
             restoreCaret();
             removeResidue();
+            ctrlr.setTextareaSelection();
             // Restore a replaced selection's text at the gap; without
             // one, cancel just clears the dead command DOM.
             if (fragLatex) ctrlr.writeLatex(fragLatex);
