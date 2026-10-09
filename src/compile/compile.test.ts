@@ -897,6 +897,17 @@ const FIXTURES: {
     ],
   },
   {
+    // A function applied to a set emits its image — imageset maps the
+    // call elementwise (f(FiniteSet) would raise TypeError at exec).
+    latex:
+      '\\displaylines{\\text{def} f(x) = x^2\\\\ f\\left(\\{1,2,3\\}\\right)}',
+    expectedPython: [
+      'def f(x):',
+      '    return x**2',
+      'sp.imageset(sp.Lambda(sp.Symbol("_a0"), f(sp.Symbol("_a0"))), sp.FiniteSet(1, 2, 3))',
+    ],
+  },
+  {
     // f'(0)/f'(\pi): sp.diff can't take a literal/constant as its
     // variable — diff at a fresh symbol, then substitute the point.
     latex: "f'(0)",

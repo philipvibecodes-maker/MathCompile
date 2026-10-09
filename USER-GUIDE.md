@@ -218,6 +218,11 @@ complex), `\cup` / `\cap` / `\setminus` become `Union` /
 sets on both sides — SymPy can't name an unknown set, so bare symbols
 get an `!` error note.
 
+Applying a function to a set gives the image: `f(\{1,2,3\})` evaluates
+to `\{f(1), f(2), f(3)\}` (and `\{1,4,9\}` when `f` is defined). Other
+arguments stay fixed — `g(\{1,2\}, y)` maps over the set with `y` free —
+and several set arguments map over their Cartesian product.
+
 ### Logic
 
 | You want | Type | Renders |

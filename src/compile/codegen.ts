@@ -687,9 +687,8 @@ class Emitter {
       // position (`g(f)`, `sin(f)`) is handled in applyArgs, which emits
       // the unapplied eta form `sp.Lambda(x, f(x))`. The emitting guard
       // breaks f/g mutual-reference cycles on the second hop.
-      return this.scope.withEmitting(
-        name,
-        () => `${ident}(${argNodes.map((a) => this.emit(a)).join(', ')})`,
+      return this.scope.withEmitting(name, () =>
+        this.callOrImage(argNodes, (ps) => `${ident}(${ps.join(', ')})`),
       );
     }
     if (this.scope.decls.defined.has(name)) return pyIdent(name);
@@ -1069,6 +1068,37 @@ class Emitter {
       }
     }
     return this.emit(a);
+  }
+
+  /** Emit a function applied to `callArgs` — the image
+   * `imageset(Lambda(…), …)` when an arg is a set: `f(\{1,2\})` maps f
+   * elementwise (`{f(1), f(2)}`), several set args map over their
+   * Cartesian product, and non-set args stay fixed in the Lambda body.
+   * Lambda params are synthesized `_a{i}` names — a free `x` beside a
+   * set (`g(\{1,2\}, x)`) isn't captured. `apply` builds the call from
+   * emitted arg strings; `argEmit` is callArg where the call site
+   * eta-expands function args. */
+  private callOrImage(
+    callArgs: MathJson[],
+    apply: (params: string[]) => string,
+    argEmit: (a: MathJson) => string = (a) => this.emit(a),
+  ): string {
+    if (!callArgs.some((a) => this.isSetish(a)))
+      return apply(callArgs.map((a) => argEmit(a)));
+    const setParams: string[] = [];
+    const params = callArgs.map((a, i) => {
+      if (!this.isSetish(a)) return argEmit(a);
+      const p = `${this.sp}Symbol("_a${i}")`;
+      setParams.push(p);
+      return p;
+    });
+    const sig =
+      setParams.length === 1 ? setParams[0] : `(${setParams.join(', ')})`;
+    const sets = callArgs
+      .filter((a) => this.isSetish(a))
+      .map((a) => this.emit(a))
+      .join(', ');
+    return `${this.sp}imageset(${this.sp}Lambda(${sig}, ${apply(params)}), ${sets})`;
   }
 
   /** Emit `node`, wrapping in parens when its precedence is below minPrec. */
@@ -1873,12 +1903,25 @@ class Emitter {
           // inverse(f)(x)-style row instead of InverseFunction garbage.
           const base = callee[1];
           const mapped = isStr(base) ? INVERSE_FUNCS[base] : undefined;
-          const argList = args.slice(1).map((a) => this.callArg(a)).join(', ');
-          if (base === 'Sqrt')
-            return [`(${argList})**2`, PREC_POW];
-          if (mapped) return [`${this.sp}${mapped}(${argList})`, PREC_ATOM];
-          const name = isStr(base) ? `${base}inv` : 'inverse';
-          return [`${this.sp}Function(${JSON.stringify(name)})(${argList})`, PREC_ATOM];
+          const applyInverse = (ps: string[]): string =>
+            base === 'Sqrt'
+              ? `(${ps.join(', ')})**2`
+              : mapped
+                ? `${this.sp}${mapped}(${ps.join(', ')})`
+                : `${this.sp}Function(${JSON.stringify(
+                    isStr(base) ? `${base}inv` : 'inverse',
+                  )})(${ps.join(', ')})`;
+          const text = this.callOrImage(
+            args.slice(1),
+            applyInverse,
+            (a) => this.callArg(a),
+          );
+          return [
+            text,
+            base === 'Sqrt' && !args.slice(1).some((a) => this.isSetish(a))
+              ? PREC_POW
+              : PREC_ATOM,
+          ];
         }
         if (isHead(callee, 'Derivative')) {
           // f'(x): ["Apply", ["Derivative", f, n], x] — the prime
@@ -1947,7 +1990,12 @@ class Emitter {
           );
           let text = `${this.sp}diff(${applied(vars)}, ${diffBy(vars.join(', '))})`;
           argNodes.forEach((a, i) => {
-            if (!isVar(a)) text = `${text}.subs(${vars[i]}, ${this.emit(a)})`;
+            if (isVar(a)) return;
+            // `f'(\{1,2\})` — a set evaluation point maps the derivative
+            // elementwise; subs would hand it the whole set.
+            if (this.isSetish(a))
+              text = `${this.sp}imageset(${this.sp}Lambda(${vars[i]}, ${text}), ${this.emit(a)})`;
+            else text = `${text}.subs(${vars[i]}, ${this.emit(a)})`;
           });
           return [text, PREC_ATOM];
         }
@@ -1955,8 +2003,15 @@ class Emitter {
           // `(x \mapsto x^2)(3)` — a lambda callee is a real call, not
           // juxtaposed factors (the generic multiply path below would
           // emit `(lambda ...) * 3`, a TypeError at exec).
-          const argList = args.slice(1).map((a) => this.callArg(a)).join(', ');
-          return [`${this.emit(callee)}(${argList})`, PREC_ATOM];
+          const lambda = this.emit(callee);
+          return [
+            this.callOrImage(
+              args.slice(1),
+              (ps) => `${lambda}(${ps.join(', ')})`,
+              (a) => this.callArg(a),
+            ),
+            PREC_ATOM,
+          ];
         }
         if (!isStr(callee)) {
           // A non-name "callee" isn't a call — `\sqrt{x}(x+1)`, `2(x+1)`,
@@ -1975,7 +2030,9 @@ class Emitter {
         const fnArgs = args.slice(1).filter((a) => a !== callee);
         this.scope.noteCallArgs(callee, fnArgs);
         return [
-          `${calleeText}(${args.slice(1).map((a) => this.emit(a)).join(', ')})`,
+          this.callOrImage(args.slice(1), (ps) =>
+            `${calleeText}(${ps.join(', ')})`,
+          ),
           PREC_ATOM,
         ];
       }
@@ -2783,7 +2840,14 @@ class Emitter {
           // self-reference can't recurse).
           const fnArgs = args.slice(1).filter((a) => a !== name);
           this.scope.noteCallArgs(name, fnArgs);
-          return [`${this.fn(name)}(${rendered})`, PREC_ATOM];
+          return [
+            this.callOrImage(
+              args.slice(1),
+              (ps) => `${this.fn(name)}(${ps.join(', ')})`,
+              (a) => this.callArg(a),
+            ),
+            PREC_ATOM,
+          ];
         }
         return [`${this.sp}${pyIdent(name)}(${rendered})`, PREC_ATOM];
       }
