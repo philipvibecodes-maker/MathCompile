@@ -1183,6 +1183,24 @@ describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
     ]);
   });
 
+  it('does not leak `name = rhs` bindings into later cells', async () => {
+    // Each call gets a fresh engine — an `a = 5` in one cell can't bind
+    // `a` in another's interim (CE Assign survives popScope on a shared
+    // engine, which flipped earlier cells' +C to +7 in the UI).
+    expect(await interimEvaluate('a = 5')).toEqual([
+      { ok: true, latex: 'a=5' },
+    ]);
+    expect(await interimEvaluate('a+1')).toEqual([
+      { ok: true, latex: 'a+1' },
+    ]);
+  });
+
+  it('shows no interim row for a \\python cell', async () => {
+    // PythonSource is a statement the interim can't evaluate — boxing
+    // it would echo PythonSource(...) junk; silent-empty instead.
+    expect(await interimEvaluate('\\python{x = 3\nx * 2}')).toEqual([]);
+  });
+
   it('reserves declared names from cells above for + C letters', async () => {
     // With `C = 7` bound above, the real engine picks D for the
     // constant of integration — interim must match.

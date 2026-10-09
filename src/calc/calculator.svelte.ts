@@ -292,8 +292,6 @@ export function prewarm(): void {
   ensureWorker();
 }
 
-let interimCE: ComputeEngine | undefined;
-
 const isArr = (v: MathJson | undefined): v is MathJson[] => Array.isArray(v);
 const headOf = (v: MathJson | undefined): string | undefined =>
   isArr(v) && typeof v[0] === 'string' ? v[0] : undefined;
@@ -312,6 +310,9 @@ const SKIP_HEADS = new Set([
   // would echo a \mathrm{Minimum}(body, var) guess.
   'Minimum',
   'Maximum',
+  // \python{...} cells parse to PythonSource — boxing it echoes
+  // PythonSource(...) junk.
+  'PythonSource',
 ]);
 const hasHead = (n: MathJson): boolean =>
   isArr(n) && (SKIP_HEADS.has(headOf(n) ?? '') || n.slice(1).some(hasHead));
@@ -572,26 +573,25 @@ export async function interimEvaluate(
       else if (isArr(n)) for (const c of n) reserve(c);
     };
     reserve(ir);
-    const engine = (interimCE ??= new ComputeEngine());
+    // Fresh engine per call — CE `Assign` bindings survive popScope on
+    // a shared engine (verified: pushScope → Assign → popScope still
+    // evaluates the name), so a reused singleton would leak `name = rhs`
+    // rows into every other cell's interim.
+    const engine = new ComputeEngine();
     const nextConst = takeConstFrom(used);
-    // A pushed scope contains each `name = rhs` binding — a row below
-    // sees it (a = 5 \\ a+1 → 6), but nothing leaks into other cells
-    // or later evals.
-    engine.pushScope();
-    try {
-      return statements
-        .map((s): CalcRow | null => {
-          try {
-            return evalStatement(s, engine, nextConst);
-          } catch {
-            // A statement CE can't read shouldn't sink the other rows.
-            return null;
-          }
-        })
-        .filter((r): r is CalcRow => r !== null);
-    } finally {
-      engine.popScope();
-    }
+    // `name = rhs` binds inside the per-call engine — a row below sees
+    // it (a = 5 \\ a+1 → 6) and nothing leaks into other cells or
+    // later evals.
+    return statements
+      .map((s): CalcRow | null => {
+        try {
+          return evalStatement(s, engine, nextConst);
+        } catch {
+          // A statement CE can't read shouldn't sink the other rows.
+          return null;
+        }
+      })
+      .filter((r): r is CalcRow => r !== null);
   } catch {
     return [];
   }
