@@ -1417,6 +1417,16 @@ describe('calculator import-* mode (from sympy import *)', () => {
     );
   });
 
+  it('emits an unqualified imageset for a function applied to a set', () => {
+    const prog = calcAllStar(
+      '\\text{def} f(x) = x^2',
+      'f\\left(\\{1,2,3\\}\\right)',
+    );
+    expect(prog.cells[1].statements[0].code).toBe(
+      F('imageset(Lambda(Symbol("_a0"), f(Symbol("_a0"))), FiniteSet(1, 2, 3))'),
+    );
+  });
+
   it('shared-scope defs stay unqualified down the worksheet', () => {
     const prog = calcAllStar('a = 5', 'a + 1');
     expect(prog.cells[0].statements).toEqual([
