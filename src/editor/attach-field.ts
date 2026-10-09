@@ -70,8 +70,15 @@ export function attachField(
   // must always land the user back in the input.
   const handleFocusOut = (e: FocusEvent) => {
     cb.onCaretContext?.(null);
-    if (e.relatedTarget === null && !pointerRecentlyDown())
-      el.mq?.focus();
+    if (e.relatedTarget !== null || pointerRecentlyDown()) return;
+    // Vimium's Escape blurs to nowhere — but a blur-to-nothing can
+    // also arrive mid-transfer while focus is heading to another cell
+    // (Shift+Enter's new-cell handoff). Defer a tick and only refocus
+    // if focus is still stranded by then.
+    setTimeout(() => {
+      const ae = document.activeElement;
+      if (ae === document.body || ae === el || ae === null) el.mq?.focus();
+    });
   };
 
   // move-out: hop cells on vertical edges; skip selection extensions
