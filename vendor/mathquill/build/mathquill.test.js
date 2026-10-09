@@ -12064,6 +12064,14 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     // into the code.
                     if (cmd instanceof PythonBlock && ch === '{')
                         return;
+                    // MATHCOMPILE: same swallow when a matrix defers to the
+                    // dimensions menu — a `\pmatrix{` typed while the menu is open
+                    // would leave a stray brace beside the grid the menu inserts.
+                    if (ch === '{' &&
+                        cmd instanceof CellGrid &&
+                        cmd.dimsMenu &&
+                        cursor.options.matrixDimensionsMenu)
+                        return;
                     if (ch !== '\\' || !this.isEmpty())
                         cursor.parent.write(cursor, ch);
                     else
@@ -13707,7 +13715,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 else
                     cursor.insAtRightEnd(beginNode.parent);
                 node.createLeftOf(cursor.show());
-                if (grid && node === grid)
+                // A grid deferred to the matrix-dimensions menu was never
+                // adopted (no parent) — there is no first cell to land in.
+                if (grid && node === grid && grid.parent)
                     cursor.insAtLeftEnd(grid.getEnd(L));
             };
             var origWrite = nameBlock.write;
@@ -13774,6 +13784,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             _this_1.rowSize = 0;
             _this_1.gridClass = 'mq-matrix mq-non-leaf';
             _this_1.cellTextAlign = 'center';
+            // MATHCOMPILE: set on the matrix family — a typed command defers to
+            // the rows/columns menu (matrixDimensionsMenu option) instead of
+            // inserting a default 2x2 grid.
+            _this_1.dimsMenu = false;
             return _this_1;
         }
         Object.defineProperty(CellGrid.prototype, "cells", {
@@ -14136,8 +14150,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             return rows;
         };
         // Force-delete the row containing `cell`, discarding its content —
-        // unlike deleteCell, which only removes a fully-empty row. A grid
-        // keeps at least one row. Returns the cell to focus, or undefined.
+        // unlike deleteCell, which only removes a fully-empty row. Returns
+        // the cell to focus, or undefined on the last row — the caller then
+        // deletes the whole matrix.
         CellGrid.prototype.deleteRow = function (currentCell) {
             var rows = this.cellRows(), blocks = this.cells, row = -1;
             for (var i = 0; i < rows.length; i += 1) {
@@ -14165,8 +14180,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             return focus || blocks[0];
         };
         // Force-delete the column containing `cell`, discarding its content.
-        // A grid keeps at least one column. Returns the cell to focus, or
-        // undefined.
+        // Returns the cell to focus, or undefined on the last column — the
+        // caller then deletes the whole matrix.
         CellGrid.prototype.deleteColumn = function (currentCell) {
             var rows = this.cellRows(), blocks = this.cells, row = -1, column = -1, columns = 0;
             for (var i = 0; i < rows.length; i += 1) {
@@ -14276,8 +14291,23 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             cursor.clearSelection();
             cursor.endSelection();
             var cellToFocus = this[method](cell);
-            if (!cellToFocus)
+            if (!cellToFocus) {
+                // Last row/column: delete the matrix outright, cells and
+                // all. Anchor the caret to a surviving node FIRST — pointing it
+                // at the grid leaves cursor[R] dangling into a detached tree,
+                // and the next insert never links into the parent.
+                var parent = this.parent, rightward = this[R];
+                this.remove();
+                if (rightward)
+                    cursor.insLeftOf(rightward);
+                else
+                    cursor.insAtRightEnd(parent);
+                parent.bubble(function (node) {
+                    node.reflow();
+                    return undefined;
+                });
                 return;
+            }
             this.finalizeTree();
             this.bubble(function (node) {
                 node.reflow();
@@ -14385,7 +14415,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var Matrix = /** @class */ (function (_super) {
         __extends(Matrix, _super);
         function Matrix() {
-            return _super !== null && _super.apply(this, arguments) || this;
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.dimsMenu = true;
+            return _this_1;
         }
         Matrix.prototype.createBlocks = function () {
             this.blocks = [
@@ -14395,6 +14427,91 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 new MatrixCell(1, this),
             ];
         };
+        // MATHCOMPILE: with the matrixDimensionsMenu option on, inserting a
+        // matrix-family grid on the typed path fires 'mq:matrix-request' on
+        // the field's container instead of dropping a default 2x2 grid — the
+        // app's menu calls detail.insert(rows, cols) to write the grid (or
+        // nothing on cancel). Parsing and latex()/write() builds cells
+        // directly, so they never reach here.
+        Matrix.prototype.createLeftOf = function (cursor) {
+            var _c, _d;
+            var ctrlr = cursor.controller;
+            if (!this.dimsMenu || !ctrlr.options.matrixDimensionsMenu) {
+                return _super.prototype.createLeftOf.call(this, cursor);
+            }
+            var parent = cursor.parent;
+            var left = cursor[L];
+            var open = this.latexOpen();
+            var close = this.latexClose();
+            var frag = this.replacedFragment;
+            var fragLatex = frag ? frag.fold('', function (s, n) { return s + n.latex(); }) : '';
+            // Put the caret back in the gap the command occupied in case focus
+            // moved while the menu was open — this also re-anchors the cursor
+            // element, which can be parked inside the wrapper residue.
+            var restoreCaret = function () {
+                if (left && left.parent === parent)
+                    cursor.insRightOf(left);
+                else if (!left)
+                    cursor.insAtLeftEnd(parent);
+            };
+            // The resolved command input leaves its wrapper behind holding the
+            // blurred selection DOM; remove it once the caret is re-anchored or
+            // it renders as a grayed ghost and swallows DOM writes.
+            var removeResidue = function () {
+                var _c;
+                var rootEl = parent.domFrag().oneElement();
+                (_c = rootEl === null || rootEl === void 0 ? void 0 : rootEl.querySelector(':scope > .mq-latex-command-input-wrapper')) === null || _c === void 0 ? void 0 : _c.remove();
+            };
+            ctrlr.container.dispatchEvent(new CustomEvent('mq:matrix-request', {
+                bubbles: true,
+                detail: {
+                    env: (_d = (_c = open.match(/^\\begin\{([a-zA-Z]+)/)) === null || _c === void 0 ? void 0 : _c[1]) !== null && _d !== void 0 ? _d : 'matrix',
+                    insert: function (rows, cols) {
+                        // The consumed selection stays referenced on the cursor —
+                        // drop it or the next blur's endSelection() re-arms
+                        // setTextareaSelection, whose textarea.select() steals
+                        // focus back (observed as Shift+Enter landing on this
+                        // field instead of the new cell).
+                        cursor.clearSelection();
+                        restoreCaret();
+                        removeResidue();
+                        // Reset the textarea's shadow selection state — the flag
+                        // armed when the user selected the replaced text would
+                        // otherwise survive and make the next keydown's
+                        // guardedTextareaSelect steal focus back to this field.
+                        ctrlr.setTextareaSelection();
+                        var cells = Math.max(1, cols);
+                        // A replaced selection goes in the first cell only — the
+                        // remaining rows are empty.
+                        var empty = new Array(cells).fill('').join('&');
+                        var first = [fragLatex]
+                            .concat(new Array(cells - 1).fill(''))
+                            .join('&');
+                        ctrlr.writeLatex(open +
+                            [first]
+                                .concat(new Array(Math.max(0, rows - 1)).fill(empty))
+                                .join('\\\\') +
+                            close);
+                        var grid = cursor[L];
+                        if (grid instanceof MathCommand)
+                            grid.placeCursor(cursor);
+                    },
+                    cancel: function () {
+                        cursor.clearSelection();
+                        restoreCaret();
+                        removeResidue();
+                        ctrlr.setTextareaSelection();
+                        // Restore a replaced selection's text at the gap; without
+                        // one, cancel just clears the dead command DOM.
+                        if (fragLatex)
+                            ctrlr.writeLatex(fragLatex);
+                    }
+                }
+            }));
+            // The deferred resolution leaves the input already removed — resync
+            // the edit handler now or the store keeps the raw `\pmatrix`.
+            ctrlr.handle('edit');
+        };
         return Matrix;
     }(CellGrid));
     function withBraces(env) {
@@ -14402,8 +14519,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         return env;
     }
     Environments.matrix = function () { return new Matrix(); };
-    // \matrix{...} emits the \begin{matrix} env form (like \pmatrix).
-    LatexCmds.matrix = function () { return withBraces(new MatrixEnv()); };
+    // \matrix{...} displays and serializes as \pmatrix — plain TeX's
+    // paren'd matrix. \begin{matrix} stays the paren-less env.
+    LatexCmds.matrix = function () { return withBraces(new PMatrix()); };
     var PMatrix = /** @class */ (function (_super) {
         __extends(PMatrix, _super);
         function PMatrix() {
@@ -14498,6 +14616,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         __extends(Cases, _super);
         function Cases() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            // A case split is not a matrix for the dimensions menu.
+            _this_1.dimsMenu = false;
             _this_1.parens = { left: '{', right: null };
             _this_1.cellTextAlign = 'left';
             return _this_1;
@@ -15015,7 +15135,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 else
                     cursor.insAtRightEnd(input.parent);
                 grid.createLeftOf(cursor.show());
-                cursor.insAtLeftEnd(grid.getEnd(L));
+                // Same deferred-insert guard as \begin's resolve.
+                if (grid.parent)
+                    cursor.insAtLeftEnd(grid.getEnd(L));
             };
             var origWrite = argBlock.write;
             argBlock.write = function (cursor, ch) {
@@ -18024,15 +18146,15 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 mq.typedText('z');
                 assert.equal(mq.latex(), '\\begin{matrix}bz\\\\d\\end{matrix}');
             });
-            test('Ctrl-Shift-Backspace/Ctrl-Shift-Del refuse on the last row or column', function () {
+            test('Ctrl-Shift-Backspace/Ctrl-Shift-Del on the last row or column delete the matrix', function () {
                 mq.latex('\\begin{matrix}a&b\\end{matrix}');
                 mq.moveToLeftEnd().keystroke('Right');
-                mq.keystroke('Ctrl-Shift-Backspace'); // one row: no-op
-                assert.equal(mq.latex(), '\\begin{matrix}a&b\\end{matrix}');
-                mq.keystroke('Ctrl-Shift-Del'); // delete col 0 -> single column
-                assert.equal(mq.latex(), '\\begin{matrix}b\\end{matrix}');
-                mq.keystroke('Ctrl-Shift-Del'); // one column: no-op
-                assert.equal(mq.latex(), '\\begin{matrix}b\\end{matrix}');
+                mq.keystroke('Ctrl-Shift-Backspace'); // one row: matrix deleted
+                assert.equal(mq.latex(), '');
+                mq.latex('\\begin{matrix}a\\\\b\\end{matrix}');
+                mq.moveToLeftEnd().keystroke('Right');
+                mq.keystroke('Ctrl-Shift-Del'); // one column: matrix deleted
+                assert.equal(mq.latex(), '');
             });
             test('inside \\displaylines the delete shortcuts keep word-delete', function () {
                 // \displaylines is a grid internally, but the rebinding is
@@ -19559,8 +19681,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             assertParsesLatex('\\mathchoice{a}{b}{c}{d}', '\\mathchoice{a}{b}{c}{d}');
             assertParsesLatex('\\includegraphics[width=1cm]{x}', '\\includegraphics[width=1cm]{x}');
             assertParsesLatex('\\path{x}', '\\path{x}');
-            // \matrix{...} emits the \begin{matrix} env form like \pmatrix
-            assertParsesLatex('\\matrix{a&b}', '\\begin{matrix}a&b\\end{matrix}');
+            // \matrix{...} displays as \pmatrix and emits the pmatrix env form
+            assertParsesLatex('\\matrix{a&b}', '\\begin{pmatrix}a&b\\end{pmatrix}');
             // TeX boxes keep 'to <dim>'; siunitx + skip commands stay verbatim
             assertParsesLatex('\\hbox to 3em{x}', '\\hbox to 3em{x}');
             assertParsesLatex('\\hbox{x}', '\\hbox {x}');

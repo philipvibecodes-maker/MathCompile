@@ -16,7 +16,12 @@
 // targets is future work.
 
 import type { Issue, MathJson, NormResult } from './ir';
-import { isDiffMark, normalizeIR, unquote } from './ir';
+import {
+  isDiffMark,
+  normalizeIR,
+  unquote,
+  type NormalizeOptions,
+} from './ir';
 import { CALC_RUNTIME_PY } from './calc-runtime';
 // The name tables below are derived views over the notation registry —
 // each name lives once in src/compile/notation.ts.
@@ -940,21 +945,34 @@ class Emitter {
     const h = off === 2 ? n[1] : headOf(n);
     if (h === 'Set' || h === 'FiniteSet') return n.length > off;
     // A bare `List` (`[0,1]`) emits a python list — finite, iterable.
-    if (h === 'List') return n.length > off;
+    // A Matrix literal iterates its elements — a paren tuple is one.
+    if (h === 'List' || h === 'Matrix') return n.length > off;
     if (h === 'Union' || h === 'Intersection')
       return n.slice(off).every((a) => this.isFiniteSet(a));
     return false;
   }
 
-  /** The member operand of Element/NotElement: a `(x, y)` tuple needs
-   * `sp.Tuple` — the `List` emission `[x, y]` isn't a SymPy Expr and
-   * Function/Contains raise TypeError on it. */
-  private emitMember(member: MathJson): string {
-    if (isHead(member, 'List'))
-      return `${this.sp}Tuple(${member
-        .slice(1)
-        .map((a) => this.emit(a))
-        .join(', ')})`;
+  /** The member operand of Element/NotElement (and a FiniteSet
+   * element): a `(x, y)` tuple needs `sp.Tuple` — the `List` emission
+   * `[x, y]` isn't a SymPy Expr and Function/Contains raise TypeError
+   * on it. A paren-tuple Matrix gets the same treatment — matrices
+   * aren't Basic/hashable. A 2-element paren tuple emits the open
+   * interval it is. */
+  emitMember(member: MathJson): string {
+    const tuple = (els: MathJson[]): string =>
+      `${this.sp}Tuple(${els.map((a) => this.emit(a)).join(', ')})`;
+    if (isHead(member, 'List')) return tuple(member.slice(1));
+    if (isHead(member, 'Matrix')) {
+      const rows: MathJson[] =
+        member.length === 2 && isHead(member[1], 'List')
+          ? (member[1] as MathJson[]).slice(1)
+          : (member as MathJson[]).slice(1);
+      const els = (r: MathJson): MathJson[] =>
+        isHead(r, 'List') ? (r as MathJson[]).slice(1) : [r];
+      return rows.length === 1
+        ? tuple(els(rows[0]))
+        : `${this.sp}Tuple(${rows.map((r) => tuple(els(r))).join(', ')})`;
+    }
     return this.emit(member);
   }
 
@@ -963,8 +981,15 @@ class Emitter {
    * Complement compute instead of raising TypeError on bare Symbols. */
   private setArg(n: MathJson): string {
     if (this.isSetish(n)) return this.emit(n);
-    // A python list can't nest inside FiniteSet's args — splat it.
-    if (isHead(n, 'List') || (isStr(n) && this.scope.kinds.listNames.has(n)))
+    // A python list or matrix can't nest inside FiniteSet's args —
+    // splat it (a paren tuple's elements are the set members).
+    if (
+      isHead(n, 'List') ||
+      isHead(n, 'Matrix') ||
+      (isStr(n) &&
+        (this.scope.kinds.listNames.has(n) ||
+          this.scope.kinds.matrixNames.has(n)))
+    )
       return `${this.sp}FiniteSet(*${this.emit(n)})`;
     return `${this.sp}FiniteSet(${this.emit(n)})`;
   }
@@ -1513,7 +1538,7 @@ class Emitter {
             ];
         }
         return [
-          `${this.sp}FiniteSet(${args.map((a) => this.emit(a)).join(', ')})`,
+          `${this.sp}FiniteSet(${args.map((a) => this.emitMember(a)).join(', ')})`,
           PREC_ATOM,
         ];
       }
@@ -2658,7 +2683,7 @@ interface CellBody {
 // Free symbol names inside an expression — used to infer the variable of
 // an integral written without a differential. Constants, the CE 'Nothing'
 // marker, and callee names (f in f(t), call heads) don't count.
-function freeNames(node: MathJson, acc = new Set<string>()): string[] {
+export function freeNames(node: MathJson, acc = new Set<string>()): string[] {
   if (isStr(node)) {
     if (!CONSTANTS[node] && node !== 'Nothing' && !node.startsWith("'"))
       acc.add(node);
@@ -2705,8 +2730,8 @@ function allNames(node: MathJson, acc: Set<string>): void {
 // The next constant-of-integration letter: first capital not in `used`
 // (C, else D, E, …). `used` is mutated — the returned letter is claimed.
 // Exhausted alphabet falls back to reusing C — nothing else is left to
-// give. Shared with the interim nerdamer emitter so both engines pick
-// the same letter for the same cell.
+// give. Shared with the interim engine so both pick the same letter
+// for the same cell.
 export function firstFreeCapital(used: Set<string>): string {
   for (let code = 'C'.charCodeAt(0); code <= 'Z'.charCodeAt(0); code++) {
     const name = String.fromCharCode(code);
@@ -2938,7 +2963,7 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
         lines: [`${idents} = ${rhs}`],
         display: `${sp}Eq(${sp}Tuple(${members
           .map((m) => `${sp}Symbol(${JSON.stringify(m)})`)
-          .join(', ')}), ${rhs})`,
+          .join(', ')}), ${emitter.emitMember(node[2])}, evaluate=False)`,
         defines: true,
       };
     }
@@ -3093,7 +3118,7 @@ function findStatementHeads(node: MathJson, found: Set<string>): void {
   for (const child of node.slice(1)) findStatementHeads(child, found);
 }
 
-export interface CompileOptions {
+export interface CompileOptions extends NormalizeOptions {
   /** Emit `from sympy import *` and unqualified sympy names (default).
    * `false` emits `import sympy as sp` with `sp.` qualifiers. */
   importAll?: boolean;
@@ -3110,7 +3135,7 @@ export function compileWorksheet(
   const importLine = qualified
     ? 'import sympy as sp'
     : 'from sympy import *';
-  const perCell = cells.map((c) => normalizeIR(c.json));
+  const perCell = cells.map((c) => normalizeIR(c.json, undefined, opts));
   const issues: Issue[] = perCell.flatMap((r, i) =>
     r.issues.map((iss) => ({
       ...iss,
@@ -3447,6 +3472,7 @@ function compileCellInScope(
 // in later cells stay invisible to the cells above them.
 export function compileCellsForCalc(
   cells: CellInput[],
+  opts: NormalizeOptions = {},
 ): CalcWorksheetProgram {
   const scope = new Scope(
     true,
@@ -3466,7 +3492,11 @@ export function compileCellsForCalc(
       // The shared declaredFns set both seeds this cell's normalize
       // (a `g(4)` below a `\def g` is a call, not juxtaposition) and
       // collects the names this cell declares for the cells below it.
-      const { ir, issues } = normalizeIR(cell.json, scope.decls.declaredFns);
+      const { ir, issues } = normalizeIR(
+        cell.json,
+        scope.decls.declaredFns,
+        opts,
+      );
       if (ir === undefined)
         return { defs: [], statements: [], issues, statementLines: [] };
       return compileCellInScope(ir, issues, scope);
@@ -3477,8 +3507,11 @@ export function compileCellsForCalc(
 // Compile a single cell for the calculator target — the standalone
 // equivalent of compileCellsForCalc([cell]), with the cell's decls
 // folded into the prelude (a self-contained program).
-export function compileCellForCalc(cell: CellInput): CalcProgram {
-  const { ir, issues } = normalizeIR(cell.json);
+export function compileCellForCalc(
+  cell: CellInput,
+  opts: NormalizeOptions = {},
+): CalcProgram {
+  const { ir, issues } = normalizeIR(cell.json, undefined, opts);
   if (ir === undefined)
     return { prelude: [], statements: [], issues, statementLines: [] };
   const scope = new Scope(

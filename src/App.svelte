@@ -61,6 +61,7 @@
     appStore.target === 'python'
       ? compileWorksheet(appStore.cells, appStore.target, {
           importAll: appStore.importAll,
+          pairTuple: appStore.pairTuple,
         })
       : null,
   );
@@ -179,6 +180,7 @@
       guideOpen: appStore.guideOpen,
       showPlumbing: appStore.showPlumbing,
       importAll: appStore.importAll,
+      pairTuple: appStore.pairTuple,
       fadeMs: appStore.fadeMs,
       debounceMs: appStore.debounceMs,
       fadeInMs: appStore.fadeInMs,
@@ -304,8 +306,8 @@
               {#if calcEngine.status === 'loading'}
                 <span class="engine-spinner" aria-hidden="true"></span>
                 <span class="engine-chip-text"
-                  >SymPy engine loading — interim results use nerdamer, a
-                  faster but less accurate engine</span
+                  >SymPy engine loading — interim results use Compute
+                  Engine, a faster but less accurate engine</span
                 >
               {:else if calcEngine.status === 'error'}
                 <span class="engine-chip-text">SymPy failed to load</span>
@@ -336,9 +338,9 @@
                     Answers come from SymPy, a full computer-algebra
                     system running as WebAssembly (Pyodide), which takes
                     a while to download and boot. Until it's ready,
-                    results come from nerdamer — a lightweight JavaScript
-                    engine that's faster but less accurate — and are
-                    marked "estimate".
+                    results come from Compute Engine — the same
+                    JavaScript math engine that parses LaTeX for the
+                    compiler — and are marked "estimate".
                   {/if}
                 </span>
               </button>
@@ -427,6 +429,47 @@
                       </button>
                     </div>
                   {/if}
+                  <div class="settings-row">
+                    <label class="target-select">
+                      (a,b)
+                      <select
+                        value={appStore.pairTuple}
+                        onchange={(e) =>
+                          (appStore.pairTuple = e.currentTarget
+                            .value as 'interval' | 'matrix')}
+                      >
+                        <option value="interval">open interval</option>
+                        <option value="matrix">1×2 matrix</option>
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      class="info-icon"
+                      aria-label="About the (a,b) setting"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        aria-hidden="true"
+                      >
+                        <circle cx="12" cy="12" r="9" />
+                        <line x1="12" y1="11" x2="12" y2="16.5" />
+                        <circle cx="12" cy="7.5" r="0.75" fill="currentColor" />
+                      </svg>
+                      <span
+                        class="info-tip"
+                        role="tooltip"
+                        aria-hidden="true"
+                      >
+                        What a two-element tuple in parentheses compiles
+                        to: an open interval or a 1×2 row matrix. Three
+                        or more elements always make a 1×n matrix.
+                      </span>
+                    </button>
+                  </div>
                   <label class="fade-slider" title="Code-line fade duration">
                     fade
                     <input

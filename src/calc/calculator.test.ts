@@ -1,17 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { compileCellForCalc, compileCellsForCalc } from '../compile/codegen';
-import { normalizeIR, parseCellLatex } from '../compile/ir';
-import { interimConstNames, irToNerdamer } from './nerdamer-emit';
+import { parseCellLatex } from '../compile/ir';
 import { interimEvaluate, shownPrograms } from './calculator.svelte.ts';
-
-// latex statement -> nerdamer input through the shared pipeline —
-// '' is a poisoned row, null falls back to nerdamer's latex reader.
-const toN = (s: string) => {
-  const norm = normalizeIR(parseCellLatex(s));
-  return norm.ir === undefined
-    ? null
-    : irToNerdamer(norm.ir, interimConstNames(norm.ir));
-};
 const calc = (latex: string) => compileCellForCalc({ json: parseCellLatex(latex) });
 const calcAll = (...latexs: string[]) =>
   compileCellsForCalc(latexs.map((latex) => ({ json: parseCellLatex(latex) })));
@@ -904,63 +894,7 @@ describe('compileCellsForCalc (worksheet cells share one scope)', () => {
   });
 });
 
-describe('irToNerdamer (normalized IR → nerdamer input)', () => {
-  it('emits plain algebra in written order', () => {
-    expect(toN('x+1')).toBe('x+1');
-  });
-
-  it('maps a definite integral to defint', () => {
-    expect(toN('\\int_{0}^{1}x')).toBe('defint(x, 0, 1, x)');
-    expect(toN('\\int_{0}^{1}x dx')).toBe('defint(x, 0, 1, x)');
-  });
-
-  it('maps an indefinite integral to integrate + constant', () => {
-    expect(toN('\\int x')).toBe('(integrate(x, x)+C)');
-    expect(toN('\\int C dx')).toBe('(integrate(C, x)+D)');
-  });
-
-  it('maps \\sum_{i=lo}^{hi} to sum', () => {
-    expect(toN('\\sum_{i=0}^{n}k')).toBe('sum(k, i, 0, n)');
-  });
-
-  it('maps \\prod_{i=lo}^{hi} to product', () => {
-    expect(toN('\\prod_{i=1}^{n}k')).toBe('product(k, i, 1, n)');
-  });
-
-  it('maps \\lim_{x\\to a} to limit', () => {
-    expect(toN('\\lim_{x\\to 0}y')).toBe('limit(y, x, 0)');
-  });
-
-  it('maps the MathQuill \\derivative form to diff', () => {
-    expect(toN('\\frac{d }{d x}x^2')).toBe('diff(x^2, x)');
-    expect(toN('\\frac{d^2}{d x^2}x^3')).toBe('diff(x^3, x, 2)');
-  });
-
-  it('expands \\binom into factorials', () => {
-    // The factorial expansion self-wraps so it stays atomic under
-    // division/power.
-    expect(toN('\\binom{n}{k}')).toBe(
-      '(factorial(n)/(factorial(k)*factorial(n-k)))',
-    );
-  });
-
-  it('maps \\sqrt[n]{x} to nthroot', () => {
-    expect(toN('\\sqrt[3]{8}')).toBe('nthroot(8, 3)');
-  });
-
-  it("keeps an equation's lhs before a translated command", () => {
-    expect(toN('2^{n}=\\sum_{i=0}^{n}\\binom{i}{n}')).toBe(
-      '2^n = sum((factorial(i)/(factorial(n)*factorial(i-n))), i, 0, n)',
-    );
-  });
-
-  it('keeps a leading operator after a translated command verbatim', () => {
-    // `+m` is a top-level Add term — the binomial stays inside its own
-    // Multiply factor.
-    expect(toN('n\\binom{n}{k}+m')).toBe(
-      'n*(factorial(n)/(factorial(k)*factorial(n-k)))+m',
-    );
-  });
+describe('codegen edge cases', () => {
   it('reads a bare prime as a primed variable name', () => {
     const p = calc("x'");
     expect(p.statements[0]?.code).toBe(F('x_prime'));
@@ -1016,7 +950,7 @@ describe('irToNerdamer (normalized IR → nerdamer input)', () => {
   });
 });
 
-describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
+describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
   it('evaluates arithmetic to its latex form', async () => {
     expect(await interimEvaluate('2+2')).toEqual([{ ok: true, latex: '4' }]);
   });
@@ -1028,7 +962,7 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
     expect((rows[0] as { latex?: string }).latex).toContain('\\sqrt{2}');
   });
 
-  it('evaluates a definite integral via nerdamer defint', async () => {
+  it('evaluates a definite integral', async () => {
     const rows = await interimEvaluate('\\int_{0}^{1}x');
     expect(rows[0].ok).toBe(true);
     expect((rows[0] as { latex?: string }).latex).toBe('\\frac{1}{2}');
@@ -1038,14 +972,90 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
     const rows = await interimEvaluate('\\int x dx');
     expect(rows[0].ok).toBe(true);
     const latex = (rows[0] as { latex?: string }).latex ?? '';
-    expect(latex).toContain('x^{2}');
+    expect(latex).toContain('x^2');
     expect(latex).toContain('C');
   });
 
-  it('evaluates a derivative via nerdamer diff', async () => {
+  it('uses the next free capital for the constant (mirrors codegen)', async () => {
+    const rows = await interimEvaluate('\\int C dx');
+    expect(rows[0].ok).toBe(true);
+    expect((rows[0] as { latex?: string }).latex).toContain('D');
+  });
+
+  it('evaluates a derivative', async () => {
     const rows = await interimEvaluate('\\frac{d }{d x}x^2');
     expect(rows[0].ok).toBe(true);
-    expect((rows[0] as { latex?: string }).latex).toBe('2 \\cdot x');
+    expect((rows[0] as { latex?: string }).latex).toBe('2x');
+  });
+
+  it('evaluates limits, sums, products, binomials, and nth roots', async () => {
+    expect((await interimEvaluate('\\lim_{x\\to 0}\\frac{\\sin x}{x}'))[0])
+      .toMatchObject({ ok: true, latex: '1' });
+    expect((await interimEvaluate('\\sum_{i=1}^{10}i'))[0]).toMatchObject({
+      ok: true,
+      latex: '55',
+    });
+    expect((await interimEvaluate('\\prod_{i=1}^{4}i'))[0]).toMatchObject({
+      ok: true,
+      latex: '24',
+    });
+    expect((await interimEvaluate('\\binom{5}{2}'))[0]).toMatchObject({
+      ok: true,
+      latex: '10',
+    });
+    expect((await interimEvaluate('\\sqrt[3]{8}'))[0]).toMatchObject({
+      ok: true,
+      latex: '2',
+    });
+  });
+
+  it('keeps a symbolic sum unevaluated like the old interim', async () => {
+    const rows = await interimEvaluate('\\sum_{i=0}^{n}\\binom{i}{n}');
+    expect(rows[0].ok).toBe(true);
+    expect((rows[0] as { latex?: string }).latex).toContain('\\sum');
+  });
+
+  it('binds `name = rhs` for the rows below it within the cell', async () => {
+    // Mirrors codegen's statement binding: a = 5 then a+1 → 6, like the
+    // real engine's shared worksheet namespace.
+    const rows = await interimEvaluate('a = 5\\\\ a+1');
+    expect(rows).toEqual([
+      { ok: true, latex: 'a=5' },
+      { ok: true, latex: '6' },
+    ]);
+  });
+
+  it('shows the evaluated rhs on assignments', async () => {
+    const rows = await interimEvaluate('x = \\frac{1}{2}');
+    expect(rows).toEqual([{ ok: true, latex: 'x=\\frac{1}{2}' }]);
+  });
+
+  it('stays empty on \\text{def} statements', async () => {
+    expect(await interimEvaluate('\\text{def} g(x) = x^2')).toEqual([]);
+  });
+
+  it('cleans CE-only serializer names MathQuill cannot render', async () => {
+    // e^{x} evaluates to \exponentialE^{x} — rendered as plain e.
+    const rows = await interimEvaluate('e^{x}');
+    expect(rows[0].ok).toBe(true);
+    expect((rows[0] as { latex?: string }).latex).toBe('e^{x}');
+  });
+
+  it('maps \\vert absolute bars to a pipe MathQuill renders', async () => {
+    // CE emits \ln(\vert x\vert) for integrate(1/x) — MathQuill shows
+    // "vertical bar" literally, so the interim maps it to a plain |.
+    const rows = await interimEvaluate('\\int\\frac{1}{x}dx');
+    const latex = (rows[0] as { latex?: string }).latex ?? '';
+    expect(latex).not.toContain('\\vert');
+    expect(latex).toContain('| x|');
+  });
+
+  it('evaluates iterated integrals with per-level constants', async () => {
+    const rows = await interimEvaluate('\\int\\int x dxdy');
+    expect(rows[0].ok).toBe(true);
+    const latex = (rows[0] as { latex?: string }).latex ?? '';
+    expect(latex).toContain('C');
+    expect(latex).toContain('D');
   });
 
   it('evaluates a boundless \\iint as an iterated integrate', async () => {
@@ -1055,7 +1065,7 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].ok).toBe(true);
     const latex = (rows[0] as { latex?: string }).latex ?? '';
-    expect(latex).toContain('x^{2}');
+    expect(latex).toContain('x^2');
     expect(latex).toContain('C');
     expect(latex).toContain('D');
   });
@@ -1076,7 +1086,7 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
   });
 
   it('does not let one bad row sink the others', async () => {
-    // A matrix row can't be nerdamer-evaluated — the plain rows around
+    // A matrix row can't be CE-evaluated — the plain rows around
     // it must still get interim results.
     const rows = await interimEvaluate('1+1\\\\ x+1');
     expect(rows).toEqual([
@@ -1096,6 +1106,58 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
     expect(await interimEvaluate('')).toEqual([]);
   });
 
+  it('treats chained equality as an equation, not an assignment', async () => {
+    // a=b=c normalizes to a multi-arg Equal — the real engine emits
+    // comparisons, so the interim must not bind `a` for the rows below.
+    const rows = await interimEvaluate('a=b=c\\\\ a+1');
+    expect(rows).toEqual([
+      { ok: true, latex: 'a=b=c' },
+      { ok: true, latex: 'a+1' },
+    ]);
+  });
+
+  it('peels \\text{d} differentials out of the integrand', async () => {
+    const rows = await interimEvaluate('\\int x^{2}\\text{d}x');
+    expect(rows[0].ok).toBe(true);
+    const latex = (rows[0] as { latex?: string }).latex ?? '';
+    expect(latex).toContain('x^3');
+    expect(latex).toContain('C');
+  });
+
+  it('peels differentials nested inside the integrand tail', async () => {
+    const rows = await interimEvaluate('\\int \\sin x\\text{d}x');
+    expect(rows[0].ok).toBe(true);
+    expect((rows[0] as { latex?: string }).latex ?? '').toContain('\\cos(x)');
+  });
+
+  it('expands a where-block into body and condition rows', async () => {
+    const rows = await interimEvaluate('x^{2}\\text{ where }x>0');
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => r.ok)).toBe(true);
+  });
+
+  it('infers the integration variable past named constants', async () => {
+    // \int \pi x has one real free variable — Pi is a constant, not a
+    // candidate (codegen's freeNames excludes it).
+    const rows = await interimEvaluate('\\int \\pi x');
+    expect(rows[0].ok).toBe(true);
+    expect((rows[0] as { latex?: string }).latex ?? '').toContain('\\pi');
+  });
+
+  it('evaluates a matrix literal row', async () => {
+    const rows = await interimEvaluate(
+      '\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}',
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].ok).toBe(true);
+  });
+
+  it('shows no row for a call on a skipped def', async () => {
+    // \text{def} statements don't bind in the interim, so g(3) can't be
+    // evaluated honestly — no row rather than a wrong one.
+    expect(await interimEvaluate('\\text{def} g(x)=x^{2}\\\\ g(3)')).toEqual([]);
+  });
+
   it('groups power bases — (2^3)^2 is 64, -2^2 squares the group', async () => {
     expect((await interimEvaluate('\\left(2^3\\right)^2'))[0])
       .toEqual({ ok: true, latex: '64' });
@@ -1104,19 +1166,13 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
   });
 
   it('evaluates \\log like codegen — base 10', async () => {
-    // nerdamer spells the base-10 default as the change-of-base
-    // quotient (symbolic — it doesn't simplify it to 2).
     const latex = (await interimEvaluate('\\log(100)'))[0] as { latex?: string };
-    expect(latex.latex).toBe(
-      '\\frac{\\mathrm{log}\\left(100\\right)}{\\mathrm{log}\\left(10\\right)}',
-    );
+    expect(latex.latex).toBe('2');
   });
 
   it('keeps the binomial quotient atomic under division', async () => {
-    // nerdamer flips the reciprocal — (2!·3!)/5! is still 1/10, not
-    // the old 1/1440.
     const latex = (await interimEvaluate('1/\\binom{5}{2}'))[0] as { latex?: string };
-    expect(latex.latex).toBe('\\frac{2! \\cdot 3!}{5!}');
+    expect(latex.latex).toBe('\\frac{1}{10}');
   });
 
   it('shows no interim for extrema over a bound variable', async () => {
@@ -1125,11 +1181,33 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
     expect(await interimEvaluate('\\max_{x}x^2')).toEqual([]);
   });
 
-  it('shows no interim for one-sided limits', async () => {
-    // nerdamer has no direction arg; a two-sided guess at a
-    // discontinuity would contradict the real engine.
-    expect(await interimEvaluate('\\lim_{x\\to 0^{-}}\\frac{1}{x}')).toEqual([]);
-    expect(await interimEvaluate('\\lim_{x\\to 0^{+}}\\frac{1}{x}')).toEqual([]);
+  it('evaluates one-sided limits in the right direction', async () => {
+    // CE reads the direction superscript — a wrong-sided or two-sided
+    // guess would contradict the real engine.
+    expect(await interimEvaluate('\\lim_{x\\to 0^{-}}\\frac{1}{x}')).toEqual([
+      { ok: true, latex: '-\\infty' },
+    ]);
+    expect(await interimEvaluate('\\lim_{x\\to 0^{+}}\\frac{1}{x}')).toEqual([
+      { ok: true, latex: '\\infty' },
+    ]);
+  });
+
+  it('does not leak `name = rhs` bindings into later cells', async () => {
+    // Each call gets a fresh engine — an `a = 5` in one cell can't bind
+    // `a` in another's interim (CE Assign survives popScope on a shared
+    // engine, which flipped earlier cells' +C to +7 in the UI).
+    expect(await interimEvaluate('a = 5')).toEqual([
+      { ok: true, latex: 'a=5' },
+    ]);
+    expect(await interimEvaluate('a+1')).toEqual([
+      { ok: true, latex: 'a+1' },
+    ]);
+  });
+
+  it('shows no interim row for a \\python cell', async () => {
+    // PythonSource is a statement the interim can't evaluate — boxing
+    // it would echo PythonSource(...) junk; silent-empty instead.
+    expect(await interimEvaluate('\\python{x = 3\nx * 2}')).toEqual([]);
   });
 
   it('reserves declared names from cells above for + C letters', async () => {

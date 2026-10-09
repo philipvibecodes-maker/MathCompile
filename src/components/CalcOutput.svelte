@@ -21,7 +21,7 @@
 
   let rows = $state<CalcRow[]>([]);
   let pending = $state(false);
-  // True while the shown rows came from the nerdamer interim engine —
+  // True while the shown rows came from the interim engine —
   // they're estimates, so the UI marks them until SymPy rows land.
   let interim = $state(false);
   let failed = $state('');
@@ -84,6 +84,8 @@
       .slice(0, index + 1)
       .map((c) => c.latex);
     const latex = prefixLatex[prefixLatex.length - 1] ?? '';
+    // Read here so toggling the (a,b) pref re-triggers the eval below.
+    const pairTuple = appStore.pairTuple;
     const mine = ++seq;
     if (latexToStatementStrings(latex).length === 0) {
       rows = [];
@@ -99,19 +101,21 @@
     failed = '';
     const timer = setTimeout(() => {
       if (mine !== seq) return;
-      // While the engine boots, show nerdamer's instant best-effort
+      // While the engine boots, show CE's instant best-effort
       // result — rendered dimmed since the real eval is still pending.
       // The `pending` guard keeps a late interim from overwriting real
       // rows that already landed.
       if (calcEngine.status !== 'ready') {
-        interimEvaluate(latex, prefixLatex.slice(0, -1)).then((r) => {
+        interimEvaluate(latex, prefixLatex.slice(0, -1), {
+          pairTuple,
+        }).then((r) => {
           if (mine === seq && pending && r.length > 0) {
             rows = r;
             interim = true;
           }
         });
       }
-      evaluate(appStore.cells.slice(0, index + 1)).then(
+      evaluate(appStore.cells.slice(0, index + 1), { pairTuple }).then(
         (r) => {
           if (mine !== seq) return;
           rows = r.rows;
@@ -266,7 +270,7 @@
       {#if interim}
         <span
           class="calc-interim"
-          title="Estimate from the interim engine (nerdamer) — replaced by the SymPy result once the engine finishes loading."
+          title="Estimate from the interim engine (Compute Engine) — replaced by the SymPy result once the engine finishes loading."
           >estimate · SymPy still loading</span
         >
       {/if}
