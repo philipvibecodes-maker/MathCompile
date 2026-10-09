@@ -611,6 +611,10 @@
       display: inline-block;
       vertical-align: top;
       overflow: visible;
+      // straddle the container's top edge like LaTeX scripts: the sup's
+      // center sits at the edge, not its top inside it
+      position: relative;
+      top: -0.4em;
     }
     &:not(.mq-sup-only) > .mq-sup {
       width: 0;
@@ -619,6 +623,9 @@
       display: inline-block;
       float: none;
       vertical-align: bottom;
+      // matching small overshoot below the container's bottom edge
+      position: relative;
+      top: 0.13em;
     }
   }
 

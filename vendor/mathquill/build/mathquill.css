@@ -570,6 +570,8 @@
   display: inline-block;
   vertical-align: top;
   overflow: visible;
+  position: relative;
+  top: -0.4em;
 }
 .mq-math-mode .mq-matrix + .mq-supsub:not(.mq-sup-only) > .mq-sup,
 .mq-math-mode .mq-matrix + .mq-cursor + .mq-supsub:not(.mq-sup-only) > .mq-sup,
@@ -584,6 +586,8 @@
   display: inline-block;
   float: none;
   vertical-align: bottom;
+  position: relative;
+  top: 0.13em;
 }
 .mq-math-mode .mq-array > span {
   display: block;
