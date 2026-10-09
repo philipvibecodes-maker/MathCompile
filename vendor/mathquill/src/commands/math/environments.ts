@@ -703,9 +703,18 @@ class CellGrid extends MathCommand {
     var cellToFocus = this[method](cell);
     if (!cellToFocus) {
       // Last row/column: delete the matrix outright, cells and
-      // all — the caret lands where the grid was.
-      cursor.insLeftOf(this);
+      // all. Anchor the caret to a surviving node FIRST — pointing it
+      // at the grid leaves cursor[R] dangling into a detached tree,
+      // and the next insert never links into the parent.
+      var parent = this.parent as MQNode,
+        rightward = this[R] as MQNode;
       this.remove();
+      if (rightward) cursor.insLeftOf(rightward);
+      else cursor.insAtRightEnd(parent);
+      parent.bubble(function (node) {
+        node.reflow();
+        return undefined;
+      });
       return;
     }
     this.finalizeTree();
