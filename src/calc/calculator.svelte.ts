@@ -312,6 +312,10 @@ const SKIP_HEADS = new Set([
   // would echo a \mathrm{Minimum}(body, var) guess.
   'Minimum',
   'Maximum',
+  // \D total derivative / \nabla gradient — no interim beats a wrong
+  // one; the SymPy result lands when the worker is ready.
+  'TotalD',
+  'Gradient',
   // \python{...} cells parse to PythonSource — boxing it echoes
   // PythonSource(...) junk.
   'PythonSource',
