@@ -13324,6 +13324,28 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds.gradient = function () {
         return new GradientAlias('\\nabla ', h('span', {}, [h.entityText('&nabla;')]), '\u2207', 'gradient');
     };
+    //======================================================================
+    //  \plot \u2014 insertion alias for \text{plot}
+    //======================================================================
+    // Typing `\plot` expands to a real \text{plot} TextBlock plus a trailing
+    // space \u2014 the statement marker the compiler reads as a plot request,
+    // with the caret after the space ready for the expression \u2014 the same
+    // insertion-time expansion \def uses. A `\plot` in pasted latex renders
+    // the same "plot" text and serializes as \text{plot}, so stored latex
+    // canonicalizes on the next save.
+    var PlotAlias = /** @class */ (function (_super) {
+        __extends(PlotAlias, _super);
+        function PlotAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        PlotAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{plot}\\ ');
+        };
+        return PlotAlias;
+    }(MQSymbol));
+    LatexCmds.plot = function () {
+        return new PlotAlias('\\text{plot}', h('span', { class: 'mq-text-mode' }, [h.text('plot')]), 'plot', 'plot');
+    };
     // Triple-quoted strings come first \u2014 docstrings span lines and must not get
     // keyword/call coloring on their contents.
     var PY_TOKEN_RE = /("""[\s\S]*?"""|'''[\s\S]*?'''|'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*")|(#[^\n]*)|(\b(?:and|as|assert|async|await|break|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|not|or|pass|raise|return|try|while|with|yield|True|False)\b)|(\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|([A-Za-z_]\w*(?=\s*\())/g;

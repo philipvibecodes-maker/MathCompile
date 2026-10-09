@@ -753,6 +753,34 @@ const isDefMark = (v: MathJson): boolean => {
   return t !== undefined && t.trim() === 'def';
 };
 
+// `\text{plot}` arrives as a text literal 'plot' — the statement-level
+// marker that asks for a plot of the expression after it.
+const isPlotMark = (v: MathJson): boolean => {
+  const t = isString(v) ? unquote(v) : undefined;
+  return t !== undefined && t.trim() === 'plot';
+};
+
+// `\text{plot} <stmt-expr>` — the marker is a bare factor that binds the
+// WHOLE statement (`\text{plot} x^2 + y^2` plots x²+y², not just x²):
+// CE parses the mark into the leftmost InvisibleOperator item, so the
+// strip walks the node's left spine and lifts it out. Returns the
+// statement expression with the mark removed, or undefined when there
+// is no leading plot mark.
+const splitPlotMark = (n: MathJson): MathJson | undefined => {
+  if (!isArray(n)) return undefined;
+  if (head(n) === 'InvisibleOperator') {
+    const items = n.slice(1).filter((x) => !isSpacing(x));
+    if (items.length >= 2 && isPlotMark(items[0]))
+      return items.length === 2
+        ? items[1]
+        : (['Multiply', ...items.slice(1)] as MathJson);
+    return undefined;
+  }
+  const left = splitPlotMark(n[1]);
+  if (left === undefined) return undefined;
+  return [head(n), left, ...n.slice(2)] as MathJson;
+};
+
 // Statement `\text{def} f(x)…`: the marker lands as the first factor of
 // an InvisibleOperator chain (also inside an Equal lhs). Returns the
 // signature when what's left is a name (+args); a bare `\text{def} f`
@@ -2095,6 +2123,13 @@ export function normalizeIR(
     // the declaredFns pre-scan below see the chained-relation shape and
     // never mistake the nested form for an assignment.
     if (h === 'Equal') node = flattenEqual(node);
+    // `\text{plot} <stmt-expr>` — strip the marker before any other
+    // statement rule sees the node; it binds the whole expression
+    // (see splitPlotMark).
+    if (atStatement) {
+      const rest = splitPlotMark(node);
+      if (rest !== undefined) return ['Plot', normalize(rest, false)];
+    }
 
     // Declaration pre-scan: statement-level shapes that bind a callable
     // name (`\text{def}` def/decl, mapsto declaration,

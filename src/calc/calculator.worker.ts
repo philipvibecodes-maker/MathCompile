@@ -94,6 +94,136 @@ def _mc_row(val):
         pass
     return out
 
+# ————————————————————————————————————————————————————————————————————
+# Plot sampling — a _mc_plot(<expr>) statement's marker dict lands here
+# via the interception in _mc_run_cell. The value's signature is
+# classified (free symbols × output components) and sampled on a default
+# grid with lambdify; non-finite points come back as nulls so the
+# frontend breaks lines at poles/asymptotes.
+
+_MC_PLOT_R1 = (-10.0, 10.0)
+_MC_PLOT_R2 = (-3.0, 3.0)
+_MC_PLOT_N1 = 600
+_MC_PLOT_N2 = 80
+
+import inspect as _mc_inspect
+import numpy as _mc_np
+
+
+def _mc_plot_components(expr):
+    # A Matrix with one row or column, a Tuple, and a plain list all read
+    # as a multi-component output; anything else is scalar.
+    if isinstance(expr, sp.MatrixBase):
+        if expr.rows == 1 or expr.cols == 1:
+            return list(expr)
+        raise ValueError(
+            'a matrix that is not a row or column vector cannot be plotted'
+        )
+    if isinstance(expr, (sp.Tuple, tuple, list)):
+        return list(expr)
+    if isinstance(expr, sp.Set):
+        raise ValueError(
+            'a set or interval cannot be plotted — write components as a column vector'
+        )
+    return [expr]
+
+
+def _mc_plot_signature(v):
+    # Resolve a plot-marked value to (vars, components, label): a Lambda
+    # carries its params, a python function (a def'd name) is called
+    # on fresh symbols named after its parameters, and an expression's
+    # free symbols are the variables.
+    if isinstance(v, sp.Lambda):
+        vars_ = list(v.signature)
+        comps = _mc_plot_components(v.expr)
+        return vars_, comps, sp.latex(v.expr)
+    if callable(v) and not isinstance(v, sp.Basic):
+        try:
+            names = [
+                n for n in _mc_inspect.signature(v).parameters
+                if not n.startswith('*')
+            ]
+        except Exception:
+            names = []
+        if len(names) == 0:
+            raise ValueError(
+                'cannot determine the plotted function’s parameters'
+            )
+        vars_ = [sp.Symbol(n) for n in names]
+        comps = _mc_plot_components(v(*vars_))
+        label = getattr(v, '__name__', 'f')
+        return vars_, comps, f'{label}({", ".join(names)})'
+    free = sorted(getattr(v, 'free_symbols', set()), key=lambda s: s.name)
+    comps = _mc_plot_components(v)
+    try:
+        label = sp.latex(v)
+    except Exception:
+        label = str(v)
+    return free, comps, label
+
+
+def _mc_plot_clean(a, shape):
+    a = _mc_np.asarray(a, dtype=float)
+    a = _mc_np.broadcast_to(a, shape)
+    out = []
+    for x in a.ravel():
+        out.append(None if not _mc_np.isfinite(x) else float(x))
+    if len(shape) == 2:
+        return [out[i * shape[1]:(i + 1) * shape[1]] for i in range(shape[0])]
+    return out
+
+
+def _mc_plot_payload(v):
+    vars_, comps, label = _mc_plot_signature(v)
+    d = len(vars_)
+    c = len(comps)
+    if d not in (1, 2):
+        raise ValueError(
+            f'cannot plot a function of {d} variables (needs 1 or 2)'
+        )
+    if c not in (1, 2, 3):
+        raise ValueError(
+            f'cannot plot {c} output components (needs 1, 2, or 3)'
+        )
+    fnum = sp.lambdify(vars_, comps, 'numpy')
+    vnames = [s.name for s in vars_]
+    if d == 1:
+        ts = _mc_np.linspace(_MC_PLOT_R1[0], _MC_PLOT_R1[1], _MC_PLOT_N1)
+        vals = _mc_np.asarray(fnum(ts))
+        if vals.ndim == 1:
+            vals = vals.reshape(1, -1)
+        shape = (len(ts),)
+        data = {'t': _mc_plot_clean(ts, shape)}
+        names = ['y'] if c == 1 else ['x', 'y', 'z'][:c]
+        for i in range(c):
+            data[names[i]] = _mc_plot_clean(vals[i], shape)
+        if c == 1:
+            data['x'], data['y'] = data.pop('t'), data['y']
+    else:
+        us = _mc_np.linspace(_MC_PLOT_R2[0], _MC_PLOT_R2[1], _MC_PLOT_N2)
+        vs = _mc_np.linspace(_MC_PLOT_R2[0], _MC_PLOT_R2[1], _MC_PLOT_N2)
+        U, V = _mc_np.meshgrid(us, vs)
+        vals = _mc_np.asarray(fnum(U, V))
+        if vals.ndim == 2:
+            vals = vals.reshape(1, vals.shape[0], vals.shape[1])
+        shape = U.shape
+        data = {
+            'u': _mc_plot_clean(us, (len(us),)),
+            'v': _mc_plot_clean(vs, (len(vs),)),
+        }
+        names = ['z'] if c == 1 else ['fx', 'fy', 'fz'][:c]
+        for i in range(c):
+            data[names[i]] = _mc_plot_clean(vals[i], shape)
+        if c == 1:
+            data['x'], data['y'] = data.pop('u'), data.pop('v')
+    return {
+        'kind': f'{d}x{c}',
+        'vars': vnames,
+        'label': label,
+        'data': data,
+    }
+
+
 # The worksheet namespace plus one snapshot per cell boundary: _snaps[i]
 # is the namespace + result rows captured after cell i last ran. A cell
 # sees every name bound by the cells above it (a def g in cell 2 is
@@ -117,7 +247,13 @@ def _mc_run_cell(cell, ns):
             if err is not None:
                 out.append({'ok': False, 'error': err})
                 continue
-            row = _mc_row(_mc_eval_stmt(stmt, ns))
+            val = _mc_eval_stmt(stmt, ns)
+            # A _mc_plot marker isn't a value row — sample the
+            # expression and hand the frontend plot data instead.
+            if isinstance(val, dict) and val.get('__mcplot__') is True:
+                out.append({'ok': True, 'plot': _mc_plot_payload(val['expr'])})
+                continue
+            row = _mc_row(val)
             row['ok'] = True
             out.append(row)
         except Exception as e:
@@ -168,7 +304,7 @@ let boot: Promise<PyodideLike> | undefined;
 async function bootEngine(): Promise<PyodideLike> {
   importScripts(`${PYODIDE_BASE}pyodide.js`);
   const py = await loadPyodide({ indexURL: PYODIDE_BASE });
-  await py.loadPackage(['sympy']);
+  await py.loadPackage(['sympy', 'numpy']);
   await py.runPythonAsync(SETUP_PY);
   return py;
 }

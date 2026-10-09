@@ -1313,3 +1313,26 @@ LatexCmds.gradient = () =>
     '∇',
     'gradient'
   );
+
+//======================================================================
+//  \plot — insertion alias for \text{plot}
+//======================================================================
+
+// Typing `\plot` expands to a real \text{plot} TextBlock plus a trailing
+// space — the statement marker the compiler reads as a plot request,
+// with the caret after the space ready for the expression — the same
+// insertion-time expansion \def uses. A `\plot` in pasted latex renders
+// the same "plot" text and serializes as \text{plot}, so stored latex
+// canonicalizes on the next save.
+class PlotAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{plot}\\ ');
+  }
+}
+LatexCmds.plot = () =>
+  new PlotAlias(
+    '\\text{plot}',
+    h('span', { class: 'mq-text-mode' }, [h.text('plot')]) as HTMLElement,
+    'plot',
+    'plot'
+  );
