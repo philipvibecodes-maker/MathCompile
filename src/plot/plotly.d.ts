@@ -9,6 +9,12 @@ declare module 'plotly.js-dist-min' {
       layout: Record<string, unknown>,
       config?: Record<string, unknown>,
     ): Promise<unknown>;
+    react(
+      el: HTMLElement,
+      traces: Record<string, unknown>[],
+      layout: Record<string, unknown>,
+      config?: Record<string, unknown>,
+    ): Promise<unknown>;
     purge(el: HTMLElement): void;
   };
   export default Plotly;

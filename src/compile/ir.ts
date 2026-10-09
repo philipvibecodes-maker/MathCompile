@@ -771,9 +771,12 @@ const splitPlotMark = (n: MathJson): MathJson | undefined => {
   if (head(n) === 'InvisibleOperator') {
     const items = n.slice(1).filter((x) => !isSpacing(x));
     if (items.length >= 2 && isPlotMark(items[0]))
+      // The tail re-normalizes as an InvisibleOperator so the usual
+      // juxtaposition rules still apply — `\plot g(x)` applies the
+      // declared g to x (Apply), it is not g·(x).
       return items.length === 2
         ? items[1]
-        : (['Multiply', ...items.slice(1)] as MathJson);
+        : (['InvisibleOperator', ...items.slice(1)] as MathJson);
     return undefined;
   }
   const left = splitPlotMark(n[1]);
