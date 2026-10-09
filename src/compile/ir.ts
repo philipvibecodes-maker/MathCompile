@@ -155,6 +155,169 @@ const foldDQuotient = (args: MathJson[]): MathJson[] | null => {
   return null;
 };
 
+// `\text{D}` marks — the quoted 'D' literal the `\D` insertion alias
+// (and the 'd-total-alias' latex rewrite) produces. They must be read
+// on RAW children: norming unquotes 'D' to a plain D symbol.
+const isTotalDMark = (v: MathJson | undefined): boolean => v === "'D'";
+
+// A `\text{D}`-power: `\text{D}`, `\text{D}^2` — total-derivative order.
+const totalDPower = (
+  v: MathJson | undefined,
+): { is: boolean; order: MathJson | undefined } => {
+  if (isTotalDMark(v)) return { is: true, order: undefined };
+  if (
+    isArray(v) &&
+    head(v) === 'Power' &&
+    v.length === 3 &&
+    isTotalDMark(v[1])
+  )
+    return { is: true, order: v[2] };
+  return { is: false, order: undefined };
+};
+
+// `\frac{\D f}{\D x}` on raw children — the same quotient shapes as
+// dQuotient keyed on the 'D' literal, folding to TotalD slots.
+const tdQuotient = (
+  num: MathJson,
+  den: MathJson,
+):
+  | { body?: MathJson; x: MathJson; order: MathJson | undefined }
+  | null => {
+  if (
+    !isArray(den) ||
+    (head(den) !== 'Multiply' && head(den) !== 'InvisibleOperator') ||
+    den.length !== 3
+  )
+    return null;
+  const dp = totalDPower(den[1]);
+  if (!dp.is) return null;
+  let order = dp.order;
+  let x: MathJson;
+  if (isArray(den[2]) && head(den[2]) === 'Power' && den[2].length === 3) {
+    x = den[2][1];
+    if (
+      order !== undefined &&
+      JSON.stringify(order) !== JSON.stringify(den[2][2])
+    )
+      return null;
+    order = den[2][2];
+  } else {
+    x = den[2];
+    if (order !== undefined) return null; // \D^2 / (\D x) — not a clean
+    // nth-order quotient; leave it a fraction.
+  }
+  const np = totalDPower(num);
+  if (np.is) {
+    if (
+      np.order !== undefined &&
+      order !== undefined &&
+      JSON.stringify(np.order) !== JSON.stringify(order)
+    )
+      return null;
+    return { x, order: order ?? np.order };
+  }
+  if (
+    isArray(num) &&
+    (head(num) === 'Multiply' || head(num) === 'InvisibleOperator')
+  ) {
+    const nq = totalDPower(num[1]);
+    if (!nq.is) return null;
+    if (
+      nq.order !== undefined &&
+      order !== undefined &&
+      JSON.stringify(nq.order) !== JSON.stringify(order)
+    )
+      return null;
+    const tail = num.slice(2);
+    return {
+      body: tail.length === 1 ? tail[0] : ['Multiply', ...tail],
+      x,
+      order: order ?? nq.order,
+    };
+  }
+  return null;
+};
+
+// True when a 'D' literal appears anywhere inside a node — a mark that
+// must fold before norming unquotes it to a plain D symbol.
+const hasTotalDMark = (v: MathJson): boolean =>
+  isTotalDMark(v) || (isArray(v) && v.some((c) => hasTotalDMark(c)));
+
+// Fold the `\D` (`\text{D}`) operator inside a juxtaposition — runs on
+// the RAW factor list since norming would unquote the mark: `\D_x f`,
+// `\D_x^2 f`, `\frac{\D f}{\D x} g`, `\frac{\D}{\D x} f`, and the bare
+// `\D f` (missing variable — codegen flags it).
+const foldTotalD = (
+  rawArgs: MathJson[],
+  ctx: NormalizeCtx,
+): MathJson | null => {
+  const normVar = (v: MathJson): MathJson => ctx.norm(v, false, false, true);
+  const bodyOf = (parts: MathJson[]): MathJson =>
+    parts.length === 1
+      ? ctx.norm(parts[0])
+      : (['Multiply', ...parts.map((n) => ctx.norm(n))] as MathJson);
+  const first = rawArgs[0];
+  // `\D_x f` / `\D_x^2 f` — the variable rides the mark's subscript.
+  const sub =
+    isArray(first) &&
+    head(first) === 'Subscript' &&
+    first.length === 3 &&
+    isTotalDMark(first[1])
+      ? { x: first[2], order: undefined as MathJson | undefined }
+      : isArray(first) &&
+          head(first) === 'Power' &&
+          first.length === 3 &&
+          isArray(first[1]) &&
+          head(first[1]) === 'Subscript' &&
+          first[1].length === 3 &&
+          isTotalDMark(first[1][1])
+        ? { x: first[1][2], order: first[2] as MathJson | undefined }
+        : null;
+  if (sub !== null && rawArgs.length > 1)
+    return sub.order !== undefined
+      ? [
+          'TotalD',
+          bodyOf(rawArgs.slice(1)),
+          normVar(sub.x),
+          ctx.norm(sub.order),
+        ]
+      : ['TotalD', bodyOf(rawArgs.slice(1)), normVar(sub.x)];
+  // `\D f` / `\D^2 f` — a bare mark: an operator missing its variable.
+  const dp = totalDPower(first);
+  if (dp.is && rawArgs.length > 1)
+    return dp.order !== undefined
+      ? ['TotalD', bodyOf(rawArgs.slice(1)), 'Nothing', ctx.norm(dp.order)]
+      : ['TotalD', bodyOf(rawArgs.slice(1)), 'Nothing'];
+  // A `\frac{\D f}{\D x}` factor — the same two placements as the
+  // d-quotient fold.
+  for (let i = 0; i < rawArgs.length; i++) {
+    const a = rawArgs[i];
+    if (!isArray(a) || head(a) !== 'Divide' || a.length !== 3) continue;
+    const q = tdQuotient(a[1], a[2]);
+    if (!q) continue;
+    const x = normVar(q.x);
+    if (q.body !== undefined) {
+      // `\frac{\D f}{\D x} g` — g stays a factor outside the derivative.
+      const d: MathJson =
+        q.order !== undefined
+          ? ['TotalD', ctx.norm(q.body), x, ctx.norm(q.order)]
+          : ['TotalD', ctx.norm(q.body), x];
+      const factors = [
+        ...rawArgs.slice(0, i).map((n) => ctx.norm(n)),
+        d,
+        ...rawArgs.slice(i + 1).map((n) => ctx.norm(n)),
+      ];
+      return factors.length === 1 ? factors[0] : ['Multiply', ...factors];
+    }
+    const rest = rawArgs.filter((_, j) => j !== i);
+    if (rest.length === 0) return null; // `\frac{\D}{\D x}` alone — leave it.
+    return q.order !== undefined
+      ? ['TotalD', bodyOf(rest), x, ctx.norm(q.order)]
+      : ['TotalD', bodyOf(rest), x];
+  }
+  return null;
+};
+
 // `\python{ ... }` bodies are raw source, not math latex: braces, `\` and
 // `\\` inside them are code, and a literal newline is content. They're
 // extracted to opaque `\mcpsnippet{i}` markers here — before outputLatex
@@ -1158,13 +1321,24 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
             fn,
             ...(mid.length === 0 ? callArgs : [...mid, ...callArgs]),
           ];
-        if (isString(fn) && fn.length > 1) {
+        if (isString(fn) && fn.length > 1 && !hasTotalDMark(fn)) {
+          // `\nabla f(x)` — the grad word applied through juxtaposition
+          // is the gradient of the whole product, not a grad(f,x) call.
+          if (fn === 'grad' && mid.length > 0) {
+            const parts = [...mid, ...callArgs];
+            return [
+              'Gradient',
+              parts.length === 1
+                ? parts[0]
+                : (['Multiply', ...parts] as MathJson),
+            ];
+          }
           if (mid.length === 0)
             return ctx.norm([fn, ...callArgs] as MathJson[], ctx.atStatement);
           firstNorm = ctx.norm(fn);
           return ['Apply', firstNorm, ...mid, ...callArgs];
         }
-        if (isArray(fn)) {
+        if (isArray(fn) && !hasTotalDMark(fn)) {
           firstNorm = ctx.norm(fn);
           const fnHead = head(firstNorm);
           if (
@@ -1210,9 +1384,24 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
           ];
         }
       }
+      // `\D` — the `\text{D}` mark must fold before each factor norms:
+      // norming unquotes 'D' to an ordinary D symbol. `\D_x f`,
+      // `\frac{\D f}{\D x} g`, `\frac{\D}{\D x} f`, `\D f`.
+      const td = foldTotalD(flatItems, ctx);
+      if (td) return td;
       const args = flatItems.map((n) =>
         n === fn && firstNorm !== undefined ? firstNorm : ctx.norm(n),
       );
+      // `\nabla f` — lowered to `\operatorname{grad}` by the latex
+      // rewrite — binds the rest of the juxtaposition as the
+      // gradient's argument, not a product factor.
+      if (args[0] === 'grad')
+        return [
+          'Gradient',
+          args.length === 2
+            ? args[1]
+            : (['Multiply', ...args.slice(1)] as MathJson),
+        ];
       // `\mathrm{trace}(M)`-style word ops fused to a matrix literal
       // arrive as InvisibleOperator(word, Matrix) — a method call, not
       // a product (the Delimiter-less pmatrix shape).
@@ -1262,6 +1451,17 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
     why: 'd-quotient fold, then matrix word-op fold, else plain product',
     when: (h) => h === 'Multiply',
     rewrite: (node, ctx) => {
+      // Same `\D` fold as the implicit-product path, on the raw
+      // children before 'D' unquotes.
+      const td = foldTotalD(
+        node
+          .slice(1)
+          .flatMap((n): MathJson[] =>
+            isDelimiterGroup(n) ? delimiterArgs(n) : [n],
+          ),
+        ctx,
+      );
+      if (td) return td;
       const args = node.slice(1).map((n) => ctx.norm(n));
       const folded = foldDQuotient(args);
       if (folded)
@@ -1278,6 +1478,34 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
       }
       return DECLINE;
     },
+  },
+  {
+    name: 'total-d-quotient',
+    // A standalone `\frac{\D f}{\D x}` — the 'D'-marked quotient, read
+    // on the raw children before norming unquotes the marks.
+    why: 'a \\text{D}-quotient Divide folds to TotalD(body, x[, order])',
+    when: (h, node) => h === 'Divide' && node.length === 3,
+    rewrite: (node, ctx) => {
+      const q = tdQuotient(node[1], node[2]);
+      if (q && q.body !== undefined)
+        return q.order !== undefined
+          ? [
+              'TotalD',
+              ctx.norm(q.body),
+              ctx.norm(q.x, false, false, true),
+              ctx.norm(q.order),
+            ]
+          : ['TotalD', ctx.norm(q.body), ctx.norm(q.x, false, false, true)];
+      return DECLINE;
+    },
+  },
+  {
+    name: 'gradient-call',
+    // `\operatorname{grad}(x)` — the `\nabla` rewrite target in call
+    // position — folds to Gradient(body).
+    why: 'a grad(...) call folds to Gradient(body)',
+    when: (h, node) => h === 'grad' && node.length === 2,
+    rewrite: (node, ctx) => ['Gradient', ctx.norm(node[1])],
   },
   {
     name: 'divide-quotient',

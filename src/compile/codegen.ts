@@ -1679,6 +1679,109 @@ class Emitter {
           },
         );
       }
+      case 'TotalD': {
+        // `\frac{\D f}{\D x}` / `\D_x f` — the TOTAL derivative: every
+        // free symbol in the body differentiates through the chain rule
+        // as a function of the variable — `\frac{\D(xy)}{\D t}` emits
+        // `sp.diff(x(t)*y(t), t)` = `x(t)*y'(t) + y(t)*x'(t)`.
+        const v = args[1];
+        if (!isStr(v) || missingArg(v)) {
+          this.scope.flag(
+            'error',
+            'total derivative needs a variable — write \\D_x f or \\frac{\\D f}{\\D x}',
+          );
+          return [`${this.sp}diff(${this.emit(args[0])}, x)`, PREC_ATOM];
+        }
+        if (
+          isStr(args[0]) &&
+          this.scope.decls.defined.has(args[0]) &&
+          !this.scope.decls.declaredFns.has(args[0])
+        )
+          this.scope.flag(
+            'error',
+            `${args[0]} is bound to a value — cannot differentiate`,
+          );
+        return this.scope.withLambdaBound([v], (): [string, number] => {
+          // Free names become functions of the variable; names that
+          // already carry a callable meaning keep their signature.
+          for (const n of freeNames(args[0])) {
+            if (
+              n === v ||
+              this.scope.decls.defined.has(n) ||
+              this.scope.emit.matrices.has(n) ||
+              this.scope.emit.functions.has(n) ||
+              this.scope.decls.declaredFns.has(n) ||
+              this.scope.kinds.depVars.has(n)
+            )
+              continue;
+            this.fn(n);
+            this.scope.noteDepVar(n, [v]);
+          }
+          const f = this.emit(args[0]);
+          const x = this.emit(v);
+          return args.length >= 3
+            ? [
+                `${this.sp}diff(${f}, ${x}, ${this.emit(args[2])})`,
+                PREC_ATOM,
+              ]
+            : [`${this.sp}diff(${f}, ${x})`, PREC_ATOM];
+        });
+      }
+      case 'Gradient': {
+        // `\nabla f` — the gradient: a row of partials over the body's
+        // free variables; `sp.derive_by_array` emits the textbook vector.
+        const body = args[0];
+        let vars: string[];
+        if (isStr(body)) {
+          // ∇f on a bare name — like `\frac{df}{dx}`: a field, not a
+          // symbol. Its recorded args define the variables; an
+          // undeclared f becomes f(x) of one variable.
+          if (
+            this.scope.decls.defined.has(body) &&
+            !this.scope.decls.declaredFns.has(body)
+          ) {
+            this.scope.flag(
+              'error',
+              `${body} is bound to a value — not a scalar field`,
+            );
+            return [
+              `${this.sp}derive_by_array(${this.emit(body)}, [])`,
+              PREC_ATOM,
+            ];
+          }
+          const recorded = this.scope.emit.fnArgs.get(body);
+          if (recorded !== undefined) {
+            vars = recorded.filter((a): a is string => isStr(a));
+          } else {
+            const v = body === 'x' ? 't' : 'x';
+            this.fn(body);
+            this.scope.noteDepVar(body, [v]);
+            vars = [v];
+          }
+        } else {
+          vars = freeNames(body).filter(
+            (n) =>
+              !this.scope.decls.defined.has(n) &&
+              !this.scope.emit.matrices.has(n) &&
+              !this.scope.emit.functions.has(n) &&
+              !this.scope.decls.declaredFns.has(n) &&
+              !this.scope.kinds.depVars.has(n),
+          );
+        }
+        if (vars.length === 0) {
+          this.scope.flag('error', 'gradient needs a free variable');
+          return [
+            `${this.sp}derive_by_array(${this.emit(body)}, [])`,
+            PREC_ATOM,
+          ];
+        }
+        return [
+          `${this.sp}derive_by_array(${this.emit(body)}, [${vars
+            .map((v) => this.sym(v))
+            .join(', ')}])`,
+          PREC_ATOM,
+        ];
+      }
       case 'Apply': {
         const callee = args[0];
         if (isHead(callee, 'InverseFunction')) {

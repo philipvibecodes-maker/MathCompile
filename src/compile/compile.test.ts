@@ -170,6 +170,99 @@ const FIXTURES: {
     ],
   },
   {
+    // `\D` — the total derivative: free symbols in the body become
+    // functions of the variable so the chain rule differentiates
+    // through. `\text{D}` is what the field stores after the alias.
+    latex: '\\frac{\\text{D}y}{\\text{D}x}',
+    expectedIR: ['TotalD', 'y', 'x'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+      'sp.diff(y(x), x)',
+    ],
+  },
+  {
+    latex: '\\frac{\\D f}{\\D x}',
+    expectedIR: ['TotalD', 'f', 'x'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+      'sp.diff(f(x), x)',
+    ],
+  },
+  {
+    latex: '\\frac{\\D}{\\D x}f',
+    expectedIR: ['TotalD', 'f', 'x'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+      'sp.diff(f(x), x)',
+    ],
+  },
+  {
+    latex: '\\D_t(xy)',
+    expectedIR: ['TotalD', ['Multiply', 'x', 'y'], 't'],
+    expectedPython: [
+      't = sp.Symbol("t")',
+      'x = sp.Function("x")',
+      'y = sp.Function("y")',
+      'sp.diff(x(t) * y(t), t)',
+    ],
+  },
+  {
+    latex: '\\D_x^2 f',
+    expectedIR: ['TotalD', 'f', 'x', 2],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+      'sp.diff(f(x), x, 2)',
+    ],
+  },
+  {
+    latex: '\\D f',
+    expectedIR: ['TotalD', 'f', 'Nothing'],
+    expectedPython: ['f = sp.Symbol("f")'],
+    issues: ['total derivative needs a variable'],
+  },
+  {
+    // `\nabla`/`\gradient` lower to `\operatorname{grad}` pre-parse;
+    // a bare-name body reads as a field of one variable like `df/dx`.
+    latex: '\\nabla f',
+    expectedIR: ['Gradient', 'f'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+      'sp.derive_by_array(f(x), [x])',
+    ],
+  },
+  {
+    latex: '\\gradient f',
+    expectedIR: ['Gradient', 'f'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+      'sp.derive_by_array(f(x), [x])',
+    ],
+  },
+  {
+    latex: '\\nabla (x^2+y^2)',
+    expectedIR: [
+      'Gradient',
+      ['Add', ['Power', 'x', 2], ['Power', 'y', 2]],
+    ],
+    expectedPython: [
+      "x, y = sp.symbols('x y')",
+      'sp.derive_by_array(x**2 + y**2, [x, y])',
+    ],
+  },
+  {
+    // `\nabla \cdot F` and `\nabla^2` are divergence/laplacian, not the
+    // gradient — flagged honestly rather than guessed.
+    latex: '\\nabla \\cdot F',
+    expectedPython: ['F = sp.Symbol("F")'],
+    issues: ['unsupported command'],
+  },
+  {
     // A non-name "callee" is juxtaposed factors, not a call — emitting
     // `sqrt(x)(x + 1)` raised 'Pow' object is not callable in the worker.
     latex: '\\sqrt{x}(x+1)',
