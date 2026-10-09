@@ -455,7 +455,11 @@
 
     .mq-sup {
       display: block;
-      // spread the pair: lift the sup off the sub
+    }
+
+    // spread the pair: lift the sup off the sub (lone sups must keep
+    // stock geometry — the margin would drop the baseline under the base)
+    &:not(.mq-sup-only) > .mq-sup {
       margin-bottom: 0.15em;
     }
 

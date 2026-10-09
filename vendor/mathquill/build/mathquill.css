@@ -450,6 +450,8 @@
 }
 .mq-math-mode .mq-supsub .mq-sup {
   display: block;
+}
+.mq-math-mode .mq-supsub:not(.mq-sup-only) > .mq-sup {
   margin-bottom: 0.15em;
 }
 .mq-math-mode .mq-supsub .mq-sub {
