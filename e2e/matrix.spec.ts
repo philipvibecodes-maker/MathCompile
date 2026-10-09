@@ -205,22 +205,22 @@ test('Ctrl+Shift+Delete inside a matrix cell deletes the current column', async 
   await expect(mf.locator('.mq-editable-field .mq-matrix td')).toHaveCount(2);
 });
 
-test('delete shortcuts on the last row or column unwrap the matrix', async ({
+test('delete shortcuts on the last row or column delete the matrix', async ({
   page,
 }) => {
   const mf = cell(page);
   await setValue(mf, '\\begin{matrix}a&b\\end{matrix}');
   await page.keyboard.press('Control+Home');
   await page.keyboard.press('ArrowRight');
-  await page.keyboard.press('Control+Shift+Backspace'); // last row: unwraps
-  expect(await cellValue(mf)).toBe('ab');
+  await page.keyboard.press('Control+Shift+Backspace'); // last row: all gone
+  expect(await cellValue(mf)).toBe('');
   await expect(mf.locator('.mq-matrix')).toHaveCount(0);
 
   await setValue(mf, '\\begin{matrix}b\\end{matrix}');
   await page.keyboard.press('Control+Home');
   await page.keyboard.press('ArrowRight'); // step into cell b
-  await page.keyboard.press('Control+Shift+Delete'); // last col: unwraps
-  expect(await cellValue(mf)).toBe('b');
+  await page.keyboard.press('Control+Shift+Delete'); // last col: all gone
+  expect(await cellValue(mf)).toBe('');
   await expect(mf.locator('.mq-matrix')).toHaveCount(0);
 });
 

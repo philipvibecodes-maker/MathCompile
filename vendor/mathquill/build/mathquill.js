@@ -14044,10 +14044,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             cursor.endSelection();
             var cellToFocus = this[method](cell);
             if (!cellToFocus) {
-                // Last row/column: the delete removes the matrix itself \u2014
-                // unwrap the grid like the last-cell backspace path does
-                // (contents stay inline, delimiters go).
-                cursor.unwrapGramp();
+                // Last row/column: delete the matrix outright, cells and
+                // all \u2014 the caret lands where the grid was.
+                cursor.insLeftOf(this);
+                this.remove();
                 return;
             }
             this.finalizeTree();

@@ -247,13 +247,13 @@ suite('environments', function () {
     test('Ctrl-Shift-Backspace/Ctrl-Shift-Del on the last row or column delete the matrix', function () {
       mq.latex('\\begin{matrix}a&b\\end{matrix}');
       mq.moveToLeftEnd().keystroke('Right');
-      mq.keystroke('Ctrl-Shift-Backspace'); // one row: unwraps to inline
-      assert.equal(mq.latex(), 'ab');
+      mq.keystroke('Ctrl-Shift-Backspace'); // one row: matrix deleted
+      assert.equal(mq.latex(), '');
 
       mq.latex('\\begin{matrix}a\\\\b\\end{matrix}');
       mq.moveToLeftEnd().keystroke('Right');
-      mq.keystroke('Ctrl-Shift-Del'); // one column: unwraps to inline
-      assert.equal(mq.latex(), 'ab');
+      mq.keystroke('Ctrl-Shift-Del'); // one column: matrix deleted
+      assert.equal(mq.latex(), '');
     });
 
     test('inside \\displaylines the delete shortcuts keep word-delete', function () {
