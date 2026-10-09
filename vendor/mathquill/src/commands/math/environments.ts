@@ -834,8 +834,9 @@ function withBraces<T extends CellGrid>(env: T): T {
 }
 
 Environments.matrix = () => new Matrix();
-// \matrix{...} emits the \begin{matrix} env form (like \pmatrix).
-LatexCmds.matrix = () => withBraces(new MatrixEnv());
+// \matrix{...} displays and serializes as \pmatrix — plain TeX's
+// paren'd matrix. \begin{matrix} stays the paren-less env.
+LatexCmds.matrix = () => withBraces(new PMatrix());
 
 class PMatrix extends Matrix {
   parens = { left: '(' as const, right: ')' as const };

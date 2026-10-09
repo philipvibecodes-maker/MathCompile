@@ -14165,8 +14165,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         return env;
     }
     Environments.matrix = function () { return new Matrix(); };
-    // \matrix{...} emits the \begin{matrix} env form (like \pmatrix).
-    LatexCmds.matrix = function () { return withBraces(new MatrixEnv()); };
+    // \matrix{...} displays and serializes as \pmatrix \u2014 plain TeX's
+    // paren'd matrix. \begin{matrix} stays the paren-less env.
+    LatexCmds.matrix = function () { return withBraces(new PMatrix()); };
     var PMatrix = /** @class */ (function (_super) {
         __extends(PMatrix, _super);
         function PMatrix() {
