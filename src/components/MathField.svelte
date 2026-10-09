@@ -31,6 +31,7 @@
       onMoveOut: (dir) => appStore.moveOut(id, dir),
       onDeleteOut: () => appStore.deleteFocused(),
       onFocus: () => appStore.noteFocus(id),
+      ownsFocus: () => appStore.focusedId === id,
       onCaretContext: (ctx) => {
         help = ctx;
         if (ctx) helpShown = ctx;

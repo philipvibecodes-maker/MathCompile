@@ -20,6 +20,10 @@ export interface FieldCallbacks {
   // Backspace/Delete pressed while the field holds only a blank line.
   onDeleteOut?: () => void;
   onFocus?: () => void;
+  // Whether this field is still the app's focused cell — gates the
+  // blur-to-nowhere refocus so a cell hop already owned by another
+  // field can't be stolen back.
+  ownsFocus?: () => boolean;
   // Caret context for the help strip under the cell; null when the
   // caret sits in no hint-bearing position (or the field blurs).
   onCaretContext?: (ctx: HelpContext | null) => void;
@@ -77,7 +81,8 @@ export function attachField(
     // if focus is still stranded by then.
     setTimeout(() => {
       const ae = document.activeElement;
-      if (ae === document.body || ae === el || ae === null) el.mq?.focus();
+      const stranded = ae === document.body || ae === el || ae === null;
+      if (stranded && (cb.ownsFocus?.() ?? true)) el.mq?.focus();
     });
   };
 
