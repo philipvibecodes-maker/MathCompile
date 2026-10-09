@@ -442,7 +442,7 @@
   vertical-align: -0.65em;
 }
 .mq-math-mode .mq-supsub.mq-sup-only {
-  vertical-align: 0.65em;
+  vertical-align: 0.55em;
 }
 .mq-math-mode .mq-supsub.mq-sup-only > .mq-sup {
   display: inline-block;
