@@ -38,7 +38,14 @@ New files:
   spec-taking envs (`\array`, `\subarray`, `\tabular`, `\alignat`,
   `\alignedat` — and typed `\begin{<spec-env>}`) go through a pending
   `\begin{name}{arg}` input (`EnvSpecInput`) that applies the arg on
-  `}`/Enter/Tab.
+  `}`/Enter/Tab. Typed matrix-family inserts (`\pmatrix`,
+  `\begin{bmatrix}`, `\array{cc}`, …) can defer to an app-supplied
+  dimensions menu: with `config({matrixDimensionsMenu: true})`,
+  `Matrix.createLeftOf` dispatches `mq:matrix-request` on the
+  controller's container instead of dropping a default 2x2 grid — the
+  app's `detail.insert(rows, cols)` writes the grid (or nothing on
+  cancel). `\cases` and the non-matrix grids (`aligned`, `gathered`,
+  `displaylines`) never defer.
 - `src/commands/math/extraCommands.ts` (in `SOURCES_FULL` and
   `SOURCES_BASIC`) — the additions that used to be
   inline in `commands.ts`: `LatexCmds`/`CharCmds` and their helper
@@ -156,15 +163,17 @@ Inline `// MATHCOMPILE:` edits, by file:
   non-letter resolves `\<char>` escapes (`\;` `\{` `\|` …) to their
   atoms instead of writing the raw character; the `{` that opens a
   `\python` block is swallowed since it's the block's visible
-  delimiter, not source text.
+  delimiter, not source text; a `{` typed while a matrix is deferred
+  to the dimensions menu is swallowed the same way, so it can't leave
+  a stray brace beside the grid the menu inserts.
 - `src/commands/math/basicSymbols.ts` — also: `lim` removed from the
   default `autoOperatorNames` list — `\lim` is a real command (see
   extraCommands.ts), so typed `lim` resolves through `autoCommands`.
 - `src/publicapi.ts` + `src/mathquill.d.ts` —
   `EditableField.insertLineBreak()` Enter semantics (matrix row inside
   a matrix cell, `\displaylines` row split, or wrap top-level content
-  in `\displaylines`) and `dIsDerivative`/`limStartsWithArrow` on
-  `v1.Config` typings.
+  in `\displaylines`) and `dIsDerivative`/`limStartsWithArrow`/
+  `matrixDimensionsMenu` on `v1.Config` typings.
 - `src/css/math.less` — styles for the additions: `.mq-matrix`/
   `.mq-displaylines` (with zero horizontal indent so line 1 doesn't
   shift when a second line is added), display-mode comma spacing

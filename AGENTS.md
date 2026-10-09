@@ -192,7 +192,10 @@ and empty blocks serialize as `{ }`.
   spec-taking envs (`\array`, `\subarray`, `\tabular`, `\alignat`,
   `\alignedat` — and typed `\begin{<spec-env>}`) first open a pending
   `\begin{name}{arg}` input that applies the arg on `}`/Enter/Tab.
-  Inside a matrix cell, Enter adds a row and
+  Typed matrix-family commands defer to a rows/columns menu
+  (`src/editor/matrix-menu.ts` via the vendored `matrixDimensionsMenu`
+  option — Enter inserts the grid, Escape cancels); `\cases` and the
+  non-matrix grids skip it. Inside a matrix cell, Enter adds a row and
   Shift+Space adds a column; Ctrl+Shift+Backspace deletes the current
   row and Ctrl+Shift+Delete deletes the current column (each a no-op
   once only one remains) — those keys keep their usual word-delete

@@ -7,6 +7,7 @@ import {
 import { outputLatex } from '../compile/latex';
 import { attachAutocompleteMenu } from './ac-menu';
 import { attachSymbolPicker } from './ac-picker';
+import { attachMatrixMenu } from './matrix-menu';
 import { readHelpContext, type HelpContext } from './context-help';
 import { SMART_AUTO_COMMANDS } from './smart-commands';
 
@@ -111,6 +112,7 @@ export function attachField(
 
   const detachAutocomplete = attachAutocompleteMenu(el);
   const detachPicker = attachSymbolPicker(el);
+  const detachMatrixMenu = attachMatrixMenu(el);
 
   return {
     focus: (edge) => el.focus({ edge }),
@@ -164,6 +166,7 @@ export function attachField(
       el.removeEventListener('click', reportContext);
       detachAutocomplete();
       detachPicker();
+      detachMatrixMenu();
     },
   };
 }

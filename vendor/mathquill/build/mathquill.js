@@ -11830,6 +11830,14 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     // into the code.
                     if (cmd instanceof PythonBlock && ch === '{')
                         return;
+                    // MATHCOMPILE: same swallow when a matrix defers to the
+                    // dimensions menu \u2014 a `\pmatrix{` typed while the menu is open
+                    // would leave a stray brace beside the grid the menu inserts.
+                    if (ch === '{' &&
+                        cmd instanceof CellGrid &&
+                        cmd.dimsMenu &&
+                        cursor.options.matrixDimensionsMenu)
+                        return;
                     if (ch !== '\\' || !this.isEmpty())
                         cursor.parent.write(cursor, ch);
                     else
@@ -13473,7 +13481,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 else
                     cursor.insAtRightEnd(beginNode.parent);
                 node.createLeftOf(cursor.show());
-                if (grid && node === grid)
+                // A grid deferred to the matrix-dimensions menu was never
+                // adopted (no parent) \u2014 there is no first cell to land in.
+                if (grid && node === grid && grid.parent)
                     cursor.insAtLeftEnd(grid.getEnd(L));
             };
             var origWrite = nameBlock.write;
@@ -13540,6 +13550,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             _this_1.rowSize = 0;
             _this_1.gridClass = 'mq-matrix mq-non-leaf';
             _this_1.cellTextAlign = 'center';
+            // MATHCOMPILE: set on the matrix family \u2014 a typed command defers to
+            // the rows/columns menu (matrixDimensionsMenu option) instead of
+            // inserting a default 2x2 grid.
+            _this_1.dimsMenu = false;
             return _this_1;
         }
         Object.defineProperty(CellGrid.prototype, "cells", {
@@ -14164,7 +14178,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var Matrix = /** @class */ (function (_super) {
         __extends(Matrix, _super);
         function Matrix() {
-            return _super !== null && _super.apply(this, arguments) || this;
+            var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            _this_1.dimsMenu = true;
+            return _this_1;
         }
         Matrix.prototype.createBlocks = function () {
             this.blocks = [
@@ -14173,6 +14189,47 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 new MatrixCell(1, this),
                 new MatrixCell(1, this),
             ];
+        };
+        // MATHCOMPILE: with the matrixDimensionsMenu option on, inserting a
+        // matrix-family grid on the typed path fires 'mq:matrix-request' on
+        // the field's container instead of dropping a default 2x2 grid \u2014 the
+        // app's menu calls detail.insert(rows, cols) to write the grid (or
+        // nothing on cancel). Parsing and latex()/write() builds cells
+        // directly, so they never reach here.
+        Matrix.prototype.createLeftOf = function (cursor) {
+            var _c, _d;
+            var ctrlr = cursor.controller;
+            if (!this.dimsMenu || !ctrlr.options.matrixDimensionsMenu) {
+                return _super.prototype.createLeftOf.call(this, cursor);
+            }
+            var parent = cursor.parent;
+            var left = cursor[L];
+            var open = this.latexOpen();
+            var close = this.latexClose();
+            var frag = this.replacedFragment;
+            ctrlr.container.dispatchEvent(new CustomEvent('mq:matrix-request', {
+                bubbles: true,
+                detail: {
+                    env: (_d = (_c = open.match(/^\\begin\{([a-zA-Z]+)/)) === null || _c === void 0 ? void 0 : _c[1]) !== null && _d !== void 0 ? _d : 'matrix',
+                    insert: function (rows, cols) {
+                        // Put the caret back in the gap the command occupied in
+                        // case focus moved while the menu was open.
+                        if (left && left.parent === parent)
+                            cursor.insRightOf(left);
+                        else if (!left)
+                            cursor.insAtLeftEnd(parent);
+                        var row = [frag ? frag.latex() : '']
+                            .concat(new Array(Math.max(0, cols - 1)).fill(''))
+                            .join('&');
+                        ctrlr.writeLatex(open +
+                            new Array(Math.max(1, rows)).fill(row).join('\\\\') +
+                            close);
+                        var grid = cursor[L];
+                        if (grid instanceof MathCommand)
+                            grid.placeCursor(cursor);
+                    }
+                }
+            }));
         };
         return Matrix;
     }(CellGrid));
@@ -14278,6 +14335,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         __extends(Cases, _super);
         function Cases() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            // A case split is not a matrix for the dimensions menu.
+            _this_1.dimsMenu = false;
             _this_1.parens = { left: '{', right: null };
             _this_1.cellTextAlign = 'left';
             return _this_1;
@@ -14795,7 +14854,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 else
                     cursor.insAtRightEnd(input.parent);
                 grid.createLeftOf(cursor.show());
-                cursor.insAtLeftEnd(grid.getEnd(L));
+                // Same deferred-insert guard as \begin's resolve.
+                if (grid.parent)
+                    cursor.insAtLeftEnd(grid.getEnd(L));
             };
             var origWrite = argBlock.write;
             argBlock.write = function (cursor, ch) {

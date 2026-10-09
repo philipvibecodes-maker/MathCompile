@@ -76,8 +76,10 @@ test('a typed matrix still reaches the left-of hints through the input-wrapper r
   const mf = cell(page);
   // Typing \pmatrix + Enter leaves an invisible .mq-latex-command-input-
   // wrapper between the previous atom and the .mq-matrix; the walk must
-  // see through it (hydration-only coverage would miss this).
+  // see through it (hydration-only coverage would miss this). The second
+  // Enter accepts the dimensions menu's default 2x2.
   await page.keyboard.type('x+\\pmatrix');
+  await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
   await expect(help(mf)).toContainText('add row'); // inside the grid
   await page.keyboard.press('ArrowLeft'); // out the left edge
