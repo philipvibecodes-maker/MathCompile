@@ -428,7 +428,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(calc('x!!').statements[0].code).toBe(F('sp.factorial2(x)'));
     const prog = calc('f\\circ g');
     expect(prog.statements[0].code).toBe(
-      F('sp.Lambda(sp.Symbol("x"), f(g(sp.Symbol("x"))))'),
+      F('sp.Lambda(sp.Symbol("a"), f(g(sp.Symbol("a"))))'),
     );
     expect(prog.prelude).toContain('f = sp.Function("f")');
     expect(prog.prelude).toContain('g = sp.Function("g")');
@@ -933,7 +933,7 @@ describe('codegen edge cases', () => {
   });
   it("evaluates f'(0) at 0 instead of differentiating a constant", () => {
     const p = calc("f'(0)");
-    expect(p.statements[0]?.code).toContain('.subs(x, 0)');
+    expect(p.statements[0]?.code).toContain('.subs(a, 0)');
     expect(p.statements[0]?.code).not.toContain('diff(f(0), 0)');
   });
 
@@ -943,11 +943,11 @@ describe('codegen edge cases', () => {
     // at the point, not diff(f(2), 2).
     for (const l of ['f\\prime(2)', 'f^{\\prime}(2)']) {
       const p = calc(l);
-      expect(p.statements[0]?.code).toContain('diff(f(x), x)');
-      expect(p.statements[0]?.code).toContain('.subs(x, 2)');
+      expect(p.statements[0]?.code).toContain('diff(f(a), a)');
+      expect(p.statements[0]?.code).toContain('.subs(a, 2)');
     }
     expect(calc('f\\prime\\prime(2)').statements[0]?.code).toBe(
-      F('sp.diff(f(x), x, 2).subs(x, 2)'),
+      F('sp.diff(f(a), a, 2).subs(a, 2)'),
     );
   });
 
@@ -968,7 +968,7 @@ describe('function applied to a set emits its image', () => {
     expect(prog.cells[1].statements).toEqual([
       {
         code: F(
-          'sp.imageset(sp.Lambda(sp.Symbol("_a0"), f(sp.Symbol("_a0"))), sp.FiniteSet(1, 2, 3))',
+          'sp.imageset(sp.Lambda(sp.Symbol("a"), f(sp.Symbol("a"))), sp.FiniteSet(1, 2, 3))',
         ),
         display: undefined,
       },
@@ -980,7 +980,7 @@ describe('function applied to a set emits its image', () => {
     expect(p.prelude).toContain('foo = sp.Function("foo")');
     expect(p.statements[0]?.code).toBe(
       F(
-        'sp.imageset(sp.Lambda(sp.Symbol("_a0"), foo(sp.Symbol("_a0"))), sp.FiniteSet(1, 2))',
+        'sp.imageset(sp.Lambda(sp.Symbol("a"), foo(sp.Symbol("a"))), sp.FiniteSet(1, 2))',
       ),
     );
   });
@@ -992,7 +992,7 @@ describe('function applied to a set emits its image', () => {
       'f\\left(S\\right)',
     );
     expect(prog.cells[2].statements[0]?.code).toBe(
-      F('sp.imageset(sp.Lambda(sp.Symbol("_a0"), f(sp.Symbol("_a0"))), S)'),
+      F('sp.imageset(sp.Lambda(sp.Symbol("a"), f(sp.Symbol("a"))), S)'),
     );
   });
 
@@ -1004,12 +1004,12 @@ describe('function applied to a set emits its image', () => {
     );
     expect(prog.cells[1].statements[0]?.code).toBe(
       F(
-        'sp.imageset(sp.Lambda(sp.Symbol("_a0"), g(sp.Symbol("_a0"), y)), sp.FiniteSet(1, 2))',
+        'sp.imageset(sp.Lambda(sp.Symbol("a"), g(sp.Symbol("a"), y)), sp.FiniteSet(1, 2))',
       ),
     );
     expect(prog.cells[2].statements[0]?.code).toBe(
       F(
-        'sp.imageset(sp.Lambda((sp.Symbol("_a0"), sp.Symbol("_a1")), g(sp.Symbol("_a0"), sp.Symbol("_a1"))), sp.FiniteSet(1, 2), sp.FiniteSet(3, 4))',
+        'sp.imageset(sp.Lambda((sp.Symbol("a"), sp.Symbol("b")), g(sp.Symbol("a"), sp.Symbol("b"))), sp.FiniteSet(1, 2), sp.FiniteSet(3, 4))',
       ),
     );
   });
@@ -1021,11 +1021,11 @@ describe('function applied to a set emits its image', () => {
       'f\\left(\\{1,2\\} \\cup \\{3\\}\\right)',
     );
     expect(prog.cells[1].statements[0]?.code).toBe(
-      F('sp.imageset(sp.Lambda(sp.Symbol("_a0"), f(sp.Symbol("_a0"))), sp.S.Reals)'),
+      F('sp.imageset(sp.Lambda(sp.Symbol("a"), f(sp.Symbol("a"))), sp.S.Reals)'),
     );
     expect(prog.cells[2].statements[0]?.code).toBe(
       F(
-        'sp.imageset(sp.Lambda(sp.Symbol("_a0"), f(sp.Symbol("_a0"))), sp.Union(sp.FiniteSet(1, 2), sp.FiniteSet(3)))',
+        'sp.imageset(sp.Lambda(sp.Symbol("a"), f(sp.Symbol("a"))), sp.Union(sp.FiniteSet(1, 2), sp.FiniteSet(3)))',
       ),
     );
   });
@@ -1037,11 +1037,11 @@ describe('function applied to a set emits its image', () => {
       '\\left(x \\mapsto x^2\\right)\\left(\\{3,4\\}\\right)',
     );
     expect(prog.cells[1].statements[0]?.code).toBe(
-      F('sp.imageset(sp.Lambda(x, sp.diff(f(x), x)), sp.FiniteSet(1, 2))'),
+      F('sp.imageset(sp.Lambda(a, sp.diff(f(a), a)), sp.FiniteSet(1, 2))'),
     );
     expect(prog.cells[2].statements[0]?.code).toBe(
       F(
-        'sp.imageset(sp.Lambda(sp.Symbol("_a0"), sp.Lambda(x, x**2)(sp.Symbol("_a0"))), sp.FiniteSet(3, 4))',
+        'sp.imageset(sp.Lambda(sp.Symbol("b"), sp.Lambda(x, x**2)(sp.Symbol("b"))), sp.FiniteSet(3, 4))',
       ),
     );
   });
@@ -1049,7 +1049,30 @@ describe('function applied to a set emits its image', () => {
   it('maps an inverse function over the set', () => {
     expect(calc('\\sin^{-1}\\left(\\{0,1\\}\\right)').statements[0]?.code).toBe(
       F(
-        'sp.imageset(sp.Lambda(sp.Symbol("_a0"), sp.asin(sp.Symbol("_a0"))), sp.FiniteSet(0, 1))',
+        'sp.imageset(sp.Lambda(sp.Symbol("a"), sp.asin(sp.Symbol("a"))), sp.FiniteSet(0, 1))',
+      ),
+    );
+  });
+
+  it('names Lambda params the first unused lowercase letters', () => {
+    // `g(\{1,2\}, x)` — `x` is free beside the set, so it can't bind
+    // the element variable; `a` is the first unused letter. A letter
+    // bound anywhere in the program (`a = 5`) is also skipped — the
+    // param would resolve to the bound value.
+    const prog = calcAll(
+      'a = 5',
+      '\\text{def} g(x,y) = x + y',
+      'g\\left(\\{1,2\\}, x\\right)',
+      'g\\left(\\{1,2\\}, \\{3,4\\}\\right)',
+    );
+    expect(prog.cells[2].statements[0]?.code).toBe(
+      F(
+        'sp.imageset(sp.Lambda(sp.Symbol("b"), g(sp.Symbol("b"), x)), sp.FiniteSet(1, 2))',
+      ),
+    );
+    expect(prog.cells[3].statements[0]?.code).toBe(
+      F(
+        'sp.imageset(sp.Lambda((sp.Symbol("b"), sp.Symbol("c")), g(sp.Symbol("b"), sp.Symbol("c"))), sp.FiniteSet(1, 2), sp.FiniteSet(3, 4))',
       ),
     );
   });
@@ -1423,7 +1446,7 @@ describe('calculator import-* mode (from sympy import *)', () => {
       'f\\left(\\{1,2,3\\}\\right)',
     );
     expect(prog.cells[1].statements[0].code).toBe(
-      F('imageset(Lambda(Symbol("_a0"), f(Symbol("_a0"))), FiniteSet(1, 2, 3))'),
+      F('imageset(Lambda(Symbol("a"), f(Symbol("a"))), FiniteSet(1, 2, 3))'),
     );
   });
 

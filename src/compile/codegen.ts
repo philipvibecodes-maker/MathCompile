@@ -1061,7 +1061,11 @@ class Emitter {
           // arity instead of falling back to `f(2)`.
           const params = argNodes.every(isStr)
             ? argNodes.map((x) => this.emit(x))
-            : argNodes.map((_, i) => `${this.sp}Symbol("x${i === 0 ? '' : i}")`);
+            : this.freshLetters(
+                argNodes.length,
+                a,
+                ...argNodes.filter(isStr).map((x) => this.emit(x)),
+              ).map((n) => `${this.sp}Symbol("${n}")`);
           const sig = params.length === 1 ? params[0] : `(${params.join(', ')})`;
           return `${this.sp}Lambda(${sig}, ${this.scope.emit.functions.get(a)!}(${params.join(', ')}))`;
         });
@@ -1070,14 +1074,61 @@ class Emitter {
     return this.emit(a);
   }
 
+  /** Lowercase letters already spoken for — every lone letter in the
+   * emitted `code` fragments plus every single-letter name bound in the
+   * program scope (declared, defined, bound, minted idents, function
+   * names). `i` is always taken: `sym('i')` emits the imaginary unit. */
+  private takenLetters(...code: string[]): Set<string> {
+    const used = new Set<string>(['i']);
+    for (const src of code)
+      for (const m of src.matchAll(/\b([a-z])\b/g)) used.add(m[1]);
+    const single = (n: string) => n.length === 1 && n >= 'a' && n <= 'z';
+    for (const s of [
+      this.scope.decls.declared,
+      this.scope.decls.defined,
+      this.scope.emit.bound,
+      this.scope.emit.lambdaBound,
+      this.scope.emit.emitting,
+      this.scope.emit.constNames,
+      this.scope.kinds.depVars,
+    ])
+      for (const n of s) if (single(n)) used.add(n);
+    for (const m of [
+      this.scope.emit.symbols,
+      this.scope.emit.functions,
+      this.scope.emit.matrices,
+    ]) {
+      for (const n of m.keys()) if (single(n)) used.add(n);
+      for (const v of m.values()) if (single(v)) used.add(v);
+    }
+    for (const n of this.scope.emit.fnArgs.keys())
+      if (single(n)) used.add(n);
+    return used;
+  }
+
+  /** `count` fresh names for synthesized Lambda params — the first
+   * unused consecutive lowercase letters (`a`, `b`, … for two params),
+   * the first `count` unused letters when no run survives, and `_a{i}`
+   * once the alphabet runs out. `code` is emitted text the params will
+   * sit beside — its lone letters count as used. */
+  private freshLetters(count: number, ...code: string[]): string[] {
+    const used = this.takenLetters(...code);
+    const alpha = 'abcdefghijklmnopqrstuvwxyz';
+    for (let i = 0; i + count <= alpha.length; i++)
+      if ([...alpha.slice(i, i + count)].every((c) => !used.has(c)))
+        return alpha.slice(i, i + count).split('');
+    const free = [...alpha].filter((c) => !used.has(c));
+    return Array.from({ length: count }, (_, i) => free[i] ?? `_a${i}`);
+  }
+
   /** Emit a function applied to `callArgs` — the image
    * `imageset(Lambda(…), …)` when an arg is a set: `f(\{1,2\})` maps f
    * elementwise (`{f(1), f(2)}`), several set args map over their
    * Cartesian product, and non-set args stay fixed in the Lambda body.
-   * Lambda params are synthesized `_a{i}` names — a free `x` beside a
-   * set (`g(\{1,2\}, x)`) isn't captured. `apply` builds the call from
-   * emitted arg strings; `argEmit` is callArg where the call site
-   * eta-expands function args. */
+   * Lambda params are the first unused lowercase letters — a free `x`
+   * beside a set (`g(\{1,2\}, x)`) isn't captured. `apply` builds the
+   * call from emitted arg strings; `argEmit` is callArg where the call
+   * site eta-expands function args. */
   private callOrImage(
     callArgs: MathJson[],
     apply: (params: string[]) => string,
@@ -1085,20 +1136,27 @@ class Emitter {
   ): string {
     if (!callArgs.some((a) => this.isSetish(a)))
       return apply(callArgs.map((a) => argEmit(a)));
-    const setParams: string[] = [];
-    const params = callArgs.map((a, i) => {
-      if (!this.isSetish(a)) return argEmit(a);
-      const p = `${this.sp}Symbol("_a${i}")`;
-      setParams.push(p);
-      return p;
-    });
+    const isSet = callArgs.map((a) => this.isSetish(a));
+    const fixed = callArgs.map((a, i) => (isSet[i] ? '' : argEmit(a)));
+    const sets = callArgs.map((a, i) => (isSet[i] ? this.emit(a) : ''));
+    // Probe the body with sentinel params so its letters count as used.
+    const probe = apply(callArgs.map((_, i) => `\x00${i}`));
+    const names = this.freshLetters(
+      isSet.filter(Boolean).length,
+      probe,
+      ...fixed,
+      ...sets,
+    );
+    let k = 0;
+    const params = callArgs.map((_, i) =>
+      isSet[i] ? `${this.sp}Symbol("${names[k++]}")` : fixed[i],
+    );
+    const setParams = params.filter((_, i) => isSet[i]);
     const sig =
       setParams.length === 1 ? setParams[0] : `(${setParams.join(', ')})`;
-    const sets = callArgs
-      .filter((a) => this.isSetish(a))
-      .map((a) => this.emit(a))
-      .join(', ');
-    return `${this.sp}imageset(${this.sp}Lambda(${sig}, ${apply(params)}), ${sets})`;
+    return `${this.sp}imageset(${this.sp}Lambda(${sig}, ${apply(params)}), ${sets
+      .filter((s) => s !== '')
+      .join(', ')})`;
   }
 
   /** Emit `node`, wrapping in parens when its precedence is below minPrec. */
@@ -1983,10 +2041,20 @@ class Emitter {
               PREC_ATOM,
             ];
           }
+          // Non-variable eval points need fresh differentiation vars —
+          // the first unused lowercase letters (a free `x` arg or a
+          // function named `x` would otherwise capture/collide).
+          const varCode = argNodes.map((a) => (isVar(a) ? this.emit(a) : ''));
+          const evalCode = argNodes.map((a) => (isVar(a) ? '' : this.emit(a)));
+          const fresh = this.freshLetters(
+            evalCode.filter((s) => s !== '').length,
+            applied(argNodes.map((_, i) => `\x00${i}`)),
+            ...varCode,
+            ...evalCode,
+          );
+          let fk = 0;
           const vars = argNodes.map((a, i) =>
-            isVar(a)
-              ? this.emit(a)
-              : this.sym(argNodes.length === 1 ? 'x' : `_ev${i}`),
+            isVar(a) ? varCode[i] : this.sym(fresh[fk++]),
           );
           let text = `${this.sp}diff(${applied(vars)}, ${diffBy(vars.join(', '))})`;
           argNodes.forEach((a, i) => {
@@ -1994,8 +2062,8 @@ class Emitter {
             // `f'(\{1,2\})` — a set evaluation point maps the derivative
             // elementwise; subs would hand it the whole set.
             if (this.isSetish(a))
-              text = `${this.sp}imageset(${this.sp}Lambda(${vars[i]}, ${text}), ${this.emit(a)})`;
-            else text = `${text}.subs(${vars[i]}, ${this.emit(a)})`;
+              text = `${this.sp}imageset(${this.sp}Lambda(${vars[i]}, ${text}), ${evalCode[i]})`;
+            else text = `${text}.subs(${vars[i]}, ${evalCode[i]})`;
           });
           return [text, PREC_ATOM];
         }
@@ -2730,7 +2798,7 @@ class Emitter {
           // double-application `g(f(x)(x))`.
           const gIsExpr = !isStr(args[2]);
           const g = isStr(args[2]) ? this.fn(args[2]) : this.emit(args[2]);
-          const t = `${this.sp}Symbol("x")`;
+          const t = `${this.sp}Symbol("${this.freshLetters(1, f, g)[0]}")`;
           return [
             `${this.sp}Lambda(${t}, ${gIsExpr ? `${f}(${g})` : `${f}(${g}(${t}))`})`,
             PREC_LOW,

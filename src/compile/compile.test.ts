@@ -904,7 +904,7 @@ const FIXTURES: {
     expectedPython: [
       'def f(x):',
       '    return x**2',
-      'sp.imageset(sp.Lambda(sp.Symbol("_a0"), f(sp.Symbol("_a0"))), sp.FiniteSet(1, 2, 3))',
+      'sp.imageset(sp.Lambda(sp.Symbol("a"), f(sp.Symbol("a"))), sp.FiniteSet(1, 2, 3))',
     ],
   },
   {
@@ -912,17 +912,17 @@ const FIXTURES: {
     // variable — diff at a fresh symbol, then substitute the point.
     latex: "f'(0)",
     expectedPython: [
-      'x = sp.Symbol("x")',
+      'a = sp.Symbol("a")',
       'f = sp.Function("f")',
-      'sp.diff(f(x), x).subs(x, 0)',
+      'sp.diff(f(a), a).subs(a, 0)',
     ],
   },
   {
     latex: "f'(\\pi)",
     expectedPython: [
-      'x = sp.Symbol("x")',
+      'a = sp.Symbol("a")',
       'f = sp.Function("f")',
-      'sp.diff(f(x), x).subs(x, sp.pi)',
+      'sp.diff(f(a), a).subs(a, sp.pi)',
     ],
   },
   {
@@ -1713,7 +1713,7 @@ const FIXTURES: {
     expectedPython: [
       'f = sp.Function("f")',
       'g = sp.Function("g")',
-      'sp.Lambda(sp.Symbol("x"), f(g(sp.Symbol("x"))))',
+      'sp.Lambda(sp.Symbol("a"), f(g(sp.Symbol("a"))))',
     ],
   },
 ];
