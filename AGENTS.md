@@ -162,8 +162,12 @@ and empty blocks serialize as `{ }`.
   `.mq-focused`, not `activeElement === el`).
 - MQ has **no deferred internal refocus** — `click()` alone is reliable
   in e2e; no settle window needed.
-- `Home`/`End` move within the *current block*; field edges need
-  `Ctrl+Home`/`Ctrl+End` (or `mq.moveToLeftEnd()`).
+- `Home`/`End` (and Shift-) move within the *current line* — the
+  innermost `\displaylines` row / matrix cell, or the whole field when
+  single-line; field edges need `Ctrl+Home`/`Ctrl+End` (or
+  `mq.moveToLeftEnd()`). Tab/Shift-Tab at the field's last/first line
+  leave the field (browser default), and Ctrl+Z/Ctrl+Shift+Z are the
+  vendored undo history (`vendor/mathquill/src/services/undo.ts`).
 - Theming: `data-theme` on `<html>` (`light`|`dark`) swaps the CSS vars
   in `index.css` (`--muted`, `--faint`, `--accent-text`, `--selected-bg`,
   …) — never hardcode colors, and scope vendored-MathQuill fixes under
