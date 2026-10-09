@@ -3712,21 +3712,39 @@ function compileCellInScope(
   };
 }
 
+// The calc program's import line — `import sympy as sp` qualified or
+// `from sympy import *` under import-*. Exec'd into the worker's
+// namespace; a star import is legal inside exec() at top level.
+const calcImportLine = (qualified: boolean): string =>
+  qualified ? 'import sympy as sp' : 'from sympy import *';
+
+// The runtime helper source for a given import mode. It is written
+// `sp.`-qualified; import-* mode strips the `sp.` prefixes so the
+// emitted program stays self-contained (a star import binds every
+// name the helper references bare).
+const calcRuntimePy = (qualified: boolean): string =>
+  qualified ? CALC_RUNTIME_PY : CALC_RUNTIME_PY.replace(/\bsp\./g, '');
+
 // Compile every cell for the calculator target as ONE sequential
-// program — the same pipeline as compileWorksheet (always
-// `sp.`-qualified, since the worker execs against `import sympy as sp`),
-// but the cells share a single emission scope: declared names, symbol/
-// function defs, and assignment/dep-var tracking accumulate down the
-// worksheet. A name bound in an earlier cell is in scope below — a
-// `def g` in cell 2 puts `g` in cell 3's namespace instead of emitting
-// a shadowing `sp.Function("g")` decl there — while names declared only
+// program — the same pipeline as compileWorksheet — but the cells
+// share a single emission scope: declared names, symbol/function
+// defs, and assignment/dep-var tracking accumulate down the worksheet.
+// A name bound in an earlier cell is in scope below — a `def g` in
+// cell 2 puts `g` in cell 3's namespace instead of emitting a
+// shadowing `sp.Function("g")` decl there — while names declared only
 // in later cells stay invisible to the cells above them.
+//
+// `importAll` picks the import style like the python target: the
+// worker execs the prelude itself, so `from sympy import *` populates
+// the namespace with the bare names the statements then use (`sp`
+// stays seeded for the helper and worker internals either way).
 export function compileCellsForCalc(
   cells: CellInput[],
-  opts: NormalizeOptions = {},
+  opts: CompileOptions = {},
 ): CalcWorksheetProgram {
+  const qualified = opts.importAll === false;
   const scope = new Scope(
-    true,
+    qualified,
     new Set<string>(),
     new Set<string>(),
     new Set<string>(),
@@ -3737,8 +3755,10 @@ export function compileCellsForCalc(
   return {
     // The CALC_RUNTIME_PY block defines the mc_* helpers the statements
     // call — it execs as part of the program (self-contained) and shows
-    // once in the code block, like the import line.
-    prelude: ['import sympy as sp', CALC_RUNTIME_PY],
+    // once in the code block, like the import line. The helper source
+    // is written `sp.`-qualified; the import-* mode strips the prefix
+    // so the shown program stays self-contained under a star import.
+    prelude: [calcImportLine(qualified), calcRuntimePy(qualified)],
     cells: cells.map((cell) => {
       // The shared declaredFns set both seeds this cell's normalize
       // (a `g(4)` below a `\def g` is a call, not juxtaposition) and
@@ -3760,13 +3780,14 @@ export function compileCellsForCalc(
 // folded into the prelude (a self-contained program).
 export function compileCellForCalc(
   cell: CellInput,
-  opts: NormalizeOptions = {},
+  opts: CompileOptions = {},
 ): CalcProgram {
+  const qualified = opts.importAll === false;
   const { ir, issues } = normalizeIR(cell.json, undefined, opts);
   if (ir === undefined)
     return { prelude: [], statements: [], issues, statementLines: [] };
   const scope = new Scope(
-    true,
+    qualified,
     new Set<string>(),
     new Set<string>(),
     new Set<string>(),
@@ -3776,7 +3797,7 @@ export function compileCellForCalc(
   );
   const c = compileCellInScope(ir, issues, scope);
   return {
-    prelude: ['import sympy as sp', CALC_RUNTIME_PY, ...c.defs],
+    prelude: [calcImportLine(qualified), calcRuntimePy(qualified), ...c.defs],
     ...c,
   };
 }

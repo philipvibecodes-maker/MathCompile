@@ -346,7 +346,7 @@
               </button>
             </span>
           {/if}
-          {#if compiled && appStore.target === 'python'}
+          {#if appStore.target === 'python' || appStore.target === 'calculator'}
             <label class="option-checkbox output-import-all">
               <input
                 type="checkbox"
@@ -356,6 +356,8 @@
               />
               import *
             </label>
+          {/if}
+          {#if compiled && appStore.target === 'python'}
             <button
               class="cell-copy"
               title="Copy the entire output as one script"

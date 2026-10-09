@@ -411,6 +411,9 @@ engine status.
 - `!` marks a statement that failed, `i` a note; hover for the message.
 - **Show generating code** reveals the exact Python program that
   produced the results, with a copy button.
+- The `import *` checkbox in the header (shared with the Python
+  target) writes the program against `from sympy import *` — off, it
+  uses `import sympy as sp` with `sp.`-qualified names.
 - The **Settings** menu (calculator and Python targets) exposes
   display plumbing and animation timing — default values are fine.
 
