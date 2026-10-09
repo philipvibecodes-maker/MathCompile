@@ -5,6 +5,7 @@ import {
   firstFreeCapital,
   freeNames,
   type CalcWorksheetProgram,
+  type CompileOptions,
 } from '../compile/codegen';
 import {
   isDiffMark,
@@ -148,7 +149,7 @@ function ensureWorker(): Worker {
 // rejects surface as error rows without a worker round-trip.
 export function evaluate(
   cells: { latex: string; json?: MathJson }[],
-  opts: NormalizeOptions = {},
+  opts: CompileOptions = {},
 ): Promise<CalcResult> {
   let prog: ReturnType<typeof compileCellsForCalc>;
   try {

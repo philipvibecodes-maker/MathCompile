@@ -86,6 +86,9 @@
     const latex = prefixLatex[prefixLatex.length - 1] ?? '';
     // Read here so toggling the (a,b) pref re-triggers the eval below.
     const pairTuple = appStore.pairTuple;
+    // Same for the import-* pref: it rewrites the emitted program's
+    // import line + qualifiers, so the eval must re-run with it.
+    const importAll = appStore.importAll;
     const mine = ++seq;
     if (latexToStatementStrings(latex).length === 0) {
       rows = [];
@@ -115,7 +118,10 @@
           }
         });
       }
-      evaluate(appStore.cells.slice(0, index + 1), { pairTuple }).then(
+      evaluate(appStore.cells.slice(0, index + 1), {
+        pairTuple,
+        importAll,
+      }).then(
         (r) => {
           if (mine !== seq) return;
           rows = r.rows;

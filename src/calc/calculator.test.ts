@@ -2,9 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { compileCellForCalc, compileCellsForCalc } from '../compile/codegen';
 import { parseCellLatex } from '../compile/ir';
 import { interimEvaluate, shownPrograms } from './calculator.svelte.ts';
-const calc = (latex: string) => compileCellForCalc({ json: parseCellLatex(latex) });
+// Assertions below pin the `import sympy as sp` (qualified) emission —
+// the helpers pass importAll:false; import-* mode has its own describe.
+const calc = (latex: string) =>
+  compileCellForCalc({ json: parseCellLatex(latex) }, { importAll: false });
 const calcAll = (...latexs: string[]) =>
-  compileCellsForCalc(latexs.map((latex) => ({ json: parseCellLatex(latex) })));
+  compileCellsForCalc(
+    latexs.map((latex) => ({ json: parseCellLatex(latex) })),
+    { importAll: false },
+  );
 // The calc pipeline wraps every evaluated expression — expectations
 // spell the inner emitted expression; F() applies the worker's
 // clean_and_simplify wrap.
@@ -801,9 +807,10 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // `sp.Pow(x, -007)` is invalid Python — the integer value is emitted.
     expect(calc('x^{-007}').statements[0].code).toBe(F('sp.Pow(x, -7)'));
     expect(
-      compileCellForCalc({
-        json: ['Power', 'x', ['Negate', { num: '007' }]],
-      }).statements[0].code,
+      compileCellForCalc(
+        { json: ['Power', 'x', ['Negate', { num: '007' }]] },
+        { importAll: false },
+      ).statements[0].code,
     ).toBe(F('sp.Pow(x, -7)'));
   });
 
@@ -1357,5 +1364,66 @@ describe('shownPrograms (generating-code block assembly)', () => {
     const prog = calcAll('\\python{x = 3\nx * 2}');
     const { displayCode } = shownPrograms(prog);
     expect(displayCode).toContain('e = clean_and_simplify(x * 2)');
+  });
+});
+
+describe('calculator import-* mode (from sympy import *)', () => {
+  // Same option as compileWorksheet: importAll:true (also the default)
+  // emits a star import + unqualified names; the worker execs the
+  // prelude itself so the namespace gets every bare name.
+  const calcStar = (latex: string) =>
+    compileCellForCalc({ json: parseCellLatex(latex) }, { importAll: true });
+  const calcAllStar = (...latexs: string[]) =>
+    compileCellsForCalc(
+      latexs.map((latex) => ({ json: parseCellLatex(latex) })),
+      { importAll: true },
+    );
+
+  it('is the default emission', () => {
+    expect(compileCellForCalc({ json: parseCellLatex('x+1') }).prelude[0]).toBe(
+      'from sympy import *',
+    );
+    expect(
+      compileCellsForCalc([{ json: parseCellLatex('x+1') }]).prelude[0],
+    ).toBe('from sympy import *');
+  });
+
+  it('emits unqualified names through the whole program', () => {
+    const prog = calcStar('x + \\sin(y) + \\sqrt{2}');
+    expect(prog.prelude[0]).toBe('from sympy import *');
+    // Multi-name cells batch into one symbols() decl, like qualified
+    // mode's sp.symbols('x y').
+    expect(prog.prelude).toContain("x, y = symbols('x y')");
+    expect(prog.statements).toEqual([
+      { code: F('x + sin(y) + sqrt(2)'), display: undefined },
+    ]);
+  });
+
+  it('dequalifies the runtime helper so the shown program runs standalone', () => {
+    const prog = calcStar('x+1');
+    const helper = prog.prelude.find((l) =>
+      l.includes('def clean_and_simplify'),
+    );
+    expect(helper).toBeDefined();
+    expect(helper).not.toContain('sp.');
+    expect(helper).toContain('Poly(');
+    expect(helper).toContain('simplify(');
+  });
+
+  it('emits unqualified set heads', () => {
+    const prog = calcStar('\\{1,2\\} \\cup \\{3\\}');
+    expect(prog.statements[0].code).toBe(
+      F('Union(FiniteSet(1, 2), FiniteSet(3))'),
+    );
+  });
+
+  it('shared-scope defs stay unqualified down the worksheet', () => {
+    const prog = calcAllStar('a = 5', 'a + 1');
+    expect(prog.cells[0].statements).toEqual([
+      { code: 'a = 5', display: F('Eq(Symbol("a"), 5)'), defines: true },
+    ]);
+    expect(prog.cells[1].statements).toEqual([
+      { code: F('a + 1'), display: undefined },
+    ]);
   });
 });
