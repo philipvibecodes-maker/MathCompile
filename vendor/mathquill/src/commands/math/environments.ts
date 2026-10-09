@@ -879,12 +879,18 @@ class Matrix extends CellGrid {
             if (left && (left as MQNode).parent === parent)
               cursor.insRightOf(left as MQNode);
             else if (!left) cursor.insAtLeftEnd(parent);
-            const row = [frag ? frag.latex() : '']
-              .concat(new Array(Math.max(0, cols - 1)).fill(''))
+            const cells = Math.max(1, cols);
+            // A replaced selection goes in the first cell only — the
+            // remaining rows are empty.
+            const empty = new Array(cells).fill('').join('&');
+            const first = [frag ? frag.fold('', (s, n) => s + n.latex()) : '']
+              .concat(new Array(cells - 1).fill(''))
               .join('&');
             ctrlr.writeLatex(
               open +
-                new Array(Math.max(1, rows)).fill(row).join('\\\\') +
+                [first]
+                  .concat(new Array(Math.max(0, rows - 1)).fill(empty))
+                  .join('\\\\') +
                 close
             );
             const grid = cursor[L] as MQNode;

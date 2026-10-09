@@ -14218,11 +14218,17 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                             cursor.insRightOf(left);
                         else if (!left)
                             cursor.insAtLeftEnd(parent);
-                        var row = [frag ? frag.latex() : '']
-                            .concat(new Array(Math.max(0, cols - 1)).fill(''))
+                        var cells = Math.max(1, cols);
+                        // A replaced selection goes in the first cell only \u2014 the
+                        // remaining rows are empty.
+                        var empty = new Array(cells).fill('').join('&');
+                        var first = [frag ? frag.fold('', function (s, n) { return s + n.latex(); }) : '']
+                            .concat(new Array(cells - 1).fill(''))
                             .join('&');
                         ctrlr.writeLatex(open +
-                            new Array(Math.max(1, rows)).fill(row).join('\\\\') +
+                            [first]
+                                .concat(new Array(Math.max(0, rows - 1)).fill(empty))
+                                .join('\\\\') +
                             close);
                         var grid = cursor[L];
                         if (grid instanceof MathCommand)

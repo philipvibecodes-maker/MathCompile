@@ -99,6 +99,33 @@ test('a typed \\array{spec} keeps the spec through the menu', async ({
   expect(await cellValue(mf)).toBe('\\begin{array}{cc}&\\\\&\\end{array}');
 });
 
+test('a matrix inserted over a selection keeps the selection in the first cell', async ({
+  page,
+}) => {
+  const mf = cell(page);
+  await page.keyboard.type('x+1');
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('Control+Shift+End');
+  await page.keyboard.type('\\pmatrix');
+  await page.keyboard.press('Enter');
+  await expect(menu(mf)).toBeVisible();
+  await page.keyboard.press('Enter');
+  expect(await cellValue(mf)).toBe('\\begin{pmatrix}x+1&\\\\&\\end{pmatrix}');
+});
+
+test('content around the caret survives the insert', async ({ page }) => {
+  const mf = cell(page);
+  await page.keyboard.type('a+b');
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.type('\\pmatrix');
+  await page.keyboard.press('Enter');
+  await expect(menu(mf)).toBeVisible();
+  await page.keyboard.press('Enter');
+  expect(await cellValue(mf)).toBe(
+    '\\begin{pmatrix}&\\\\&\\end{pmatrix}a+b',
+  );
+});
+
 test('\\cases is not a matrix and skips the menu', async ({ page }) => {
   const mf = cell(page);
   await page.keyboard.type('\\cases');
