@@ -910,8 +910,17 @@ class Matrix extends CellGrid {
           },
           cancel: () => {
             restoreCaret();
-            if (fragLatex) ctrlr.writeLatex(fragLatex);
-            removeGhost();
+            // Put a replaced selection's own nodes back in the gap —
+            // the same adopt/insertBefore move the normal path makes
+            // into the first cell (writeLatex would anchor to the
+            // cursor element still parked inside the dead wrapper).
+            if (frag) {
+              frag.domFrag().removeClass('mq-blur');
+              frag.adopt(parent, cursor[L] as NodeRef, cursor[R] as NodeRef);
+              frag.domFrag().insertBefore(cursor.domFrag());
+              cursor.insRightOf(frag.getEnd(R) as MQNode);
+              parent.bubble((n) => n.reflow());
+            }
           }
         }
       })

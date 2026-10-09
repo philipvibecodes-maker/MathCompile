@@ -14249,9 +14249,17 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     },
                     cancel: function () {
                         restoreCaret();
-                        if (fragLatex)
-                            ctrlr.writeLatex(fragLatex);
-                        removeGhost();
+                        // Put a replaced selection's own nodes back in the gap \u2014
+                        // the same adopt/insertBefore move the normal path makes
+                        // into the first cell (writeLatex would anchor to the
+                        // cursor element still parked inside the dead wrapper).
+                        if (frag) {
+                            frag.domFrag().removeClass('mq-blur');
+                            frag.adopt(parent, cursor[L], cursor[R]);
+                            frag.domFrag().insertBefore(cursor.domFrag());
+                            cursor.insRightOf(frag.getEnd(R));
+                            parent.bubble(function (n) { return n.reflow(); });
+                        }
                     }
                 }
             }));
