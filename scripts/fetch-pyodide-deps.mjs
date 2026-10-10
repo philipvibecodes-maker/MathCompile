@@ -78,4 +78,20 @@ const wheel = meta.urls.find((u) => u.filename.endsWith('.whl'));
 if (!wheel) throw new Error(`no wheel published for plotly ${PLOTLY_VERSION}`);
 await download(wheel.url, wheel.filename);
 
-console.log(`pyodide ${PYODIDE_VERSION} + plotly ${PLOTLY_VERSION} staged in .pyodide-build/`);
+// The wheel is also the artifact the worker repopulates plotly's files
+// from after a snapshot restore — same-origin, so no PyPI at runtime.
+// It is served (and committed) under public/wheels/.
+const WHEELS_OUT = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../public/wheels',
+);
+await mkdir(WHEELS_OUT, { recursive: true });
+const staged = join(DEST, wheel.filename);
+const served = join(WHEELS_OUT, wheel.filename);
+if (!(await stat(served).catch(() => null))) {
+  const { copyFile } = await import('node:fs/promises');
+  await copyFile(staged, served);
+  console.log(`wheels/${wheel.filename} staged for serving`);
+}
+
+console.log(`pyodide ${PYODIDE_VERSION} + plotly ${PLOTLY_VERSION} staged`);
