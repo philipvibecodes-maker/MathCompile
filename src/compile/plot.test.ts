@@ -10,7 +10,7 @@ import {
   compileCellsForCalc,
   compileCellForCalc,
 } from './codegen';
-import { plotFigure } from '../plot/figures';
+import { themedFigure } from '../plot/theme';
 import type { PlotData } from '../plot/types';
 import type { MathJson } from './ir';
 
@@ -140,84 +140,48 @@ describe('plot statement python codegen', () => {
   });
 });
 
-describe('plot figures', () => {
+describe('plot theming', () => {
+  // The worker emits the plotly python figure dict; themedFigure only
+  // touches presentation, never the trace data.
   const base: PlotData = {
     kind: '1x1',
     vars: ['x'],
     label: 'x^{2}',
-    data: { x: [0, 1], y: [0, 1] },
+    figure: {
+      data: [{ type: 'scatter', x: [0, 1], y: [0, 1] }],
+      layout: { margin: { l: 40 }, updatemenus: [{ buttons: [] }] },
+    },
   };
 
-  it('1x1 is a single 2D line', () => {
-    const { traces, layout } = plotFigure(base);
-    expect(traces).toHaveLength(1);
-    expect(traces[0].type).toBe('scatter');
-    expect(layout.showlegend).toBe(false);
+  it('passes the worker figure data through unchanged', () => {
+    const { data } = themedFigure(base, true);
+    expect(data).toBe(base.figure.data);
   });
 
-  it('1x3 is a single 3D line', () => {
-    const { traces } = plotFigure({
+  it('dark mode applies dark font/grid/zeroline and transparent bg', () => {
+    const { layout } = themedFigure(base, true);
+    expect(layout.paper_bgcolor).toBe('rgba(0,0,0,0)');
+    expect((layout.font as { color: string }).color).toBe('#e6e8ee');
+    expect(layout.updatemenus).toBe(base.figure.layout.updatemenus);
+  });
+
+  it('light mode applies light font and keeps figure layout keys', () => {
+    const { layout } = themedFigure(base, false);
+    expect((layout.font as { color: string }).color).toBe('#333333');
+    expect(layout.margin).toEqual({ l: 40 });
+  });
+
+  it('colors 2D axes the figure defined', () => {
+    const withAxes: PlotData = {
       ...base,
-      kind: '1x3',
-      data: { x: [0], y: [0], z: [0] },
-    });
-    expect(traces[0].type).toBe('scatter3d');
-  });
-
-  it('2x2 offers several modes through one updatemenu', () => {
-    const { traces, layout } = plotFigure({
-      kind: '2x2',
-      vars: ['u', 'v'],
-      label: 'f',
-      data: {
-        u: [0, 1, 2, 3],
-        v: [0, 1, 2, 3],
-        fx: [
-          [0, 0, 0, 0],
-          [0, 0, 0, 0],
-          [0, 0, 0, 0],
-          [0, 0, 0, 0],
-        ],
-        fy: [
-          [0, 1, 2, 3],
-          [0, 1, 2, 3],
-          [0, 1, 2, 3],
-          [0, 1, 2, 3],
-        ],
+      figure: {
+        ...base.figure,
+        layout: { xaxis: { zeroline: true }, yaxis: {} },
       },
-    });
-    const menu = (
-      layout.updatemenus as { buttons: { label: string }[] }[]
-    )[0];
-    const labels = menu.buttons.map((b) => b.label);
-    expect(labels).toEqual([
-      'quiver',
-      'magnitude heatmap',
-      'streamlines',
-      'image of grid',
-    ]);
-    expect(traces.length).toBeGreaterThan(3);
-  });
-
-  it('2x3 offers surface/grid/point-cloud modes', () => {
-    const g = [
-      [0, 1],
-      [0, 1],
-    ];
-    const { layout } = plotFigure({
-      kind: '2x3',
-      vars: ['u', 'v'],
-      label: 'f',
-      data: { u: [0, 1], v: [0, 1], fx: g, fy: g, fz: g },
-    });
-    const menu = (
-      layout.updatemenus as { buttons: { label: string }[] }[]
-    )[0];
-    expect(menu.buttons.map((b) => b.label)).toEqual([
-      'surface, colored by |f|',
-      'surface, colored by u',
-      'grid curves',
-      'point cloud',
-    ]);
+    };
+    const { layout } = themedFigure(withAxes, true);
+    const x = layout.xaxis as Record<string, unknown>;
+    expect(x.zeroline).toBe(true);
+    expect(x.zerolinecolor).toBe('#9aa2ae');
   });
 });

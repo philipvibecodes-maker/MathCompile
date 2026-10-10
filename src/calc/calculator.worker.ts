@@ -162,15 +162,247 @@ def _mc_plot_signature(v):
     return free, comps, label
 
 
-def _mc_plot_clean(a, shape):
-    a = _mc_np.asarray(a, dtype=float)
-    a = _mc_np.broadcast_to(a, shape)
-    out = []
-    for x in a.ravel():
-        out.append(None if not _mc_np.isfinite(x) else float(x))
-    if len(shape) == 2:
-        return [out[i * shape[1]:(i + 1) * shape[1]] for i in range(shape[0])]
-    return out
+_MC_PLOT_ACC = '#3b82f6'
+_MC_PLOT_MARGIN = dict(l=40, r=10, t=30, b=40)
+
+
+def _mc_plot_menu(fig, labels, vis_lists):
+    # One updatemenu driving trace visibility — the several views of the
+    # same signature (heatmap vs streamlines vs quiver, ...).
+    fig.update_layout(updatemenus=[dict(
+        buttons=[
+            dict(label=lab, method='update', args=[{'visible': vis}])
+            for lab, vis in zip(labels, vis_lists)
+        ],
+        direction='down',
+        x=0,
+        y=1.12,
+    )])
+
+
+def _mc_plot_streamlines(us, vs, fx, fy):
+    # RK4 streamlines of the sampled field, seeded every few grid nodes.
+    # fx/fy are 2-D numpy arrays over (vs, us); out-of-range and
+    # non-finite lookups read as zero so a streamline dies at the edge.
+    nu, nv = len(us), len(vs)
+    du = (us[-1] - us[0]) / (nu - 1 or 1)
+    dv = (vs[-1] - vs[0]) / (nv - 1 or 1)
+
+    def field(x, y):
+        iu = (x - us[0]) / du
+        iv = (y - vs[0]) / dv
+        j0 = int(_mc_np.floor(iu))
+        i0 = int(_mc_np.floor(iv))
+        if j0 < 0 or i0 < 0 or j0 + 1 >= nu or i0 + 1 >= nv:
+            return 0.0, 0.0
+        a, b = iu - j0, iv - i0
+
+        def at(g):
+            return (
+                g[i0][j0] * (1 - a) * (1 - b)
+                + g[i0][j0 + 1] * a * (1 - b)
+                + g[i0 + 1][j0] * (1 - a) * b
+                + g[i0 + 1][j0 + 1] * a * b
+            )
+
+        return at(fx), at(fy)
+
+    step = min(du, dv) * 0.5
+    xs, ys = [], []
+    for i in range(0, nv, 3):
+        for j in range(0, nu, 3):
+            x, y = us[j], vs[i]
+            xs.append(x)
+            ys.append(y)
+            for _ in range(120):
+                k1x, k1y = field(x, y)
+                k2x, k2y = field(x + k1x * step * 0.5, y + k1y * step * 0.5)
+                k3x, k3y = field(x + k2x * step * 0.5, y + k2y * step * 0.5)
+                k4x, k4y = field(x + k3x * step, y + k3y * step)
+                x += (step / 6) * (k1x + 2 * k2x + 2 * k3x + k4x)
+                y += (step / 6) * (k1y + 2 * k2y + 2 * k3y + k4y)
+                if not (_mc_np.isfinite(x) and _mc_np.isfinite(y)):
+                    break
+                if k1x * k1x + k1y * k1y < 1e-8:
+                    break
+                xs.append(x)
+                ys.append(y)
+            xs.append(None)
+            ys.append(None)
+    return xs, ys
+
+
+def _mc_plot_gridlines(us, vs, fx, fy, fz=None):
+    # Coordinate-line curves through f: fixed-v rows and fixed-u
+    # columns, concatenated with None breaks — how f warps the grid.
+    xs, ys, zs = [], [], []
+    for i in range(0, len(vs), 2):
+        xs += list(fx[i]) + [None]
+        ys += list(fy[i]) + [None]
+        if fz is not None:
+            zs += list(fz[i]) + [None]
+    for j in range(0, len(us), 2):
+        xs += list(fx[:, j]) + [None]
+        ys += list(fy[:, j]) + [None]
+        if fz is not None:
+            zs += list(fz[:, j]) + [None]
+    return xs, ys, zs
+
+
+def _mc_plot_figure(d, c, vars_, comps):
+    # Sample the components and build the plotly figure for the
+    # signature. Non-finite samples stay NaN — plotly gaps on them,
+    # which is what makes poles/asymptotes break cleanly.
+    import plotly.graph_objects as go
+
+    fnum = sp.lambdify(vars_, comps, 'numpy')
+    acc = _MC_PLOT_ACC
+    if d == 1:
+        ts = _mc_np.linspace(_MC_PLOT_R1[0], _MC_PLOT_R1[1], _MC_PLOT_N1)
+        vals = _mc_np.asarray(fnum(ts), dtype=float)
+        if vals.ndim == 1:
+            vals = vals.reshape(1, -1)
+        if c == 1:
+            fig = go.Figure(go.Scatter(
+                x=ts, y=vals[0], mode='lines',
+                line=dict(color=acc, width=2),
+            ))
+            fig.update_xaxes(zeroline=True)
+            fig.update_yaxes(zeroline=True)
+        elif c == 2:
+            fig = go.Figure(go.Scatter(
+                x=vals[0], y=vals[1], mode='lines',
+                line=dict(color=acc, width=2),
+            ))
+            fig.update_xaxes(zeroline=True)
+            fig.update_yaxes(zeroline=True, scaleanchor='x', scaleratio=1)
+        else:
+            fig = go.Figure(go.Scatter3d(
+                x=vals[0], y=vals[1], z=vals[2], mode='lines',
+                line=dict(color=acc, width=4),
+            ))
+        fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
+        return fig
+
+    us = _mc_np.linspace(_MC_PLOT_R2[0], _MC_PLOT_R2[1], _MC_PLOT_N2)
+    vs = _mc_np.linspace(_MC_PLOT_R2[0], _MC_PLOT_R2[1], _MC_PLOT_N2)
+    U, V = _mc_np.meshgrid(us, vs)
+    vals = _mc_np.asarray(fnum(U, V), dtype=float)
+    if vals.ndim == 2:
+        vals = vals.reshape(1, vals.shape[0], vals.shape[1])
+    mag = _mc_np.sqrt(sum(v * v for v in vals))
+    fig = go.Figure()
+    if c == 1:
+        fig.add_surface(
+            x=us, y=vs, z=vals[0], colorscale='Viridis', showscale=False,
+            contours=dict(
+                z=dict(show=True, usecolormap=True, project=dict(z=True)),
+            ),
+        )
+        fig.add_heatmap(
+            x=us, y=vs, z=vals[0], colorscale='Viridis', showscale=False,
+            visible=False,
+        )
+        _mc_plot_menu(fig, ['surface', 'heatmap'], [[True, False], [False, True]])
+    elif c == 2:
+        fx, fy = vals[0], vals[1]
+        # Quiver: one scatter of tail→tip segments plus a cone per tip.
+        stride = 5
+        sx, sy, cx, cy, vx, vy = [], [], [], [], [], []
+        for i in range(0, len(vs), stride):
+            for j in range(0, len(us), stride):
+                fxx = fx[i][j]
+                fyy = fy[i][j]
+                if not (_mc_np.isfinite(fxx) and _mc_np.isfinite(fyy)):
+                    continue
+                sx += [us[j], us[j] + fxx, None]
+                sy += [vs[i], vs[i] + fyy, None]
+                cx.append(us[j] + fxx)
+                cy.append(vs[i] + fyy)
+                vx.append(fxx)
+                vy.append(fyy)
+        span = _mc_np.hypot(us[-1] - us[0], vs[-1] - vs[0])
+        fig.add_scatter(
+            x=sx, y=sy, mode='lines', line=dict(color=acc, width=1),
+            hoverinfo='skip',
+        )
+        fig.add_cone(
+            x=cx, y=cy, z=[0] * len(cx), u=vx, v=vy, w=[0] * len(vx),
+            colorscale='Viridis', sizemode='absolute',
+            sizeref=float(span) * 0.4, anchor='tail', showscale=False,
+            scene='scene2',
+        )
+        fig.update_layout(scene2=dict(
+            domain=dict(x=[0, 1], y=[0, 1]),
+            camera=dict(eye=dict(x=0, y=0, z=1.6)),
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+            zaxis=dict(range=[-0.5, 0.5], visible=False),
+        ))
+        fig.add_heatmap(
+            x=us, y=vs, z=mag, colorscale='Viridis', showscale=False,
+            visible=False,
+        )
+        str_x, str_y = _mc_plot_streamlines(us, vs, fx, fy)
+        fig.add_scatter(
+            x=str_x, y=str_y, mode='lines', line=dict(color=acc, width=1),
+            hoverinfo='skip', visible=False,
+        )
+        gx, gy, _ = _mc_plot_gridlines(us, vs, fx, fy)
+        fig.add_scatter(
+            x=gx, y=gy, mode='lines',
+            line=dict(color='rgba(59,130,246,0.55)', width=1),
+            hoverinfo='skip', visible=False,
+        )
+        _mc_plot_menu(
+            fig,
+            ['quiver', 'magnitude heatmap', 'streamlines', 'image of grid'],
+            [
+                [True, True, False, False, False],
+                [False, False, True, False, False],
+                [False, False, False, True, False],
+                [False, False, False, False, True],
+            ],
+        )
+        fig.update_xaxes(zeroline=True)
+        fig.update_yaxes(zeroline=True, scaleanchor='x', scaleratio=1)
+    else:
+        fx, fy, fz = vals[0], vals[1], vals[2]
+        fig.add_surface(
+            x=fx, y=fy, z=fz, surfacecolor=mag, colorscale='Viridis',
+            showscale=False,
+        )
+        fig.add_surface(
+            x=fx, y=fy, z=fz, surfacecolor=U, colorscale='Plasma',
+            showscale=False, visible=False,
+        )
+        gx, gy, gz = _mc_plot_gridlines(us, vs, fx, fy, fz)
+        fig.add_scatter3d(
+            x=gx, y=gy, z=gz, mode='lines',
+            line=dict(color='rgba(59,130,246,0.7)', width=2),
+            hoverinfo='skip', visible=False,
+        )
+        fig.add_scatter3d(
+            x=fx.ravel(), y=fy.ravel(), z=fz.ravel(), mode='markers',
+            marker=dict(size=2, color=acc), visible=False,
+        )
+        _mc_plot_menu(
+            fig,
+            [
+                'surface, colored by |f|',
+                'surface, colored by u',
+                'grid curves',
+                'point cloud',
+            ],
+            [
+                [True, False, False, False],
+                [False, True, False, False],
+                [False, False, True, False],
+                [False, False, False, True],
+            ],
+        )
+    fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
+    return fig
 
 
 def _mc_plot_payload(v):
@@ -185,42 +417,14 @@ def _mc_plot_payload(v):
         raise ValueError(
             f'cannot plot {c} output components (needs 1, 2, or 3)'
         )
-    fnum = sp.lambdify(vars_, comps, 'numpy')
-    vnames = [s.name for s in vars_]
-    if d == 1:
-        ts = _mc_np.linspace(_MC_PLOT_R1[0], _MC_PLOT_R1[1], _MC_PLOT_N1)
-        vals = _mc_np.asarray(fnum(ts))
-        if vals.ndim == 1:
-            vals = vals.reshape(1, -1)
-        shape = (len(ts),)
-        data = {'t': _mc_plot_clean(ts, shape)}
-        names = ['y'] if c == 1 else ['x', 'y', 'z'][:c]
-        for i in range(c):
-            data[names[i]] = _mc_plot_clean(vals[i], shape)
-        if c == 1:
-            data['x'], data['y'] = data.pop('t'), data['y']
-    else:
-        us = _mc_np.linspace(_MC_PLOT_R2[0], _MC_PLOT_R2[1], _MC_PLOT_N2)
-        vs = _mc_np.linspace(_MC_PLOT_R2[0], _MC_PLOT_R2[1], _MC_PLOT_N2)
-        U, V = _mc_np.meshgrid(us, vs)
-        vals = _mc_np.asarray(fnum(U, V))
-        if vals.ndim == 2:
-            vals = vals.reshape(1, vals.shape[0], vals.shape[1])
-        shape = U.shape
-        data = {
-            'u': _mc_plot_clean(us, (len(us),)),
-            'v': _mc_plot_clean(vs, (len(vs),)),
-        }
-        names = ['z'] if c == 1 else ['fx', 'fy', 'fz'][:c]
-        for i in range(c):
-            data[names[i]] = _mc_plot_clean(vals[i], shape)
-        if c == 1:
-            data['x'], data['y'] = data.pop('u'), data.pop('v')
+    fig = _mc_plot_figure(d, c, vars_, comps)
     return {
         'kind': f'{d}x{c}',
-        'vars': vnames,
+        'vars': [s.name for s in vars_],
         'label': label,
-        'data': data,
+        # The figure dict the plotly python library emits — the frontend
+        # applies theme overrides and hands it to plotly.js as-is.
+        'figure': json.loads(fig.to_json()),
     }
 
 
@@ -304,7 +508,7 @@ let boot: Promise<PyodideLike> | undefined;
 async function bootEngine(): Promise<PyodideLike> {
   importScripts(`${PYODIDE_BASE}pyodide.js`);
   const py = await loadPyodide({ indexURL: PYODIDE_BASE });
-  await py.loadPackage(['sympy', 'numpy']);
+  await py.loadPackage(['sympy', 'numpy', 'plotly']);
   await py.runPythonAsync(SETUP_PY);
   return py;
 }
