@@ -1652,6 +1652,49 @@ const FIXTURES: {
     ],
   },
   {
+    // A bare `[a,b]` is the same closed interval `I = [a,b]` binds —
+    // CE only mints Interval in set context (`x ∈ [a,b]`, `[a,b)`),
+    // leaving the bracket pair as a 2-element List in expression
+    // position; the parse-stage rewrite closes that gap everywhere.
+    latex: '[0,1]',
+    expectedPython: ['sp.Interval(0, 1)'],
+  },
+  {
+    latex: '[a,b]',
+    expectedPython: [
+      'a, b = sp.symbols(\'a b\')',
+      'sp.Interval(a, b)',
+    ],
+  },
+  {
+    // `\left[…\right]` spellings parse to the same List node.
+    latex: '\\left[0,1\\right]',
+    expectedPython: ['sp.Interval(0, 1)'],
+  },
+  {
+    // Nested `[a,b]` reads as the interval too — here a finite set of
+    // two closed intervals.
+    latex: '\\{[0,1], [2,3]\\}',
+    expectedPython: [
+      'sp.FiniteSet(sp.Interval(0, 1), sp.Interval(2, 3))',
+    ],
+  },
+  {
+    // `[x,y] = [1,2]` destructures — the bound value must stay a real
+    // iterable list (an Interval isn't iterable), so the rhs keeps its
+    // List node.
+    latex: '[x,y] = [1,2]',
+    expectedPython: ['x, y = [1, 2]'],
+  },
+  {
+    // Matrix rows are structural List nodes — never bracket literals.
+    latex: '\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}',
+    expectedPython: [
+      'a, b, c, d = sp.symbols(\'a b c d\')',
+      'sp.Matrix([[a, b], [c, d]])',
+    ],
+  },
+  {
     // `expr \text{ for } x \in S` — set-builder notation, rewritten to
     // the Comprehension head at parse (its ForAll IR is identical to
     // `\forall`'s); a relational bound becomes a real domain.
