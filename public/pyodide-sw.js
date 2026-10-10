@@ -4,7 +4,12 @@
 const CACHE = 'pyodide-v0.29.0';
 
 const isEngineAsset = (url) =>
-  url.hostname === 'cdn.jsdelivr.net' && url.pathname.startsWith('/pyodide/');
+  (url.hostname === 'cdn.jsdelivr.net' &&
+    url.pathname.startsWith('/pyodide/')) ||
+  // The frozen engine memory image (~22MB) the worker restores at boot —
+  // same-origin so the CDN check alone would miss it.
+  (url.origin === self.location.origin &&
+    url.pathname.endsWith('/engine.snapshot.gz'));
 
 self.addEventListener('fetch', (e) => {
   let url;

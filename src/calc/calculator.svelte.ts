@@ -96,6 +96,9 @@ function ensureWorker(): Worker {
   const w = new Worker(new URL('./calculator.worker.ts', import.meta.url), {
     type: 'classic',
   });
+  // The worker can't read import.meta.env (classic worker), so the
+  // base public assets are served under comes from the page.
+  w.postMessage({ type: 'init', snapshotBase: import.meta.env.BASE_URL });
   w.onmessage = (e: MessageEvent<WorkerReply>) => {
     const m = e.data;
     if (m.type === 'ready') {
