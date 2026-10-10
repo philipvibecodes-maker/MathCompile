@@ -210,5 +210,18 @@ describe('plot theming', () => {
     expect(z.backgroundcolor).toBe('rgba(0,0,0,0)');
     expect(z.gridcolor).toBe('rgba(154,162,174,0.22)');
     expect(z.title).toBe('z');
+    // An axis fig.to_json() never serialized is absent — the override
+    // still has to land, or plotly paints its default opaque pane.
+    const bare: PlotData = {
+      ...base,
+      figure: { ...base.figure, layout: { scene: {} } },
+    };
+    const bareScene = themedFigure(bare, true).layout.scene as Record<
+      string,
+      unknown
+    >;
+    expect(
+      (bareScene.xaxis as Record<string, unknown>).backgroundcolor,
+    ).toBe('rgba(0,0,0,0)');
   });
 });
