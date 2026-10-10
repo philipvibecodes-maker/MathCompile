@@ -40,10 +40,19 @@ interface EvalCellMsg {
 
 interface EvalRequest {
   id: number;
+  type?: never;
   // The worksheet prefix ending at the requesting cell: shared prelude
   // plus every cell's program in order. The reply's `rows` are the last
   // cell's results.
   program: { prelude: string[]; cells: EvalCellMsg[] };
+}
+
+// First message the main thread sends — the page knows BASE_URL (the
+// base public assets are served under); a classic worker can't read
+// import.meta.env itself.
+interface InitRequest {
+  type: 'init';
+  snapshotBase: string;
 }
 
 type WorkerMessage =
@@ -54,7 +63,9 @@ type WorkerMessage =
 
 const scope = self as unknown as {
   postMessage(msg: WorkerMessage): void;
-  onmessage: ((e: MessageEvent<EvalRequest>) => void) | null;
+  onmessage:
+    | ((e: MessageEvent<InitRequest | EvalRequest>) => void)
+    | null;
 };
 
 const PYODIDE_BASE = 'https://cdn.jsdelivr.net/pyodide/v0.29.0/full/';
@@ -510,11 +521,18 @@ let boot: Promise<PyodideLike> | undefined;
 // (scripts/make-pyodide-snapshot.cjs) with sympy, numpy and plotly
 // already loaded — restoring it skips both the multi-second imports
 // and the micropip PyPI install entirely.
+// The base public assets are served under — set by the 'init' message.
+// Undefined means no init arrived (shouldn't happen: the main thread
+// posts init right after construction) — the snapshot fetch is skipped
+// and boot falls back to the cold path rather than guessing a URL.
+let snapshotBase: string | undefined;
+
 async function fetchSnapshot(): Promise<ArrayBuffer | undefined> {
+  if (snapshotBase === undefined) return undefined;
   for (const file of ['engine.snapshot.gz', 'engine.snapshot']) {
-    const resp = await fetch(
-      `${import.meta.env.BASE_URL}${file}`,
-    ).catch(() => undefined);
+    const resp = await fetch(`${snapshotBase}${file}`).catch(
+      () => undefined,
+    );
     if (!resp?.ok || !resp.body) continue;
     let buf: ArrayBuffer;
     if (file.endsWith('.gz')) {
@@ -593,12 +611,17 @@ function ensureEngine(): Promise<PyodideLike> {
   return boot;
 }
 
-// Boot on spawn so prewarm() — which only creates the worker — already
-// overlaps the wasm download with the user's menu interaction.
-void ensureEngine();
-
 scope.onmessage = (e) => {
-  const { id, program } = e.data;
+  const msg = e.data as InitRequest | EvalRequest;
+  if (msg.type === 'init') {
+    snapshotBase = msg.snapshotBase;
+    // The main thread posts init right after construction, so boot
+    // still overlaps the wasm download with the user's menu
+    // interaction the same way an unconditional boot on spawn did.
+    void ensureEngine();
+    return;
+  }
+  const { id, program } = msg;
   void ensureEngine()
     .then(async (py) => {
       // The program travels inside the python source as a quoted literal —
