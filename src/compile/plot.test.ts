@@ -184,4 +184,26 @@ describe('plot theming', () => {
     expect(x.zeroline).toBe(true);
     expect(x.zerolinecolor).toBe('#9aa2ae');
   });
+
+  it('makes scene and axis panels transparent', () => {
+    // The opaque panels a 3D scene paints are scene.bgcolor plus each
+    // axis's backgroundcolor — without the override they stay white in
+    // dark mode.
+    const withScene: PlotData = {
+      ...base,
+      figure: {
+        ...base.figure,
+        layout: {
+          scene: { xaxis: {}, yaxis: {}, zaxis: { title: 'z' } },
+        },
+      },
+    };
+    const { layout } = themedFigure(withScene, true);
+    const scene = layout.scene as Record<string, unknown>;
+    expect(scene.bgcolor).toBe('rgba(0,0,0,0)');
+    const z = scene.zaxis as Record<string, unknown>;
+    expect(z.backgroundcolor).toBe('rgba(0,0,0,0)');
+    expect(z.gridcolor).toBe('rgba(154,162,174,0.22)');
+    expect(z.title).toBe('z');
+  });
 });
