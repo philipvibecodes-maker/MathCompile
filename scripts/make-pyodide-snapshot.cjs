@@ -1,8 +1,11 @@
-// Freezes a post-import Pyodide interpreter into public/engine.snapshot
+// Freezes a post-import SymPy interpreter into public/engine.snapshot.gz
 // so the calculator worker restores it (_loadSnapshot) instead of
-// cold-booting CPython + SymPy and micropip-installing plotly on every
-// first load. The worker falls back to the normal boot when the file is
-// absent or stale (BUILD_ID check inside pyodide).
+// cold-booting CPython + SymPy on every first load. numpy and plotly
+// are deliberately kept out of the image (see the warm block below):
+// the worker repopulates them at boot — numpy via loadPackage, plotly
+// by unzipping the vendored wheel in public/wheels/. The worker falls
+// back to the normal micropip boot when the file is absent or stale
+// (BUILD_ID check inside pyodide).
 //
 // Why zipfile instead of loadPackage for the pre-snapshot install:
 // loadPackage records packages in a map that occupies a reserved hiwire
@@ -85,7 +88,7 @@ async function main() {
     );
   }
   await py.runPythonAsync(`
-import glob, os, sysconfig, zipfile
+import glob, os, sys, sysconfig, zipfile
 purelib = sysconfig.get_paths()['purelib']
 for w in glob.glob('/tmp/*.whl'):
     zipfile.ZipFile(w).extractall(purelib)
@@ -100,20 +103,16 @@ sp.series(sp.sin(x), x); sp.latex(sp.sqrt(2))
 # _mc_row simplifies every result — warm it so sympy.physics (pulled in
 # lazily by simplify) is resident in the snapshot.
 sp.simplify(x + x); sp.N(sp.pi, 12)
-import numpy
-# Warm everything _mc_plot_figure calls: the graph_objects validators
-# for the traces it builds, plus plotly.io's to_json path. These modules
-# must live in sys.modules because plotly's files are not repopulated
-# after a restore — plotly is not a pyodide built-in.
-import plotly.graph_objects as go
-import plotly.io
-import numpy as np
-fig = go.Figure(
-    data=[go.Scatter(x=[0, 1], y=[0, 1]), go.Cone(x=[0], y=[0], z=[0], u=[1], v=[0], w=[0]), go.Surface(z=[[0, 1], [1, 0]]), go.Heatmap(z=[[0, 1], [1, 0]]), go.Scatter3d(x=[0], y=[0], z=[0])],
-    layout={'updatemenus': [{'buttons': [{'label': 'a', 'method': 'update', 'args': [{}]}]}]},
-)
-import json
-json.loads(fig.to_json())
+# plotly and numpy are deliberately NOT warmed. numpy carries .so
+# modules and makeMemorySnapshot captures the wasm heap but not the
+# indirect-call table — a .so loaded now is dead after the restore and
+# dlopening a new one post-restore crashes with 'table index is out of
+# bounds'. plotly is pure python, but the import is ~0.2s anyway, so it
+# is repopulated from a vendored wheel at boot instead (cheaper than
+# pinning the whole package into the image). Both must stay out of
+# sys.modules here so they install and import fresh post-restore.
+for _pinned in ('numpy', 'plotly', 'narwhals'):
+    assert _pinned not in sys.modules, f'snapshot would pin {_pinned} — it must not be imported pre-snapshot'
 `);
 
   const snap = py.makeMemorySnapshot();
@@ -132,13 +131,35 @@ json.loads(fig.to_json())
     _loadSnapshot: snap,
   });
   await check.loadPackage(BUILTINS);
+  // Mirror the worker's plotly repopulation: drop the vendored wheel
+  // into the FS and unzip it into purelib, then fresh-import.
+  const plotlyWheel = wheels.find((w) => w.startsWith('plotly-'));
+  if (!plotlyWheel) throw new Error('plotly wheel missing from .pyodide-build');
+  check.FS.writeFile(
+    `/tmp/${plotlyWheel}`,
+    new Uint8Array(readFileSync(join(BUILD, plotlyWheel))),
+  );
   await check.runPythonAsync(
-    `import sympy.physics
+    `import glob, sysconfig, zipfile
+for w in glob.glob('/tmp/plotly-*.whl'):
+    zipfile.ZipFile(w).extractall(sysconfig.get_paths()['purelib'])
+import sympy.physics
 import sympy as sp
 sp.integrate(sp.Symbol('x')**2, sp.Symbol('x'))
 import plotly.graph_objects as go
 import json
-json.loads(go.Figure(go.Scatter(x=[0, 1], y=[0, 1])).to_json())`,
+fig = go.Figure()
+fig.add_scatter(x=[0, 1], y=[0, 1])
+fig.update_xaxes(zeroline=True)
+json.loads(fig.to_json())
+# The .so path numpy takes post-restore (numpy was never imported at
+# snapshot time, so these are fresh installs and dlopens) — the
+# numpy.random lazy import + a numpy lambdify are what _mc_plot_figure
+# hits on its first real eval.
+import numpy
+import numpy.random
+import numpy as np
+sp.lambdify(sp.Symbol('x'), sp.Symbol('x')**2, 'numpy')(np.array([1.0]))`,
   );
   console.log('snapshot verified (restore + loadPackage + lazy import ok)');
 }

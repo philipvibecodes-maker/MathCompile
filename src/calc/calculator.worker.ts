@@ -19,6 +19,7 @@ declare function loadPyodide(opts: {
 interface PyodideLike {
   loadPackage(pkgs: string | string[]): Promise<void>;
   runPythonAsync(code: string): Promise<unknown>;
+  FS: { writeFile(path: string, data: Uint8Array): void };
 }
 
 interface CalcStatementMsg {
@@ -69,6 +70,10 @@ const scope = self as unknown as {
 };
 
 const PYODIDE_BASE = 'https://cdn.jsdelivr.net/pyodide/v0.29.0/full/';
+// The vendored wheel the snapshot boot repopulates plotly's files
+// from — pinned to the same version scripts/fetch-pyodide-deps.mjs
+// stages into public/wheels/.
+const PLOTLY_WHEEL = 'plotly-7.1.0-py3-none-any.whl';
 
 const SETUP_PY = `
 import json
@@ -118,8 +123,10 @@ _MC_PLOT_R2 = (-3.0, 3.0)
 _MC_PLOT_N1 = 600
 _MC_PLOT_N2 = 80
 
-import inspect as _mc_inspect
-import numpy as _mc_np
+# numpy and inspect are imported lazily inside _mc_plot_figure /
+# _mc_plot_signature so their ~1s import only runs when a plot cell
+# actually evaluates — and so a snapshot-restored interpreter never
+# holds a pre-snapshot numpy module.
 
 
 def _mc_plot_components(expr):
@@ -150,6 +157,7 @@ def _mc_plot_signature(v):
         comps = _mc_plot_components(v.expr)
         return vars_, comps, sp.latex(v.expr)
     if callable(v) and not isinstance(v, sp.Basic):
+        import inspect as _mc_inspect
         try:
             names = [
                 n for n in _mc_inspect.signature(v).parameters
@@ -265,6 +273,7 @@ def _mc_plot_figure(d, c, vars_, comps):
     # Sample the components and build the plotly figure for the
     # signature. Non-finite samples stay NaN — plotly gaps on them,
     # which is what makes poles/asymptotes break cleanly.
+    import numpy as _mc_np
     import plotly.graph_objects as go
 
     fnum = sp.lambdify(vars_, comps, 'numpy')
@@ -518,9 +527,10 @@ def mc_run(prog_json):
 let boot: Promise<PyodideLike> | undefined;
 
 // engine.snapshot(.gz) in public/ is a frozen post-import memory image
-// (scripts/make-pyodide-snapshot.cjs) with sympy, numpy and plotly
-// already loaded — restoring it skips both the multi-second imports
-// and the micropip PyPI install entirely.
+// (scripts/make-pyodide-snapshot.cjs) with sympy already loaded —
+// restoring it skips the multi-second imports; numpy and plotly are
+// repopulated on top of it at boot (numpy via loadPackage, plotly by
+// unzipping the vendored wheel), so no micropip/PyPI install runs.
 // The base public assets are served under — set by the 'init' message.
 // Undefined means no init arrived (shouldn't happen: the main thread
 // posts init right after construction) — the snapshot fetch is skipped
@@ -533,19 +543,27 @@ async function fetchSnapshot(): Promise<ArrayBuffer | undefined> {
     const resp = await fetch(`${snapshotBase}${file}`).catch(
       () => undefined,
     );
-    if (!resp?.ok || !resp.body) continue;
+    if (!resp?.ok) continue;
     let buf: ArrayBuffer;
-    if (file.endsWith('.gz')) {
-      if (typeof DecompressionStream === 'undefined') continue;
-      try {
-        buf = await new Response(
-          resp.body.pipeThrough(new DecompressionStream('gzip')),
-        ).arrayBuffer();
-      } catch {
-        continue;
-      }
-    } else {
+    try {
       buf = await resp.arrayBuffer();
+      // Some dev servers tag .gz assets with Content-Encoding: gzip and
+      // fetch has then already decoded for us; sniff the bytes instead
+      // of trusting the filename or headers — gzip starts 1f 8b, a
+      // snapshot starts with its own magic.
+      if (
+        buf.byteLength > 2 &&
+        new DataView(buf).getUint16(0, true) === 0x8b1f &&
+        typeof DecompressionStream !== 'undefined'
+      )
+        buf = await new Response(
+          new Blob([buf])
+            .stream()
+            .pipeThrough(new DecompressionStream('gzip')),
+        ).arrayBuffer();
+    } catch (err) {
+      console.warn(`[calc] snapshot ${file} unusable:`, err);
+      continue;
     }
     // Check the snapshot magic before handing bytes to _loadSnapshot:
     // servers that fall back to index.html answer 200 with HTML, and
@@ -571,9 +589,23 @@ async function bootEngine(): Promise<PyodideLike> {
       });
       // Package files never survive a snapshot — the EMFS tree lives
       // outside the wasm heap — so the built-ins must be repopulated
-      // for lazy imports. plotly is not a built-in; the modules the
-      // plot code touches are warmed into the image itself.
+      // for lazy imports. plotly is not a built-in, so its files are
+      // repopulated by unzipping the vendored wheel the same way
+      // loadPackage would (numpy stays out of the image on purpose —
+      // its .so modules would be dead pointers after the restore).
       await py.loadPackage(['sympy', 'numpy', 'narwhals', 'packaging']);
+      const wheelResp = await fetch(
+        `${snapshotBase}wheels/${PLOTLY_WHEEL}`,
+      );
+      if (wheelResp.ok) {
+        py.FS.writeFile(
+          `/tmp/${PLOTLY_WHEEL}`,
+          new Uint8Array(await wheelResp.arrayBuffer()),
+        );
+        await py.runPythonAsync(
+          `import sysconfig, zipfile\nzipfile.ZipFile('/tmp/${PLOTLY_WHEEL}').extractall(sysconfig.get_paths()['purelib'])`,
+        );
+      }
       await py.runPythonAsync(SETUP_PY);
       return py;
     } catch (err) {
