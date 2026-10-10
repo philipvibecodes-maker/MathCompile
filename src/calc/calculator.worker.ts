@@ -13,6 +13,7 @@
 declare function importScripts(...urls: string[]): void;
 declare function loadPyodide(opts: {
   indexURL: string;
+  _loadSnapshot?: ArrayBuffer;
 }): Promise<PyodideLike>;
 
 interface PyodideLike {
@@ -505,8 +506,62 @@ def mc_run(prog_json):
 
 let boot: Promise<PyodideLike> | undefined;
 
+// engine.snapshot(.gz) in public/ is a frozen post-import memory image
+// (scripts/make-pyodide-snapshot.cjs) with sympy, numpy and plotly
+// already loaded — restoring it skips both the multi-second imports
+// and the micropip PyPI install entirely.
+async function fetchSnapshot(): Promise<ArrayBuffer | undefined> {
+  for (const file of ['engine.snapshot.gz', 'engine.snapshot']) {
+    const resp = await fetch(
+      `${import.meta.env.BASE_URL}${file}`,
+    ).catch(() => undefined);
+    if (!resp?.ok || !resp.body) continue;
+    let buf: ArrayBuffer;
+    if (file.endsWith('.gz')) {
+      if (typeof DecompressionStream === 'undefined') continue;
+      try {
+        buf = await new Response(
+          resp.body.pipeThrough(new DecompressionStream('gzip')),
+        ).arrayBuffer();
+      } catch {
+        continue;
+      }
+    } else {
+      buf = await resp.arrayBuffer();
+    }
+    // Check the snapshot magic before handing bytes to _loadSnapshot:
+    // servers that fall back to index.html answer 200 with HTML, and
+    // feeding that to _loadSnapshot hangs the boot instead of throwing.
+    const SNAPSHOT_MAGIC = 1886286592;
+    if (
+      buf.byteLength > 48 &&
+      new Uint32Array(buf, 0, 4)[0] === SNAPSHOT_MAGIC
+    )
+      return buf;
+  }
+  return undefined;
+}
+
 async function bootEngine(): Promise<PyodideLike> {
   importScripts(`${PYODIDE_BASE}pyodide.js`);
+  const snap = await fetchSnapshot();
+  if (snap) {
+    try {
+      const py = await loadPyodide({
+        indexURL: PYODIDE_BASE,
+        _loadSnapshot: snap,
+      });
+      // Package files never survive a snapshot — the EMFS tree lives
+      // outside the wasm heap — so the built-ins must be repopulated
+      // for lazy imports. plotly is not a built-in; the modules the
+      // plot code touches are warmed into the image itself.
+      await py.loadPackage(['sympy', 'numpy', 'narwhals', 'packaging']);
+      await py.runPythonAsync(SETUP_PY);
+      return py;
+    } catch (err) {
+      console.warn('[calc] snapshot restore failed, cold-booting:', err);
+    }
+  }
   const py = await loadPyodide({ indexURL: PYODIDE_BASE });
   // plotly is a pure-Python PyPI package, not a Pyodide built-in, so it
   // has to come in through micropip rather than loadPackage.

@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:perf": "playwright test -c playwright.perf.config.ts",
-    "docs:pdf": "node scripts/build-reference-pdf.mjs"
+    "docs:pdf": "node scripts/build-reference-pdf.mjs",
+    "pyodide:snapshot": "node scripts/fetch-pyodide-deps.mjs && node -e \"require('./scripts/make-pyodide-snapshot.cjs')\""
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
