@@ -16,12 +16,16 @@ import {
   type NormalizeOptions,
 } from '../compile/ir';
 import { arcTrigNames } from './result-latex';
+import type { PlotData } from '../plot/types';
 
 export interface CalcRowOk {
   ok: true;
   latex?: string;
   text?: string;
   approx?: string;
+  /** A `\text{plot}` statement's sampled payload — the row renders an
+   * interactive figure instead of a math result. */
+  plot?: PlotData;
 }
 export interface CalcRowErr {
   ok: false;
@@ -92,6 +96,9 @@ function ensureWorker(): Worker {
   const w = new Worker(new URL('./calculator.worker.ts', import.meta.url), {
     type: 'classic',
   });
+  // The worker can't read import.meta.env (classic worker), so the
+  // base public assets are served under comes from the page.
+  w.postMessage({ type: 'init', snapshotBase: import.meta.env.BASE_URL });
   w.onmessage = (e: MessageEvent<WorkerReply>) => {
     const m = e.data;
     if (m.type === 'ready') {
@@ -320,6 +327,9 @@ const SKIP_HEADS = new Set([
   // \python{...} cells parse to PythonSource — boxing it echoes
   // PythonSource(...) junk.
   'PythonSource',
+  // \text{plot} statements are engine-side sampling, not evaluation —
+  // boxing them would echo Plot(...) junk.
+  'Plot',
 ]);
 const hasHead = (n: MathJson): boolean =>
   isArr(n) && (SKIP_HEADS.has(headOf(n) ?? '') || n.slice(1).some(hasHead));

@@ -11,6 +11,7 @@
   import { mountStaticMath } from '../editor/static-math';
   import { highlightPython } from '../calc/python-highlight';
   import { appStore, type Cell } from '../state/store.svelte';
+  import PlotView from '../plot/PlotView.svelte';
 
   // Per-cell SymPy output for the calculator target. Edits are debounced,
   // then the cell evaluates through the codegen pipeline in the context
@@ -144,10 +145,10 @@
     return () => clearTimeout(timer);
   });
 
-  // Split shown code around the emitted `def clean_and_simplify`
-  // block: head is everything before the signature line, sig is the
-  // `def` line itself, body is its indented suite, rest is the
-  // remainder of the program.
+  // Split shown code around the emitted helper definitions
+  // (clean_and_simplify, _mc_plot): head is everything before the
+  // first `def`, sig is the def line itself, body is the indented
+  // suites, rest is the remainder of the program.
   function splitHelperBlock(
     code: string,
   ): { head: string; sig: string; body: string; rest: string } | null {
@@ -157,8 +158,14 @@
     );
     if (i < 0) return null;
     let j = i + 1;
-    while (j < lines.length && (lines[j] === '' || lines[j].startsWith(' ')))
+    // Swallow the helper suite plus any further top-level `def _mc_*`
+    // helpers that follow it (the fold covers the whole prelude).
+    while (j < lines.length) {
+      while (j < lines.length && (lines[j] === '' || lines[j].startsWith(' ')))
+        j++;
+      if (!lines[j]?.startsWith('def _mc_')) break;
       j++;
+    }
     return {
       head: lines.slice(0, i).join('\n'),
       sig: lines[i],
@@ -256,16 +263,21 @@
       {#each rows as row, i (i)}
         <div class="calc-row">
           {#if row.ok}
-            <div class="calc-result">
-              {#if row.latex !== undefined && row.latex !== ''}
-                <span class="calc-math" use:staticMath={row.latex ?? ''}></span>
-              {:else}
-                <code class="calc-text">{row.text ?? ''}</code>
-              {/if}
-              {#if row.approx !== undefined}
-                <span class="calc-approx">≈ {row.approx}</span>
-              {/if}
-            </div>
+            {#if row.plot !== undefined}
+              <PlotView plot={row.plot} />
+            {:else}
+              <div class="calc-result">
+                {#if row.latex !== undefined && row.latex !== ''}
+                  <span class="calc-math" use:staticMath={row.latex ?? ''}
+                  ></span>
+                {:else}
+                  <code class="calc-text">{row.text ?? ''}</code>
+                {/if}
+                {#if row.approx !== undefined}
+                  <span class="calc-approx">≈ {row.approx}</span>
+                {/if}
+              </div>
+            {/if}
           {:else if (row.severity ?? 'error') === 'error'}
             <span class="parse-error-icon" title={row.error}>!</span>
           {:else}

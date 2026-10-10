@@ -27,3 +27,4 @@ test-results-perf/
 playwright-report/
 .playwright-mcp/
 perf-results/
+.pyodide-build/

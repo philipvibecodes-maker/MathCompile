@@ -5,4 +5,4 @@
 // `D` is deliberately absent: a one-letter autoCommand would rewrite
 // every typed D — it only expands through the `\D` command input.
 export const SMART_AUTO_COMMANDS =
-  'int iint antid sum sqrt prod lim pi infty theta derivative def nabla gradient';
+  'int iint antid sum sqrt prod lim pi infty theta derivative def plot nabla gradient';
