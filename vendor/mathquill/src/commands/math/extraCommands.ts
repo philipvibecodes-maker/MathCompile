@@ -1117,6 +1117,56 @@ LatexCmds.varprojlim = () =>
   new SummationNotation('\\varprojlim ', 'lim&#8592;', 'inverse limit');
 
 //======================================================================
+//  Set operations (\cup \cap \union \intersect \bigcup \bigcap)
+//======================================================================
+
+// MATHCOMPILE: \cup/\cap render as ordinary binary operators until a
+// script attaches — SupSub.contactWeld (commands.ts) then swaps in the
+// big n-ary form, so `\cup_{i=1}^{n}` displays and serializes as
+// `\bigcup_{i=1}^{n}`. The registrations moved out of advancedSymbols.ts
+// (the cut sites are tagged there) because they need the classes below —
+// which live here rather than commands.ts since only extraCommands uses
+// them and every symbol they touch (BinaryOperator in math.ts,
+// SummationNotation in commands.ts) is in SOURCES_BASIC.
+class SetOperation extends BinaryOperator {
+  constructor(
+    ctrlSeq: string,
+    htmlEntity: string,
+    private makeBig: () => BigSetOperation,
+    mathspeak?: string
+  ) {
+    super(ctrlSeq, h.entityText(htmlEntity), undefined, mathspeak);
+  }
+  bigVersion() {
+    return this.makeBig();
+  }
+}
+
+// The scripted form — a \sum-style n-ary operator whose over/under
+// bounds serialize verbatim as `_{ }^{ }`.
+class BigSetOperation extends SummationNotation {}
+
+const bigUnionOp = () =>
+  new BigSetOperation('\\bigcup ', '&#8899;', 'big union');
+const bigIntersectionOp = () =>
+  new BigSetOperation('\\bigcap ', '&#8898;', 'big intersection');
+
+LatexCmds['∪'] =
+  LatexCmds.cup =
+  LatexCmds.union =
+    () => new SetOperation('\\cup ', '&cup;', bigUnionOp, 'union');
+
+LatexCmds['∩'] =
+  LatexCmds.cap =
+  LatexCmds.intersect =
+  LatexCmds.intersection =
+    () =>
+      new SetOperation('\\cap ', '&cap;', bigIntersectionOp, 'intersection');
+
+LatexCmds.bigcup = bigUnionOp;
+LatexCmds.bigcap = bigIntersectionOp;
+
+//======================================================================
 //  Displaystyle \lim — bound under the operator (desmosinc/mathquill#252)
 //======================================================================
 

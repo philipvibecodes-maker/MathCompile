@@ -212,6 +212,7 @@ describe('derived ir.ts views equal the replaced literals', () => {
         'IdenticallyEqual', 'Degrees', 'Minimum', 'Maximum',
         'Interval', 'Open', 'IntegerRange',
         'Element', 'NotElement', 'Union', 'Intersection', 'SetMinus',
+        'BigUnion', 'BigIntersection',
         'Subset', 'SubsetEqual', 'Superset', 'SupersetEqual',
         'NotSubset', 'NotSubsetNotEqual', 'NotSuperset',
         'NotSupersetNotEqual', 'And', 'Or', 'Not', 'Which', 'Piecewise',

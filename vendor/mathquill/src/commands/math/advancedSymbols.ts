@@ -717,8 +717,8 @@ LatexCmds['∮'] = LatexCmds.oint = bindVanillaSymbol(
   '&#8750;',
   'o int'
 );
-LatexCmds.bigcap = bindVanillaSymbol('\\bigcap ', '&#8745;', 'big cap');
-LatexCmds.bigcup = bindVanillaSymbol('\\bigcup ', '&#8746;', 'big cup');
+// MATHCOMPILE: \bigcap/\bigcup moved to extraCommands.ts — the scripted
+// n-ary form needs the SummationNotation machinery, not a leaf symbol.
 LatexCmds.bigsqcup = bindVanillaSymbol(
   '\\bigsqcup ',
   '&#8852;',
@@ -1069,16 +1069,8 @@ LatexCmds['∅'] =
   LatexCmds.varnothing =
     bindBinaryOperator('\\varnothing ', '&empty;', 'nothing');
 
-LatexCmds['∪'] =
-  LatexCmds.cup =
-  LatexCmds.union =
-    bindBinaryOperator('\\cup ', '&cup;', 'union');
-
-LatexCmds['∩'] =
-  LatexCmds.cap =
-  LatexCmds.intersect =
-  LatexCmds.intersection =
-    bindBinaryOperator('\\cap ', '&cap;', 'intersection');
+// MATHCOMPILE: the \cup/\cap family moved to extraCommands.ts — a
+// script upgrades them to \bigcup/\bigcap (SetOperation/BigSetOperation).
 
 // MATHCOMPILE: ===== Round-trip coverage: more commands real LaTeX emits =====
 // Each entry below previously failed parse and blanked the field.

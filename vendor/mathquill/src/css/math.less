@@ -710,7 +710,13 @@
 
   .mq-dot-recurring {
     text-align: center;
-    height: 0.3em;
+    // MATHCOMPILE: hug the stem like KaTeX's \dot — the glyph's ink
+    // overflows its short line box upward (margin-top keeps it inside
+    // the field's overflow clip), and the negative margin pulls the
+    // stem up under the dot instead of a full line away.
+    line-height: 0.3em;
+    margin-top: 0.1em;
+    margin-bottom: -0.6em;
   }
 
   ////
