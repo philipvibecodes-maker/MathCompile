@@ -214,17 +214,18 @@
   .mq-int {
     > big {
       display: inline-block;
+      font-size: 330%;
       .transform(scaleX(0.7));
       vertical-align: -0.16em;
     }
 
     > .mq-supsub {
       font-size: 80%;
-      vertical-align: -1.1em;
+      vertical-align: -1.5em;
       padding-right: 0.2em;
 
       > .mq-sup > .mq-sup-inner {
-        vertical-align: 1.3em;
+        vertical-align: 2.1em;
       }
 
       > .mq-sub {
@@ -238,19 +239,19 @@
     + .mq-supsub,
     + .mq-cursor + .mq-supsub {
       font-size: 80%;
-      vertical-align: -1.1em;
+      vertical-align: -1.5em;
       padding-right: 0.2em;
 
       // A sign carrying only an upper bound still sets that bound above
       // itself; the generic `.mq-supsub.mq-sup-only` rule below would
       // float it as an ordinary exponent.
       &.mq-sup-only {
-        vertical-align: -1.1em;
+        vertical-align: -1.5em;
 
         // Lift the lone bound to the definite-bound height (same top as
         // the .mq-sup-inner bound of the large-operator template).
         > .mq-sup {
-          vertical-align: 1.9em;
+          vertical-align: 2.55em;
         }
       }
 
@@ -259,12 +260,12 @@
       // bound is display:block so vertical-align does not apply — shift
       // it visually to the definite-bound height instead.
       > .mq-sup {
-        margin-bottom: 0.4em;
+        margin-bottom: 0.55em;
       }
 
       &:not(.mq-sup-only) > .mq-sup {
         position: relative;
-        top: -0.45em;
+        top: -0.7em;
       }
 
       > .mq-sub {
@@ -445,7 +446,7 @@
     vertical-align: -0.65em;
 
     &.mq-sup-only {
-      vertical-align: 0.65em;
+      vertical-align: 0.5em;
 
       & > .mq-sup {
         display: inline-block;
@@ -455,7 +456,12 @@
 
     .mq-sup {
       display: block;
-      // spread the pair: lift the sup off the sub
+    }
+
+    // spread the pair: lift the sup off the sub. The sup is nested
+    // inside .mq-sub in pair DOM (a descendant, not a child), and lone
+    // sups must keep stock geometry — so exclude only sup-only roots.
+    &:not(.mq-sup-only) .mq-sup {
       margin-bottom: 0.15em;
     }
 
@@ -605,6 +611,10 @@
       display: inline-block;
       vertical-align: top;
       overflow: visible;
+      // straddle the container's top edge like LaTeX scripts: the sup's
+      // center sits at the edge, not its top inside it
+      position: relative;
+      top: -0.4em;
     }
     &:not(.mq-sup-only) > .mq-sup {
       width: 0;
@@ -613,7 +623,23 @@
       display: inline-block;
       float: none;
       vertical-align: bottom;
+      // matching small overshoot below the container's bottom edge
+      position: relative;
+      top: 0.13em;
     }
+  }
+
+  // Edge-straddling scripts poke ~0.4em above / ~0.2em below the line box;
+  // grow the clip region only on root blocks containing them — universal
+  // padding pushed every calc output row into overflow. Negative margins
+  // keep the box's layout metrics unchanged.
+  .mq-root-block:has(.mq-matrix ~ .mq-supsub),
+  .mq-root-block:has(.mq-displaylines ~ .mq-supsub),
+  .mq-root-block:has(.mq-bracket-container ~ .mq-supsub) {
+    padding-top: 0.5em;
+    padding-bottom: 0.4em;
+    margin-top: -0.5em;
+    margin-bottom: -0.4em;
   }
 
   .mq-array > span {
