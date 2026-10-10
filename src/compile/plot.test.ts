@@ -187,14 +187,19 @@ describe('plot theming', () => {
 
   it('makes scene and axis panels transparent', () => {
     // The opaque panels a 3D scene paints are scene.bgcolor plus each
-    // axis's backgroundcolor — without the override they stay white in
-    // dark mode.
+    // axis's backgroundcolor — fig.to_json() emits them explicitly, so
+    // the theme's transparent must override the figure's white.
     const withScene: PlotData = {
       ...base,
       figure: {
         ...base.figure,
         layout: {
-          scene: { xaxis: {}, yaxis: {}, zaxis: { title: 'z' } },
+          scene: {
+            bgcolor: 'rgb(255,255,255)',
+            xaxis: {},
+            yaxis: {},
+            zaxis: { title: 'z', backgroundcolor: 'rgb(230,236,245)' },
+          },
         },
       },
     };

@@ -52,19 +52,20 @@ export function themedFigure(plot: PlotData, dark: boolean) {
     const entry = layout[key];
     if (!isObj(entry)) continue;
     const scene: Record<string, unknown> = {
-      bgcolor: 'rgba(0,0,0,0)',
       ...entry,
+      // The panes a scene paints are scene.bgcolor plus each axis's
+      // backgroundcolor — fig.to_json() carries them explicitly, so
+      // the transparent override must come after the spread.
+      bgcolor: 'rgba(0,0,0,0)',
     };
     for (const ax of ['xaxis', 'yaxis', 'zaxis']) {
       if (isObj(scene[ax]))
         scene[ax] = {
-          // The axis planes are the opaque panels a 3D scene paints —
-          // transparent like the 2D plot area so the cell bg shows.
-          backgroundcolor: 'rgba(0,0,0,0)',
           gridcolor: t.grid,
           zerolinecolor: t.zero,
           zeroline: true,
           ...scene[ax],
+          backgroundcolor: 'rgba(0,0,0,0)',
         };
     }
     layout[key] = scene;
