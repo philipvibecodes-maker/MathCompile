@@ -51,10 +51,16 @@ export function themedFigure(plot: PlotData, dark: boolean) {
     if (key !== 'scene' && !/^scene\d+$/.test(key)) continue;
     const entry = layout[key];
     if (!isObj(entry)) continue;
-    const scene = { ...entry };
+    const scene: Record<string, unknown> = {
+      bgcolor: 'rgba(0,0,0,0)',
+      ...entry,
+    };
     for (const ax of ['xaxis', 'yaxis', 'zaxis']) {
       if (isObj(scene[ax]))
         scene[ax] = {
+          // The axis planes are the opaque panels a 3D scene paints —
+          // transparent like the 2D plot area so the cell bg shows.
+          backgroundcolor: 'rgba(0,0,0,0)',
           gridcolor: t.grid,
           zerolinecolor: t.zero,
           zeroline: true,

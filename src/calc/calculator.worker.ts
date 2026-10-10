@@ -204,6 +204,7 @@ def _mc_plot_streamlines(us, vs, fx, fy):
     # RK4 streamlines of the sampled field, seeded every few grid nodes.
     # fx/fy are 2-D numpy arrays over (vs, us); out-of-range and
     # non-finite lookups read as zero so a streamline dies at the edge.
+    import numpy as _mc_np
     nu, nv = len(us), len(vs)
     du = (us[-1] - us[0]) / (nu - 1 or 1)
     dv = (vs[-1] - vs[0]) / (nv - 1 or 1)
