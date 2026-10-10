@@ -47,6 +47,27 @@ export function themedFigure(plot: PlotData, dark: boolean) {
       ...(isObj(entry) ? entry : {}),
     };
   }
+  // fig.to_json() only emits layout keys the figure touched — a
+  // single-scene figure serializes no 'scene' at all, so create the
+  // entry whenever a gl3d trace type is present, else the panes keep
+  // plotly's opaque default.
+  const GL3D = new Set([
+    'scatter3d',
+    'surface',
+    'cone',
+    'streamtube',
+    'mesh3d',
+    'volume',
+    'isosurface',
+    'pointcloud',
+  ]);
+  const has3d = plot.figure.data.some(
+    (tr) =>
+      isObj(tr) &&
+      typeof tr.type === 'string' &&
+      GL3D.has(tr.type),
+  );
+  if (has3d && !isObj(layout.scene)) layout.scene = {};
   for (const key of Object.keys(layout)) {
     if (key !== 'scene' && !/^scene\d+$/.test(key)) continue;
     const entry = layout[key];
