@@ -508,7 +508,12 @@ let boot: Promise<PyodideLike> | undefined;
 async function bootEngine(): Promise<PyodideLike> {
   importScripts(`${PYODIDE_BASE}pyodide.js`);
   const py = await loadPyodide({ indexURL: PYODIDE_BASE });
-  await py.loadPackage(['sympy', 'numpy', 'plotly']);
+  // plotly is a pure-Python PyPI package, not a Pyodide built-in, so it
+  // has to come in through micropip rather than loadPackage.
+  await py.loadPackage(['sympy', 'numpy', 'micropip']);
+  await py.runPythonAsync(
+    'import micropip\nawait micropip.install("plotly")',
+  );
   await py.runPythonAsync(SETUP_PY);
   return py;
 }
