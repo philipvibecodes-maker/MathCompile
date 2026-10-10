@@ -461,6 +461,17 @@ class SupSub extends MathCommand {
     return super.createLeftOf(cursor);
   }
   contactWeld(cursor: Cursor) {
+    // MATHCOMPILE: a script on a union/intersection upgrades the symbol
+    // to its big n-ary form — `\cup_{i}` reads and writes `\bigcup_{i}`.
+    // The script's blocks become the operator's bounds (like \sum);
+    // a script whose bound is already filled welds as usual.
+    const setOp = this[L];
+    if (
+      (setOp instanceof SetOperation || setOp instanceof BigSetOperation) &&
+      this.absorbIntoSetOperation(setOp, cursor)
+    )
+      return;
+
     // Look on either side for a SupSub, if one is found compare my
     // .sub, .sup with its .sub, .sup. If I have one that it doesn't,
     // then call .addBlock() on it with my block; if I have one that
@@ -518,6 +529,74 @@ class SupSub extends MathCommand {
         break;
       }
     }
+  }
+  // MATHCOMPILE: move this script's blocks into the bounds of the set
+  // operator on the left, swapping \cup/\cap for \bigcup/\bigcap when
+  // needed. Returns false when a bound the script needs is already
+  // filled — the caller then welds the SupSub as an ordinary sibling.
+  private absorbIntoSetOperation(setOp: MQNode, cursor: Cursor) {
+    var upgrade = setOp instanceof SetOperation;
+    var big = upgrade
+      ? (setOp as SetOperation).bigVersion()
+      : (setOp as BigSetOperation);
+    if (upgrade) {
+      big.createBlocks();
+      // the bound blocks' <span>s exist only once the view renders —
+      // the content move below inserts into them
+      big.html();
+    }
+    var boundOf = (supsub: 'sub' | 'sup') =>
+      (supsub === 'sub' ? big.getEnd(L) : big.getEnd(R)) as MathBlock;
+    if (
+      (this.sub && !boundOf('sub').isEmpty()) ||
+      (this.sup && !boundOf('sup').isEmpty())
+    )
+      return false;
+    for (
+      var supsub: 'sub' | 'sup' | false = 'sub';
+      supsub;
+      supsub = supsub === 'sub' ? 'sup' : false
+    ) {
+      var src = this[supsub];
+      if (!src) continue;
+      var dest = boundOf(supsub);
+      if (!src.isEmpty()) {
+        src
+          .domFrag()
+          .children()
+          .insAtDirEnd(L, dest.domFrag().oneElement());
+        src.children().disown().adopt(dest, dest.getEnd(R), 0);
+      }
+      if (supsub === this.supsub) {
+        this.placeCursor = ((dest: MathBlock) => (cursor: Cursor) =>
+          cursor.insAtDirEnd(R, dest))(dest);
+      }
+    }
+    if (upgrade) {
+      // swap the small op for the big one, in the DOM and the tree —
+      // this SupSub's element is the anchor immediately right of it.
+      // Removing the small op first makes its neighbors adjacent, which
+      // Fragment#adopt requires.
+      big.domFrag().insertBefore(this.domFrag());
+      var parent = setOp.parent!;
+      var before = setOp[L];
+      setOp.remove();
+      big.adopt(parent, before, this);
+      big.finalizeTree();
+    }
+    var caretBound = boundOf(this.supsub === 'sup' ? 'sup' : 'sub');
+    var srcBlocks = { sub: this.sub, sup: this.sup };
+    this.remove();
+    if (cursor) {
+      if (cursor[L] === this) cursor.insRightOf(big);
+      else if (
+        cursor[R] === this ||
+        cursor.parent === srcBlocks.sub ||
+        cursor.parent === srcBlocks.sup
+      )
+        cursor.insAtDirEnd(L, caretBound);
+    }
+    return true;
   }
   finalizeTree() {
     if (this.supsub === 'sub') {

@@ -809,9 +809,10 @@ export const NOTATION: Notation[] = [
   { name: 'daleth', display: '\\daleth' },
   { name: 'aleph', display: '\\aleph' },
   { name: 'weierstrass', display: '\\wp' },
-  // \theta — a bare glyph with no emission metadata; carried so the
-  // smart-mode command list has a home.
+  // \theta / \phi — bare glyphs with no emission metadata; carried so
+  // the smart-mode command list has a home.
   { name: 'theta', commands: ['theta'] },
+  { name: 'phi', commands: ['phi'] },
 ];
 
 // `call` heads that are real SymPy functions — codegen keeps emitting
@@ -862,8 +863,11 @@ const STRUCTURAL_HEADS = [
   'NotDivides', 'Implies', 'Equivalent', 'IdenticallyEqual', 'Degrees',
   'Interval', 'Open', 'IntegerRange',
   // set operators — codegen emits real SymPy when operands are
-  // set-like, and the same flagged Function stub as before otherwise
+  // set-like, and the same flagged Function stub as before otherwise.
+  // BigUnion/BigIntersection are the \bigcup/\bigcap bound forms — an
+  // index + bounds like Sum/Product, not binary ops.
   'Element', 'NotElement', 'Union', 'Intersection', 'SetMinus',
+  'BigUnion', 'BigIntersection',
   'Subset', 'SubsetEqual', 'Superset', 'SupersetEqual',
   'NotSubset', 'NotSubsetNotEqual', 'NotSuperset', 'NotSupersetNotEqual',
   'And', 'Or', 'Not', 'Which', 'Piecewise',

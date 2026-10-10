@@ -97,6 +97,10 @@ const INT_ALIASES = /(?<!\\)((?:\\\\)*)\\antid(?![a-zA-Z])/g;
 const canonicalInt = (s: string): string =>
   s.replace(INT_ALIASES, '$1\\int');
 
+// Same backslash-parity guard as INT_ALIASES: the op's own \ must sit
+// at an odd position in a run, or `\\` + the letters is literal text.
+const BIG_SET_OPS = /(?<!\\)((?:\\\\)*)\\big(cup|cap)(?![a-zA-Z])/g;
+
 export const LATEX_RULES: LatexRule[] = [
   {
     name: 'over-under',
@@ -235,6 +239,35 @@ export const LATEX_RULES: LatexRule[] = [
     ],
   },
   {
+    name: 'big-set-ops',
+    why: 'CE has no \\bigcup/\\bigcap — rewrite each to an `mc-*` \\text '
+      + 'marker beside a \\sum/\\prod so the parse tree carries the op; '
+      + 'ir.ts\'s bigSetOps() folds marker+op into BigUnion/'
+      + 'BigIntersection, which codegen emits as a comprehension '
+      + 'Union/Intersection.',
+    applies: /\\(?:bigcup|bigcap)(?![a-zA-Z])/,
+    rewrite: (s) =>
+      s.replace(
+        BIG_SET_OPS,
+        (_m, bs: string, kind: string) =>
+          `${bs}\\text{mc-big${
+            kind === 'cup' ? 'union' : 'intersect'
+          }}\\${kind === 'cup' ? 'sum' : 'prod'}`,
+      ),
+    tests: [
+      [
+        '\\bigcup_{i=1}^{n} A_i',
+        '\\text{mc-bigunion}\\sum_{i=1}^{n} A_i',
+      ],
+      [
+        '\\bigcap_{i=1}^{n} A_i',
+        '\\text{mc-bigintersect}\\prod_{i=1}^{n} A_i',
+      ],
+      ['x\\\\bigcup y', 'x\\\\bigcup y'],
+      ['x\\\\\\bigcup y', 'x\\\\\\text{mc-bigunion}\\sum y'],
+    ],
+  },
+  {
     name: 'd-total-alias',
     why: '\\D is the insertion alias for the total-derivative operator — '
       + 'in the field it expands to \\text{D} atoms, so this rewrite only '
@@ -330,6 +363,7 @@ export const PRE_PARSE_RULES = [
   'limits-hints',
   'thin-space',
   'partial-subscript',
+  'big-set-ops',
   'd-total-alias',
   'nabla-gradient',
 ];
