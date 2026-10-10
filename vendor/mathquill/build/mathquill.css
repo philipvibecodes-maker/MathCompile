@@ -116,9 +116,7 @@
   display: -moz-inline-box;
   display: inline-block;
   width: 100%;
-  padding: 0.5em 2px;
-  margin-top: -0.5em;
-  margin-bottom: -0.4em;
+  padding: 2px;
   -webkit-box-sizing: border-box;
   -moz-box-sizing: border-box;
   box-sizing: border-box;
@@ -590,6 +588,14 @@
   vertical-align: bottom;
   position: relative;
   top: 0.13em;
+}
+.mq-math-mode .mq-root-block:has(.mq-matrix ~ .mq-supsub),
+.mq-math-mode .mq-root-block:has(.mq-displaylines ~ .mq-supsub),
+.mq-math-mode .mq-root-block:has(.mq-bracket-container ~ .mq-supsub) {
+  padding-top: 0.5em;
+  padding-bottom: 0.4em;
+  margin-top: -0.5em;
+  margin-bottom: -0.4em;
 }
 .mq-math-mode .mq-array > span {
   display: block;

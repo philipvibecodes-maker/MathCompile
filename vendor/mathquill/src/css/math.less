@@ -10,11 +10,7 @@
 .mq-math-mode .mq-root-block {
   .inline-block;
   width: 100%;
-  // headroom for edge-straddling scripts (matrix/bracket-adjacent
-  // sups pokes above the line box); negative margins keep layout metrics
-  padding: 0.5em 2px;
-  margin-top: -0.5em;
-  margin-bottom: -0.4em;
+  padding: 2px;
   .box-sizing(border-box); // supported by IE8+: http://caniuse.com/css3-boxsizing
   white-space: nowrap;
   overflow: hidden;
@@ -631,6 +627,19 @@
       position: relative;
       top: 0.13em;
     }
+  }
+
+  // Edge-straddling scripts poke ~0.4em above / ~0.2em below the line box;
+  // grow the clip region only on root blocks containing them — universal
+  // padding pushed every calc output row into overflow. Negative margins
+  // keep the box's layout metrics unchanged.
+  .mq-root-block:has(.mq-matrix ~ .mq-supsub),
+  .mq-root-block:has(.mq-displaylines ~ .mq-supsub),
+  .mq-root-block:has(.mq-bracket-container ~ .mq-supsub) {
+    padding-top: 0.5em;
+    padding-bottom: 0.4em;
+    margin-top: -0.5em;
+    margin-bottom: -0.4em;
   }
 
   .mq-array > span {
