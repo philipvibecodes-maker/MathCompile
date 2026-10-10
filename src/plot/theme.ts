@@ -59,14 +59,17 @@ export function themedFigure(plot: PlotData, dark: boolean) {
       bgcolor: 'rgba(0,0,0,0)',
     };
     for (const ax of ['xaxis', 'yaxis', 'zaxis']) {
-      if (isObj(scene[ax]))
-        scene[ax] = {
-          gridcolor: t.grid,
-          zerolinecolor: t.zero,
-          zeroline: true,
-          ...scene[ax],
-          backgroundcolor: 'rgba(0,0,0,0)',
-        };
+      // fig.to_json() only serializes props the worker set — an axis
+      // the figure never touched is absent entirely, so build the
+      // entry unconditionally (these keys are presentation-only; a
+      // hidden scene's axes stay hidden).
+      scene[ax] = {
+        ...(isObj(scene[ax]) ? scene[ax] : {}),
+        gridcolor: t.grid,
+        zerolinecolor: t.zero,
+        zeroline: true,
+        backgroundcolor: 'rgba(0,0,0,0)',
+      };
     }
     layout[key] = scene;
   }
