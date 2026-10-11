@@ -7,7 +7,7 @@
   import type PlotlyT from 'plotly.js-dist-min';
   import { appStore } from '../state/store.svelte';
   import type { PlotData } from './types';
-  import { applyModeAxes, themedFigure } from './theme';
+  import { applyModeAxes, GL3D_TYPES, themedFigure } from './theme';
 
   let { plot }: { plot: PlotData } = $props();
 
@@ -80,6 +80,48 @@
       }
     }
   }
+  // updatemenus hide/show traces via a per-trace `visible` array —
+  // which gl3d traces ignore (scalar restyle+indices is the only form
+  // that reaches them; cartesian traces honor the array fine). After
+  // a menu click, `_fullLayout.updatemenus[].active` holds the chosen
+  // button — re-apply its vis list to gl3d traces in the working form.
+  // Runs on afterplot and is a no-op once state matches, so it can't
+  // loop on its own restyles.
+  function syncMenuVisibility(gd: HTMLDivElement) {
+    if (!Plotly) return;
+    const gd2 = gd as unknown as {
+      _fullLayout?: {
+        updatemenus?: { active?: number; buttons?: { args?: unknown[] }[] }[];
+      };
+      data?: { type?: string; visible?: unknown }[];
+    };
+    const data = gd2.data;
+    if (!gd2._fullLayout?.updatemenus || !data) return;
+    for (const m of gd2._fullLayout.updatemenus) {
+      const vis = (
+        typeof m.active === 'number' && m.active >= 0
+          ? m.buttons?.[m.active]?.args
+          : undefined
+      )?.find(
+        (a): a is { visible: unknown[] } =>
+          !!a && Array.isArray((a as { visible?: unknown }).visible),
+      )?.visible;
+      if (!vis) continue;
+      const off: number[] = [];
+      const on: number[] = [];
+      data.forEach((t, i) => {
+        if (i >= vis.length || !t.type || !GL3D_TYPES.has(t.type)) return;
+        const want = vis[i];
+        const cur = t.visible === undefined ? true : t.visible;
+        if (cur !== want) {
+          (want === false || want === 'legendonly' ? off : on).push(i);
+        }
+      });
+      if (off.length) void Plotly.restyle(gd, 'visible', false, off);
+      if (on.length) void Plotly.restyle(gd, 'visible', true, on);
+    }
+  }
+
   // The afterplot listener is bound once per graph element — a remount
   // (the fail branch swapping in/out) gets a fresh element and a fresh
   // binding.
@@ -120,7 +162,10 @@
     if (wiredEl !== target) {
       (
         target as unknown as { on: (ev: string, cb: () => void) => void }
-      ).on('plotly_afterplot', () => unpickSheet(target));
+      ).on('plotly_afterplot', () => {
+        unpickSheet(target);
+        syncMenuVisibility(target);
+      });
       wiredEl = target;
     }
   });

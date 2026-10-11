@@ -184,7 +184,7 @@ export function themedFigure(plot: PlotData, dark: boolean) {
   return { data, layout };
 }
 
-const GL3D_TYPES = new Set([
+export const GL3D_TYPES = new Set([
   'scatter3d',
   'surface',
   'cone',

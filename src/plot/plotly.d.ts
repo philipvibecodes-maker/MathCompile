@@ -16,6 +16,12 @@ declare module 'plotly.js-dist-min' {
       config?: Record<string, unknown>,
     ): Promise<unknown>;
     purge(el: HTMLElement): void;
+    restyle(
+      el: HTMLElement,
+      attr: string,
+      value: unknown,
+      indices?: number[],
+    ): Promise<unknown>;
     Plots: {
       resize(el: HTMLElement): void;
     };

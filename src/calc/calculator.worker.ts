@@ -399,12 +399,16 @@ def _mc_desmos_box(fig, bounds):
 def _mc_desmos_axes(fig, bounds):
     # Per axis: a line lo->hi through the origin, a cone arrowhead at
     # the positive end, the axis letter ~9% past the tip, and tick
-    # labels at 0 and +-half-extent.
+    # labels at 0 and +-half-extent (rounded to the grid step so the
+    # labels read 1, 9, ... rather than the raw sampled extents).
+    import math as _mc_math
     span = max(b[1] - b[0] for b in bounds)
     sizeref = 0.045 * span
     for i, letter in enumerate(('x', 'y', 'z')):
         lo, hi = bounds[i]
         half = (hi - lo) / 2.0
+        step = _mc_grid_step(hi - lo)
+        decimals = max(0, -int(_mc_math.floor(_mc_math.log10(step))))
         line = [[0.0], [0.0], [0.0]]
         line[i] = [lo, hi]
         fig.add_scatter3d(
@@ -435,7 +439,7 @@ def _mc_desmos_axes(fig, bounds):
                 tp[i].append(p)
                 tp[(i + 1) % 3].append(0.0)
                 tp[(i + 2) % 3].append(0.0)
-                labels.append(_mc_fmt(p))
+                labels.append(_mc_fmt(round(p, decimals)))
         fig.add_scatter3d(
             x=tp[0], y=tp[1], z=tp[2], mode='text',
             text=labels, textfont=dict(color='#8c8c8c', size=12),
