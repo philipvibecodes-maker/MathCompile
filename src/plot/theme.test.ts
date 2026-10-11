@@ -22,15 +22,24 @@ function plot3d(): PlotData {
             [0, '#64748b'],
             [1, '#64748b'],
           ],
-          meta: { mcRole: 'xyplane' },
-        },
-        {
-          type: 'scatter3d',
-          mode: 'lines',
-          x: [0, 0, null],
-          y: [0, 1, null],
-          z: [0, 0, null],
-          line: { color: 'rgba(148,163,184,0.55)' },
+          contours: {
+            x: {
+              show: true,
+              color: 'rgba(148,163,184,0.55)',
+              width: 1,
+              start: 0,
+              end: 1,
+              size: 1,
+            },
+            y: {
+              show: true,
+              color: 'rgba(148,163,184,0.55)',
+              width: 1,
+              start: 0,
+              end: 1,
+              size: 1,
+            },
+          },
           meta: { mcRole: 'xyplane' },
         },
         {
@@ -61,16 +70,19 @@ function plot3d(): PlotData {
 const themed = (dark = true) => themedFigure(plot3d(), dark);
 
 describe('themedFigure tagged reference traces', () => {
-  it('restyles the plane slab and gridlines for the theme', () => {
+  it('restyles the plane slab and grid contours for the theme', () => {
     const { data } = themed(true);
     expect(data[1].colorscale).toEqual([
       [0, '#94a3b8'],
       [1, '#94a3b8'],
     ]);
     expect(data[1].opacity).toBe(0.25);
-    expect((data[2].line as Record<string, unknown>).color).toBe(
-      'rgba(148,163,184,0.55)',
-    );
+    const contours = data[1].contours as {
+      x: { color: string };
+      y: { color: string };
+    };
+    expect(contours.x.color).toBe('rgba(148,163,184,0.55)');
+    expect(contours.y.color).toBe('rgba(148,163,184,0.55)');
   });
 
   it('uses the light palette in light mode', () => {
@@ -80,14 +92,17 @@ describe('themedFigure tagged reference traces', () => {
       [1, '#64748b'],
     ]);
     expect(data[1].opacity).toBe(0.32);
+    const contours = data[1].contours as {
+      x: { color: string };
+      y: { color: string };
+    };
+    expect(contours.x.color).toBe('rgba(51,65,85,0.55)');
+    expect(contours.y.color).toBe('rgba(51,65,85,0.55)');
     expect((data[2].line as Record<string, unknown>).color).toBe(
-      'rgba(51,65,85,0.55)',
-    );
-    expect((data[3].line as Record<string, unknown>).color).toBe(
       '#4b5563',
     );
     expect(
-      (data[4].textfont as Record<string, unknown>).color,
+      (data[3].textfont as Record<string, unknown>).color,
     ).toBe('#4b5563');
   });
 
@@ -104,21 +119,21 @@ describe('applySceneOptions', () => {
     applySceneOptions(fig, { planeOrigin: false, planeOnly: false });
     expect(fig.data[0].visible).toBeUndefined();
     expect(fig.data[1].visible).toBe(false);
-    expect(fig.data[2].visible).toBe(false);
     // zaxis is tied to planeOnly, not planeOrigin.
+    expect(fig.data[2].visible).toBe(false);
     expect(fig.data[3].visible).toBe(false);
     applySceneOptions(fig, { planeOrigin: true, planeOnly: true });
     expect(fig.data[1].visible).toBe(true);
+    expect(fig.data[2].visible).toBe(true);
     expect(fig.data[3].visible).toBe(true);
-    expect(fig.data[4].visible).toBe(true);
   });
 
   it('zaxis shows only when planeOnly hides the axis boxes', () => {
     const fig = themed();
     applySceneOptions(fig, { planeOrigin: true, planeOnly: false });
-    expect(fig.data[3].visible).toBe(false);
+    expect(fig.data[2].visible).toBe(false);
     applySceneOptions(fig, { planeOrigin: false, planeOnly: true });
-    expect(fig.data[3].visible).toBe(true);
+    expect(fig.data[2].visible).toBe(true);
   });
 
   it('planeOnly hides every scene axis', () => {
@@ -172,7 +187,6 @@ describe('applySceneOptions', () => {
       true,
       true,
       true,
-      true,
     ]);
     // 2-D mode button activates no gl3d trace, so it hides the
     // tagged traces outright — the slab can't float over the 2-D
@@ -180,7 +194,6 @@ describe('applySceneOptions', () => {
     expect(buttons[1].args[0].visible).toEqual([
       false,
       true,
-      false,
       false,
       false,
       false,

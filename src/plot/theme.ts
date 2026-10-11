@@ -121,6 +121,11 @@ export function themedFigure(plot: PlotData, dark: boolean) {
     const role = mcRole(tr);
     if (role === 'xyplane') {
       if (tr.type === 'surface') {
+        const contours = isObj(tr.contours) ? tr.contours : {};
+        const axisContours = (axis: 'x' | 'y') =>
+          isObj(contours[axis])
+            ? { ...contours[axis], color: t.planeGrid }
+            : { color: t.planeGrid };
         return {
           ...tr,
           opacity: t.planeOpacity,
@@ -128,6 +133,11 @@ export function themedFigure(plot: PlotData, dark: boolean) {
             [0.0, t.planeFill],
             [1.0, t.planeFill],
           ],
+          contours: {
+            ...contours,
+            x: axisContours('x'),
+            y: axisContours('y'),
+          },
         };
       }
       if (tr.type === 'scatter3d' && isObj(tr.line)) {

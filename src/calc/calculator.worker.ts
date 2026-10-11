@@ -293,12 +293,16 @@ _MC_PLOT_XYPLANE_SRC = '''def _mc_nice_step(span):
 
 def _mc_plot_xyplane(fig, x0, x1, y0, y1):
     # The z=0 reference plane (the 'xy plane through origin' option): a
-    # translucent slab plus gridlines, meta-tagged so the frontend
-    # toggles the whole plane as one unit. Colors are placeholders —
-    # src/plot/theme.ts restyles mcRole traces per theme.
+    # translucent slab, meta-tagged so the frontend toggles it as one
+    # unit. Colors are placeholders — src/plot/theme.ts restyles mcRole
+    # traces per theme.
     # Ambient-only lighting: the gl3d surface pipeline
     # specular-sparkles on a perfectly flat translucent surface.
-    import numpy as _mc_np
+    # The grid is drawn as the slab's own x/y contour lines — a
+    # separate coplanar line trace z-fights the slab into stair-stepped
+    # dashes.
+    import math as _mc_math
+    xstep, ystep = _mc_nice_step(x1 - x0), _mc_nice_step(y1 - y0)
     fig.add_surface(
         x=[[x0, x1], [x0, x1]],
         y=[[y0, y0], [y1, y1]],
@@ -309,29 +313,14 @@ def _mc_plot_xyplane(fig, x0, x1, y0, y1):
         showscale=False, hoverinfo='skip',
         surfacecolor=[[0.0, 0.0], [0.0, 0.0]],
         colorscale=[[0.0, '#64748b'], [1.0, '#64748b']],
-        meta={'mcRole': 'xyplane'},
-    )
-    xs_, ys_, zs_ = [], [], []
-    for gx in _mc_np.arange(
-            _mc_np.ceil(x0 / _mc_nice_step(x1 - x0))
-            * _mc_nice_step(x1 - x0),
-            x1 + _mc_nice_step(x1 - x0) * 1e-6,
-            _mc_nice_step(x1 - x0)):
-        xs_ += [float(gx), float(gx), None]
-        ys_ += [y0, y1, None]
-        zs_ += [0.0, 0.0, None]
-    for gy in _mc_np.arange(
-            _mc_np.ceil(y0 / _mc_nice_step(y1 - y0))
-            * _mc_nice_step(y1 - y0),
-            y1 + _mc_nice_step(y1 - y0) * 1e-6,
-            _mc_nice_step(y1 - y0)):
-        xs_ += [x0, x1, None]
-        ys_ += [float(gy), float(gy), None]
-        zs_ += [0.0, 0.0, None]
-    fig.add_scatter3d(
-        x=xs_, y=ys_, z=zs_, mode='lines',
-        line=dict(color='rgba(148,163,184,0.55)', width=1),
-        hoverinfo='skip',
+        contours=dict(
+            x=dict(show=True, color='rgba(148,163,184,0.55)', width=1,
+                   start=_mc_math.ceil(x0 / xstep) * xstep,
+                   end=_mc_math.floor(x1 / xstep) * xstep, size=xstep),
+            y=dict(show=True, color='rgba(148,163,184,0.55)', width=1,
+                   start=_mc_math.ceil(y0 / ystep) * ystep,
+                   end=_mc_math.floor(y1 / ystep) * ystep, size=ystep),
+        ),
         meta={'mcRole': 'xyplane'},
     )
 
@@ -443,9 +432,9 @@ def _mc_plot_figure(d, c, vars_, comps):
     if c == 1:
         fig.add_surface(
             x=us, y=vs, z=vals[0], colorscale='Viridis', showscale=False,
-            contours=dict(
-                z=dict(show=True, usecolormap=True, project=dict(z=True)),
-            ),
+            # On-surface contour lines only — floor-projected contours
+            # z-fight the xy-plane slab whenever zmin lands on z=0.
+            contours=dict(z=dict(show=True, usecolormap=True)),
         )
         fig.add_heatmap(
             x=us, y=vs, z=vals[0], colorscale='Viridis', showscale=False,
@@ -748,8 +737,7 @@ def _mc_plot_code(d, c, vars_, comps, plane, zext):
                 "    x=us, y=vs, z=vals[0], colorscale='Viridis',",
                 '    showscale=False,',
                 '    contours=dict(z=dict(',
-                '        show=True, usecolormap=True,',
-                '        project=dict(z=True))),',
+                '        show=True, usecolormap=True)),',
                 ')',
                 'fig.add_heatmap(',
                 '    x=us, y=vs, z=vals[0],'

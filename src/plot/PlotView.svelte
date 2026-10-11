@@ -59,6 +59,9 @@
     responsive: true,
     modeBarButtonsToRemove: ['toImage'],
     scrollZoom: true,
+    // gl3d has no MSAA — supersample the GL canvas (default 2) so slab
+    // edges and gridlines don't stair-step.
+    plotGlPixelRatio: 4,
   };
 
   onMount(() => {
