@@ -7252,8 +7252,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     //variable-sized
     // These are not actually variable-sized, and bigX (bigcap...) is the same as X (cap...)
     LatexCmds['∮'] = LatexCmds.oint = bindVanillaSymbol('\\oint ', '&#8750;', 'o int');
-    LatexCmds.bigcap = bindVanillaSymbol('\\bigcap ', '&#8745;', 'big cap');
-    LatexCmds.bigcup = bindVanillaSymbol('\\bigcup ', '&#8746;', 'big cup');
+    // MATHCOMPILE: \bigcap/\bigcup moved to extraCommands.ts — the scripted
+    // n-ary form needs the SummationNotation machinery, not a leaf symbol.
     LatexCmds.bigsqcup = bindVanillaSymbol('\\bigsqcup ', '&#8852;', 'big square cup');
     LatexCmds.bigvee = bindVanillaSymbol('\\bigvee ', '&#8744;', 'big vee');
     LatexCmds.bigwedge = bindVanillaSymbol('\\bigwedge ', '&#8743;', 'big wedge');
@@ -7485,15 +7485,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                                 LatexCmds.nothing =
                                     LatexCmds.varnothing =
                                         bindBinaryOperator('\\varnothing ', '&empty;', 'nothing');
-    LatexCmds['∪'] =
-        LatexCmds.cup =
-            LatexCmds.union =
-                bindBinaryOperator('\\cup ', '&cup;', 'union');
-    LatexCmds['∩'] =
-        LatexCmds.cap =
-            LatexCmds.intersect =
-                LatexCmds.intersection =
-                    bindBinaryOperator('\\cap ', '&cap;', 'intersection');
+    // MATHCOMPILE: the \cup/\cap family moved to extraCommands.ts — a
+    // script upgrades them to \bigcup/\bigcap (SetOperation/BigSetOperation).
     // MATHCOMPILE: ===== Round-trip coverage: more commands real LaTeX emits =====
     // Each entry below previously failed parse and blanked the field.
     // Named spacing commands (the \, \: \; \! single-char forms are in
@@ -10454,6 +10447,14 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             return _super.prototype.createLeftOf.call(this, cursor);
         };
         SupSub.prototype.contactWeld = function (cursor) {
+            // MATHCOMPILE: a script on a union/intersection upgrades the symbol
+            // to its big n-ary form — `\cup_{i}` reads and writes `\bigcup_{i}`.
+            // The script's blocks become the operator's bounds (like \sum);
+            // a script whose bound is already filled welds as usual.
+            var setOp = this[L];
+            if ((setOp instanceof SetOperation || setOp instanceof BigSetOperation) &&
+                this.absorbIntoSetOperation(setOp, cursor))
+                return;
             // Look on either side for a SupSub, if one is found compare my
             // .sub, .sup with its .sub, .sup. If I have one that it doesn't,
             // then call .addBlock() on it with my block; if I have one that
@@ -10513,6 +10514,70 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     break;
                 }
             }
+        };
+        // MATHCOMPILE: move this script's blocks into the bounds of the set
+        // operator on the left, swapping \cup/\cap for \bigcup/\bigcap when
+        // needed. Returns false when a bound the script needs is already
+        // filled — the caller then welds the SupSub as an ordinary sibling.
+        SupSub.prototype.absorbIntoSetOperation = function (setOp, cursor) {
+            var upgrade = setOp instanceof SetOperation;
+            var big = upgrade
+                ? setOp.bigVersion()
+                : setOp;
+            if (upgrade) {
+                big.createBlocks();
+                // the bound blocks' <span>s exist only once the view renders —
+                // the content move below inserts into them
+                big.html();
+            }
+            var boundOf = function (supsub) {
+                return (supsub === 'sub' ? big.getEnd(L) : big.getEnd(R));
+            };
+            if ((this.sub && !boundOf('sub').isEmpty()) ||
+                (this.sup && !boundOf('sup').isEmpty()))
+                return false;
+            for (var supsub = 'sub'; supsub; supsub = supsub === 'sub' ? 'sup' : false) {
+                var src = this[supsub];
+                if (!src)
+                    continue;
+                var dest = boundOf(supsub);
+                if (!src.isEmpty()) {
+                    src
+                        .domFrag()
+                        .children()
+                        .insAtDirEnd(L, dest.domFrag().oneElement());
+                    src.children().disown().adopt(dest, dest.getEnd(R), 0);
+                }
+                if (supsub === this.supsub) {
+                    this.placeCursor = (function (dest) { return function (cursor) {
+                        return cursor.insAtDirEnd(R, dest);
+                    }; })(dest);
+                }
+            }
+            if (upgrade) {
+                // swap the small op for the big one, in the DOM and the tree —
+                // this SupSub's element is the anchor immediately right of it.
+                // Removing the small op first makes its neighbors adjacent, which
+                // Fragment#adopt requires.
+                big.domFrag().insertBefore(this.domFrag());
+                var parent = setOp.parent;
+                var before = setOp[L];
+                setOp.remove();
+                big.adopt(parent, before, this);
+                big.finalizeTree();
+            }
+            var caretBound = boundOf(this.supsub === 'sup' ? 'sup' : 'sub');
+            var srcBlocks = { sub: this.sub, sup: this.sup };
+            this.remove();
+            if (cursor) {
+                if (cursor[L] === this)
+                    cursor.insRightOf(big);
+                else if (cursor[R] === this ||
+                    cursor.parent === srcBlocks.sub ||
+                    cursor.parent === srcBlocks.sup)
+                    cursor.insAtDirEnd(L, caretBound);
+            }
+            return true;
         };
         SupSub.prototype.finalizeTree = function () {
             if (this.supsub === 'sub') {
@@ -13140,6 +13205,57 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds.varprojlim = function () {
         return new SummationNotation('\\varprojlim ', 'lim&#8592;', 'inverse limit');
     };
+    //======================================================================
+    //  Set operations (\cup \cap \union \intersect \bigcup \bigcap)
+    //======================================================================
+    // MATHCOMPILE: \cup/\cap render as ordinary binary operators until a
+    // script attaches — SupSub.contactWeld (commands.ts) then swaps in the
+    // big n-ary form, so `\cup_{i=1}^{n}` displays and serializes as
+    // `\bigcup_{i=1}^{n}`. The registrations moved out of advancedSymbols.ts
+    // (the cut sites are tagged there) because they need the classes below —
+    // which live here rather than commands.ts since only extraCommands uses
+    // them and every symbol they touch (BinaryOperator in math.ts,
+    // SummationNotation in commands.ts) is in SOURCES_BASIC.
+    var SetOperation = /** @class */ (function (_super) {
+        __extends(SetOperation, _super);
+        function SetOperation(ctrlSeq, htmlEntity, makeBig, mathspeak) {
+            var _this_1 = _super.call(this, ctrlSeq, h.entityText(htmlEntity), undefined, mathspeak) || this;
+            _this_1.makeBig = makeBig;
+            return _this_1;
+        }
+        SetOperation.prototype.bigVersion = function () {
+            return this.makeBig();
+        };
+        return SetOperation;
+    }(BinaryOperator));
+    // The scripted form — a \sum-style n-ary operator whose over/under
+    // bounds serialize verbatim as `_{ }^{ }`.
+    var BigSetOperation = /** @class */ (function (_super) {
+        __extends(BigSetOperation, _super);
+        function BigSetOperation() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        return BigSetOperation;
+    }(SummationNotation));
+    var bigUnionOp = function () {
+        return new BigSetOperation('\\bigcup ', '&#8899;', 'big union');
+    };
+    var bigIntersectionOp = function () {
+        return new BigSetOperation('\\bigcap ', '&#8898;', 'big intersection');
+    };
+    LatexCmds['∪'] =
+        LatexCmds.cup =
+            LatexCmds.union =
+                function () { return new SetOperation('\\cup ', '&cup;', bigUnionOp, 'union'); };
+    LatexCmds['∩'] =
+        LatexCmds.cap =
+            LatexCmds.intersect =
+                LatexCmds.intersection =
+                    function () {
+                        return new SetOperation('\\cap ', '&cap;', bigIntersectionOp, 'intersection');
+                    };
+    LatexCmds.bigcup = bigUnionOp;
+    LatexCmds.bigcap = bigIntersectionOp;
     //======================================================================
     //  Displaystyle \lim — bound under the operator (desmosinc/mathquill#252)
     //======================================================================
@@ -22043,6 +22159,80 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             Point.prototype.init.call(cursor, A.parent, A[L], A[R]);
             assert.throws(function () {
                 cursor.select();
+            });
+        });
+    });
+    suite('set operations (\\cup \\cap -> \\bigcup \\bigcap)', function () {
+        var $ = window.test_only_jquery;
+        var mq;
+        setup(function () {
+            mq = MQ.MathField($('<span></span>').appendTo('#mock')[0]);
+        });
+        suite('aliases', function () {
+            test('\\union and \\intersect serialize as \\cup and \\cap', function () {
+                mq.latex('A \\union B');
+                assert.equal(mq.latex(), 'A\\cup B');
+                mq.latex('A \\intersect B');
+                assert.equal(mq.latex(), 'A\\cap B');
+            });
+        });
+        suite('script upgrade', function () {
+            test('a typed subscript upgrades \\cup to \\bigcup', function () {
+                mq.latex('\\cup');
+                mq.typedText('_').typedText('i');
+                assert.equal(mq.latex(), '\\bigcup_{i}^{ }');
+            });
+            test('a typed superscript upgrades \\cap to \\bigcap', function () {
+                mq.latex('\\cap');
+                mq.typedText('^').typedText('n');
+                assert.equal(mq.latex(), '\\bigcap_{ }^{n}');
+            });
+            test('written \\cup_{i=1}^{n} becomes \\bigcup_{i=1}^{n}', function () {
+                mq.write('\\cup_{i=1}^{n}');
+                assert.equal(mq.latex(), '\\bigcup_{i=1}^{n}');
+            });
+            test('written \\cap_{i=1}^{n} becomes \\bigcap_{i=1}^{n}', function () {
+                mq.write('\\cap_{i=1}^{n}');
+                assert.equal(mq.latex(), '\\bigcap_{i=1}^{n}');
+            });
+            test('pasted \\cup_{i}^{n} upgrades too', function () {
+                mq.latex('\\cup_{i}^{n}');
+                assert.equal(mq.latex(), '\\bigcup_{i}^{n}');
+            });
+            test('the upgraded op renders like a \\sum-style large operator', function () {
+                mq.latex('\\cup');
+                mq.typedText('_').typedText('i');
+                var $el = $(mq.el());
+                assert.equal($el.find('.mq-large-operator').length, 1);
+                assert.equal($el.find('.mq-from').length, 1);
+                assert.equal($el.find('.mq-to').length, 1);
+            });
+            test('the caret lands inside the new bound', function () {
+                mq.latex('\\cup');
+                mq.typedText('_');
+                mq.typedText('i');
+                assert.equal(mq.latex(), '\\bigcup_{i}^{ }');
+                // still inside the bound — next typed char joins it
+                mq.typedText('+1');
+                assert.equal(mq.latex(), '\\bigcup_{i+1}^{ }');
+            });
+        });
+        suite('big ops', function () {
+            test('\\bigcup/\\bigcap round-trip with bounds', function () {
+                mq.latex('\\bigcup_{i=1}^{n}');
+                assert.equal(mq.latex(), '\\bigcup_{i=1}^{n}');
+                mq.latex('\\bigcap_{i=1}^{n}');
+                assert.equal(mq.latex(), '\\bigcap_{i=1}^{n}');
+            });
+            test('a typed script fills an empty \\bigcup bound', function () {
+                mq.latex('\\bigcup_{ }^{ }');
+                mq.moveToRightEnd().typedText('_').typedText('i');
+                assert.equal(mq.latex(), '\\bigcup_{i}^{ }');
+            });
+            test('a second script stays a sibling when the bound is filled', function () {
+                mq.latex('\\bigcup_{i}^{ }');
+                mq.moveToRightEnd().typedText('_').typedText('j');
+                assert.equal(mq.latex(), '\\bigcup_{i}^{ }_{j}');
             });
         });
     });

@@ -472,6 +472,42 @@ const intervalBind = (s: string, j: MathJson): MathJson => {
   return [head(j), j[1], ['Interval', lo, hi]] as MathJson;
 };
 
+// `\bigcup`/`\bigcap` reach CE as the `\text{mc-*}` marker the
+// 'big-set-ops' latex rule plants beside a \sum/\prod — fold the pair
+// into a BigUnion/BigIntersection node so operator-bounds and codegen
+// see the real op.
+const bigSetOps = (node: MathJson): MathJson => {
+  if (!isArray(node)) return node;
+  const h = head(node);
+  const args = node.slice(1).map(bigSetOps) as MathJson[];
+  if (h !== 'InvisibleOperator' && h !== 'Multiply')
+    return [h, ...args] as MathJson;
+  const markerAt = args.findIndex(
+    (a) => a === "'mc-bigunion'" || a === "'mc-bigintersect'",
+  );
+  if (markerAt < 0) return [h, ...args];
+  const union = args[markerAt] === "'mc-bigunion'";
+  const opHead = union ? 'Sum' : 'Product';
+  const opAt = args.findIndex((a) => isArray(a) && head(a) === opHead);
+  const big: MathJson | undefined =
+    opAt >= 0
+      ? ([
+          union ? 'BigUnion' : 'BigIntersection',
+          ...(args[opAt] as MathJson[]).slice(1),
+        ] as MathJson)
+      : undefined;
+  const out: MathJson[] = [];
+  args.forEach((a, i) => {
+    if (i === markerAt) {
+      if (big) out.push(big);
+      return;
+    }
+    if (i === opAt) return;
+    out.push(a);
+  });
+  return out.length === 1 ? (out[0] as MathJson) : ([h, ...out] as MathJson);
+};
+
 // Parse a cell's LaTeX into raw MathJSON. Multiple statements become a
 // `["Block", ...]` node so downstream code sees one tree per cell. Parse
 // failures degrade to an Error node — the pipeline reports, never throws.
@@ -503,8 +539,9 @@ export function parseCellLatex(latex: string): MathJson | undefined {
     } catch {
       return ['Error', `'parse-failed'`] as MathJson;
     }
+    const jj = bigSetOps(j);
     return bracketIntervals(
-      intervalBind(s, TEXT_FOR.test(s) ? forToComprehension(j) : j),
+      intervalBind(s, TEXT_FOR.test(s) ? forToComprehension(jj) : jj),
     );
     })
     .filter((n): n is MathJson => n !== undefined);
@@ -1574,9 +1611,15 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
     name: 'operator-bounds',
     // Non-canonical \int/\sum/\prod take Tuple bounds (or a bare
     // variable for indefinite integrals); fold into the canonical
-    // Limits shape.
+    // Limits shape. BigUnion/BigIntersection carry the same Tuple
+    // bounds as \sum/\prod — the tail below folds them to Limits too.
     why: 'Tuple/bare-variable operator bounds fold to a Limits node',
-    when: (h) => h === 'Integrate' || h === 'Sum' || h === 'Product',
+    when: (h) =>
+      h === 'Integrate' ||
+      h === 'Sum' ||
+      h === 'Product' ||
+      h === 'BigUnion' ||
+      h === 'BigIntersection',
     rewrite: (node, ctx) => {
       const h = head(node) as string;
       // Iterated integrals nest under the outer sign and park EVERY

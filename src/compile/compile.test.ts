@@ -147,6 +147,41 @@ const FIXTURES: {
     expectedPython: ["k, n = sp.symbols('k n')", 'sp.product(k, (k, 1, n))'],
   },
   {
+    // \bigcup/\bigcap compile to a comprehension — SymPy's Union/
+    // Intersection take args, not bounds.
+    latex: '\\bigcup_{i=1}^{n} A_i',
+    expectedIR: ['BigUnion', 'A_i', ['Limits', 'i', 1, 'n']],
+    expectedPython: [
+      "A_i, i, n = sp.symbols('A_i i n')",
+      'sp.Union(*[A_i for i in sp.Range(1, n + 1)])',
+    ],
+  },
+  {
+    latex: '\\bigcap_{i=1}^{n} A_i',
+    expectedIR: ['BigIntersection', 'A_i', ['Limits', 'i', 1, 'n']],
+    expectedPython: [
+      "A_i, i, n = sp.symbols('A_i i n')",
+      'sp.Intersection(*[A_i for i in sp.Range(1, n + 1)])',
+    ],
+  },
+  {
+    // `i \in S` iterates the set directly, no Range.
+    latex: '\\bigcup_{i \\in S} A_i',
+    expectedIR: ['BigUnion', 'A_i', ['Element', 'i', 'S']],
+    expectedPython: [
+      "A_i, i, S = sp.symbols('A_i i S')",
+      'sp.Union(*[A_i for i in S])',
+    ],
+  },
+  {
+    latex: 'A \\cup B',
+    expectedIR: ['Union', 'A', 'B'],
+    expectedPython: [
+      "A, B = sp.symbols('A B')",
+      'sp.Union(sp.FiniteSet(A), sp.FiniteSet(B))',
+    ],
+  },
+  {
     latex: '\\lim_{x\\to 0} \\frac{\\sin x}{x}',
     // A bare \lim is two-sided — sympy's dir='+' default would silently
     // right-hand it (1/x at 0 gives oo instead of zoo).
@@ -2104,6 +2139,22 @@ describe('error messages + resilient emission', () => {
     // Previously these emitted Sum(i) / Sum(i, i) — every non-tuple
     // shape raises ValueError at eval time.
     expect(compile('\\sum i').lines.join('\n')).not.toContain('summation');
+  });
+
+  it('\\bigcup/\\bigcap flag missing bounds and unbounded ranges', () => {
+    expect(compile('\\bigcup A').issues).toContain(
+      'big union needs an index and bounds — write \\bigcup_{i=1}^{n}',
+    );
+    expect(compile('\\bigcap A').issues).toContain(
+      'big intersection needs an index and bounds',
+    );
+    expect(compile('\\bigcup_{i=1}^{ }A_i').issues).toContain(
+      'upper bound is empty — fill it in or delete it',
+    );
+    // `for i in Range(1, oo)` never finishes — flagged at compile time.
+    expect(compile('\\bigcup_{i=1}^{\\infty} A_i').issues).toContain(
+      "can't enumerate",
+    );
   });
 
   it('under-arity builtins say how many args they need', () => {

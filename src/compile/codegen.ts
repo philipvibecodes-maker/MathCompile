@@ -2439,6 +2439,68 @@ class Emitter {
         };
         return this.scope.withLambdaBound(boundVars, finish);
       }
+      case 'BigUnion':
+      case 'BigIntersection': {
+        // `\bigcup_{i=1}^{n} A_i` / `\bigcap` — an n-ary set op over an
+        // index. SymPy's Union/Intersection have no bound form, so
+        // emit an explicit comprehension: `Union(*[A_i for i in
+        // Range(1, n+1)])` — Range works whenever the bounds resolve
+        // to ints at eval time; an unbounded upper bound would hang
+        // the comprehension, so that one flags.
+        const { body } = unwrapLambda(args[0]);
+        const op = h === 'BigUnion' ? 'Union' : 'Intersection';
+        const cmd = h === 'BigUnion' ? '\\bigcup' : '\\bigcap';
+        const word = h === 'BigUnion' ? 'big union' : 'big intersection';
+        const missing = (n: MathJson | undefined): boolean =>
+          n === undefined || n === 'Nothing' || isHead(n, 'Error');
+        // `\bigcup_{i \in S} A_i` — union over a set's members,
+        // iterated directly.
+        if (isHead(args[1], 'Element') && isStr(args[1][1])) {
+          const v = args[1][1];
+          return this.scope.withLambdaBound([v], () => [
+            `${this.sp}${op}(*[${this.emit(body)} for ${this.emit(v)} in ${this.emit((args[1] as MathJson[])[2])}])`,
+            PREC_ATOM,
+          ]);
+        }
+        const limits = isHead(args[1], 'Limits') ? args[1].slice(1) : null;
+        const boundVars =
+          limits && isStr(limits[0]) && !missing(limits[0])
+            ? [limits[0]]
+            : [];
+        const finish = (): [string, number] => {
+          if (!limits || missing(limits[0])) {
+            this.scope.flag(
+              'error',
+              `${word} needs an index and bounds — write ${cmd}_{i=1}^{n}`,
+            );
+            return [`${this.sp}${op}(${this.emit(body)})`, PREC_ATOM];
+          }
+          if (missing(limits[1]) || missing(limits[2])) {
+            this.scope.flag(
+              'error',
+              `${missing(limits[2]) ? 'upper' : 'lower'} bound is empty — fill it in or delete it`,
+            );
+            return [`${this.sp}${op}(${this.emit(body)})`, PREC_ATOM];
+          }
+          if (
+            limits[2] === 'PositiveInfinity' ||
+            limits[2] === 'NegativeInfinity' ||
+            limits[2] === 'Infinity' ||
+            limits[2] === '-Infinity'
+          ) {
+            this.scope.flag(
+              'error',
+              `${word} over an unbounded index can't enumerate — write it as a set comprehension`,
+            );
+            return [`${this.sp}${op}(${this.emit(body)})`, PREC_ATOM];
+          }
+          return [
+            `${this.sp}${op}(*[${this.emit(body)} for ${this.emit(limits[0])} in ${this.sp}Range(${this.emit(limits[1])}, ${this.emit(limits[2])} + 1)])`,
+            PREC_ATOM,
+          ];
+        };
+        return this.scope.withLambdaBound(boundVars, finish);
+      }
       case 'Limit': {
         // ["Limit", ["Function", body, x], value] or
         // ["Limit", ["Function", body, x], value, dir] where dir is ±1

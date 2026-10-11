@@ -645,7 +645,9 @@
 }
 .mq-math-mode .mq-dot-recurring {
   text-align: center;
-  height: 0.3em;
+  line-height: 0.3em;
+  margin-top: 0.1em;
+  margin-bottom: -0.6em;
 }
 .mq-math-mode .mq-sqrt-prefix {
   position: absolute;

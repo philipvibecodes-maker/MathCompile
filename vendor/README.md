@@ -190,7 +190,10 @@ Inline `// MATHCOMPILE:` edits, by file:
   extensible arrows/delimiters, `\bra`/`\ket`, the
   boundless-integral sibling supsub rules, and `.mq-limit` (the
   underscript stacks below "lim" via the `\sum`-style
-  float-right/width:100% baseline trick). Also: the block holding the
+  float-right/width:100% baseline trick). `.mq-dot-recurring` hugs the
+  stem like KaTeX's `\dot` — a `0.3em` line box (ink overflows upward
+  into `margin-top` headroom) plus `margin-bottom: -0.6em` pulling the
+  stem up under the dot. Also: the block holding the
   caret keeps the empty-slot box — always while it's empty
   (`.mq-hasCursor:has(> .mq-cursor:only-child)`, upstream strips
   `.mq-empty` on focus so `\mathrm{ }` collapsed to zero width and
@@ -217,10 +220,23 @@ Inline `// MATHCOMPILE:` edits, by file:
   `replaceSelection`/`disown` instead of `deleteSelection`.
 - `src/commands/math/advancedSymbols.ts` — also: `\mapsto` is a
   `bindBinaryOperator` (relation spacing like `\to`), not a
-  `VanillaSymbol`.
+  `VanillaSymbol`. `\cup`/`\cap`/`\bigcup`/`\bigcap` and the `∪`/`∩`
+  char commands are removed here — they live in extraCommands.ts as
+  set operations (below).
 - `src/commands/math/extraCommands.ts` — also: typed `:` is a
   `BinaryOperator` relation (`f : X → Y`), with `.mq-comma` styling
-  covered in `math.less`.
+  covered in `math.less`. Set operations: `SetOperation` (a
+  `BinaryOperator` holding a `bigVersion()` factory) backs `\cup`/`\cap`
+  plus the `\union`/`\intersect`/`\intersection` aliases and the `∪`/`∩`
+  chars; `BigSetOperation` (a `SummationNotation` — bounds stack
+  over/under like `\sum`) backs `\bigcup`/`\bigcap`.
+- `src/commands/math/commands.ts` — `SupSub.contactWeld` hands a SupSub
+  typed/written/parsed right of a `SetOperation` or `BigSetOperation`
+  to `SupSub::absorbIntoSetOperation`, which upgrades `\cup`/`\cap` in
+  place to `\bigcup`/`\bigcap` (or keeps an existing big op) and moves
+  the script blocks into the big op's bounds — so `A \cup_i^{n} B`
+  serializes as `\bigcup_{i}^{n}`, not `\cup_{i}^{n}`. Covered by
+  `test/unit/setOps.test.js`.
 - `src/commands/math/environments.ts` — `insertLineBreakAtCursor`
   inside a `\python` block inserts a `\n` into the source instead of
   splitting a `\displaylines` row (covers programmatic
@@ -270,8 +286,8 @@ SupSub on demand (or from parsing `\iint_{a}^{b}`), and `.mq-int`
 sibling-supsub rules keep the bound styling. `\antid` is an insertion
 alias: the app maps it to `\int` at compile time (CE has no `\antid`).
 
-Coverage: `test/unit/environments.test.js` and
-`test/unit/undo.test.js` (mocha; run `make test` then open
+Coverage: `test/unit/environments.test.js`, `test/unit/undo.test.js`
+and `test/unit/setOps.test.js` (mocha; run `make test` then open
 `test/unit.html`, or run `npx playwright test e2e/vendor.spec.ts`
 at the repo root to run the whole vendor suite headlessly).
 
