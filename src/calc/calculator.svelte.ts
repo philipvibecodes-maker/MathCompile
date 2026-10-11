@@ -26,6 +26,9 @@ export interface CalcRowOk {
   /** A `\text{plot}` statement's sampled payload — the row renders an
    * interactive figure instead of a math result. */
   plot?: PlotData;
+  /** The literal program a plot row ran — the generating-code block
+   * shows it in place of the opaque `_mc_plot` statement. */
+  code?: string;
 }
 export interface CalcRowErr {
   ok: false;
@@ -191,7 +194,6 @@ export function evaluate(
     // Uncompileable cells show their issues; a cell with none at all
     // (empty, or only notes) shows nothing.
     return Promise.resolve({ rows: issueRows });
-  const { code, displayCode } = shownPrograms(prog);
   // A multi-statement cell keeps its good rows when a sibling statement
   // is broken — and issue rows interleave at their own input line, not
   // at the bottom of the output.
@@ -201,6 +203,11 @@ export function evaluate(
     pending.set(id, {
       resolve: (r) => {
         clearTimeout(timer);
+        // Rows align with the last cell's statements — a plot row's
+        // `code` replaces the opaque _mc_plot statement in the shown
+        // program with the literal code that built the figure.
+        const rowCode = r.map((row) => (row.ok ? row.code : undefined));
+        const { code, displayCode } = shownPrograms(prog, rowCode);
         const merged = [
           ...r.map((row, i) => ({ row, line: last.statementLines[i] })),
           ...issueRows.map((row) => ({ row, line: row.line })),
@@ -262,19 +269,42 @@ export function evaluate(
 // statements for their `e = ...` capture lines, mirroring the worker's
 // exec/eval split; a definition's display echoes the statement itself,
 // so its capture line is dropped even in the plumbing view.
-export function shownPrograms(prog: CalcWorksheetProgram): {
+export function shownPrograms(
+  prog: CalcWorksheetProgram,
+  rowCode?: (string | undefined)[],
+): {
   code: string;
   displayCode: string;
 } {
-  const okStmts = (c: CalcWorksheetProgram['cells'][number]) =>
-    c.statements.filter((s) => s.error === undefined && s.code !== '');
+  const lastIdx = prog.cells.length - 1;
+  // Statement lines for one cell: the worker's literal code wins when
+  // a row supplies it (plot statements), else the emitted text. The
+  // display variant wraps expression statements in `e = ...` capture
+  // lines; a definition's display echoes the statement itself, so its
+  // capture line is dropped even in the plumbing view.
+  const stmtLines = (
+    c: CalcWorksheetProgram['cells'][number],
+    i: number,
+    display: boolean,
+  ): string[] =>
+    c.statements.flatMap((s, si) => {
+      if (s.error !== undefined || s.code === '') return [];
+      const over = i === lastIdx ? rowCode?.[si] : undefined;
+      if (over !== undefined) return [over];
+      if (!display) return [s.code];
+      return s.display === undefined || s.defines
+        ? s.display === undefined
+          ? [`e = ${s.code}`]
+          : [s.code]
+        : [s.code, `e = ${s.display}`];
+    });
   const marker = (i: number) => (prog.cells.length > 1 ? [`# cell ${i + 1}`] : []);
   const code = [
     ...prog.prelude,
     ...prog.cells.flatMap((c, i) => [
       ...marker(i),
       ...c.defs,
-      ...okStmts(c).map((s) => s.code),
+      ...stmtLines(c, i, false),
     ]),
   ].join('\n');
   const displayCode = [
@@ -282,13 +312,7 @@ export function shownPrograms(prog: CalcWorksheetProgram): {
     ...prog.cells.flatMap((c, i) => [
       ...marker(i),
       ...c.defs,
-      ...okStmts(c).flatMap((s) =>
-        s.display === undefined || s.defines
-          ? s.display === undefined
-            ? [`e = ${s.code}`]
-            : [s.code]
-          : [s.code, `e = ${s.display}`],
-      ),
+      ...stmtLines(c, i, true),
     ]),
   ].join('\n');
   return { code, displayCode };

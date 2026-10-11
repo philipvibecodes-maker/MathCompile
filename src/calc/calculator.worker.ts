@@ -78,6 +78,7 @@ const PLOTLY_WHEEL = 'plotly-7.1.0-py3-none-any.whl';
 const SETUP_PY = `
 import json
 import sympy as sp
+from sympy.printing.str import StrPrinter as _MCStrPrinter
 
 def _mc_eval_stmt(stmt, ns):
     # Expression statements eval their code directly; statements carrying
@@ -200,7 +201,11 @@ def _mc_plot_menu(fig, labels, vis_lists):
     )])
 
 
-def _mc_plot_streamlines(us, vs, fx, fy):
+# The streamlines/gridlines helpers are exec'd from source strings:
+# _mc_plot_code hands the generating-code block the same text it shows
+# as "the code that ran", so the shown source can't drift from the
+# executed one.
+_MC_PLOT_STREAMLINES_SRC = '''def _mc_plot_streamlines(us, vs, fx, fy):
     # RK4 streamlines of the sampled field, seeded every few grid nodes.
     # fx/fy are 2-D numpy arrays over (vs, us); out-of-range and
     # non-finite lookups read as zero so a streamline dies at the edge.
@@ -250,10 +255,11 @@ def _mc_plot_streamlines(us, vs, fx, fy):
                 ys.append(y)
             xs.append(None)
             ys.append(None)
-    return xs, ys
+    return xs, ys'''
 
+exec(_MC_PLOT_STREAMLINES_SRC)
 
-def _mc_plot_gridlines(us, vs, fx, fy, fz=None):
+_MC_PLOT_GRIDLINES_SRC = '''def _mc_plot_gridlines(us, vs, fx, fy, fz=None):
     # Coordinate-line curves through f: fixed-v rows and fixed-u
     # columns, concatenated with None breaks — how f warps the grid.
     xs, ys, zs = [], [], []
@@ -267,7 +273,9 @@ def _mc_plot_gridlines(us, vs, fx, fy, fz=None):
         ys += list(fy[:, j]) + [None]
         if fz is not None:
             zs += list(fz[:, j]) + [None]
-    return xs, ys, zs
+    return xs, ys, zs'''
+
+exec(_MC_PLOT_GRIDLINES_SRC)
 
 
 def _mc_plot_figure(d, c, vars_, comps):
@@ -427,6 +435,294 @@ def _mc_plot_figure(d, c, vars_, comps):
     return fig
 
 
+class _MCCodePrinter(_MCStrPrinter):
+    # sstr with sp. prefixes on sympy names, matching the codegen style
+    # of the displayed program — user-defined functions stay bare. Only
+    # used to print the expression inside the shown plotting code; the
+    # executed path never sees this text.
+    def _print_Function(self, expr):
+        fn = expr.func
+        if isinstance(fn, sp.core.function.UndefinedFunction):
+            return _MCStrPrinter._print_Function(self, expr)
+        if (getattr(fn, '__module__', None) or '').startswith('sympy'):
+            name = getattr(fn, '__name__', None) or str(fn)
+            return 'sp.%s(%s)' % (
+                name, ', '.join(self._print(a) for a in expr.args))
+        return _MCStrPrinter._print_Function(self, expr)
+    def _print_Pow(self, expr):
+        if expr.exp == sp.Rational(1, 2):
+            return 'sp.sqrt(' + self._print(expr.base) + ')'
+        return _MCStrPrinter._print_Pow(self, expr)
+    def _sp_call(self, expr):
+        return 'sp.%s(%s)' % (
+            type(expr).__name__,
+            ', '.join(self._print(a) for a in expr.args))
+    _print_Derivative = _sp_call
+    _print_Integral = _sp_call
+    _print_Limit = _sp_call
+    _print_Sum = _sp_call
+    _print_Product = _sp_call
+    def _print_MatrixBase(self, expr):
+        return 'sp.' + _MCStrPrinter._print_MatrixBase(self, expr)
+    def _print_Pi(self, expr): return 'sp.pi'
+    def _print_Exp1(self, expr): return 'sp.E'
+    def _print_ImaginaryUnit(self, expr): return 'sp.I'
+    def _print_Infinity(self, expr): return 'sp.oo'
+    def _print_NegativeInfinity(self, expr): return '-sp.oo'
+    def _print_ComplexInfinity(self, expr): return 'sp.zoo'
+    def _print_NaN(self, expr): return 'sp.nan'
+
+
+def _mc_plot_code(d, c, vars_, comps):
+    # The literal program _mc_plot_figure ran for this signature — the
+    # generating-code block shows it in place of the opaque _mc_plot
+    # marker. Mirrors the figure fn's branches; constants interpolate
+    # from the real _MC_PLOT_* values and the helper sources are the
+    # same strings exec'd above, so the shown text can't drift.
+    v0 = vars_[0].name
+    params = (
+        f'({v0},)' if d == 1 else f'({vars_[0].name}, {vars_[1].name})'
+    )
+    body = '[' + ', '.join(
+        _MCCodePrinter().doprint(e) for e in comps) + ']'
+    acc = _MC_PLOT_ACC
+    m = _MC_PLOT_MARGIN
+    margin = f"dict(l={m['l']}, r={m['r']}, t={m['t']}, b={m['b']})"
+    L = [
+        'import numpy as _mc_np',
+        'import plotly.graph_objects as go',
+        '',
+    ]
+    # The shown code references the variables and any free names in the
+    # expression by name — declare them so the block runs standalone
+    # (in the real namespace a name may hold a bound value).
+    names = sorted(
+        {s.name for s in vars_}
+        | {s.name for e in comps for s in e.free_symbols}
+    )
+    if names:
+        L.append(
+            f"{', '.join(names)} = sp.symbols('{' '.join(names)}')"
+        )
+        L.append('')
+    helpers = []
+    if d == 2 and c == 2:
+        helpers = [_MC_PLOT_STREAMLINES_SRC, _MC_PLOT_GRIDLINES_SRC]
+    elif d == 2 and c == 3:
+        helpers = [_MC_PLOT_GRIDLINES_SRC]
+    for src in helpers:
+        L += [src.rstrip(), '']
+    L.append(f"fnum = sp.lambdify({params}, {body}, 'numpy')")
+
+    def menu(labels, vis_lists):
+        L.append('fig.update_layout(updatemenus=[dict(')
+        L.append('    buttons=[')
+        for lab, vis in zip(labels, vis_lists):
+            L.append(
+                f"        dict(label='{lab}', method='update',"
+            )
+            L.append(
+                f'             args=[{{"visible": {vis}}}]),'
+            )
+        L.append('    ],')
+        L.append("    direction='down', x=0, y=1.12,")
+        L.append(')])')
+
+    if d == 1:
+        L += [
+            f'ts = _mc_np.linspace({_MC_PLOT_R1[0]}, {_MC_PLOT_R1[1]},'
+            f' {_MC_PLOT_N1})',
+            'vals = _mc_np.asarray(fnum(ts), dtype=float)',
+            'if vals.ndim == 1:',
+            '    vals = vals.reshape(1, -1)',
+        ]
+        if c == 1:
+            L += [
+                'fig = go.Figure(go.Scatter(',
+                "    x=ts, y=vals[0], mode='lines',",
+                f"    line=dict(color='{acc}', width=2),",
+                '))',
+                'fig.update_xaxes(zeroline=True)',
+                'fig.update_yaxes(zeroline=True)',
+            ]
+        elif c == 2:
+            L += [
+                'fig = go.Figure(go.Scatter(',
+                "    x=vals[0], y=vals[1], mode='lines',",
+                f"    line=dict(color='{acc}', width=2),",
+                '))',
+                'fig.update_xaxes(zeroline=True)',
+                "fig.update_yaxes(zeroline=True, scaleanchor='x',"
+                ' scaleratio=1)',
+            ]
+        else:
+            L += [
+                'fig = go.Figure(go.Scatter3d(',
+                '    x=vals[0], y=vals[1], z=vals[2],',
+                f"    mode='lines', line=dict(color='{acc}', width=4),",
+                '))',
+            ]
+        L.append(f'fig.update_layout(margin={margin}, showlegend=False)')
+    else:
+        L += [
+            f'us = _mc_np.linspace({_MC_PLOT_R2[0]}, {_MC_PLOT_R2[1]},'
+            f' {_MC_PLOT_N2})',
+            f'vs = _mc_np.linspace({_MC_PLOT_R2[0]}, {_MC_PLOT_R2[1]},'
+            f' {_MC_PLOT_N2})',
+            'U, V = _mc_np.meshgrid(us, vs)',
+            'vals = _mc_np.asarray(fnum(U, V), dtype=float)',
+            'if vals.ndim == 2:',
+            '    vals = vals.reshape('
+            '1, vals.shape[0], vals.shape[1])',
+            'mag = _mc_np.sqrt(sum(v * v for v in vals))',
+            'fig = go.Figure()',
+        ]
+        if c == 1:
+            L += [
+                'fig.add_surface(',
+                "    x=us, y=vs, z=vals[0], colorscale='Viridis',",
+                '    showscale=False,',
+                '    contours=dict(z=dict(',
+                '        show=True, usecolormap=True,',
+                '        project=dict(z=True))),',
+                ')',
+                'fig.add_heatmap(',
+                '    x=us, y=vs, z=vals[0],'
+                " colorscale='Viridis',",
+                '    showscale=False, visible=False,',
+                ')',
+            ]
+            menu(
+                ['surface', 'heatmap'],
+                [[True, False], [False, True]],
+            )
+        elif c == 2:
+            L += [
+                'fx, fy = vals[0], vals[1]',
+                '# quiver: one scatter of tail→tip segments plus a cone',
+                '# per tip',
+                'stride = 5',
+                'sx, sy, cx, cy, vx, vy = [], [], [], [], [], []',
+                'for i in range(0, len(vs), stride):',
+                '    for j in range(0, len(us), stride):',
+                '        fxx = fx[i][j]',
+                '        fyy = fy[i][j]',
+                '        if not (_mc_np.isfinite(fxx)'
+                ' and _mc_np.isfinite(fyy)):',
+                '            continue',
+                '        sx += [us[j], us[j] + fxx, None]',
+                '        sy += [vs[i], vs[i] + fyy, None]',
+                '        cx.append(us[j] + fxx)',
+                '        cy.append(vs[i] + fyy)',
+                '        vx.append(fxx)',
+                '        vy.append(fyy)',
+                'span = _mc_np.hypot(us[-1] - us[0], vs[-1] - vs[0])',
+                'fig.add_scatter(',
+                "    x=sx, y=sy, mode='lines',",
+                f"    line=dict(color='{acc}', width=1),",
+                "    hoverinfo='skip',",
+                ')',
+                'fig.add_cone(',
+                '    x=cx, y=cy, z=[0] * len(cx), u=vx, v=vy,',
+                '    w=[0] * len(vx),',
+                "    colorscale='Viridis', sizemode='absolute',",
+                '    sizeref=float(span) * 0.4,',
+                "    anchor='tail', showscale=False,",
+                "    scene='scene2',",
+                ')',
+                'fig.update_layout(scene2=dict(',
+                '    domain=dict(x=[0, 1], y=[0, 1]),',
+                '    camera=dict(eye=dict(x=0, y=0, z=1.6)),',
+                '    xaxis=dict(visible=False),',
+                '    yaxis=dict(visible=False),',
+                '    zaxis=dict(range=[-0.5, 0.5], visible=False),',
+                '))',
+                'fig.add_heatmap(',
+                '    x=us, y=vs, z=mag,'
+                " colorscale='Viridis',",
+                '    showscale=False, visible=False,',
+                ')',
+                'str_x, str_y = _mc_plot_streamlines(us, vs, fx, fy)',
+                'fig.add_scatter(',
+                '    x=str_x, y=str_y,'
+                " mode='lines',",
+                f"    line=dict(color='{acc}', width=1),",
+                "    hoverinfo='skip', visible=False,",
+                ')',
+                'gx, gy, _ = _mc_plot_gridlines(us, vs, fx, fy)',
+                'fig.add_scatter(',
+                "    x=gx, y=gy, mode='lines',",
+                "    line=dict(color='rgba(59,130,246,0.55)',"
+                ' width=1),',
+                "    hoverinfo='skip', visible=False,",
+                ')',
+            ]
+            menu(
+                [
+                    'quiver',
+                    'magnitude heatmap',
+                    'streamlines',
+                    'image of grid',
+                ],
+                [
+                    [True, True, False, False, False],
+                    [False, False, True, False, False],
+                    [False, False, False, True, False],
+                    [False, False, False, False, True],
+                ],
+            )
+            L += [
+                'fig.update_xaxes(zeroline=True)',
+                "fig.update_yaxes(zeroline=True, scaleanchor='x',"
+                ' scaleratio=1)',
+            ]
+        else:
+            L += [
+                'fx, fy, fz = vals[0], vals[1], vals[2]',
+                'fig.add_surface(',
+                '    x=fx, y=fy, z=fz, surfacecolor=mag,',
+                "    colorscale='Viridis', showscale=False,",
+                ')',
+                'fig.add_surface(',
+                '    x=fx, y=fy, z=fz, surfacecolor=U,',
+                "    colorscale='Plasma', showscale=False,",
+                '    visible=False,',
+                ')',
+                'gx, gy, gz = _mc_plot_gridlines(us, vs, fx, fy, fz)',
+                'fig.add_scatter3d(',
+                "    x=gx, y=gy, z=gz, mode='lines',",
+                "    line=dict(color='rgba(59,130,246,0.7)', width=2),",
+                "    hoverinfo='skip', visible=False,",
+                ')',
+                'fig.add_scatter3d(',
+                '    x=fx.ravel(), y=fy.ravel(), z=fz.ravel(),',
+                "    mode='markers',",
+                f'    marker=dict(size=2, color={acc!r}),'
+                ' visible=False,',
+                ')',
+            ]
+            menu(
+                [
+                    'surface, colored by |f|',
+                    'surface, colored by u',
+                    'grid curves',
+                    'point cloud',
+                ],
+                [
+                    [True, False, False, False],
+                    [False, True, False, False],
+                    [False, False, True, False],
+                    [False, False, False, True],
+                ],
+            )
+        L.append(f'fig.update_layout(margin={margin}, showlegend=False)')
+    L += [
+        '# the figure dict the frontend hands to plotly.js',
+        'fig.to_json()',
+    ]
+    return '\\n'.join(L)
+
+
 def _mc_plot_payload(v):
     vars_, comps, label = _mc_plot_signature(v)
     d = len(vars_)
@@ -441,12 +737,18 @@ def _mc_plot_payload(v):
         )
     fig = _mc_plot_figure(d, c, vars_, comps)
     return {
-        'kind': f'{d}x{c}',
-        'vars': [s.name for s in vars_],
-        'label': label,
-        # The figure dict the plotly python library emits — the frontend
-        # applies theme overrides and hands it to plotly.js as-is.
-        'figure': json.loads(fig.to_json()),
+        'plot': {
+            'kind': f'{d}x{c}',
+            'vars': [s.name for s in vars_],
+            'label': label,
+            # The figure dict the plotly python library emits — the
+            # frontend applies theme overrides and hands it to
+            # plotly.js as-is.
+            'figure': json.loads(fig.to_json()),
+        },
+        # The literal program that built the figure, for the cell's
+        # generating-code block.
+        'code': _mc_plot_code(d, c, vars_, comps),
     }
 
 
@@ -477,7 +779,8 @@ def _mc_run_cell(cell, ns):
             # A _mc_plot marker isn't a value row — sample the
             # expression and hand the frontend plot data instead.
             if isinstance(val, dict) and val.get('__mcplot__') is True:
-                out.append({'ok': True, 'plot': _mc_plot_payload(val['expr'])})
+                res = _mc_plot_payload(val['expr'])
+                out.append({'ok': True, 'plot': res['plot'], 'code': res['code']})
                 continue
             row = _mc_row(val)
             row['ok'] = True
