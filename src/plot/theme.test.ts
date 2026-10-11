@@ -1,65 +1,79 @@
 import { describe, expect, it } from 'vitest';
-import { applySceneOptions, themedFigure } from './theme';
+import { applyModeAxes, themedFigure } from './theme';
 import type { PlotData } from './types';
 
-// A minimal 3-D figure dict as the worker emits it: one data trace
-// plus the meta-tagged xy-plane and z-axis reference traces.
+// A minimal 3-D figure dict as the worker emits it: the named scene
+// decor traces (grid, box, arrow axes, ticks), the brick-red surface,
+// a hidden 2-D-mode heatmap, and the translucent sheet last.
 function plot3d(): PlotData {
   return {
-    kind: '1x3',
-    vars: ['t'],
+    kind: '2x1',
+    vars: ['x', 'y'],
     label: 'f',
     figure: {
       data: [
-        { type: 'scatter3d', x: [0], y: [0], z: [0] },
         {
-          type: 'surface',
-          x: [[0, 1], [0, 1]],
-          y: [[0, 0], [1, 1]],
-          z: [[0, 0], [0, 0]],
-          opacity: 0.25,
-          colorscale: [
-            [0, '#64748b'],
-            [1, '#64748b'],
-          ],
-          contours: {
-            x: {
-              show: true,
-              color: 'rgba(148,163,184,0.55)',
-              width: 1,
-              start: 0,
-              end: 1,
-              size: 1,
-            },
-            y: {
-              show: true,
-              color: 'rgba(148,163,184,0.55)',
-              width: 1,
-              start: 0,
-              end: 1,
-              size: 1,
-            },
-          },
-          meta: { mcRole: 'xyplane' },
+          type: 'scatter3d',
+          mode: 'lines',
+          name: 'wallgrid',
+          line: { color: 'rgba(0,0,0,0.16)', width: 1 },
         },
         {
           type: 'scatter3d',
           mode: 'lines',
-          x: [0, 0, null],
-          y: [0, 0, null],
-          z: [0, 10, null],
-          line: { color: 'rgba(148,163,184,0.8)', width: 2 },
-          meta: { mcRole: 'zaxis' },
+          name: 'box',
+          line: { color: '#e3e3e3', width: 1.5 },
+        },
+        {
+          type: 'scatter3d',
+          mode: 'lines',
+          name: 'axis',
+          line: { color: '#9d9d9d', width: 3 },
+        },
+        {
+          type: 'cone',
+          name: 'axis',
+          colorscale: [
+            [0, '#9d9d9d'],
+            [1, '#9d9d9d'],
+          ],
         },
         {
           type: 'scatter3d',
           mode: 'text',
-          x: [0],
-          y: [0],
-          z: [10],
-          text: ['z'],
-          textfont: { color: 'rgba(148,163,184,0.8)' },
-          meta: { mcRole: 'zaxis' },
+          name: 'axis',
+          text: ['<b>x</b>'],
+          textfont: { color: '#9d9d9d', size: 17 },
+        },
+        {
+          type: 'scatter3d',
+          mode: 'text',
+          name: 'ticks',
+          text: ['0'],
+          textfont: { color: '#8c8c8c', size: 12 },
+        },
+        {
+          type: 'surface',
+          name: 'surf',
+          colorscale: [
+            [0, '#c74440'],
+            [1, '#c74440'],
+          ],
+          contours: {
+            x: { show: true, color: '#7e1f1a', width: 1 },
+            y: { show: true, color: '#7e1f1a', width: 1 },
+            z: { show: false },
+          },
+        },
+        { type: 'heatmap', name: 'heatmap', visible: false },
+        {
+          type: 'surface',
+          name: 'xysheet',
+          colorscale: [
+            [0, '#d9d9d9'],
+            [1, '#d9d9d9'],
+          ],
+          opacity: 0.5,
         },
       ],
       layout: {},
@@ -69,137 +83,135 @@ function plot3d(): PlotData {
 
 const themed = (dark = true) => themedFigure(plot3d(), dark);
 
-describe('themedFigure tagged reference traces', () => {
-  it('restyles the plane slab and grid contours for the theme', () => {
+describe('themedFigure named scene traces', () => {
+  it('restyles the decor traces for dark mode', () => {
     const { data } = themed(true);
-    expect(data[1].colorscale).toEqual([
-      [0, '#94a3b8'],
-      [1, '#94a3b8'],
-    ]);
-    expect(data[1].opacity).toBe(0.25);
-    const contours = data[1].contours as {
-      x: { color: string };
-      y: { color: string };
-    };
-    expect(contours.x.color).toBe('rgba(148,163,184,0.55)');
-    expect(contours.y.color).toBe('rgba(148,163,184,0.55)');
-  });
-
-  it('uses the light palette in light mode', () => {
-    const { data } = themed(false);
-    expect(data[1].colorscale).toEqual([
-      [0, '#64748b'],
-      [1, '#64748b'],
-    ]);
-    expect(data[1].opacity).toBe(0.32);
-    const contours = data[1].contours as {
-      x: { color: string };
-      y: { color: string };
-    };
-    expect(contours.x.color).toBe('rgba(51,65,85,0.55)');
-    expect(contours.y.color).toBe('rgba(51,65,85,0.55)');
-    expect((data[2].line as Record<string, unknown>).color).toBe(
-      '#4b5563',
+    expect((data[0].line as Record<string, unknown>).color).toBe(
+      'rgba(255,255,255,0.16)',
     );
+    expect((data[1].line as Record<string, unknown>).color).toBe(
+      '#3c4454',
+    );
+    expect((data[2].line as Record<string, unknown>).color).toBe(
+      '#8b93a1',
+    );
+    expect(data[3].colorscale).toEqual([
+      [0, '#8b93a1'],
+      [1, '#8b93a1'],
+    ]);
     expect(
-      (data[3].textfont as Record<string, unknown>).color,
-    ).toBe('#4b5563');
+      (data[4].textfont as Record<string, unknown>).color,
+    ).toBe('#8b93a1');
+    expect(
+      (data[5].textfont as Record<string, unknown>).color,
+    ).toBe('#7d8590');
   });
 
-  it('leaves untagged data traces untouched', () => {
+  it('restyles the surface and sheet for dark mode', () => {
+    const { data } = themed(true);
+    expect(data[6].colorscale).toEqual([
+      [0, '#c74440'],
+      [1, '#c74440'],
+    ]);
+    const contours = data[6].contours as {
+      x: { color: string };
+      y: { color: string };
+    };
+    expect(contours.x.color).toBe('#a03428');
+    expect(contours.y.color).toBe('#a03428');
+    expect(data[8].colorscale).toEqual([
+      [0, '#d9d9d9'],
+      [1, '#d9d9d9'],
+    ]);
+    expect(data[8].opacity).toBe(0.45);
+  });
+
+  it('keeps the Desmos palette in light mode', () => {
+    const { data } = themed(false);
+    expect((data[0].line as Record<string, unknown>).color).toBe(
+      'rgba(0,0,0,0.16)',
+    );
+    expect((data[2].line as Record<string, unknown>).color).toBe(
+      '#9d9d9d',
+    );
+    const contours = data[6].contours as {
+      x: { color: string };
+      y: { color: string };
+    };
+    expect(contours.x.color).toBe('#7e1f1a');
+    expect(data[8].opacity).toBe(0.5);
+  });
+
+  it('leaves unnamed data traces untouched', () => {
     const src = plot3d();
     const { data } = themedFigure(src, true);
-    expect(data[0]).toBe(src.figure.data[0]);
+    expect(data[7]).toBe(src.figure.data[7]);
   });
 });
 
-describe('applySceneOptions', () => {
-  it('planeOrigin toggles only the xyplane traces', () => {
+describe('applyModeAxes', () => {
+  it('hides the stray cartesian axes while a 3-D mode is active', () => {
     const fig = themed();
-    applySceneOptions(fig, { planeOrigin: false, planeOnly: false });
-    expect(fig.data[0].visible).toBeUndefined();
-    expect(fig.data[1].visible).toBe(false);
-    // zaxis is tied to planeOnly, not planeOrigin.
-    expect(fig.data[2].visible).toBe(false);
-    expect(fig.data[3].visible).toBe(false);
-    applySceneOptions(fig, { planeOrigin: true, planeOnly: true });
-    expect(fig.data[1].visible).toBe(true);
-    expect(fig.data[2].visible).toBe(true);
-    expect(fig.data[3].visible).toBe(true);
+    fig.layout.xaxis = { gridcolor: 'x' };
+    fig.layout.yaxis = { gridcolor: 'y' };
+    applyModeAxes(fig);
+    expect(
+      (fig.layout.xaxis as Record<string, unknown>).visible,
+    ).toBe(false);
+    expect(
+      (fig.layout.yaxis as Record<string, unknown>).visible,
+    ).toBe(false);
   });
 
-  it('zaxis shows only when planeOnly hides the axis boxes', () => {
+  it('shows the cartesian axes when a 2-D trace is active', () => {
     const fig = themed();
-    applySceneOptions(fig, { planeOrigin: true, planeOnly: false });
-    expect(fig.data[2].visible).toBe(false);
-    applySceneOptions(fig, { planeOrigin: false, planeOnly: true });
-    expect(fig.data[2].visible).toBe(true);
+    fig.layout.xaxis = { gridcolor: 'x' };
+    fig.layout.yaxis = { gridcolor: 'y' };
+    // Simulate the heatmap-mode state.
+    fig.data[7].visible = true;
+    applyModeAxes(fig);
+    expect(
+      (fig.layout.xaxis as Record<string, unknown>).visible,
+    ).toBe(true);
   });
 
-  it('planeOnly hides every scene axis', () => {
+  it('extends each mode-menu button with the axis-visibility relayout', () => {
     const fig = themed();
-    applySceneOptions(fig, { planeOrigin: true, planeOnly: true });
-    const scene = fig.layout.scene as Record<string, Record<string, unknown>>;
-    for (const ax of ['xaxis', 'yaxis', 'zaxis']) {
-      expect(scene[ax].visible).toBe(false);
-    }
-  });
-
-  it('suppresses tagged traces while a 2-D mode is showing', () => {
-    const fig = themed();
-    // Simulate the heatmap-mode state: the gl3d data trace hidden.
-    fig.data[0].visible = false;
-    applySceneOptions(fig, { planeOrigin: true, planeOnly: true });
-    for (const tr of fig.data.slice(1)) {
-      expect(tr.visible).toBe(false);
-    }
-  });
-
-  it('extends updatemenus visible args to the tagged traces', () => {
-    const fig = themed();
+    fig.layout.xaxis = { gridcolor: 'x' };
+    fig.layout.yaxis = { gridcolor: 'y' };
     fig.layout.updatemenus = [
       {
         buttons: [
-          { args: [{ visible: [true, false] }] }, // 3-D mode
-          { args: [{ visible: [false, true] }] }, // 2-D mode
+          // 3-D mode: heatmap (index 7) off, everything else on.
+          {
+            args: [
+              {
+                visible: [
+                  true, true, true, true, true, true, true, false, true,
+                ],
+              },
+            ],
+          },
+          // 2-D mode: only the heatmap.
+          {
+            args: [
+              {
+                visible: [
+                  false, false, false, false, false, false, false, true,
+                  false,
+                ],
+              },
+            ],
+          },
         ],
       },
     ];
-    // A hidden untagged 2-D trace to stand in for the 2x1 figure's
-    // heatmap — the second button activates it and no gl3d trace.
-    fig.data.splice(1, 0, {
-      type: 'heatmap',
-      x: [0],
-      y: [0],
-      z: [0],
-      visible: false,
-    });
-    applySceneOptions(fig, { planeOrigin: true, planeOnly: true });
+    applyModeAxes(fig);
     const buttons = (
       fig.layout.updatemenus as {
         buttons: { args: Record<string, unknown>[] }[];
       }[]
     )[0].buttons;
-    // 3-D mode button: tagged traces get option-driven visibility.
-    expect(buttons[0].args[0].visible).toEqual([
-      true,
-      false,
-      true,
-      true,
-      true,
-    ]);
-    // 2-D mode button activates no gl3d trace, so it hides the
-    // tagged traces outright — the slab can't float over the 2-D
-    // view.
-    expect(buttons[1].args[0].visible).toEqual([
-      false,
-      true,
-      false,
-      false,
-      false,
-    ]);
-    // Each button also gets a relayout arg toggling the cartesian
-    // axes for the mode it activates.
     expect(buttons[0].args[1]).toEqual({
       'xaxis.visible': false,
       'yaxis.visible': false,
@@ -208,13 +220,23 @@ describe('applySceneOptions', () => {
       'xaxis.visible': true,
       'yaxis.visible': true,
     });
-    // Initially the 3-D mode is active, so the stray cartesian axes
-    // the hidden heatmap instantiates stay hidden.
+  });
+
+  it('does nothing when no cartesian trace exists', () => {
+    const fig = themed();
+    fig.data = fig.data.filter((tr) => tr.type !== 'heatmap');
+    fig.layout.updatemenus = [
+      { buttons: [{ args: [{ visible: [true] }] }] },
+    ];
+    applyModeAxes(fig);
     expect(
       (fig.layout.xaxis as Record<string, unknown>).visible,
-    ).toBe(false);
-    expect(
-      (fig.layout.yaxis as Record<string, unknown>).visible,
-    ).toBe(false);
+    ).toBeUndefined();
+    const buttons = (
+      fig.layout.updatemenus as {
+        buttons: { args: Record<string, unknown>[] }[];
+      }[]
+    )[0].buttons;
+    expect(buttons[0].args).toHaveLength(1);
   });
 });

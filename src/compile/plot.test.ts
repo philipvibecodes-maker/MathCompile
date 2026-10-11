@@ -155,8 +155,8 @@ describe('plot theming', () => {
 
   it('passes the worker figure data through unchanged', () => {
     const { data } = themedFigure(base, true);
-    // Non-xyplane traces pass through by reference — the theme only
-    // clones the mcRole-tagged plane traces it restyles.
+    // Unnamed traces pass through by reference — the theme only
+    // clones the named scene traces it restyles.
     expect(data).toEqual(base.figure.data);
     for (let i = 0; i < data.length; i++) {
       expect(data[i]).toBe(base.figure.data[i]);

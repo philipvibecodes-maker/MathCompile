@@ -277,81 +277,284 @@ _MC_PLOT_GRIDLINES_SRC = '''def _mc_plot_gridlines(us, vs, fx, fy, fz=None):
 
 exec(_MC_PLOT_GRIDLINES_SRC)
 
-_MC_PLOT_XYPLANE_SRC = '''def _mc_nice_step(span):
-    # A 1/2/2.5/5-times-power-of-ten step of roughly span/6 — the
-    # xy-plane gridline pitch.
-    import numpy as _mc_np
-    if span <= 0 or not _mc_np.isfinite(span):
+# The Desmos-3D scene helpers are exec'd from a source string so the
+# generating-code block can show the same text that ran (the helpers
+# get appended to the shown program like the streamline/grid ones).
+_MC_DESMOS_SRC = '''def _mc_pad(lo, hi):
+    # Headroom so the axis letters past each arrow tip aren't clipped.
+    s = hi - lo
+    return lo - 0.04 * s, hi + 0.16 * s
+
+
+def _mc_grid_step(span):
+    # The xy-plane gridline pitch — an integer step for ordinary spans,
+    # a 1/2/5-times-power-of-ten step for big ones.
+    import math as _mc_math
+    if span <= 0 or not _mc_math.isfinite(span):
         return 1.0
-    raw = span / 6.0
-    mag = 10.0 ** _mc_np.floor(_mc_np.log10(raw))
-    for m in (1.0, 2.0, 2.5, 5.0, 10.0):
+    raw = span / 10.0
+    mag = 10.0 ** _mc_math.floor(_mc_math.log10(raw))
+    for m in (1.0, 2.0, 5.0, 10.0):
         if raw <= m * mag:
             return m * mag
     return 10.0 * mag
 
 
-def _mc_plot_xyplane(fig, x0, x1, y0, y1):
-    # The z=0 reference plane (the 'xy plane through origin' option): a
-    # translucent slab, meta-tagged so the frontend toggles it as one
-    # unit. Colors are placeholders — src/plot/theme.ts restyles mcRole
-    # traces per theme.
-    # Ambient-only lighting: the gl3d surface pipeline
-    # specular-sparkles on a perfectly flat translucent surface.
-    # The grid is drawn as the slab's own x/y contour lines — a
-    # separate coplanar line trace z-fights the slab into stair-stepped
-    # dashes.
+def _mc_fmt(v):
+    iv = int(round(v))
+    return str(iv) if abs(v - iv) < 1e-9 else '%g' % v
+
+
+def _mc_extent(a):
+    # (min, max) of the finite samples, or a sane fallback when the
+    # whole array blew up (poles, division by zero everywhere).
+    import numpy as _mc_np
+    if _mc_np.isfinite(a).any():
+        return float(_mc_np.nanmin(a)), float(_mc_np.nanmax(a))
+    return -1.0, 1.0
+
+
+def _mc_desmos_bounds(*extents):
+    # ((x0,x1),(y0,y1),(z0,z1)) from per-axis (lo,hi) extents — a
+    # degenerate axis opens to half of the widest span so
+    # aspectmode='cube' keeps a sane box.
+    span = max(hi - lo for lo, hi in extents)
+    if span <= 0:
+        span = 2.0
+    out = []
+    for lo, hi in extents:
+        if hi - lo <= 0:
+            mid = (hi + lo) / 2.0
+            lo, hi = mid - span / 2.0, mid + span / 2.0
+        out.append((lo, hi))
+    return tuple(out)
+
+
+def _mc_desmos_grid(fig, bounds, step):
+    # Integer gridlines on z=0 — one NaN-separated Scatter3d for all of
+    # them, plus a thicker copy at the axis-label positions (0 and
+    # +-half-extent) making the labeled lines heavier. Drawn before the
+    # translucent sheet, which composites over them.
     import math as _mc_math
-    xstep, ystep = _mc_nice_step(x1 - x0), _mc_nice_step(y1 - y0)
+    (x0, x1), (y0, y1), _ = bounds
+    xs, ys, zs = [], [], []
+    gx = _mc_math.ceil(x0 / step) * step
+    while gx <= x1 + step * 1e-6:
+        xs += [gx, gx, None]
+        ys += [y0, y1, None]
+        zs += [0.0, 0.0, None]
+        gx += step
+    gy = _mc_math.ceil(y0 / step) * step
+    while gy <= y1 + step * 1e-6:
+        xs += [x0, x1, None]
+        ys += [gy, gy, None]
+        zs += [0.0, 0.0, None]
+        gy += step
+    fig.add_scatter3d(
+        x=xs, y=ys, z=zs, mode='lines',
+        line=dict(color='rgba(0,0,0,0.16)', width=1),
+        hoverinfo='skip', name='wallgrid')
+    tx, ty, tz = [], [], []
+    for p in (0.0, -(x1 - x0) / 2.0, (x1 - x0) / 2.0):
+        if x0 <= p <= x1:
+            tx += [p, p, None]
+            ty += [y0, y1, None]
+            tz += [0.0, 0.0, None]
+    for p in (0.0, -(y1 - y0) / 2.0, (y1 - y0) / 2.0):
+        if y0 <= p <= y1:
+            tx += [x0, x1, None]
+            ty += [p, p, None]
+            tz += [0.0, 0.0, None]
+    fig.add_scatter3d(
+        x=tx, y=ty, z=tz, mode='lines',
+        line=dict(color='rgba(0,0,0,0.16)', width=3),
+        hoverinfo='skip', name='wallgrid')
+
+
+def _mc_desmos_box(fig, bounds):
+    # The 12 wireframe edges of the scene cube.
+    (x0, x1), (y0, y1), (z0, z1) = bounds
+    xs, ys, zs = [], [], []
+    for y in (y0, y1):
+        for z in (z0, z1):
+            xs += [x0, x1, None]
+            ys += [y, y, None]
+            zs += [z, z, None]
+    for x in (x0, x1):
+        for z in (z0, z1):
+            xs += [x, x, None]
+            ys += [y0, y1, None]
+            zs += [z, z, None]
+    for x in (x0, x1):
+        for y in (y0, y1):
+            xs += [x, x, None]
+            ys += [y, y, None]
+            zs += [z0, z1, None]
+    fig.add_scatter3d(
+        x=xs, y=ys, z=zs, mode='lines',
+        line=dict(color='#e3e3e3', width=1.5),
+        hoverinfo='skip', name='box')
+
+
+def _mc_desmos_axes(fig, bounds):
+    # Per axis: a line lo->hi through the origin, a cone arrowhead at
+    # the positive end, the axis letter ~9% past the tip, and tick
+    # labels at 0 and +-half-extent.
+    span = max(b[1] - b[0] for b in bounds)
+    sizeref = 0.045 * span
+    for i, letter in enumerate(('x', 'y', 'z')):
+        lo, hi = bounds[i]
+        half = (hi - lo) / 2.0
+        line = [[0.0], [0.0], [0.0]]
+        line[i] = [lo, hi]
+        fig.add_scatter3d(
+            x=line[0], y=line[1], z=line[2], mode='lines',
+            line=dict(color='#9d9d9d', width=3),
+            hoverinfo='skip', name='axis')
+        tip = [[0.0], [0.0], [0.0]]
+        tip[i] = [hi]
+        uvw = [[0.0], [0.0], [0.0]]
+        uvw[i] = [1.0]
+        fig.add_cone(
+            x=tip[0], y=tip[1], z=tip[2],
+            u=uvw[0], v=uvw[1], w=uvw[2],
+            colorscale=[[0.0, '#9d9d9d'], [1.0, '#9d9d9d']],
+            showscale=False, sizemode='absolute', sizeref=sizeref,
+            anchor='tip', hoverinfo='skip', name='axis')
+        lp = [[0.0], [0.0], [0.0]]
+        lp[i] = [hi + 0.09 * (hi - lo)]
+        fig.add_scatter3d(
+            x=lp[0], y=lp[1], z=lp[2], mode='text',
+            text=['<b>%s</b>' % letter],
+            textfont=dict(color='#9d9d9d', size=17),
+            hoverinfo='skip', name='axis')
+        tp = [[], [], []]
+        labels = []
+        for p in (-half, 0.0, half):
+            if lo <= p <= hi:
+                tp[i].append(p)
+                tp[(i + 1) % 3].append(0.0)
+                tp[(i + 2) % 3].append(0.0)
+                labels.append(_mc_fmt(p))
+        fig.add_scatter3d(
+            x=tp[0], y=tp[1], z=tp[2], mode='text',
+            text=labels, textfont=dict(color='#8c8c8c', size=12),
+            textposition='top center',
+            hoverinfo='skip', name='ticks')
+
+
+def _mc_desmos_surf(fig, X, Y, Z):
+    # The graph itself: flat brick red, integer contour gridlines on
+    # the surface (solid hex only — an rgba() contour color silently
+    # falls back to white), and lighting tuned for curvature
+    # readability.
+    import numpy as _mc_np
+    fig.add_surface(
+        x=X, y=Y, z=Z,
+        colorscale=[[0.0, '#c74440'], [1.0, '#c74440']],
+        showscale=False,
+        lighting=dict(ambient=0.25, diffuse=0.75, specular=0.325,
+                      roughness=0.45, fresnel=0.0),
+        lightposition=dict(x=-1400, y=-800, z=3200),
+        contours=dict(
+            x=dict(show=True, start=float(_mc_np.nanmin(X)),
+                   end=float(_mc_np.nanmax(X)),
+                   size=_mc_grid_step(
+                       float(_mc_np.nanmax(X) - _mc_np.nanmin(X))),
+                   color='#7e1f1a', width=1, highlight=False),
+            y=dict(show=True, start=float(_mc_np.nanmin(Y)),
+                   end=float(_mc_np.nanmax(Y)),
+                   size=_mc_grid_step(
+                       float(_mc_np.nanmax(Y) - _mc_np.nanmin(Y))),
+                   color='#7e1f1a', width=1, highlight=False),
+            z=dict(show=False, highlight=False),
+        ),
+        hovertemplate='x: %{x:.2f}<br>y: %{y:.2f}<br>'
+                      'z: %{z:.2f}<extra></extra>',
+        name='surf')
+
+
+def _mc_desmos_sheet(fig, bounds):
+    # The translucent z=0 sheet — added LAST so it composites over the
+    # surface and mutes the below-plane region. The page removes its
+    # pick slot so hovers reach the surface through it.
+    (x0, x1), (y0, y1), _ = bounds
     fig.add_surface(
         x=[[x0, x1], [x0, x1]],
         y=[[y0, y0], [y1, y1]],
         z=[[0.0, 0.0], [0.0, 0.0]],
-        opacity=0.25,
+        colorscale=[[0.0, '#d9d9d9'], [1.0, '#d9d9d9']],
+        showscale=False, opacity=0.5,
         lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0,
                       roughness=1.0, fresnel=0.0),
-        showscale=False, hoverinfo='skip',
-        surfacecolor=[[0.0, 0.0], [0.0, 0.0]],
-        colorscale=[[0.0, '#64748b'], [1.0, '#64748b']],
         contours=dict(
-            x=dict(show=True, color='rgba(148,163,184,0.55)', width=1,
-                   start=_mc_math.ceil(x0 / xstep) * xstep,
-                   end=_mc_math.floor(x1 / xstep) * xstep, size=xstep),
-            y=dict(show=True, color='rgba(148,163,184,0.55)', width=1,
-                   start=_mc_math.ceil(y0 / ystep) * ystep,
-                   end=_mc_math.floor(y1 / ystep) * ystep, size=ystep),
-        ),
-        meta={'mcRole': 'xyplane'},
-    )
+            x=dict(show=False, highlight=False),
+            y=dict(show=False, highlight=False),
+            z=dict(show=False, highlight=False)),
+        hoverinfo='none', name='xysheet')
 
 
-def _mc_plot_zaxis(fig, z0, z1, tick):
-    # A z-axis stub through the origin — meta-tagged 'zaxis' so the
-    # frontend shows it while 'xy plane only' hides the axis boxes.
-    # tick is the tick mark length in data units.
+def _mc_desmos_decor(fig, bounds):
+    # Everything but the data traces and the sheet — plane grid, box,
+    # axes — in the guide's order so the sheet lands last.
+    _mc_desmos_grid(fig, bounds, _mc_grid_step(
+        max(bounds[0][1] - bounds[0][0], bounds[1][1] - bounds[1][0])))
+    _mc_desmos_box(fig, bounds)
+    _mc_desmos_axes(fig, bounds)
+
+
+def _mc_desmos_scene(fig, bounds):
+    # Hide all stock scene chrome — everything visible is custom — and
+    # take the Desmos camera. The ranges get pad() headroom so the axis
+    # letters past each arrow tip aren't clipped.
+    fig.update_layout(scene=dict(
+        xaxis=dict(visible=False, range=list(_mc_pad(*bounds[0]))),
+        yaxis=dict(visible=False, range=list(_mc_pad(*bounds[1]))),
+        zaxis=dict(visible=False, range=list(_mc_pad(*bounds[2]))),
+        aspectmode='cube',
+        camera=dict(
+            eye=dict(x=0.35, y=-1.6, z=0.78),
+            up=dict(x=0, y=0, z=1)),
+    ))
+
+
+_MC_SCENE_NAMES = ('wallgrid', 'box', 'axis', 'ticks', 'xysheet')
+
+
+def _mc_mode_vis(fig, data_names, scene=True):
+    # A mode-menu button's visible list: the mode's own data traces,
+    # plus the scene decor unless the mode is a 2-D view (the heatmap
+    # button) — the slab and box can't float over the flat subplot.
+    shown = set(data_names)
+    return [
+        t.name in shown or (scene and t.name in _MC_SCENE_NAMES)
+        for t in fig.data
+    ]
+
+
+def _mc_iso_offset(us, vs, X, Y, Z):
+    # Lift positions a touch along the parametric surface's normal —
+    # coplanar Scatter3d iso-lines z-fight the surface into dashes; on
+    # a closed surface the offset copy always faces the camera so the
+    # gap isn't visible.
     import numpy as _mc_np
-    step = _mc_nice_step(z1 - z0)
-    xs_, ys_, zs_ = [0.0, 0.0, None], [0.0, 0.0, None], [z0, z1, None]
-    for gz in _mc_np.arange(
-            _mc_np.ceil(z0 / step) * step, z1 + step * 1e-6, step):
-        xs_ += [-tick, tick, None]
-        ys_ += [0.0, 0.0, None]
-        zs_ += [float(gz), float(gz), None]
-    fig.add_scatter3d(
-        x=xs_, y=ys_, z=zs_, mode='lines',
-        line=dict(color='rgba(148,163,184,0.8)', width=2),
-        hoverinfo='skip',
-        meta={'mcRole': 'zaxis'},
-    )
-    fig.add_scatter3d(
-        x=[0.0], y=[0.0], z=[z1], mode='text',
-        text=['z'], textposition='top center',
-        textfont=dict(color='rgba(148,163,184,0.8)', size=13),
-        hoverinfo='skip',
-        meta={'mcRole': 'zaxis'},
-    )'''
+    Xu = _mc_np.gradient(X, us, axis=1)
+    Xv = _mc_np.gradient(X, vs, axis=0)
+    Yu = _mc_np.gradient(Y, us, axis=1)
+    Yv = _mc_np.gradient(Y, vs, axis=0)
+    Zu = _mc_np.gradient(Z, us, axis=1)
+    Zv = _mc_np.gradient(Z, vs, axis=0)
+    nx = Yu * Zv - Zu * Yv
+    ny = Zu * Xv - Xu * Zv
+    nz = Xu * Yv - Yu * Xv
+    n = _mc_np.sqrt(nx * nx + ny * ny + nz * nz)
+    n = _mc_np.where(_mc_np.isfinite(n) & (n > 0), n, 1.0)
+    spans = [e[1] - e[0] for e in
+             (_mc_extent(X), _mc_extent(Y), _mc_extent(Z))]
+    eps = 0.004 * max(spans)
+    return X + nx / n * eps, Y + ny / n * eps, Z + nz / n * eps'''
 
-exec(_MC_PLOT_XYPLANE_SRC)
+exec(_MC_DESMOS_SRC)
 
 
 def _mc_plot_figure(d, c, vars_, comps):
@@ -383,38 +586,24 @@ def _mc_plot_figure(d, c, vars_, comps):
             fig.update_xaxes(zeroline=True)
             fig.update_yaxes(zeroline=True, scaleanchor='x', scaleratio=1)
         else:
-            fig = go.Figure(go.Scatter3d(
+            # R3 curve inside the Desmos scene: plane grid, box, arrow
+            # axes first, the curve, the translucent sheet last.
+            fig = go.Figure()
+            bounds = _mc_desmos_bounds(
+                _mc_extent(vals[0]), _mc_extent(vals[1]),
+                _mc_extent(vals[2]))
+            _mc_desmos_decor(fig, bounds)
+            fig.add_scatter3d(
                 x=vals[0], y=vals[1], z=vals[2], mode='lines',
-                line=dict(color=acc, width=4),
-            ))
-        # The z=0 reference plane spans the curve's xy extent and a
-        # z-axis stub spans its z extent — the 'xy plane' options
-        # toggle them; skipped when the samples are all non-finite.
-        plane = None
-        zext = None
-        if c == 3:
-            if (_mc_np.isfinite(vals[0]).any()
-                    and _mc_np.isfinite(vals[1]).any()):
-                plane = (
-                    float(_mc_np.nanmin(vals[0])),
-                    float(_mc_np.nanmax(vals[0])),
-                    float(_mc_np.nanmin(vals[1])),
-                    float(_mc_np.nanmax(vals[1])),
-                )
-            if _mc_np.isfinite(vals[2]).any():
-                z0 = float(_mc_np.nanmin(vals[2]))
-                z1 = float(_mc_np.nanmax(vals[2]))
-                if z0 == z1:
-                    z0, z1 = z0 - 1.0, z1 + 1.0
-                xspan = plane[1] - plane[0] if plane else 1.0
-                yspan = plane[3] - plane[2] if plane else 1.0
-                zext = (z0, z1, 0.02 * max(xspan, yspan))
-            if plane is not None:
-                _mc_plot_xyplane(fig, *plane)
-            if zext is not None:
-                _mc_plot_zaxis(fig, *zext)
+                line=dict(color=acc, width=4), name='curve',
+                hovertemplate='x: %{x:.2f}<br>y: %{y:.2f}<br>'
+                              'z: %{z:.2f}<extra></extra>')
+            _mc_desmos_sheet(fig, bounds)
+            _mc_desmos_scene(fig, bounds)
+            fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
+            return fig, bounds
         fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
-        return fig, plane, zext
+        return fig, None
 
     us = _mc_np.linspace(_MC_PLOT_R2[0], _MC_PLOT_R2[1], _MC_PLOT_N2)
     vs = _mc_np.linspace(_MC_PLOT_R2[0], _MC_PLOT_R2[1], _MC_PLOT_N2)
@@ -424,32 +613,26 @@ def _mc_plot_figure(d, c, vars_, comps):
         vals = vals.reshape(1, vals.shape[0], vals.shape[1])
     mag = _mc_np.sqrt(sum(v * v for v in vals))
     fig = go.Figure()
-    # The z=0 reference plane's xy extent and the z-axis stub's z
-    # extent for the 3-D kinds — stay None for the 2-D quiver family
-    # and all-nonfinite samples.
-    plane = None
-    zext = None
+    # The Desmos scene bounds for the 3-D kinds — None for the 2-D
+    # quiver family.
+    bounds = None
     if c == 1:
-        fig.add_surface(
-            x=us, y=vs, z=vals[0], colorscale='Viridis', showscale=False,
-            # On-surface contour lines only — floor-projected contours
-            # z-fight the xy-plane slab whenever zmin lands on z=0.
-            contours=dict(z=dict(show=True, usecolormap=True)),
-        )
+        bounds = _mc_desmos_bounds(
+            (float(us[0]), float(us[-1])),
+            (float(vs[0]), float(vs[-1])),
+            _mc_extent(vals[0]))
+        _mc_desmos_decor(fig, bounds)
+        _mc_desmos_surf(fig, us, vs, vals[0])
         fig.add_heatmap(
             x=us, y=vs, z=vals[0], colorscale='Viridis', showscale=False,
-            visible=False,
+            visible=False, name='heatmap',
         )
-        _mc_plot_menu(fig, ['surface', 'heatmap'], [[True, False], [False, True]])
-        # The xy-plane reference spans the sampled domain, the z-axis
-        # stub the sampled z range.
-        plane = (float(us[0]), float(us[-1]), float(vs[0]), float(vs[-1]))
-        if _mc_np.isfinite(vals[0]).any():
-            z0 = float(_mc_np.nanmin(vals[0]))
-            z1 = float(_mc_np.nanmax(vals[0]))
-            if z0 == z1:
-                z0, z1 = z0 - 1.0, z1 + 1.0
-            zext = (z0, z1, 0.02 * float(us[-1] - us[0]))
+        _mc_desmos_sheet(fig, bounds)
+        _mc_desmos_scene(fig, bounds)
+        _mc_plot_menu(
+            fig, ['surface', 'heatmap'],
+            [_mc_mode_vis(fig, ('surf',)),
+             _mc_mode_vis(fig, ('heatmap',), scene=False)])
     elif c == 2:
         fx, fy = vals[0], vals[1]
         # Quiver: one scatter of tail→tip segments plus a cone per tip.
@@ -514,63 +697,48 @@ def _mc_plot_figure(d, c, vars_, comps):
         fig.update_yaxes(zeroline=True, scaleanchor='x', scaleratio=1)
     else:
         fx, fy, fz = vals[0], vals[1], vals[2]
+        bounds = _mc_desmos_bounds(
+            _mc_extent(fx), _mc_extent(fy), _mc_extent(fz))
+        _mc_desmos_decor(fig, bounds)
         fig.add_surface(
-            x=fx, y=fy, z=fz, surfacecolor=mag, colorscale='Viridis',
+            x=fx, y=fy, z=fz,
+            colorscale=[[0.0, '#c74440'], [1.0, '#c74440']],
             showscale=False,
-        )
+            lighting=dict(ambient=0.25, diffuse=0.75, specular=0.325,
+                          roughness=0.45, fresnel=0.0),
+            lightposition=dict(x=-1400, y=-800, z=3200),
+            hovertemplate='x: %{x:.2f}<br>y: %{y:.2f}<br>'
+                          'z: %{z:.2f}<extra></extra>',
+            name='surf')
         fig.add_surface(
             x=fx, y=fy, z=fz, surfacecolor=U, colorscale='Plasma',
-            showscale=False, visible=False,
-        )
-        gx, gy, gz = _mc_plot_gridlines(us, vs, fx, fy, fz)
+            showscale=False, visible=False, name='surfb')
+        # Parametric surfaces can't use contours.x/y — its iso-lines
+        # are the coordinate grid, offset a touch along the normal so
+        # they don't z-fight the surface.
+        xo, yo, zo = _mc_iso_offset(us, vs, fx, fy, fz)
+        gx, gy, gz = _mc_plot_gridlines(us, vs, xo, yo, zo)
         fig.add_scatter3d(
             x=gx, y=gy, z=gz, mode='lines',
-            line=dict(color='rgba(59,130,246,0.7)', width=2),
-            hoverinfo='skip', visible=False,
-        )
+            line=dict(color='#7e1f1a', width=1),
+            hoverinfo='skip', name='iso')
         fig.add_scatter3d(
             x=fx.ravel(), y=fy.ravel(), z=fz.ravel(), mode='markers',
-            marker=dict(size=2, color=acc), visible=False,
-        )
+            marker=dict(size=2, color=acc), visible=False, name='cloud')
+        _mc_desmos_sheet(fig, bounds)
+        _mc_desmos_scene(fig, bounds)
         _mc_plot_menu(
             fig,
+            ['surface', 'colored by u', 'grid curves', 'point cloud'],
             [
-                'surface, colored by |f|',
-                'surface, colored by u',
-                'grid curves',
-                'point cloud',
-            ],
-            [
-                [True, False, False, False],
-                [False, True, False, False],
-                [False, False, True, False],
-                [False, False, False, True],
+                _mc_mode_vis(fig, ('surf', 'iso')),
+                _mc_mode_vis(fig, ('surfb', 'iso')),
+                _mc_mode_vis(fig, ('iso',)),
+                _mc_mode_vis(fig, ('cloud',)),
             ],
         )
-        # The xy-plane reference spans the parametric surface's xy
-        # footprint, the z-axis stub its z range — each skipped when
-        # the samples are all non-finite.
-        if _mc_np.isfinite(fx).any() and _mc_np.isfinite(fy).any():
-            plane = (
-                float(_mc_np.nanmin(fx)),
-                float(_mc_np.nanmax(fx)),
-                float(_mc_np.nanmin(fy)),
-                float(_mc_np.nanmax(fy)),
-            )
-        if _mc_np.isfinite(fz).any():
-            z0 = float(_mc_np.nanmin(fz))
-            z1 = float(_mc_np.nanmax(fz))
-            if z0 == z1:
-                z0, z1 = z0 - 1.0, z1 + 1.0
-            xspan = plane[1] - plane[0] if plane else 1.0
-            yspan = plane[3] - plane[2] if plane else 1.0
-            zext = (z0, z1, 0.02 * max(xspan, yspan))
-    if plane is not None:
-        _mc_plot_xyplane(fig, *plane)
-    if zext is not None:
-        _mc_plot_zaxis(fig, *zext)
     fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
-    return fig, plane, zext
+    return fig, bounds
 
 
 class _MCCodePrinter(_MCStrPrinter):
@@ -611,7 +779,7 @@ class _MCCodePrinter(_MCStrPrinter):
     def _print_NaN(self, expr): return 'sp.nan'
 
 
-def _mc_plot_code(d, c, vars_, comps, plane, zext):
+def _mc_plot_code(d, c, vars_, comps, bounds):
     # The literal program _mc_plot_figure ran for this signature — the
     # generating-code block shows it in place of the opaque _mc_plot
     # marker. Mirrors the figure fn's branches; constants interpolate
@@ -652,16 +820,16 @@ def _mc_plot_code(d, c, vars_, comps, plane, zext):
         helpers = [_MC_PLOT_STREAMLINES_SRC, _MC_PLOT_GRIDLINES_SRC]
     elif d == 2 and c == 3:
         helpers = [_MC_PLOT_GRIDLINES_SRC]
-    if plane is not None or zext is not None:
-        helpers.append(_MC_PLOT_XYPLANE_SRC)
+    if bounds is not None:
+        helpers.append(_MC_DESMOS_SRC)
     for src in helpers:
         L += [src.rstrip(), '']
     L.append(f"fnum = sp.lambdify({params}, {body}, 'numpy')")
 
-    def menu(labels, vis_lists):
+    def menu(labels, vis_exprs):
         L.append('fig.update_layout(updatemenus=[dict(')
         L.append('    buttons=[')
-        for lab, vis in zip(labels, vis_lists):
+        for lab, vis in zip(labels, vis_exprs):
             L.append(
                 f"        dict(label='{lab}', method='update',"
             )
@@ -701,21 +869,19 @@ def _mc_plot_code(d, c, vars_, comps, plane, zext):
             ]
         else:
             L += [
-                'fig = go.Figure(go.Scatter3d(',
-                '    x=vals[0], y=vals[1], z=vals[2],',
-                f"    mode='lines', line=dict(color='{acc}', width=4),",
-                '))',
+                'fig = go.Figure()',
+                'bounds = _mc_desmos_bounds(',
+                '    _mc_extent(vals[0]), _mc_extent(vals[1]),',
+                '    _mc_extent(vals[2]))',
+                '_mc_desmos_decor(fig, bounds)',
+                'fig.add_scatter3d(',
+                "    x=vals[0], y=vals[1], z=vals[2], mode='lines',",
+                f"    line=dict(color='{acc}', width=4), name='curve',",
+                "    hovertemplate='x: %{x:.2f}<br>y: %{y:.2f}<br>'",
+                "                  'z: %{z:.2f}<extra></extra>')",
+                '_mc_desmos_sheet(fig, bounds)',
+                '_mc_desmos_scene(fig, bounds)',
             ]
-        if plane is not None:
-            L.append(
-                f'_mc_plot_xyplane(fig, {plane[0]!r}, {plane[1]!r},'
-                f' {plane[2]!r}, {plane[3]!r})'
-            )
-        if zext is not None:
-            L.append(
-                f'_mc_plot_zaxis(fig, {zext[0]!r}, {zext[1]!r},'
-                f' {zext[2]!r})'
-            )
         L.append(f'fig.update_layout(margin={margin}, showlegend=False)')
     else:
         L += [
@@ -733,21 +899,25 @@ def _mc_plot_code(d, c, vars_, comps, plane, zext):
         ]
         if c == 1:
             L += [
-                'fig.add_surface(',
-                "    x=us, y=vs, z=vals[0], colorscale='Viridis',",
-                '    showscale=False,',
-                '    contours=dict(z=dict(',
-                '        show=True, usecolormap=True)),',
-                ')',
+                'bounds = _mc_desmos_bounds(',
+                '    (float(us[0]), float(us[-1])),',
+                '    (float(vs[0]), float(vs[-1])),',
+                '    _mc_extent(vals[0]))',
+                '_mc_desmos_decor(fig, bounds)',
+                '_mc_desmos_surf(fig, us, vs, vals[0])',
                 'fig.add_heatmap(',
                 '    x=us, y=vs, z=vals[0],'
                 " colorscale='Viridis',",
                 '    showscale=False, visible=False,',
+                "    name='heatmap',",
                 ')',
+                '_mc_desmos_sheet(fig, bounds)',
+                '_mc_desmos_scene(fig, bounds)',
             ]
             menu(
                 ['surface', 'heatmap'],
-                [[True, False], [False, True]],
+                ["_mc_mode_vis(fig, ('surf',))",
+                 "_mc_mode_vis(fig, ('heatmap',), scene=False)"],
             )
         elif c == 2:
             L += [
@@ -832,51 +1002,45 @@ def _mc_plot_code(d, c, vars_, comps, plane, zext):
         else:
             L += [
                 'fx, fy, fz = vals[0], vals[1], vals[2]',
+                'bounds = _mc_desmos_bounds(',
+                '    _mc_extent(fx), _mc_extent(fy), _mc_extent(fz))',
+                '_mc_desmos_decor(fig, bounds)',
                 'fig.add_surface(',
-                '    x=fx, y=fy, z=fz, surfacecolor=mag,',
-                "    colorscale='Viridis', showscale=False,",
-                ')',
+                '    x=fx, y=fy, z=fz,',
+                "    colorscale=[[0.0, '#c74440'], [1.0, '#c74440']],",
+                '    showscale=False,',
+                '    lighting=dict(ambient=0.25, diffuse=0.75,',
+                '        specular=0.325, roughness=0.45, fresnel=0.0),',
+                '    lightposition=dict(x=-1400, y=-800, z=3200),',
+                "    hovertemplate='x: %{x:.2f}<br>y: %{y:.2f}<br>'",
+                "        'z: %{z:.2f}<extra></extra>',",
+                "    name='surf')",
                 'fig.add_surface(',
                 '    x=fx, y=fy, z=fz, surfacecolor=U,',
                 "    colorscale='Plasma', showscale=False,",
-                '    visible=False,',
+                "    visible=False, name='surfb',",
                 ')',
-                'gx, gy, gz = _mc_plot_gridlines(us, vs, fx, fy, fz)',
+                'xo, yo, zo = _mc_iso_offset(us, vs, fx, fy, fz)',
+                'gx, gy, gz = _mc_plot_gridlines(us, vs, xo, yo, zo)',
                 'fig.add_scatter3d(',
                 "    x=gx, y=gy, z=gz, mode='lines',",
-                "    line=dict(color='rgba(59,130,246,0.7)', width=2),",
-                "    hoverinfo='skip', visible=False,",
-                ')',
+                "    line=dict(color='#7e1f1a', width=1),",
+                "    hoverinfo='skip', name='iso')",
                 'fig.add_scatter3d(',
                 '    x=fx.ravel(), y=fy.ravel(), z=fz.ravel(),',
                 "    mode='markers',",
                 f'    marker=dict(size=2, color={acc!r}),'
-                ' visible=False,',
-                ')',
+                "    visible=False, name='cloud')",
+                '_mc_desmos_sheet(fig, bounds)',
+                '_mc_desmos_scene(fig, bounds)',
             ]
             menu(
-                [
-                    'surface, colored by |f|',
-                    'surface, colored by u',
-                    'grid curves',
-                    'point cloud',
-                ],
-                [
-                    [True, False, False, False],
-                    [False, True, False, False],
-                    [False, False, True, False],
-                    [False, False, False, True],
-                ],
-            )
-        if plane is not None:
-            L.append(
-                f'_mc_plot_xyplane(fig, {plane[0]!r}, {plane[1]!r},'
-                f' {plane[2]!r}, {plane[3]!r})'
-            )
-        if zext is not None:
-            L.append(
-                f'_mc_plot_zaxis(fig, {zext[0]!r}, {zext[1]!r},'
-                f' {zext[2]!r})'
+                ['surface', 'colored by u', 'grid curves',
+                 'point cloud'],
+                ["_mc_mode_vis(fig, ('surf', 'iso'))",
+                 "_mc_mode_vis(fig, ('surfb', 'iso'))",
+                 "_mc_mode_vis(fig, ('iso',))",
+                 "_mc_mode_vis(fig, ('cloud',))"],
             )
         L.append(f'fig.update_layout(margin={margin}, showlegend=False)')
     L += [
@@ -898,7 +1062,7 @@ def _mc_plot_payload(v):
         raise ValueError(
             f'cannot plot {c} output components (needs 1, 2, or 3)'
         )
-    fig, plane, zext = _mc_plot_figure(d, c, vars_, comps)
+    fig, bounds = _mc_plot_figure(d, c, vars_, comps)
     return {
         'plot': {
             'kind': f'{d}x{c}',
@@ -911,7 +1075,7 @@ def _mc_plot_payload(v):
         },
         # The literal program that built the figure, for the cell's
         # generating-code block.
-        'code': _mc_plot_code(d, c, vars_, comps, plane, zext),
+        'code': _mc_plot_code(d, c, vars_, comps, bounds),
     }
 
 

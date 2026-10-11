@@ -7,7 +7,7 @@
   import type PlotlyT from 'plotly.js-dist-min';
   import { appStore } from '../state/store.svelte';
   import type { PlotData } from './types';
-  import { applySceneOptions, themedFigure } from './theme';
+  import { applyModeAxes, themedFigure } from './theme';
 
   let { plot }: { plot: PlotData } = $props();
 
@@ -40,29 +40,50 @@
     window.addEventListener('pointercancel', up);
   }
 
-  // GeoGebra-style 'xy plane' options for 3-D figures — both default
-  // on. The figure opts in by carrying the worker's meta-tagged plane
-  // traces (R3 kinds only); 2-D plots never see the checkboxes.
-  let planeOrigin = $state(true);
-  let planeOnly = $state(true);
-  const hasPlane = $derived(
-    plot.figure.data.some(
-      (tr) =>
-        typeof tr.meta === 'object' &&
-        tr.meta !== null &&
-        (tr.meta as Record<string, unknown>).mcRole === 'xyplane',
-    ),
-  );
-
   const CONFIG = {
     displaylogo: false,
     responsive: true,
     modeBarButtonsToRemove: ['toImage'],
     scrollZoom: true,
-    // gl3d has no MSAA — supersample the GL canvas (default 2) so slab
-    // edges and gridlines don't stair-step.
+    doubleClick: 'reset',
+    // gl3d has no MSAA — supersample the GL canvas (default 2) so
+    // scene edges and gridlines don't stair-step.
     plotGlPixelRatio: 4,
   };
+
+  // The translucent z=0 sheet occludes gl3d picking — the pick
+  // framebuffer resolves the front-most fragment regardless of
+  // hoverinfo — so hovering the surface below the plane gave no
+  // tooltip. Zeroing the sheet's pick slots keeps it rendered but
+  // invisible to the pick pass; plotly recreates GL objects on every
+  // redraw, so it must re-run on plotly_afterplot.
+  interface GlScene {
+    traces?: Record<string, { data?: { name?: string }; surface?: GlSurface }>;
+    glplot?: { remove: (s: GlSurface) => void; add: (s: GlSurface) => void };
+  }
+  interface GlSurface {
+    pickSlots: number;
+    __noPick?: boolean;
+  }
+  function unpickSheet(gd: HTMLDivElement) {
+    const layout = (
+      gd as unknown as { _fullLayout?: { scene?: { _scene?: GlScene } } }
+    )._fullLayout;
+    const scene = layout?.scene?._scene;
+    if (!scene?.traces || !scene.glplot) return;
+    for (const t of Object.values(scene.traces)) {
+      if (t.data?.name === 'xysheet' && t.surface && !t.surface.__noPick) {
+        t.surface.pickSlots = 0;
+        scene.glplot.remove(t.surface); // re-add forces slot reallocation
+        scene.glplot.add(t.surface); // stays last → still draws on top
+        t.surface.__noPick = true;
+      }
+    }
+  }
+  // The afterplot listener is bound once per graph element — a remount
+  // (the fail branch swapping in/out) gets a fresh element and a fresh
+  // binding.
+  let wiredEl: HTMLDivElement | undefined;
 
   onMount(() => {
     let alive = true;
@@ -88,22 +109,20 @@
     const target = el;
     const P = Plotly;
     const dark = appStore.darkMode;
-    // Reading the checkbox states here makes a toggle re-render the
-    // figure in place (Plotly.react diffs).
-    const origin = planeOrigin;
-    const only = planeOnly;
-    const showOpts = hasPlane;
     if (!target || !P) return;
     const { data, layout } = themedFigure(p, dark);
-    if (showOpts) applySceneOptions({ data, layout }, {
-      planeOrigin: origin,
-      planeOnly: only,
-    });
+    applyModeAxes({ data, layout });
     P.react(target, data, { ...layout, autosize: true }, CONFIG).catch(
       (e) => {
         failed = e instanceof Error ? e.message : String(e);
       },
     );
+    if (wiredEl !== target) {
+      (
+        target as unknown as { on: (ev: string, cb: () => void) => void }
+      ).on('plotly_afterplot', () => unpickSheet(target));
+      wiredEl = target;
+    }
   });
 </script>
 
@@ -112,18 +131,6 @@
     <div class="plot-fail">couldn't render the plot: {failed}</div>
   {:else}
     <div class="plot-el" bind:this={el} style:height="{height}px"></div>
-    {#if hasPlane}
-      <div class="plot-opts">
-        <label>
-          <input type="checkbox" bind:checked={planeOrigin} />
-          xy plane through origin
-        </label>
-        <label>
-          <input type="checkbox" bind:checked={planeOnly} />
-          xy plane only
-        </label>
-      </div>
-    {/if}
     <div
       class="plot-grip"
       role="separator"
@@ -168,18 +175,5 @@
   .plot-fail {
     color: var(--accent-text, #b91c1c);
     font-size: 13px;
-  }
-  .plot-opts {
-    display: flex;
-    gap: 16px;
-    padding: 2px 2px 4px;
-    font-size: 12px;
-    color: var(--muted);
-  }
-  .plot-opts label {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    cursor: pointer;
   }
 </style>

@@ -8,41 +8,118 @@ interface ThemeColors {
   font: string;
   grid: string;
   zero: string;
-  planeFill: string;
-  planeGrid: string;
-  planeOpacity: number;
+  // Desmos-scene pieces, restyled by trace name (the worker tags every
+  // scene trace so this pass can find it without touching data).
+  surfFront: string;
+  surfGrid: string;
+  sheet: string;
+  sheetOpacity: number;
+  wallGrid: string;
+  box: string;
   axis: string;
+  tick: string;
 }
 
 // Mirrors index.css's --text/--muted/--faint per theme. Light mode
-// needs darker alphas — the default greys wash out on the light
-// background.
+// keeps the guide's Desmos palette; dark mode lifts the greys and
+// deepens the plane so the scene stays legible on the dark background.
 const LIGHT: ThemeColors = {
   font: '#333333',
   grid: 'rgba(95,102,114,0.4)',
   zero: '#6b7280',
-  planeFill: '#64748b',
-  planeGrid: 'rgba(51,65,85,0.55)',
-  planeOpacity: 0.32,
-  axis: '#4b5563',
+  surfFront: '#c74440',
+  surfGrid: '#7e1f1a',
+  sheet: '#d9d9d9',
+  sheetOpacity: 0.5,
+  wallGrid: 'rgba(0,0,0,0.16)',
+  box: '#e3e3e3',
+  axis: '#9d9d9d',
+  tick: '#8c8c8c',
 };
 const DARK: ThemeColors = {
   font: '#e6e8ee',
   grid: 'rgba(154,162,174,0.22)',
   zero: '#9aa2ae',
-  planeFill: '#94a3b8',
-  planeGrid: 'rgba(148,163,184,0.55)',
-  planeOpacity: 0.25,
-  axis: '#9aa2ae',
+  surfFront: '#c74440',
+  surfGrid: '#a03428',
+  sheet: '#d9d9d9',
+  sheetOpacity: 0.45,
+  wallGrid: 'rgba(255,255,255,0.16)',
+  box: '#3c4454',
+  axis: '#8b93a1',
+  tick: '#7d8590',
 };
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
-const mcRole = (tr: Record<string, unknown>): string | undefined =>
-  isObj(tr.meta) && typeof tr.meta.mcRole === 'string'
-    ? (tr.meta.mcRole as string)
-    : undefined;
+const flatColorscale = (color: string) => [
+  [0.0, color],
+  [1.0, color],
+];
+
+// Restyle one named scene trace for the theme. Returns the trace
+// unchanged when the name isn't a scene piece.
+function themedTrace(
+  tr: Record<string, unknown>,
+  t: ThemeColors,
+): Record<string, unknown> {
+  switch (tr.name) {
+    case 'wallgrid':
+      return isObj(tr.line)
+        ? { ...tr, line: { ...tr.line, color: t.wallGrid } }
+        : tr;
+    case 'box':
+      return isObj(tr.line)
+        ? { ...tr, line: { ...tr.line, color: t.box } }
+        : tr;
+    case 'axis':
+      if (tr.type === 'cone') {
+        return { ...tr, colorscale: flatColorscale(t.axis) };
+      }
+      if (tr.mode === 'text' && isObj(tr.textfont)) {
+        return { ...tr, textfont: { ...tr.textfont, color: t.axis } };
+      }
+      return isObj(tr.line)
+        ? { ...tr, line: { ...tr.line, color: t.axis } }
+        : tr;
+    case 'ticks':
+      return isObj(tr.textfont)
+        ? { ...tr, textfont: { ...tr.textfont, color: t.tick } }
+        : tr;
+    case 'surf': {
+      const out: Record<string, unknown> = {
+        ...tr,
+        colorscale: flatColorscale(t.surfFront),
+      };
+      if (isObj(tr.contours)) {
+        const contours = tr.contours;
+        const axisContours = (axis: 'x' | 'y') =>
+          isObj(contours[axis])
+            ? { ...contours[axis], color: t.surfGrid }
+            : contours[axis];
+        out.contours = {
+          ...contours,
+          x: axisContours('x'),
+          y: axisContours('y'),
+        };
+      }
+      return out;
+    }
+    case 'iso':
+      return isObj(tr.line)
+        ? { ...tr, line: { ...tr.line, color: t.surfGrid } }
+        : tr;
+    case 'xysheet':
+      return {
+        ...tr,
+        opacity: t.sheetOpacity,
+        colorscale: flatColorscale(t.sheet),
+      };
+    default:
+      return tr;
+  }
+}
 
 export function themedFigure(plot: PlotData, dark: boolean) {
   const t = dark ? DARK : LIGHT;
@@ -70,21 +147,11 @@ export function themedFigure(plot: PlotData, dark: boolean) {
   // single-scene figure serializes no 'scene' at all, so create the
   // entry whenever a gl3d trace type is present, else the panes keep
   // plotly's opaque default.
-  const GL3D = new Set([
-    'scatter3d',
-    'surface',
-    'cone',
-    'streamtube',
-    'mesh3d',
-    'volume',
-    'isosurface',
-    'pointcloud',
-  ]);
   const has3d = plot.figure.data.some(
     (tr) =>
       isObj(tr) &&
       typeof tr.type === 'string' &&
-      GL3D.has(tr.type),
+      GL3D_TYPES.has(tr.type),
   );
   if (has3d && !isObj(layout.scene)) layout.scene = {};
   for (const key of Object.keys(layout)) {
@@ -113,57 +180,8 @@ export function themedFigure(plot: PlotData, dark: boolean) {
     }
     layout[key] = scene;
   }
-  // Restyle the worker's meta-tagged reference traces — the worker
-  // emits placeholder colors and tags traces meta.mcRole so this pass
-  // (and the options toggle in applySceneOptions) can find them
-  // without touching the sampled data.
-  const data = plot.figure.data.map((tr) => {
-    const role = mcRole(tr);
-    if (role === 'xyplane') {
-      if (tr.type === 'surface') {
-        const contours = isObj(tr.contours) ? tr.contours : {};
-        const axisContours = (axis: 'x' | 'y') =>
-          isObj(contours[axis])
-            ? { ...contours[axis], color: t.planeGrid }
-            : { color: t.planeGrid };
-        return {
-          ...tr,
-          opacity: t.planeOpacity,
-          colorscale: [
-            [0.0, t.planeFill],
-            [1.0, t.planeFill],
-          ],
-          contours: {
-            ...contours,
-            x: axisContours('x'),
-            y: axisContours('y'),
-          },
-        };
-      }
-      if (tr.type === 'scatter3d' && isObj(tr.line)) {
-        return { ...tr, line: { ...tr.line, color: t.planeGrid } };
-      }
-    }
-    if (role === 'zaxis') {
-      if (isObj(tr.line)) {
-        return { ...tr, line: { ...tr.line, color: t.axis } };
-      }
-      if (tr.mode === 'text' && isObj(tr.textfont)) {
-        return { ...tr, textfont: { ...tr.textfont, color: t.axis } };
-      }
-    }
-    return tr;
-  });
+  const data = plot.figure.data.map((tr) => themedTrace(tr, t));
   return { data, layout };
-}
-
-// The 'xy plane' options on 3-D figures. planeOrigin shows/hides the
-// worker's 'xyplane'-tagged plane traces; planeOnly hides the 3-D axis
-// boxes (ticks, labels, grid) and shows the worker's 'zaxis'-tagged
-// stub instead, so the plane and the z stub are the only references.
-export interface SceneOptions {
-  planeOrigin: boolean;
-  planeOnly: boolean;
 }
 
 const GL3D_TYPES = new Set([
@@ -196,56 +214,28 @@ const CARTESIAN_TYPES = new Set([
 const isShown = (v: unknown): boolean =>
   v !== false && v !== 'legendonly';
 
-export function applySceneOptions(
-  figure: {
-    data: Record<string, unknown>[];
-    layout: Record<string, unknown>;
-  },
-  opts: SceneOptions,
-): void {
-  // A tagged reference trace only makes sense while a real 3-D trace
-  // is showing — in a 2-D mode (e.g. the 2x1 heatmap button) the slab
-  // and z stub would float over the 2-D view, so they stay hidden
-  // regardless of the checkboxes.
-  const anyShown = (types: Set<string>): boolean =>
-    figure.data.some(
-      (tr) =>
-        !mcRole(tr) &&
-        typeof tr.type === 'string' &&
-        types.has(tr.type) &&
-        isShown(tr.visible),
-    );
-  const sceneActive = anyShown(GL3D_TYPES);
-  // Cartesian subplot axes draw even while every cartesian trace is
-  // hidden — suppress them until a 2-D mode is showing.
-  const hasCartesian = figure.data.some(
-    (tr) =>
-      !mcRole(tr) &&
-      typeof tr.type === 'string' &&
-      CARTESIAN_TYPES.has(tr.type),
+const isCartesian = (tr: Record<string, unknown>): boolean =>
+  typeof tr.type === 'string' && CARTESIAN_TYPES.has(tr.type);
+
+// Sync the cartesian subplot's axis visibility with the active mode.
+// The worker's mode-menu buttons carry complete visible lists (scene
+// decor included); this pass only mirrors the active mode onto
+// xaxis/yaxis.visible and extends each button with the matching
+// relayout arg so a 2-D mode shows its axes and a 3-D mode hides
+// them again.
+export function applyModeAxes(figure: {
+  data: Record<string, unknown>[];
+  layout: Record<string, unknown>;
+}): void {
+  const hasCartesian = figure.data.some(isCartesian);
+  if (!hasCartesian) return;
+  const cartesianActive = figure.data.some(
+    (tr) => isCartesian(tr) && isShown(tr.visible),
   );
-  if (hasCartesian) {
-    const cartesianActive = anyShown(CARTESIAN_TYPES);
-    for (const key of ['xaxis', 'yaxis']) {
-      const entry = figure.layout[key];
-      if (isObj(entry)) entry.visible = cartesianActive;
-    }
+  for (const key of ['xaxis', 'yaxis']) {
+    const entry = figure.layout[key];
+    if (isObj(entry)) entry.visible = cartesianActive;
   }
-  const taggedVisible = (tr: Record<string, unknown>): boolean => {
-    if (!sceneActive) return false;
-    return mcRole(tr) === 'xyplane' ? opts.planeOrigin : opts.planeOnly;
-  };
-  for (const tr of figure.data) {
-    if (mcRole(tr)) tr.visible = taggedVisible(tr);
-  }
-  // Extend every mode-menu button's visible list to the tagged
-  // traces — the worker appends them after building the menu, so a
-  // button click would otherwise leave them stale and inconsistent
-  // with the checkbox state. Per button: a mode that activates no
-  // real 3-D trace hides the tagged traces outright, a 3-D mode
-  // applies the current checkbox state. The same click toggles the
-  // cartesian axes via a second ('update'-method relayout) arg so a
-  // 2-D mode shows its axes and a 3-D mode hides them again.
   for (const menu of layoutMenus(figure.layout)) {
     const buttons = menu.buttons;
     if (!Array.isArray(buttons)) continue;
@@ -262,44 +252,21 @@ export function applySceneOptions(
           continue;
         }
         const vis = arg.visible as unknown[];
-        const modeShows = (types: Set<string>): boolean =>
-          figure.data.some((tr, i) => {
-            if (mcRole(tr)) return false;
-            if (typeof tr.type !== 'string' || !types.has(tr.type))
-              return false;
-            const v = i < vis.length ? vis[i] : tr.visible;
-            return v !== false && v !== 'legendonly';
-          });
-        const button3d = modeShows(GL3D_TYPES);
-        if (modeShows(CARTESIAN_TYPES)) button2d = true;
-        else if (button2d === undefined) button2d = false;
-        figure.data.forEach((tr, i) => {
-          const role = mcRole(tr);
-          if (!role) return;
-          vis[i] = button3d
-            ? role === 'xyplane'
-              ? opts.planeOrigin
-              : opts.planeOnly
-            : false;
+        const shows = figure.data.some((tr, i) => {
+          if (!isCartesian(tr)) return false;
+          const v = i < vis.length ? vis[i] : tr.visible;
+          return v !== false && v !== 'legendonly';
         });
+        if (shows) button2d = true;
+        else if (button2d === undefined) button2d = false;
       }
-      if (button2d === undefined || !hasCartesian) continue;
+      if (button2d === undefined) continue;
       if (!relayout) {
         relayout = {};
         args.push(relayout);
       }
       relayout['xaxis.visible'] = button2d;
       relayout['yaxis.visible'] = button2d;
-    }
-  }
-  if (!opts.planeOnly) return;
-  for (const key of Object.keys(figure.layout)) {
-    if (key !== 'scene' && !/^scene\d+$/.test(key)) continue;
-    const entry = figure.layout[key];
-    if (!isObj(entry)) continue;
-    for (const ax of ['xaxis', 'yaxis', 'zaxis']) {
-      const axis = entry[ax];
-      entry[ax] = { ...(isObj(axis) ? axis : {}), visible: false };
     }
   }
 }
