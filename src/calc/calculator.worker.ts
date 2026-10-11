@@ -277,6 +277,61 @@ _MC_PLOT_GRIDLINES_SRC = '''def _mc_plot_gridlines(us, vs, fx, fy, fz=None):
 
 exec(_MC_PLOT_GRIDLINES_SRC)
 
+_MC_PLOT_XYPLANE_SRC = '''def _mc_nice_step(span):
+    # A 1/2/2.5/5-times-power-of-ten step of roughly span/6 — the
+    # xy-plane gridline pitch.
+    import numpy as _mc_np
+    if span <= 0 or not _mc_np.isfinite(span):
+        return 1.0
+    raw = span / 6.0
+    mag = 10.0 ** _mc_np.floor(_mc_np.log10(raw))
+    for m in (1.0, 2.0, 2.5, 5.0, 10.0):
+        if raw <= m * mag:
+            return m * mag
+    return 10.0 * mag
+
+
+def _mc_plot_xyplane(fig, x0, x1, y0, y1):
+    # The z=0 reference plane (the 'xy plane through origin' option): a
+    # translucent slab plus gridlines, meta-tagged so the frontend
+    # toggles the whole plane as one unit. Colors are placeholders —
+    # src/plot/theme.ts restyles mcRole traces per theme.
+    import numpy as _mc_np
+    fig.add_surface(
+        x=[[x0, x1], [x0, x1]],
+        y=[[y0, y0], [y1, y1]],
+        z=[[0.0, 0.0], [0.0, 0.0]],
+        opacity=0.18, showscale=False, hoverinfo='skip',
+        surfacecolor=[[0.0, 0.0], [0.0, 0.0]],
+        colorscale=[[0.0, '#64748b'], [1.0, '#64748b']],
+        meta={'mcRole': 'xyplane'},
+    )
+    xs_, ys_, zs_ = [], [], []
+    for gx in _mc_np.arange(
+            _mc_np.ceil(x0 / _mc_nice_step(x1 - x0))
+            * _mc_nice_step(x1 - x0),
+            x1 + _mc_nice_step(x1 - x0) * 1e-6,
+            _mc_nice_step(x1 - x0)):
+        xs_ += [float(gx), float(gx), None]
+        ys_ += [y0, y1, None]
+        zs_ += [0.0, 0.0, None]
+    for gy in _mc_np.arange(
+            _mc_np.ceil(y0 / _mc_nice_step(y1 - y0))
+            * _mc_nice_step(y1 - y0),
+            y1 + _mc_nice_step(y1 - y0) * 1e-6,
+            _mc_nice_step(y1 - y0)):
+        xs_ += [x0, x1, None]
+        ys_ += [float(gy), float(gy), None]
+        zs_ += [0.0, 0.0, None]
+    fig.add_scatter3d(
+        x=xs_, y=ys_, z=zs_, mode='lines',
+        line=dict(color='rgba(148,163,184,0.55)', width=1),
+        hoverinfo='skip',
+        meta={'mcRole': 'xyplane'},
+    )'''
+
+exec(_MC_PLOT_XYPLANE_SRC)
+
 
 def _mc_plot_figure(d, c, vars_, comps):
     # Sample the components and build the plotly figure for the
@@ -311,8 +366,24 @@ def _mc_plot_figure(d, c, vars_, comps):
                 x=vals[0], y=vals[1], z=vals[2], mode='lines',
                 line=dict(color=acc, width=4),
             ))
+        # The z=0 reference plane spans the curve's xy extent — the
+        # 'xy plane through origin' option toggles it; skipped when the
+        # samples are all non-finite.
+        plane = None
+        if (
+            c == 3
+            and _mc_np.isfinite(vals[0]).any()
+            and _mc_np.isfinite(vals[1]).any()
+        ):
+            plane = (
+                float(_mc_np.nanmin(vals[0])),
+                float(_mc_np.nanmax(vals[0])),
+                float(_mc_np.nanmin(vals[1])),
+                float(_mc_np.nanmax(vals[1])),
+            )
+            _mc_plot_xyplane(fig, *plane)
         fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
-        return fig
+        return fig, plane
 
     us = _mc_np.linspace(_MC_PLOT_R2[0], _MC_PLOT_R2[1], _MC_PLOT_N2)
     vs = _mc_np.linspace(_MC_PLOT_R2[0], _MC_PLOT_R2[1], _MC_PLOT_N2)
@@ -322,6 +393,9 @@ def _mc_plot_figure(d, c, vars_, comps):
         vals = vals.reshape(1, vals.shape[0], vals.shape[1])
     mag = _mc_np.sqrt(sum(v * v for v in vals))
     fig = go.Figure()
+    # The z=0 reference plane's xy extent for the 3-D kinds — stays None
+    # for the 2-D quiver family and all-nonfinite samples.
+    plane = None
     if c == 1:
         fig.add_surface(
             x=us, y=vs, z=vals[0], colorscale='Viridis', showscale=False,
@@ -334,6 +408,9 @@ def _mc_plot_figure(d, c, vars_, comps):
             visible=False,
         )
         _mc_plot_menu(fig, ['surface', 'heatmap'], [[True, False], [False, True]])
+        # The xy-plane reference spans the sampled domain.
+        plane = (float(us[0]), float(us[-1]), float(vs[0]), float(vs[-1]))
+        _mc_plot_xyplane(fig, *plane)
     elif c == 2:
         fx, fy = vals[0], vals[1]
         # Quiver: one scatter of tail→tip segments plus a cone per tip.
@@ -431,8 +508,18 @@ def _mc_plot_figure(d, c, vars_, comps):
                 [False, False, False, True],
             ],
         )
+        # The xy-plane reference spans the parametric surface's xy
+        # footprint — skipped when it is all non-finite.
+        if _mc_np.isfinite(fx).any() and _mc_np.isfinite(fy).any():
+            plane = (
+                float(_mc_np.nanmin(fx)),
+                float(_mc_np.nanmax(fx)),
+                float(_mc_np.nanmin(fy)),
+                float(_mc_np.nanmax(fy)),
+            )
+            _mc_plot_xyplane(fig, *plane)
     fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
-    return fig
+    return fig, plane
 
 
 class _MCCodePrinter(_MCStrPrinter):
@@ -473,7 +560,7 @@ class _MCCodePrinter(_MCStrPrinter):
     def _print_NaN(self, expr): return 'sp.nan'
 
 
-def _mc_plot_code(d, c, vars_, comps):
+def _mc_plot_code(d, c, vars_, comps, plane):
     # The literal program _mc_plot_figure ran for this signature — the
     # generating-code block shows it in place of the opaque _mc_plot
     # marker. Mirrors the figure fn's branches; constants interpolate
@@ -514,6 +601,8 @@ def _mc_plot_code(d, c, vars_, comps):
         helpers = [_MC_PLOT_STREAMLINES_SRC, _MC_PLOT_GRIDLINES_SRC]
     elif d == 2 and c == 3:
         helpers = [_MC_PLOT_GRIDLINES_SRC]
+    if plane is not None:
+        helpers.append(_MC_PLOT_XYPLANE_SRC)
     for src in helpers:
         L += [src.rstrip(), '']
     L.append(f"fnum = sp.lambdify({params}, {body}, 'numpy')")
@@ -566,6 +655,11 @@ def _mc_plot_code(d, c, vars_, comps):
                 f"    mode='lines', line=dict(color='{acc}', width=4),",
                 '))',
             ]
+        if plane is not None:
+            L.append(
+                f'_mc_plot_xyplane(fig, {plane[0]!r}, {plane[1]!r},'
+                f' {plane[2]!r}, {plane[3]!r})'
+            )
         L.append(f'fig.update_layout(margin={margin}, showlegend=False)')
     else:
         L += [
@@ -719,6 +813,11 @@ def _mc_plot_code(d, c, vars_, comps):
                     [False, False, False, True],
                 ],
             )
+        if plane is not None:
+            L.append(
+                f'_mc_plot_xyplane(fig, {plane[0]!r}, {plane[1]!r},'
+                f' {plane[2]!r}, {plane[3]!r})'
+            )
         L.append(f'fig.update_layout(margin={margin}, showlegend=False)')
     L += [
         '# the figure dict the frontend hands to plotly.js',
@@ -739,7 +838,7 @@ def _mc_plot_payload(v):
         raise ValueError(
             f'cannot plot {c} output components (needs 1, 2, or 3)'
         )
-    fig = _mc_plot_figure(d, c, vars_, comps)
+    fig, plane = _mc_plot_figure(d, c, vars_, comps)
     return {
         'plot': {
             'kind': f'{d}x{c}',
@@ -752,7 +851,7 @@ def _mc_plot_payload(v):
         },
         # The literal program that built the figure, for the cell's
         # generating-code block.
-        'code': _mc_plot_code(d, c, vars_, comps),
+        'code': _mc_plot_code(d, c, vars_, comps, plane),
     }
 
 

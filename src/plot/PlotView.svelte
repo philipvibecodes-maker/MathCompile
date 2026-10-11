@@ -7,13 +7,27 @@
   import type PlotlyT from 'plotly.js-dist-min';
   import { appStore } from '../state/store.svelte';
   import type { PlotData } from './types';
-  import { themedFigure } from './theme';
+  import { applySceneOptions, themedFigure } from './theme';
 
   let { plot }: { plot: PlotData } = $props();
 
   let el = $state<HTMLDivElement | undefined>();
   let Plotly = $state<typeof PlotlyT | undefined>();
   let failed = $state('');
+
+  // GeoGebra-style 'xy plane' options for 3-D figures — both default
+  // on. The figure opts in by carrying the worker's meta-tagged plane
+  // traces (R3 kinds only); 2-D plots never see the checkboxes.
+  let planeOrigin = $state(true);
+  let planeOnly = $state(true);
+  const hasPlane = $derived(
+    plot.figure.data.some(
+      (tr) =>
+        typeof tr.meta === 'object' &&
+        tr.meta !== null &&
+        (tr.meta as Record<string, unknown>).mcRole === 'xyplane',
+    ),
+  );
 
   const CONFIG = {
     displaylogo: false,
@@ -46,8 +60,17 @@
     const target = el;
     const P = Plotly;
     const dark = appStore.darkMode;
+    // Reading the checkbox states here makes a toggle re-render the
+    // figure in place (Plotly.react diffs).
+    const origin = planeOrigin;
+    const only = planeOnly;
+    const showOpts = hasPlane;
     if (!target || !P) return;
     const { data, layout } = themedFigure(p, dark);
+    if (showOpts) applySceneOptions({ data, layout }, {
+      planeOrigin: origin,
+      planeOnly: only,
+    });
     P.react(target, data, { ...layout, autosize: true }, CONFIG).catch(
       (e) => {
         failed = e instanceof Error ? e.message : String(e);
@@ -61,6 +84,18 @@
     <div class="plot-fail">couldn't render the plot: {failed}</div>
   {:else}
     <div class="plot-el" bind:this={el}></div>
+    {#if hasPlane}
+      <div class="plot-opts">
+        <label>
+          <input type="checkbox" bind:checked={planeOrigin} />
+          xy plane through origin
+        </label>
+        <label>
+          <input type="checkbox" bind:checked={planeOnly} />
+          xy plane only
+        </label>
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -76,5 +111,18 @@
   .plot-fail {
     color: var(--accent-text, #b91c1c);
     font-size: 13px;
+  }
+  .plot-opts {
+    display: flex;
+    gap: 16px;
+    padding: 2px 2px 4px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .plot-opts label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
   }
 </style>

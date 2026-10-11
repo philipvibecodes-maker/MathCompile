@@ -8,6 +8,8 @@ interface ThemeColors {
   font: string;
   grid: string;
   zero: string;
+  planeFill: string;
+  planeGrid: string;
 }
 
 // Mirrors index.css's --text/--muted/--faint per theme.
@@ -15,11 +17,15 @@ const LIGHT: ThemeColors = {
   font: '#333333',
   grid: 'rgba(95,102,114,0.25)',
   zero: '#8f959e',
+  planeFill: '#64748b',
+  planeGrid: 'rgba(71,85,105,0.4)',
 };
 const DARK: ThemeColors = {
   font: '#e6e8ee',
   grid: 'rgba(154,162,174,0.22)',
   zero: '#9aa2ae',
+  planeFill: '#94a3b8',
+  planeGrid: 'rgba(148,163,184,0.55)',
 };
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
@@ -94,5 +100,54 @@ export function themedFigure(plot: PlotData, dark: boolean) {
     }
     layout[key] = scene;
   }
-  return { data: plot.figure.data, layout };
+  // Restyle the worker's xy-plane reference traces — the worker emits
+  // placeholder colors and tags the traces meta.mcRole = 'xyplane' so
+  // this pass (and the options toggle in applySceneOptions) can find
+  // them without touching the sampled data.
+  const data = plot.figure.data.map((tr) => {
+    if (!isObj(tr.meta) || tr.meta.mcRole !== 'xyplane') return tr;
+    if (tr.type === 'surface') {
+      return {
+        ...tr,
+        colorscale: [
+          [0.0, t.planeFill],
+          [1.0, t.planeFill],
+        ],
+      };
+    }
+    if (tr.type === 'scatter3d' && isObj(tr.line)) {
+      return { ...tr, line: { ...tr.line, color: t.planeGrid } };
+    }
+    return tr;
+  });
+  return { data, layout };
+}
+
+// The 'xy plane' options on 3-D figures. planeOrigin shows/hides the
+// worker's mcRole-tagged plane traces; planeOnly hides the 3-D axis
+// boxes (ticks, labels, grid) so the plane is the only reference.
+export interface SceneOptions {
+  planeOrigin: boolean;
+  planeOnly: boolean;
+}
+
+export function applySceneOptions(
+  figure: { data: Record<string, unknown>[]; layout: Record<string, unknown> },
+  opts: SceneOptions,
+): void {
+  for (const tr of figure.data) {
+    if (isObj(tr.meta) && tr.meta.mcRole === 'xyplane') {
+      tr.visible = opts.planeOrigin;
+    }
+  }
+  if (!opts.planeOnly) return;
+  for (const key of Object.keys(figure.layout)) {
+    if (key !== 'scene' && !/^scene\d+$/.test(key)) continue;
+    const entry = figure.layout[key];
+    if (!isObj(entry)) continue;
+    for (const ax of ['xaxis', 'yaxis', 'zaxis']) {
+      const axis = entry[ax];
+      entry[ax] = { ...(isObj(axis) ? axis : {}), visible: false };
+    }
+  }
 }

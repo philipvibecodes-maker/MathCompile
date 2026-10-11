@@ -155,7 +155,12 @@ describe('plot theming', () => {
 
   it('passes the worker figure data through unchanged', () => {
     const { data } = themedFigure(base, true);
-    expect(data).toBe(base.figure.data);
+    // Non-xyplane traces pass through by reference — the theme only
+    // clones the mcRole-tagged plane traces it restyles.
+    expect(data).toEqual(base.figure.data);
+    for (let i = 0; i < data.length; i++) {
+      expect(data[i]).toBe(base.figure.data[i]);
+    }
   });
 
   it('dark mode applies dark font/grid/zeroline and transparent bg', () => {
