@@ -296,12 +296,17 @@ def _mc_plot_xyplane(fig, x0, x1, y0, y1):
     # translucent slab plus gridlines, meta-tagged so the frontend
     # toggles the whole plane as one unit. Colors are placeholders —
     # src/plot/theme.ts restyles mcRole traces per theme.
+    # Ambient-only lighting: the gl3d surface pipeline
+    # specular-sparkles on a perfectly flat translucent surface.
     import numpy as _mc_np
     fig.add_surface(
         x=[[x0, x1], [x0, x1]],
         y=[[y0, y0], [y1, y1]],
         z=[[0.0, 0.0], [0.0, 0.0]],
-        opacity=0.18, showscale=False, hoverinfo='skip',
+        opacity=0.25,
+        lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0,
+                      roughness=1.0, fresnel=0.0),
+        showscale=False, hoverinfo='skip',
         surfacecolor=[[0.0, 0.0], [0.0, 0.0]],
         colorscale=[[0.0, '#64748b'], [1.0, '#64748b']],
         meta={'mcRole': 'xyplane'},
@@ -328,6 +333,33 @@ def _mc_plot_xyplane(fig, x0, x1, y0, y1):
         line=dict(color='rgba(148,163,184,0.55)', width=1),
         hoverinfo='skip',
         meta={'mcRole': 'xyplane'},
+    )
+
+
+def _mc_plot_zaxis(fig, z0, z1, tick):
+    # A z-axis stub through the origin — meta-tagged 'zaxis' so the
+    # frontend shows it while 'xy plane only' hides the axis boxes.
+    # tick is the tick mark length in data units.
+    import numpy as _mc_np
+    step = _mc_nice_step(z1 - z0)
+    xs_, ys_, zs_ = [0.0, 0.0, None], [0.0, 0.0, None], [z0, z1, None]
+    for gz in _mc_np.arange(
+            _mc_np.ceil(z0 / step) * step, z1 + step * 1e-6, step):
+        xs_ += [-tick, tick, None]
+        ys_ += [0.0, 0.0, None]
+        zs_ += [float(gz), float(gz), None]
+    fig.add_scatter3d(
+        x=xs_, y=ys_, z=zs_, mode='lines',
+        line=dict(color='rgba(148,163,184,0.8)', width=2),
+        hoverinfo='skip',
+        meta={'mcRole': 'zaxis'},
+    )
+    fig.add_scatter3d(
+        x=[0.0], y=[0.0], z=[z1], mode='text',
+        text=['z'], textposition='top center',
+        textfont=dict(color='rgba(148,163,184,0.8)', size=13),
+        hoverinfo='skip',
+        meta={'mcRole': 'zaxis'},
     )'''
 
 exec(_MC_PLOT_XYPLANE_SRC)
@@ -366,24 +398,34 @@ def _mc_plot_figure(d, c, vars_, comps):
                 x=vals[0], y=vals[1], z=vals[2], mode='lines',
                 line=dict(color=acc, width=4),
             ))
-        # The z=0 reference plane spans the curve's xy extent — the
-        # 'xy plane through origin' option toggles it; skipped when the
-        # samples are all non-finite.
+        # The z=0 reference plane spans the curve's xy extent and a
+        # z-axis stub spans its z extent — the 'xy plane' options
+        # toggle them; skipped when the samples are all non-finite.
         plane = None
-        if (
-            c == 3
-            and _mc_np.isfinite(vals[0]).any()
-            and _mc_np.isfinite(vals[1]).any()
-        ):
-            plane = (
-                float(_mc_np.nanmin(vals[0])),
-                float(_mc_np.nanmax(vals[0])),
-                float(_mc_np.nanmin(vals[1])),
-                float(_mc_np.nanmax(vals[1])),
-            )
-            _mc_plot_xyplane(fig, *plane)
+        zext = None
+        if c == 3:
+            if (_mc_np.isfinite(vals[0]).any()
+                    and _mc_np.isfinite(vals[1]).any()):
+                plane = (
+                    float(_mc_np.nanmin(vals[0])),
+                    float(_mc_np.nanmax(vals[0])),
+                    float(_mc_np.nanmin(vals[1])),
+                    float(_mc_np.nanmax(vals[1])),
+                )
+            if _mc_np.isfinite(vals[2]).any():
+                z0 = float(_mc_np.nanmin(vals[2]))
+                z1 = float(_mc_np.nanmax(vals[2]))
+                if z0 == z1:
+                    z0, z1 = z0 - 1.0, z1 + 1.0
+                xspan = plane[1] - plane[0] if plane else 1.0
+                yspan = plane[3] - plane[2] if plane else 1.0
+                zext = (z0, z1, 0.02 * max(xspan, yspan))
+            if plane is not None:
+                _mc_plot_xyplane(fig, *plane)
+            if zext is not None:
+                _mc_plot_zaxis(fig, *zext)
         fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
-        return fig, plane
+        return fig, plane, zext
 
     us = _mc_np.linspace(_MC_PLOT_R2[0], _MC_PLOT_R2[1], _MC_PLOT_N2)
     vs = _mc_np.linspace(_MC_PLOT_R2[0], _MC_PLOT_R2[1], _MC_PLOT_N2)
@@ -393,9 +435,11 @@ def _mc_plot_figure(d, c, vars_, comps):
         vals = vals.reshape(1, vals.shape[0], vals.shape[1])
     mag = _mc_np.sqrt(sum(v * v for v in vals))
     fig = go.Figure()
-    # The z=0 reference plane's xy extent for the 3-D kinds — stays None
-    # for the 2-D quiver family and all-nonfinite samples.
+    # The z=0 reference plane's xy extent and the z-axis stub's z
+    # extent for the 3-D kinds — stay None for the 2-D quiver family
+    # and all-nonfinite samples.
     plane = None
+    zext = None
     if c == 1:
         fig.add_surface(
             x=us, y=vs, z=vals[0], colorscale='Viridis', showscale=False,
@@ -408,9 +452,15 @@ def _mc_plot_figure(d, c, vars_, comps):
             visible=False,
         )
         _mc_plot_menu(fig, ['surface', 'heatmap'], [[True, False], [False, True]])
-        # The xy-plane reference spans the sampled domain.
+        # The xy-plane reference spans the sampled domain, the z-axis
+        # stub the sampled z range.
         plane = (float(us[0]), float(us[-1]), float(vs[0]), float(vs[-1]))
-        _mc_plot_xyplane(fig, *plane)
+        if _mc_np.isfinite(vals[0]).any():
+            z0 = float(_mc_np.nanmin(vals[0]))
+            z1 = float(_mc_np.nanmax(vals[0]))
+            if z0 == z1:
+                z0, z1 = z0 - 1.0, z1 + 1.0
+            zext = (z0, z1, 0.02 * float(us[-1] - us[0]))
     elif c == 2:
         fx, fy = vals[0], vals[1]
         # Quiver: one scatter of tail→tip segments plus a cone per tip.
@@ -509,7 +559,8 @@ def _mc_plot_figure(d, c, vars_, comps):
             ],
         )
         # The xy-plane reference spans the parametric surface's xy
-        # footprint — skipped when it is all non-finite.
+        # footprint, the z-axis stub its z range — each skipped when
+        # the samples are all non-finite.
         if _mc_np.isfinite(fx).any() and _mc_np.isfinite(fy).any():
             plane = (
                 float(_mc_np.nanmin(fx)),
@@ -517,9 +568,20 @@ def _mc_plot_figure(d, c, vars_, comps):
                 float(_mc_np.nanmin(fy)),
                 float(_mc_np.nanmax(fy)),
             )
-            _mc_plot_xyplane(fig, *plane)
+        if _mc_np.isfinite(fz).any():
+            z0 = float(_mc_np.nanmin(fz))
+            z1 = float(_mc_np.nanmax(fz))
+            if z0 == z1:
+                z0, z1 = z0 - 1.0, z1 + 1.0
+            xspan = plane[1] - plane[0] if plane else 1.0
+            yspan = plane[3] - plane[2] if plane else 1.0
+            zext = (z0, z1, 0.02 * max(xspan, yspan))
+    if plane is not None:
+        _mc_plot_xyplane(fig, *plane)
+    if zext is not None:
+        _mc_plot_zaxis(fig, *zext)
     fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
-    return fig, plane
+    return fig, plane, zext
 
 
 class _MCCodePrinter(_MCStrPrinter):
@@ -560,7 +622,7 @@ class _MCCodePrinter(_MCStrPrinter):
     def _print_NaN(self, expr): return 'sp.nan'
 
 
-def _mc_plot_code(d, c, vars_, comps, plane):
+def _mc_plot_code(d, c, vars_, comps, plane, zext):
     # The literal program _mc_plot_figure ran for this signature — the
     # generating-code block shows it in place of the opaque _mc_plot
     # marker. Mirrors the figure fn's branches; constants interpolate
@@ -601,7 +663,7 @@ def _mc_plot_code(d, c, vars_, comps, plane):
         helpers = [_MC_PLOT_STREAMLINES_SRC, _MC_PLOT_GRIDLINES_SRC]
     elif d == 2 and c == 3:
         helpers = [_MC_PLOT_GRIDLINES_SRC]
-    if plane is not None:
+    if plane is not None or zext is not None:
         helpers.append(_MC_PLOT_XYPLANE_SRC)
     for src in helpers:
         L += [src.rstrip(), '']
@@ -659,6 +721,11 @@ def _mc_plot_code(d, c, vars_, comps, plane):
             L.append(
                 f'_mc_plot_xyplane(fig, {plane[0]!r}, {plane[1]!r},'
                 f' {plane[2]!r}, {plane[3]!r})'
+            )
+        if zext is not None:
+            L.append(
+                f'_mc_plot_zaxis(fig, {zext[0]!r}, {zext[1]!r},'
+                f' {zext[2]!r})'
             )
         L.append(f'fig.update_layout(margin={margin}, showlegend=False)')
     else:
@@ -818,6 +885,11 @@ def _mc_plot_code(d, c, vars_, comps, plane):
                 f'_mc_plot_xyplane(fig, {plane[0]!r}, {plane[1]!r},'
                 f' {plane[2]!r}, {plane[3]!r})'
             )
+        if zext is not None:
+            L.append(
+                f'_mc_plot_zaxis(fig, {zext[0]!r}, {zext[1]!r},'
+                f' {zext[2]!r})'
+            )
         L.append(f'fig.update_layout(margin={margin}, showlegend=False)')
     L += [
         '# the figure dict the frontend hands to plotly.js',
@@ -838,7 +910,7 @@ def _mc_plot_payload(v):
         raise ValueError(
             f'cannot plot {c} output components (needs 1, 2, or 3)'
         )
-    fig, plane = _mc_plot_figure(d, c, vars_, comps)
+    fig, plane, zext = _mc_plot_figure(d, c, vars_, comps)
     return {
         'plot': {
             'kind': f'{d}x{c}',
@@ -851,7 +923,7 @@ def _mc_plot_payload(v):
         },
         # The literal program that built the figure, for the cell's
         # generating-code block.
-        'code': _mc_plot_code(d, c, vars_, comps, plane),
+        'code': _mc_plot_code(d, c, vars_, comps, plane, zext),
     }
 
 
