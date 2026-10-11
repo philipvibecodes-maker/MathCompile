@@ -489,6 +489,10 @@ def _mc_plot_code(d, c, vars_, comps):
     m = _MC_PLOT_MARGIN
     margin = f"dict(l={m['l']}, r={m['r']}, t={m['t']}, b={m['b']})"
     L = [
+        # The shown prelude is from sympy import * under the default
+        # emission, so the block must bind sp itself — and it is true
+        # either way: SETUP_PY ran import sympy as sp.
+        'import sympy as sp',
         'import numpy as _mc_np',
         'import plotly.graph_objects as go',
         '',
