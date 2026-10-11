@@ -167,6 +167,10 @@ export const COMPLETIONS: CompletionItem[] = [
   { name: 'otimes', hint: '⊗' },
   { name: 'cup', hint: 'union ∪' },
   { name: 'cap', hint: 'intersection ∩' },
+  // Aliases for \cup/\cap — serialize as the canonical command.
+  { name: 'union', hint: 'union ∪ (alias for cup)' },
+  { name: 'intersect', hint: 'intersection ∩ (alias for cap)' },
+  { name: 'intersection', hint: 'intersection ∩ (alias for cap)' },
   { name: 'setminus', hint: '∖' },
   { name: 'in', hint: '∈' },
   { name: 'notin', hint: '∉' },
