@@ -132,11 +132,11 @@ const FIXTURES: {
   },
   {
     // `u \times v` — the cross product. latex.ts rewrites \times to
-    // \otimes so CE keeps it distinct from \cdot: vector operands emit
-    // .cross(), and scalar \times stays multiplication.
+    // \text{mc-cross} so CE keeps it distinct from \cdot: vector
+    // operands emit .cross(), and scalar \times stays multiplication.
     latex: '[1,2,3] \\times [4,5,6]',
     expectedIR: [
-      'CircleTimes',
+      'CircledAst',
       ['List', 1, 2, 3],
       ['List', 4, 5, 6],
     ],
@@ -144,12 +144,12 @@ const FIXTURES: {
   },
   {
     latex: 'u \\times v',
-    expectedIR: ['CircleTimes', 'u', 'v'],
+    expectedIR: ['CircledAst', 'u', 'v'],
     expectedPython: ["u, v = sp.symbols('u v')", 'u * v'],
   },
   {
     latex: '2 \\times 3',
-    expectedIR: ['CircleTimes', 2, 3],
+    expectedIR: ['CircledAst', 2, 3],
     expectedPython: ['2 * 3'],
   },
   {
@@ -170,7 +170,7 @@ const FIXTURES: {
   {
     // Set × set is the Cartesian product — same `*` Multiply emits.
     latex: '\\mathbb{R} \\times \\mathbb{Z}',
-    expectedIR: ['CircleTimes', 'RealNumbers', 'Integers'],
+    expectedIR: ['CircledAst', 'RealNumbers', 'Integers'],
     expectedPython: ['sp.S.Reals * sp.S.Integers'],
   },
   {
@@ -195,6 +195,16 @@ const FIXTURES: {
     latex: 'u \\times [1,2,3]',
     expectedPython: ['u = sp.Symbol("u")'],
     issues: ['cross product needs vectors'],
+  },
+  {
+    // \nabla \times F is the curl — the \nabla Error operand the
+    // nabla-gradient rule leaves folds to the Nabla head.
+    latex: '\\nabla \\times [x^2, y, z]',
+    expectedIR: ['CircledAst', ['Nabla'], ['List', ['Power', 'x', 2], 'y', 'z']],
+    expectedPython: [
+      "x, y, z = sp.symbols('x y z')",
+      'sp.Matrix([sp.diff(([x**2, y, z])[2], y) - sp.diff(([x**2, y, z])[1], z), sp.diff(([x**2, y, z])[0], z) - sp.diff(([x**2, y, z])[2], x), sp.diff(([x**2, y, z])[1], x) - sp.diff(([x**2, y, z])[0], y)])',
+    ],
   },
   {
     // `e` is Euler's constant (sp.E), never a Symbol.

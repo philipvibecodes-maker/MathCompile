@@ -312,22 +312,27 @@ export const LATEX_RULES: LatexRule[] = [
   {
     name: 'times-cross',
     why: '\\times is the cross product — CE folds it into Multiply '
-      + 'with \\cdot and juxtaposition, so it rewrites to \\otimes '
-      + '(CircleTimes) to stay distinct all the way to codegen, which '
-      + 'lowers vector operands to .cross(), all-set operands to the '
-      + 'Cartesian *, and keeps scalar \\times as multiplication. An '
-      + 'even backslash count before it is a row separator + literal '
-      + 'text, not the command.',
+      + 'with \\cdot and juxtaposition, so it masquerades as \\circledast: '
+      + 'a real but effectively-unused CE infix that mints the '
+      + 'CircledAst head, which codegen lowers operand-typed: vectors '
+      + 'to .cross(), all-set operands to the Cartesian *, scalar '
+      + '\\times to multiplication. Literal \\otimes stays free for the '
+      + 'Kronecker product; literal \\circledast reads as \\times. '
+      + 'An even backslash count before it is a row separator + '
+      + 'literal text, not the command.',
     applies: /\\times(?![a-zA-Z])/,
     rewrite: (s) =>
-      s.replace(/(?<!\\)((?:\\\\)*)\\times(?![a-zA-Z])/g, '$1\\otimes'),
+      s.replace(
+        /(?<!\\)((?:\\\\)*)\\times(?![a-zA-Z])/g,
+        '$1\\circledast',
+      ),
     tests: [
-      ['u \\times v', 'u \\otimes v'],
-      ['2 \\times 3', '2 \\otimes 3'],
-      ['\\mathbb{R}^{m\\times n}', '\\mathbb{R}^{m\\otimes n}'],
+      ['u \\times v', 'u \\circledast v'],
+      ['2 \\times 3', '2 \\circledast 3'],
+      ['\\mathbb{R}^{m\\times n}', '\\mathbb{R}^{m\\circledast n}'],
       ['\\timestwo', '\\timestwo'],
       ['x\\\\times y', 'x\\\\times y'],
-      ['x\\\\\\times y', 'x\\\\\\otimes y'],
+      ['x\\\\\\times y', 'x\\\\\\circledast y'],
     ],
   },
 ];

@@ -1073,7 +1073,30 @@ const ACCENT_SUFFIX: Record<string, string> = {
 
 // Exported so tests can enumerate the folds (name-uniqueness and the
 // coverage probe in compile.test.ts) — not mutated by callers.
+// `\nabla` reaches CE as an unexpected-command Error (the
+// nabla-gradient latex rule leaves it alone before \cdot/\times);
+// inside a vector op it becomes the Nabla head so codegen can emit
+// divergence/curl.
+const isNablaError = (v: MathJson | undefined): boolean =>
+  isArray(v) &&
+  head(v) === 'Error' &&
+  isArray(v[2]) &&
+  head(v[2]) === 'LatexString' &&
+  v[2][1] === "'\\nabla'";
+
 export const NORMALIZE_RULES: NormalizeRule[] = [
+  {
+    name: 'nabla-vector-op',
+    why: 'translate the \nabla Error operand in \nabla\\cdot/\\times into the Nabla head so codegen sees divergence/curl instead of an error',
+    when: (h, node) =>
+      h === 'CircledAst' && (node as MathJson[]).slice(1).some(isNablaError),
+    rewrite: (node, ctx) => [
+      head(node),
+      ...(node as MathJson[])
+        .slice(1)
+        .map((a) => (isNablaError(a) ? (['Nabla'] as MathJson) : ctx.norm(a))),
+    ] as MathJson,
+  },
   {
     name: 'eval-bar',
     // \left. f \right|_{a}^{b}: CE emits the evaluation bar as
@@ -1943,13 +1966,16 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
         node.length === 3 &&
         isString(node[1]) &&
         SET_LEAF.has(node[1]) &&
-        isArray(node[2]) &&
-        head(node[2]) === 'Error' &&
-        isArray(node[2][2]) &&
-        isString(node[2][2][1]) &&
-        // `^{\times}` reads as `^{\otimes}` after latex.ts's times-cross
-        // rewrite; keep both for IR that bypasses parseCellLatex.
-        (node[2][2][1] === "'\\times'" || node[2][2][1] === "'\\otimes'")
+        // `^{\times}` reads as an Error after latex.ts's times-cross
+        // rewrite mints `\circledast`; keep the raw \times/\otimes
+        // Error shapes for IR that bypasses parseCellLatex.
+        (isArray(node[2]) &&
+          head(node[2]) === 'Error' &&
+          isArray(node[2][2]) &&
+          isString(node[2][2][1]) &&
+          (node[2][2][1] === "'\\times'" ||
+            node[2][2][1] === "'\\otimes'" ||
+            node[2][2][1] === "'\\circledast'"))
       );
     },
     rewrite: (node) => {
