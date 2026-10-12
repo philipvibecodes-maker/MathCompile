@@ -118,7 +118,7 @@ test('a completely empty field keeps the root block transparent', async ({
 test('dark theme: the slot box reads as a light gray', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('mathcompile-theme', 'dark');
-    localStorage.removeItem('mathcompile-cells');
+    localStorage.removeItem('mathcompile-worksheets');
   });
   await page.goto('/');
   const mf = cell(page);

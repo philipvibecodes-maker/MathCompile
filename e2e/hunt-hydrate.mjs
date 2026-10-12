@@ -2,10 +2,18 @@ import { chromium } from 'playwright';
 const browser = await chromium.launch();
 const ctx = await browser.newContext();
 await ctx.addInitScript(() => {
-  localStorage.setItem('mathcompile-cells', JSON.stringify([
-    { id: 1, latex: 'a\\over b' },
-    { id: 2, latex: 'x+1' }
-  ]));
+  localStorage.setItem('mathcompile-worksheets', JSON.stringify({
+    version: 1,
+    active: 'a',
+    sheets: [{
+      id: 'a',
+      name: 'Worksheet 1',
+      cells: [
+        { id: 1, latex: 'a\\over b' },
+        { id: 2, latex: 'x+1' }
+      ]
+    }]
+  }));
   localStorage.setItem('mathcompile-prefs', JSON.stringify({ target: 'latex' }));
 });
 const page = await ctx.newPage();
@@ -15,7 +23,7 @@ const out = await page.evaluate(() => {
   return rows.map((r) => ({
     fieldLatex: r.querySelector('math-field')?.value,
     shown: r.querySelector('.cell-latex')?.textContent,
-    cells: localStorage.getItem('mathcompile-cells'),
+    workbook: localStorage.getItem('mathcompile-worksheets'),
   }));
 });
 console.log(JSON.stringify(out, null, 1));

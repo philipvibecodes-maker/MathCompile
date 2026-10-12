@@ -1,5 +1,6 @@
 import { TARGETS } from './compile/targets';
 import type { AppStore } from './state/store.svelte';
+import { downloadWorksheetFile } from './state/worksheet-file';
 
 export interface Command {
   id: string;
@@ -42,6 +43,21 @@ export const buildCommands = (store: AppStore): Command[] => {
       run: () => store.clearAll(),
     },
     {
+      id: 'new-worksheet',
+      title: 'New worksheet',
+      keywords: 'create sheet notebook',
+      run: () => store.createWorksheet(),
+    },
+    {
+      id: 'save-worksheet-file',
+      title: 'Save worksheet to file',
+      keywords: 'export download json backup',
+      run: () => {
+        const snap = store.worksheetSnapshot();
+        if (snap) downloadWorksheetFile(snap.name, snap.cells);
+      },
+    },
+    {
       id: 'toggle-smart',
       title: 'Smart mode',
       keywords: 'toggle option autocomplete',
@@ -61,6 +77,13 @@ export const buildCommands = (store: AppStore): Command[] => {
       keywords: 'set compile codegen language output',
       current: t.id === store.target,
       run: () => (store.target = t.id),
+    })),
+    ...store.worksheets.map((w) => ({
+      id: `worksheet-${w.id}`,
+      title: `Worksheet: ${w.name}`,
+      keywords: 'switch sheet notebook',
+      current: w.id === store.activeWorksheetId,
+      run: () => store.switchWorksheet(w.id),
     })),
     ...store.cells.map((e, i) => ({
       id: `goto-${e.id}`,

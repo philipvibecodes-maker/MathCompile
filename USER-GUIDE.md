@@ -16,7 +16,8 @@ in your browser and saves your worksheet automatically.
 - **The output beside or beneath each cell** shows whatever the
   current output target produces for that cell — beside it for LaTeX
   and Python, beneath it for the calculator.
-- **The header** holds Smart mode, the Output target picker, the
+- **The header** holds the worksheet menu (switch, rename, delete,
+  save/open files), Smart mode, the Output target picker, the
   dark-mode toggle, and the Commands button (or press `Ctrl+K` /
   `⌘K`).
 - **How do I…**, under the cell list, is a quick keystroke cheat sheet.
@@ -24,7 +25,8 @@ in your browser and saves your worksheet automatically.
 
 The command palette (`Ctrl+K`) covers: insert an expression below,
 duplicate the current one, delete it, clear all expressions, toggle
-Smart mode and dark mode, switch the output target, and jump to any
+Smart mode and dark mode, switch the output target, switch worksheets
+or create a new one, save the worksheet to a file, and jump to any
 cell by number.
 
 ## Typing math
@@ -446,9 +448,15 @@ mode) to define a function — the generated code is `def f(x): return
 
 ## Saving
 
-The worksheet, theme, Smart mode, and target choice persist in your
-browser's local storage — there's nothing to click. Clearing the
-site's data resets everything.
+Every worksheet autosaves to your browser's local storage — there's
+nothing to click. The header shows the active worksheet's name; its
+menu switches between sheets, creates new ones (**+ New worksheet**),
+renames (✎), and deletes (×, click twice to confirm).
+
+**Save to file** downloads the active worksheet as a
+`.mathcompile.json` you can keep or share; **Open from file…** imports
+such a file back as a new worksheet. Clearing the site's data resets
+everything still in the browser.
 
 ---
 
