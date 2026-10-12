@@ -3748,9 +3748,19 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
         list: listRhs,
       });
     if (emitter.scope.errorCount > before) return { lines: [] };
+    // A python-list RHS binds a raw list (`u = [1, 2, 3]`), which
+    // Eq can't sympify — display it as the column vector the ops
+    // treat it as, unevaluated like other matrix/set RHSes.
+    const displayRhs =
+      listRhs && !matrixRhs ? `${sp}Matrix(${rhs})` : rhs;
     return {
       lines: [`${pyIdent(name)} = ${rhs}`],
-      display: assignDisplay(sp, name, rhs, matrixRhs || setRhs),
+      display: assignDisplay(
+        sp,
+        name,
+        displayRhs,
+        matrixRhs || setRhs || listRhs,
+      ),
       defines: true,
     };
   }
