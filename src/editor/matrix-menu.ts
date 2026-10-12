@@ -2,6 +2,7 @@ import {
   pointerRecentlyDown,
   type MathFieldElement,
 } from './math-field';
+import { mountStaticMath } from './static-math';
 
 // Matrix dimensions menu. With the vendored matrixDimensionsMenu option
 // on, a typed matrix-family command (\pmatrix, \begin{bmatrix},
@@ -17,6 +18,9 @@ const DEFAULT_DIM = 2;
 interface MatrixInsertDetail {
   env: string;
   insert: (rows: number, cols: number) => void;
+  // The exact latex insert() would write (selection included in the
+  // first cell) — the menu renders it as the live preview.
+  latex: (rows: number, cols: number) => string;
   // Restores a replaced selection's text at the command's gap; a no-op
   // when nothing was selected.
   cancel?: () => void;
@@ -32,6 +36,9 @@ export function attachMatrixMenu(field: MathFieldElement) {
   wrap.className = 'mc-mat';
   wrap.hidden = true;
   wrap.title = 'matrix dimensions';
+
+  const dims = document.createElement('div');
+  dims.className = 'mc-mat-dims';
 
   const rows = document.createElement('input');
   rows.className = 'mc-mat-dim';
@@ -53,10 +60,22 @@ export function attachMatrixMenu(field: MathFieldElement) {
   hint.className = 'mc-mat-hint';
   hint.textContent = 'rows × columns';
 
-  wrap.append(rows, sep, cols, hint);
+  dims.append(rows, sep, cols, hint);
+
+  const prev = document.createElement('div');
+  prev.className = 'mc-mat-prev';
+
+  wrap.append(dims, prev);
   field.appendChild(wrap);
 
+  const preview = mountStaticMath(prev);
+
   let pending: MatrixInsertDetail | null = null;
+
+  const refresh = () => {
+    if (pending)
+      preview.set(pending.latex(clampDim(rows.value), clampDim(cols.value)));
+  };
 
   const close = (refocus = false) => {
     const detail = pending;
@@ -97,6 +116,7 @@ export function attachMatrixMenu(field: MathFieldElement) {
     )}px`;
     rows.value = String(DEFAULT_DIM);
     cols.value = String(DEFAULT_DIM);
+    refresh();
     rows.focus();
     rows.select();
   };
@@ -105,11 +125,18 @@ export function attachMatrixMenu(field: MathFieldElement) {
     const input = e.target as HTMLInputElement;
     if (e.key === 'Enter') commit();
     else if (e.key === 'Escape') close(true);
-    else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    else if (e.key === 'Tab') {
+      // Cycle between the two inputs instead of letting focus leave
+      // the menu.
+      const other = input === rows ? cols : rows;
+      other.focus();
+      other.select();
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       input.value = String(
         clampDim(input.value) + (e.key === 'ArrowUp' ? 1 : -1),
       );
       input.select();
+      refresh();
     } else return;
     e.preventDefault();
   };
@@ -117,6 +144,7 @@ export function attachMatrixMenu(field: MathFieldElement) {
   const onInput = (e: Event) => {
     const input = e.target as HTMLInputElement;
     input.value = input.value.replace(/\D/g, '');
+    refresh();
   };
 
   const onFocusOut = (e: FocusEvent) => {

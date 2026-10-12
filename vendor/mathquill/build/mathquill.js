@@ -14692,10 +14692,25 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 var rootEl = parent.domFrag().oneElement();
                 (_c = rootEl === null || rootEl === void 0 ? void 0 : rootEl.querySelector(':scope > .mq-latex-command-input-wrapper')) === null || _c === void 0 ? void 0 : _c.remove();
             };
+            // The full latex an insert would write \u2014 shared with the menu so
+            // it can render the grid while picking dimensions.
+            var latexFor = function (rows, cols) {
+                var cells = Math.max(1, cols);
+                // A replaced selection goes in the first cell only \u2014 the
+                // remaining rows are empty.
+                var empty = new Array(cells).fill('').join('&');
+                var first = [fragLatex]
+                    .concat(new Array(cells - 1).fill(''))
+                    .join('&');
+                return (open +
+                    [first].concat(new Array(Math.max(0, rows - 1)).fill(empty)).join('\\\\') +
+                    close);
+            };
             ctrlr.container.dispatchEvent(new CustomEvent('mq:matrix-request', {
                 bubbles: true,
                 detail: {
                     env: (_d = (_c = open.match(/^\\begin\{([a-zA-Z]+)/)) === null || _c === void 0 ? void 0 : _c[1]) !== null && _d !== void 0 ? _d : 'matrix',
+                    latex: latexFor,
                     insert: function (rows, cols) {
                         // The consumed selection stays referenced on the cursor \u2014
                         // drop it or the next blur's endSelection() re-arms
@@ -14710,18 +14725,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                         // otherwise survive and make the next keydown's
                         // guardedTextareaSelect steal focus back to this field.
                         ctrlr.setTextareaSelection();
-                        var cells = Math.max(1, cols);
-                        // A replaced selection goes in the first cell only \u2014 the
-                        // remaining rows are empty.
-                        var empty = new Array(cells).fill('').join('&');
-                        var first = [fragLatex]
-                            .concat(new Array(cells - 1).fill(''))
-                            .join('&');
-                        ctrlr.writeLatex(open +
-                            [first]
-                                .concat(new Array(Math.max(0, rows - 1)).fill(empty))
-                                .join('\\\\') +
-                            close);
+                        ctrlr.writeLatex(latexFor(rows, cols));
                         var grid = cursor[L];
                         if (grid instanceof MathCommand)
                             grid.placeCursor(cursor);

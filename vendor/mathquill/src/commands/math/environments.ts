@@ -890,12 +890,29 @@ class Matrix extends CellGrid {
         ?.querySelector(':scope > .mq-latex-command-input-wrapper')
         ?.remove();
     };
+    // The full latex an insert would write — shared with the menu so
+    // it can render the grid while picking dimensions.
+    const latexFor = (rows: number, cols: number) => {
+      const cells = Math.max(1, cols);
+      // A replaced selection goes in the first cell only — the
+      // remaining rows are empty.
+      const empty = new Array(cells).fill('').join('&');
+      const first = [fragLatex]
+        .concat(new Array(cells - 1).fill(''))
+        .join('&');
+      return (
+        open +
+        [first].concat(new Array(Math.max(0, rows - 1)).fill(empty)).join('\\\\') +
+        close
+      );
+    };
     ctrlr.container.dispatchEvent(
       new CustomEvent('mq:matrix-request', {
         bubbles: true,
         detail: {
           env:
             open.match(/^\\begin\{([a-zA-Z]+)/)?.[1] ?? 'matrix',
+          latex: latexFor,
           insert: (rows: number, cols: number) => {
             // The consumed selection stays referenced on the cursor —
             // drop it or the next blur's endSelection() re-arms
@@ -910,20 +927,7 @@ class Matrix extends CellGrid {
             // otherwise survive and make the next keydown's
             // guardedTextareaSelect steal focus back to this field.
             ctrlr.setTextareaSelection();
-            const cells = Math.max(1, cols);
-            // A replaced selection goes in the first cell only — the
-            // remaining rows are empty.
-            const empty = new Array(cells).fill('').join('&');
-            const first = [fragLatex]
-              .concat(new Array(cells - 1).fill(''))
-              .join('&');
-            ctrlr.writeLatex(
-              open +
-                [first]
-                  .concat(new Array(Math.max(0, rows - 1)).fill(empty))
-                  .join('\\\\') +
-                close
-            );
+            ctrlr.writeLatex(latexFor(rows, cols));
             const grid = cursor[L] as MQNode;
             if (grid instanceof MathCommand) grid.placeCursor(cursor);
           },
