@@ -3313,17 +3313,21 @@ function seedDepVarArgs(ir: MathJson, scope: Scope): void {
   const walk = (n: MathJson): void => {
     if (!isArr(n)) return;
     const h = headOf(n);
-    if (h === 'D' && isStr(n[1])) add(n[1], n.slice(2).filter(isStr));
+    // A name is never a dependent of its own differentiation
+    // variable — `D(x,x)` is `diff(x, x)` = 1, not a function claim.
+    const varsOf = (name: MathJson, xs: MathJson[]) =>
+      xs.filter((v): v is string => isStr(v) && v !== name);
+    if (h === 'D' && isStr(n[1])) add(n[1], varsOf(n[1], n.slice(2)));
     else if (
       h === 'Apply' &&
       isArr(n[1]) &&
       headOf(n[1]) === 'Derivative' &&
       isStr(n[1][1])
     )
-      add(n[1][1], n.slice(2).filter(isStr));
+      add(n[1][1], varsOf(n[1][1], n.slice(2)));
     // A DepVar spec inside a Solve-family node declares the same list.
     else if (h === 'DepVar' && isStr(n[1]))
-      add(n[1], n.slice(2).filter(isStr));
+      add(n[1], varsOf(n[1], n.slice(2)));
     for (const c of n.slice(1)) walk(c);
   };
   walk(ir);

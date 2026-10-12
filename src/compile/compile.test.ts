@@ -1926,6 +1926,15 @@ describe('solver statement markers', () => {
     const out = compile('\\mathrm{solve}(x^2 - 1, x)');
     expect(out.cellLines[0].some((l) => l.includes('solve'))).toBe(true);
   });
+
+  it('differentiating a symbol by itself stays a plain derivative', () => {
+    // seedDepVarArgs must not claim `x` as a function of `x` — a name is
+    // never a dependent of its own differentiation variable.
+    const out = compile('x + \\frac{dx}{dx}');
+    expect(out.cellLines[0]).toContain('x = sp.Symbol("x")');
+    expect(out.cellLines[0]).toContain('x + sp.diff(x, x)');
+    expect(out.cellLines[0].join('\n')).not.toContain('x(x)');
+  });
 });
 
 describe('worksheet matrix tracking', () => {
