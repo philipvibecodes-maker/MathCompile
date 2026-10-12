@@ -137,7 +137,7 @@ const STATEMENT_CALL_HEADS = new Set(['solve', 'Solve', 'piecewise', 'Piecewise'
 // Set-valued operator heads — setish only when every operand is too
 // (Subsets/Supersets are predicates, not sets, so they don't appear here).
 const SETISH_OP_HEADS = new Set([
-  'Union', 'Intersection', 'SetMinus', 'Complement',
+  'Union', 'Intersection', 'SetMinus', 'Complement', 'CircleTimes',
 ]);
 
 // Heads that emit a Boolean — the only predicates ConditionSet accepts.
@@ -495,6 +495,12 @@ function matrixValuedNode(
     case 'Divide':
     case 'Power':
       return operands.some((a) => matrixValuedNode(a, isMatrixLeaf));
+    case 'CircleTimes':
+      // `u \times v` emits a vector when an operand is one — a matrix
+      // node or a bracket list (which wraps in sp.Matrix).
+      return operands.some(
+        (a) => matrixValuedNode(a, isMatrixLeaf) || isHead(a, 'List'),
+      );
     default:
       return false;
   }
@@ -609,6 +615,16 @@ class Emitter {
       case 'Divide':
       case 'Power':
         return operands.some((a) => this.concreteMatrix(a));
+      case 'CircleTimes':
+        // A cross always evaluates to a concrete Matrix once an operand
+        // is vector-like (MatrixExpr lowers through .as_explicit()).
+        return operands.some(
+          (a) =>
+            this.concreteMatrix(a) ||
+            this.matrixValued(a, true) ||
+            isHead(a, 'List') ||
+            (isStr(a) && this.scope.kinds.listNames.has(a)),
+        );
       default:
         return false;
     }
@@ -852,7 +868,7 @@ class Emitter {
     if (
       isHead(set, 'Power') &&
       this.isSetish(set[1]) &&
-      isHead(set[2], 'Multiply') &&
+      (isHead(set[2], 'Multiply') || isHead(set[2], 'CircleTimes')) &&
       (set[2] as MathJson[]).length === 3 &&
       (set[2] as MathJson[]).slice(1).every((e) => this.isPosInt(e))
     ) {
@@ -1292,6 +1308,58 @@ class Emitter {
           PREC_MUL,
         ];
       }
+      case 'CircleTimes': {
+        // `u \times v` — the cross product. latex.ts rewrites \times
+        // to \otimes pre-parse so CE keeps it distinct from \cdot and
+        // juxtaposition (a literal \otimes lands on the same head).
+        // Operand-typed like Norm: every operand setish emits the
+        // Cartesian `*` sets get from Multiply; a vector operand makes
+        // it a cross — .cross is a MatrixBase method, so bracket lists
+        // and list-bound names wrap in sp.Matrix and MatrixExpr lowers
+        // through .as_explicit() (MatrixSymbol has no .cross). Nothing
+        // vector-like: \times stays multiplication (`2 \times 3`).
+        if (args.every((a) => this.isSetish(a)))
+          return [
+            args.map((a) => this.emit(a, PREC_MUL)).join(' * '),
+            PREC_MUL,
+          ];
+        const crossArg = (n: MathJson): string | null => {
+          if (
+            isHead(n, 'List') ||
+            isHead(n, 'Tuple') ||
+            (isStr(n) && this.scope.kinds.listNames.has(n))
+          )
+            return `${this.sp}Matrix(${this.emit(n)})`;
+          // Bound to a Matrix literal — already concrete.
+          if (isStr(n) && this.scope.kinds.matrixNames.has(n))
+            return this.emit(n);
+          if (this.concreteMatrix(n)) return this.emit(n, PREC_ATOM);
+          if (this.matrixValued(n, true))
+            return `(${this.emit(n)}).as_explicit()`;
+          return null;
+        };
+        const texts = args.map(crossArg);
+        if (texts.every((t) => t === null))
+          return [
+            args.map((a) => this.emit(a, PREC_MUL)).join(' * '),
+            PREC_MUL,
+          ];
+        const parts = texts.map((t, i) => {
+          if (t !== null) return t;
+          const a = args[i] as MathJson;
+          this.scope.flag(
+            'error',
+            `cross product needs vectors — ${isStr(a) ? a : 'an operand'} is a scalar here`,
+          );
+          return this.emit(a);
+        });
+        return [
+          parts
+            .slice(1)
+            .reduce((acc, p) => `${acc}.cross(${p})`, parts[0] as string),
+          PREC_ATOM,
+        ];
+      }
       case 'Divide':
         // int-valued expressions divide to a Python float — keep them
         // exact as Rational (`10^6/3` -> Rational(10**6, 3)).
@@ -1558,7 +1626,7 @@ class Emitter {
           // Python and readable.
           const exp = set[2];
           const dims =
-            isHead(exp, 'Multiply') &&
+            (isHead(exp, 'Multiply') || isHead(exp, 'CircleTimes')) &&
             (exp as MathJson[]).slice(1).every((e) => this.isPosInt(e))
               ? (exp as MathJson[]).slice(1)
               : null;

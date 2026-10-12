@@ -131,6 +131,72 @@ const FIXTURES: {
     expectedPython: ["x, y = sp.symbols('x y')", '2 * x * y'],
   },
   {
+    // `u \times v` — the cross product. latex.ts rewrites \times to
+    // \otimes so CE keeps it distinct from \cdot: vector operands emit
+    // .cross(), and scalar \times stays multiplication.
+    latex: '[1,2,3] \\times [4,5,6]',
+    expectedIR: [
+      'CircleTimes',
+      ['List', 1, 2, 3],
+      ['List', 4, 5, 6],
+    ],
+    expectedPython: ['sp.Matrix([1, 2, 3]).cross(sp.Matrix([4, 5, 6]))'],
+  },
+  {
+    latex: 'u \\times v',
+    expectedIR: ['CircleTimes', 'u', 'v'],
+    expectedPython: ["u, v = sp.symbols('u v')", 'u * v'],
+  },
+  {
+    latex: '2 \\times 3',
+    expectedIR: ['CircleTimes', 2, 3],
+    expectedPython: ['2 * 3'],
+  },
+  {
+    // pmatrix column vectors — concrete .cross() directly on the
+    // emitted Matrix.
+    latex:
+      '\\begin{pmatrix}1\\\\2\\\\3\\end{pmatrix} \\times ' +
+      '\\begin{pmatrix}4\\\\5\\\\6\\end{pmatrix}',
+    expectedPython: [
+      'sp.Matrix([[1], [2], [3]]).cross(sp.Matrix([[4], [5], [6]]))',
+    ],
+  },
+  {
+    // A list-bound name wraps in sp.Matrix for .cross.
+    latex: 'u = [1,2,3] \\\\ u \\times [4,5,6]',
+    expectedPython: ['u = [1, 2, 3]', 'sp.Matrix(u).cross(sp.Matrix([4, 5, 6]))'],
+  },
+  {
+    // Set × set is the Cartesian product — same `*` Multiply emits.
+    latex: '\\mathbb{R} \\times \\mathbb{Z}',
+    expectedIR: ['CircleTimes', 'RealNumbers', 'Integers'],
+    expectedPython: ['sp.S.Reals * sp.S.Integers'],
+  },
+  {
+    // Symbolic vectors declared via \mathbb{R}^{3\times1} lower through
+    // .as_explicit() — MatrixSymbol has no .cross.
+    latex:
+      'u \\in \\mathbb{R}^{3\\times1} \\\\ v \\in \\mathbb{R}^{3\\times1} ' +
+      '\\\\ u \\times v',
+    expectedPython: [
+      'u = sp.MatrixSymbol("u", 3, 1)',
+      'v = sp.MatrixSymbol("v", 3, 1)',
+      'Element = sp.Function("Element")',
+      'MatrixSpace = sp.Function("MatrixSpace")',
+      'Element(u, MatrixSpace(sp.S.Reals, 3, 1))',
+      'Element(v, MatrixSpace(sp.S.Reals, 3, 1))',
+      '(u).as_explicit().cross((v).as_explicit())',
+    ],
+    issues: ['matrix space'],
+  },
+  {
+    // A scalar mixed into a cross is an error — the statement drops.
+    latex: 'u \\times [1,2,3]',
+    expectedPython: ['u = sp.Symbol("u")'],
+    issues: ['cross product needs vectors'],
+  },
+  {
     // `e` is Euler's constant (sp.E), never a Symbol.
     latex: 'e^x',
     expectedIR: ['Power', 'ExponentialE', 'x'],

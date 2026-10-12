@@ -739,6 +739,23 @@ export const NOTATION: Notation[] = [
     spellings: ['\\det(A)', '\\det A'],
     probes: [{ latex: '\\det(A)', expect: 'sp.Determinant(A)' }],
   },
+  {
+    name: 'CircleTimes',
+    heads: ['CircleTimes'],
+    commands: ['times', 'cross', 'otimes'],
+    spellings: ['u \\times v', 'u \\otimes v'],
+    probes: [
+      {
+        latex: '[1,2,3] \\times [4,5,6]',
+        expect: 'sp.Matrix([1, 2, 3]).cross(sp.Matrix([4, 5, 6]))',
+      },
+      { latex: '2 \\times 3', expect: '2 * 3' },
+    ],
+    note: '\\times lowers to \\otimes in latex.ts so CE keeps it '
+      + 'distinct from \\cdot/juxtaposition — codegen\'s CircleTimes '
+      + 'case is operand-typed: vectors -> .cross(), all-sets -> the '
+      + 'Cartesian *, scalars -> ordinary multiplication.',
+  },
   // `x'` parses to a distinct leaf symbol, not a Derivative head — the
   // spelling pair pins that both prime syntaxes mint the same leaf.
   {

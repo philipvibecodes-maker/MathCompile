@@ -152,6 +152,14 @@ Calculator and Python targets. A name that isn't built in, like
 | Eigenvalues | `\mathrm{eigenvals}` | \(\mathrm{eigenvals}(A)\) |
 | Eigenvectors | `\mathrm{eigenvects}` | \(\mathrm{eigenvects}(A)\) |
 | Kernel / null space | `\ker` | \(\ker A\) |
+| Cross product | `\times` between vectors | \(u \times v\) |
+
+`\times` is operand-typed: between vectors it is the cross product —
+bracket lists (`[1,2,3] \times [4,5,6]`), matrices (`\pmatrix`
+columns), and list- or matrix-bound names all count; a symbolic
+vector is declared with `u \in \mathbb{R}^{3\times1}`. Between sets it
+is the Cartesian product (`\mathbb{R} \times \mathbb{Z}`), and between
+scalars it stays multiplication (`2 \times 3`).
 
 ### Multi-line equations
 

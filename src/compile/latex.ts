@@ -309,6 +309,27 @@ export const LATEX_RULES: LatexRule[] = [
       ['x\\\\\\nabla y', 'x\\\\\\operatorname{grad} y'],
     ],
   },
+  {
+    name: 'times-cross',
+    why: '\\times is the cross product — CE folds it into Multiply '
+      + 'with \\cdot and juxtaposition, so it rewrites to \\otimes '
+      + '(CircleTimes) to stay distinct all the way to codegen, which '
+      + 'lowers vector operands to .cross(), all-set operands to the '
+      + 'Cartesian *, and keeps scalar \\times as multiplication. An '
+      + 'even backslash count before it is a row separator + literal '
+      + 'text, not the command.',
+    applies: /\\times(?![a-zA-Z])/,
+    rewrite: (s) =>
+      s.replace(/(?<!\\)((?:\\\\)*)\\times(?![a-zA-Z])/g, '$1\\otimes'),
+    tests: [
+      ['u \\times v', 'u \\otimes v'],
+      ['2 \\times 3', '2 \\otimes 3'],
+      ['\\mathbb{R}^{m\\times n}', '\\mathbb{R}^{m\\otimes n}'],
+      ['\\timestwo', '\\timestwo'],
+      ['x\\\\times y', 'x\\\\times y'],
+      ['x\\\\\\times y', 'x\\\\\\otimes y'],
+    ],
+  },
 ];
 
 const ruleByName = new Map(LATEX_RULES.map((r) => [r.name, r]));
@@ -366,6 +387,7 @@ export const PRE_PARSE_RULES = [
   'big-set-ops',
   'd-total-alias',
   'nabla-gradient',
+  'times-cross',
 ];
 
 // Display form for the output column: unwrapped like outputLatex, with

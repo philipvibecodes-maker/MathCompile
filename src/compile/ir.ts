@@ -480,7 +480,7 @@ const bigSetOps = (node: MathJson): MathJson => {
   if (!isArray(node)) return node;
   const h = head(node);
   const args = node.slice(1).map(bigSetOps) as MathJson[];
-  if (h !== 'InvisibleOperator' && h !== 'Multiply')
+  if (h !== 'InvisibleOperator' && h !== 'Multiply' && h !== 'CircleTimes')
     return [h, ...args] as MathJson;
   const markerAt = args.findIndex(
     (a) => a === "'mc-bigunion'" || a === "'mc-bigintersect'",
@@ -1947,7 +1947,9 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
         head(node[2]) === 'Error' &&
         isArray(node[2][2]) &&
         isString(node[2][2][1]) &&
-        node[2][2][1] === "'\\times'"
+        // `^{\times}` reads as `^{\otimes}` after latex.ts's times-cross
+        // rewrite; keep both for IR that bypasses parseCellLatex.
+        (node[2][2][1] === "'\\times'" || node[2][2][1] === "'\\otimes'")
       );
     },
     rewrite: (node) => {
