@@ -310,6 +310,32 @@ export const LATEX_RULES: LatexRule[] = [
     ],
   },
   {
+    name: 'times-cross',
+    why: '\\times is the cross product — CE folds it into Multiply '
+      + 'with \\cdot and juxtaposition, so it masquerades as \\circledast: '
+      + 'a real but effectively-unused CE infix that mints the '
+      + 'CircledAst head, which codegen lowers operand-typed: vectors '
+      + 'to .cross(), all-set operands to the Cartesian *, scalar '
+      + '\\times to multiplication. Literal \\otimes stays free for the '
+      + 'Kronecker product; literal \\circledast reads as \\times. '
+      + 'An even backslash count before it is a row separator + '
+      + 'literal text, not the command.',
+    applies: /\\times(?![a-zA-Z])/,
+    rewrite: (s) =>
+      s.replace(
+        /(?<!\\)((?:\\\\)*)\\times(?![a-zA-Z])/g,
+        '$1\\circledast',
+      ),
+    tests: [
+      ['u \\times v', 'u \\circledast v'],
+      ['2 \\times 3', '2 \\circledast 3'],
+      ['\\mathbb{R}^{m\\times n}', '\\mathbb{R}^{m\\circledast n}'],
+      ['\\timestwo', '\\timestwo'],
+      ['x\\\\times y', 'x\\\\times y'],
+      ['x\\\\\\times y', 'x\\\\\\circledast y'],
+    ],
+  },
+  {
     // Must run after nabla-gradient: its lookahead still needs the raw
     // \cdot to leave \nabla\cdot alone.
     name: 'cdot-dot',
@@ -393,6 +419,7 @@ export const PRE_PARSE_RULES = [
   'big-set-ops',
   'd-total-alias',
   'nabla-gradient',
+  'times-cross',
   'cdot-dot',
 ];
 

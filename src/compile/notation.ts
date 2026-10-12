@@ -890,6 +890,24 @@ export const NOTATION: Notation[] = [
     spellings: ['\\det(A)', '\\det A'],
     probes: [{ latex: '\\det(A)', expect: 'sp.Determinant(A)' }],
   },
+  {
+    name: 'Cross',
+    heads: ['CircledAst', 'Nabla'],
+    commands: ['times', 'cross', 'circledast'],
+    spellings: ['u \\times v'],
+    probes: [
+      {
+        latex: '[1,2,3] \\times [4,5,6]',
+        expect: 'sp.Matrix([1, 2, 3]).cross(sp.Matrix([4, 5, 6]))',
+      },
+      { latex: '2 \\times 3', expect: '2 * 3' },
+    ],
+    note: '\\times rewrites to \\circledast in latex.ts — the '
+      + 'CircledAst head keeps it distinct from \\cdot/juxtaposition '
+      + 'while literal \\otimes stays the Kronecker product. Codegen is '
+      + 'operand-typed: vectors -> .cross(), \\nabla\\times -> curl, '
+      + 'all-sets -> the Cartesian *, scalars -> multiplication.',
+  },
   // `x'` parses to a distinct leaf symbol, not a Derivative head — the
   // spelling pair pins that both prime syntaxes mint the same leaf.
   {

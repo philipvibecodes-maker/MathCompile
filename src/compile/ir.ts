@@ -492,7 +492,7 @@ const bigSetOps = (node: MathJson): MathJson => {
   if (!isArray(node)) return node;
   const h = head(node);
   const args = node.slice(1).map(bigSetOps) as MathJson[];
-  if (h !== 'InvisibleOperator' && h !== 'Multiply')
+  if (h !== 'InvisibleOperator' && h !== 'Multiply' && h !== 'CircleTimes')
     return [h, ...args] as MathJson;
   const markerAt = args.findIndex(
     (a) => a === "'mc-bigunion'" || a === "'mc-bigintersect'",
@@ -1409,7 +1409,7 @@ const ACCENT_SUFFIX: Record<string, string> = {
 // nabla-gradient latex rule leaves it alone before \cdot/\times);
 // inside a vector op it becomes the Nabla head so codegen can emit
 // divergence/curl. CircleMinus is the \cdot disguise; CircledAst the
-// \times one once the cross PR merges.
+// \times one.
 const isNablaError = (v: MathJson | undefined): boolean =>
   isArray(v) &&
   head(v) === 'Error' &&
@@ -2324,11 +2324,16 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
         node.length === 3 &&
         isString(node[1]) &&
         SET_LEAF.has(node[1]) &&
-        isArray(node[2]) &&
-        head(node[2]) === 'Error' &&
-        isArray(node[2][2]) &&
-        isString(node[2][2][1]) &&
-        node[2][2][1] === "'\\times'"
+        // `^{\times}` reads as an Error after latex.ts's times-cross
+        // rewrite mints `\circledast`; keep the raw \times/\otimes
+        // Error shapes for IR that bypasses parseCellLatex.
+        (isArray(node[2]) &&
+          head(node[2]) === 'Error' &&
+          isArray(node[2][2]) &&
+          isString(node[2][2][1]) &&
+          (node[2][2][1] === "'\\times'" ||
+            node[2][2][1] === "'\\otimes'" ||
+            node[2][2][1] === "'\\circledast'"))
       );
     },
     rewrite: (node) => {

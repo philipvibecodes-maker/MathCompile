@@ -164,17 +164,21 @@ Calculator and Python targets. A name that isn't built in, like
 | Diagonalization | `\mathrm{diagonalize}` | \(\mathrm{diagonalize}(A)\) |
 | Adjugate | `\mathrm{adjugate}` | \(\mathrm{adjugate}(A)\) |
 | Matrix exponential | `e^{A}` | \(e^{A}\) |
+| Cross product | `\times` between vectors | \(u \times v\) |
 | Dot product | `u \cdot v` | \(u \cdot v\) |
 | Divergence | `\nabla \cdot` then a vector field | \(\nabla \cdot F\) |
 | Elementwise product | `A \odot B` | \(A \odot B\) |
 | Kronecker product | `A \otimes B` | \(A \otimes B\) |
 | Direct sum (block diagonal) | `A \oplus B` | \(A \oplus B\) |
 
-The infix ops type themselves by operand: on scalars `\cdot`,
+The infix ops type themselves by operand: on scalars `\cdot`, `\times`,
 `\odot`, and `\otimes` are ordinary multiplication, on sets they
 emit the Cartesian product, and `\oplus` on sets is the symmetric
-difference. `\nabla \cdot F` differentiates a concrete vector field
-(`[x^2, y, z]`); on an opaque name it flags rather than guesses.
+difference. `\nabla \cdot F` and `\nabla \times F` differentiate a
+concrete vector field (`[x^2, y, z]`); on an opaque name they flag
+rather than guess. A symbolic vector operand is declared with
+`u \in \mathbb{R}^{3\times1}`; a list- or matrix-bound name already
+counts as one.
 
 ### Multi-line equations
 

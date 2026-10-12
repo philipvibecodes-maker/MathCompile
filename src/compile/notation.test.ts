@@ -226,7 +226,7 @@ describe('derived ir.ts views equal the replaced literals', () => {
         'call', 'MatrixMethod',
         'Integrate', 'Sum', 'Product', 'Limit', 'D', 'TotalD', 'Gradient',
         'Determinant', 'CircleMinus', 'CirclePlus', 'CircleTimes',
-        'Congruent', 'HadamardProduct', 'Nabla',
+        'CircledAst', 'Congruent', 'HadamardProduct', 'Nabla',
         'Sqrt', 'Root', 'Abs', 'Sign', 'Floor', 'Ceil', 'Min', 'Max',
         'Factorial', 'Gamma', 'Binomial', 'GCD', 'LCM', 'Mod',
         'Exp', 'Ln', 'Log',
