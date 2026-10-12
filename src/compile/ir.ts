@@ -1405,7 +1405,32 @@ const ACCENT_SUFFIX: Record<string, string> = {
 
 // Exported so tests can enumerate the folds (name-uniqueness and the
 // coverage probe in compile.test.ts) — not mutated by callers.
+// `\nabla` reaches CE as an unexpected-command Error (the
+// nabla-gradient latex rule leaves it alone before \cdot/\times);
+// inside a vector op it becomes the Nabla head so codegen can emit
+// divergence/curl. CircleMinus is the \cdot disguise; CircledAst the
+// \times one once the cross PR merges.
+const isNablaError = (v: MathJson | undefined): boolean =>
+  isArray(v) &&
+  head(v) === 'Error' &&
+  isArray(v[2]) &&
+  head(v[2]) === 'LatexString' &&
+  v[2][1] === "'\\nabla'";
+
 export const NORMALIZE_RULES: NormalizeRule[] = [
+  {
+    name: 'nabla-vector-op',
+    why: 'translate the \nabla Error operand in \nabla\\cdot/\\times into the Nabla head so codegen sees divergence/curl instead of an error',
+    when: (h, node) =>
+      (h === 'CircleMinus' || h === 'CircledAst') &&
+      (node as MathJson[]).slice(1).some(isNablaError),
+    rewrite: (node, ctx) => [
+      head(node),
+      ...(node as MathJson[])
+        .slice(1)
+        .map((a) => (isNablaError(a) ? (['Nabla'] as MathJson) : ctx.norm(a))),
+    ] as MathJson,
+  },
   {
     name: 'eval-bar',
     // \left. f \right|_{a}^{b}: CE emits the evaluation bar as

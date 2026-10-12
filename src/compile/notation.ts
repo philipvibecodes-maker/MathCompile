@@ -479,6 +479,53 @@ export const NOTATION: Notation[] = [
     wordOps: ['norm'],
     spellings: ['\\mathrm{norm}(A)', '\\operatorname{norm}(A)'],
   },
+  {
+    name: 'rref',
+    matrixMethod: 'rref()[0]',
+    wordOps: ['rref'],
+    spellings: ['\\mathrm{rref}(A)', '\\operatorname{rref}(A)'],
+    probes: [
+      {
+        latex: '\\mathrm{rref}(\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix})',
+        expect: '.rref()[0]',
+      },
+    ],
+    note: '.rref() returns (Matrix, pivot-cols) — the [0] keeps the '
+      + 'reduced matrix.',
+  },
+  {
+    name: 'charpoly',
+    matrixMethod: 'charpoly().as_expr()',
+    wordOps: ['charpoly'],
+    spellings: ['\\mathrm{charpoly}(A)', '\\operatorname{charpoly}(A)'],
+    note: '.charpoly() is a PurePoly; .as_expr() reads it as a '
+      + 'polynomial in lambda_.',
+  },
+  {
+    name: 'nullspace',
+    matrixMethod: 'nullspace()',
+    wordOps: ['nullspace'],
+    spellings: ['\\mathrm{nullspace}(A)', '\\operatorname{nullspace}(A)'],
+  },
+  {
+    name: 'columnspace',
+    matrixMethod: 'columnspace()',
+    wordOps: ['columnspace'],
+    spellings: ['\\mathrm{columnspace}(A)', '\\operatorname{columnspace}(A)'],
+  },
+  {
+    name: 'diagonalize',
+    matrixMethod: 'diagonalize()',
+    wordOps: ['diagonalize'],
+    spellings: ['\\mathrm{diagonalize}(A)', '\\operatorname{diagonalize}(A)'],
+    note: 'returns the (P, D) pair.',
+  },
+  {
+    name: 'adjugate',
+    matrixMethod: 'adjugate()',
+    wordOps: ['adjugate'],
+    spellings: ['\\mathrm{adjugate}(A)', '\\operatorname{adjugate}(A)'],
+  },
 
   // — constants and leaf sets —
   {
@@ -720,7 +767,72 @@ export const NOTATION: Notation[] = [
       preview: '\\nabla f',
     },
     note: '\\nabla/\\gradient lower to \\operatorname{grad} — '
-      + '\\nabla\\cdot/\\times/\\nabla^2 stay unsupported-command errors',
+      + '\\nabla\\cdot reads as divergence through the cdot-dot '
+      + 'disguise; \\times/\\nabla^2 stay unsupported-command errors',
+  },
+  {
+    name: 'Dot',
+    heads: ['CircleMinus', 'Nabla'],
+    commands: ['cdot'],
+    spellings: ['u \\cdot v'],
+    probes: [
+      {
+        latex: '[1,2,3] \\cdot [4,5,6]',
+        expect: 'sp.Matrix([1, 2, 3]).dot(sp.Matrix([4, 5, 6]))',
+      },
+      { latex: '2 \\cdot 3', expect: '2 * 3' },
+    ],
+    note: '\\cdot rewrites to \\ominus in latex.ts — the CircleMinus '
+      + 'head keeps it distinct from juxtaposition. Codegen is '
+      + 'operand-typed: vectors -> .dot(), \\nabla\\cdot -> divergence, '
+      + 'all-sets -> the Cartesian *, scalars -> multiplication.',
+  },
+  {
+    name: 'HadamardProduct',
+    heads: ['HadamardProduct'],
+    commands: ['odot'],
+    spellings: ['A \\odot B'],
+    probes: [
+      {
+        latex:
+          '\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix} \\odot ' +
+          '\\begin{pmatrix}5&6\\\\7&8\\end{pmatrix}',
+        expect: '.multiply_elementwise(',
+      },
+    ],
+    note: 'concrete matrices -> .multiply_elementwise(); MatrixExpr '
+      + '-> sp.HadamardProduct; scalars -> multiplication.',
+  },
+  {
+    name: 'KroneckerProduct',
+    heads: ['CircleTimes'],
+    commands: ['otimes'],
+    spellings: ['A \\otimes B'],
+    probes: [
+      {
+        latex: '[1,2,3] \\otimes [4,5,6]',
+        expect: 'sp.kronecker_product(sp.Matrix([1, 2, 3]), sp.Matrix([4, 5, 6]))',
+      },
+    ],
+    note: 'concrete -> sp.kronecker_product; MatrixExpr -> '
+      + 'sp.KroneckerProduct; scalars -> multiplication (a scalar '
+      + 'mixed into a kron wraps as Matrix([[s]])).',
+  },
+  {
+    name: 'DirectSum',
+    heads: ['CirclePlus'],
+    commands: ['oplus'],
+    spellings: ['A \\oplus B'],
+    probes: [
+      {
+        latex:
+          '\\begin{pmatrix}1\\\\2\\end{pmatrix} \\oplus ' +
+          '\\begin{pmatrix}3\\\\4\\end{pmatrix}',
+        expect: 'sp.diag(',
+      },
+    ],
+    note: 'matrices -> sp.diag (block diagonal); sets -> '
+      + 'sp.SymmetricDifference; anything else flags.',
   },
   {
     name: 'Def',

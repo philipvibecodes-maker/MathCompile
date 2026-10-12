@@ -157,6 +157,24 @@ Calculator and Python targets. A name that isn't built in, like
 | Eigenvalues | `\mathrm{eigenvals}` | \(\mathrm{eigenvals}(A)\) |
 | Eigenvectors | `\mathrm{eigenvects}` | \(\mathrm{eigenvects}(A)\) |
 | Kernel / null space | `\ker` | \(\ker A\) |
+| Reduced row echelon form | `\mathrm{rref}` | \(\mathrm{rref}(A)\) |
+| Characteristic polynomial | `\mathrm{charpoly}` | \(\mathrm{charpoly}(A)\) |
+| Null-space basis | `\mathrm{nullspace}` | \(\mathrm{nullspace}(A)\) |
+| Column-space basis | `\mathrm{columnspace}` | \(\mathrm{columnspace}(A)\) |
+| Diagonalization | `\mathrm{diagonalize}` | \(\mathrm{diagonalize}(A)\) |
+| Adjugate | `\mathrm{adjugate}` | \(\mathrm{adjugate}(A)\) |
+| Matrix exponential | `e^{A}` | \(e^{A}\) |
+| Dot product | `u \cdot v` | \(u \cdot v\) |
+| Divergence | `\nabla \cdot` then a vector field | \(\nabla \cdot F\) |
+| Elementwise product | `A \odot B` | \(A \odot B\) |
+| Kronecker product | `A \otimes B` | \(A \otimes B\) |
+| Direct sum (block diagonal) | `A \oplus B` | \(A \oplus B\) |
+
+The infix ops type themselves by operand: on scalars `\cdot`,
+`\odot`, and `\otimes` are ordinary multiplication, on sets they
+emit the Cartesian product, and `\oplus` on sets is the symmetric
+difference. `\nabla \cdot F` differentiates a concrete vector field
+(`[x^2, y, z]`); on an opaque name it flags rather than guesses.
 
 ### Multi-line equations
 
@@ -282,9 +300,10 @@ real SymPy calls — `integrate`, `diff`, `Sum`/`Product`, `limit`
 | Vector | `\vec{v}` | \(\vec{v}\) |
 
 `\partial_{x}u` compiles to the partial derivative like the `\frac`
-form. `\nabla` and `\Delta` are display notation — the compiler reads
-`\nabla` as an ordinary symbol, so `\nabla f` stays symbolic rather
-than becoming a gradient call.
+form. `\nabla \cdot F` compiles to divergence on a concrete vector
+field; otherwise `\nabla` and `\Delta` are display notation — the
+compiler reads `\nabla` as an ordinary symbol, so `\nabla f` stays
+symbolic rather than becoming a gradient call.
 
 ### Topology
 

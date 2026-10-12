@@ -309,6 +309,33 @@ export const LATEX_RULES: LatexRule[] = [
       ['x\\\\\\nabla y', 'x\\\\\\operatorname{grad} y'],
     ],
   },
+  {
+    // Must run after nabla-gradient: its lookahead still needs the raw
+    // \cdot to leave \nabla\cdot alone.
+    name: 'cdot-dot',
+    why: '\\cdot is the dot product — CE folds it into Multiply with '
+      + 'juxtaposition, so it masquerades as \\ominus: a real but '
+      + 'effectively-unused CE infix that mints the CircleMinus head, '
+      + 'which codegen lowers operand-typed: vectors to .dot(), '
+      + '\\nabla\\cdot to divergence, all-set operands to the '
+      + 'Cartesian *, scalar \\cdot to multiplication. Literal '
+      + '\\ominus reads as \\cdot. An even backslash count before it '
+      + 'is a row separator + literal text, not the command.',
+    applies: /\\cdot(?![a-zA-Z])/,
+    rewrite: (s) =>
+      s.replace(
+        /(?<!\\)((?:\\\\)*)\\cdot(?![a-zA-Z])/g,
+        '$1\\ominus',
+      ),
+    tests: [
+      ['u \\cdot v', 'u \\ominus v'],
+      ['2 \\cdot 3', '2 \\ominus 3'],
+      ['\\mathbb{R}^{m\\cdot n}', '\\mathbb{R}^{m\\ominus n}'],
+      ['\\cdots', '\\cdots'],
+      ['x\\\\cdot y', 'x\\\\cdot y'],
+      ['x\\\\\\cdot y', 'x\\\\\\ominus y'],
+    ],
+  },
 ];
 
 const ruleByName = new Map(LATEX_RULES.map((r) => [r.name, r]));
@@ -366,6 +393,7 @@ export const PRE_PARSE_RULES = [
   'big-set-ops',
   'd-total-alias',
   'nabla-gradient',
+  'cdot-dot',
 ];
 
 // Display form for the output column: unwrapped like outputLatex, with

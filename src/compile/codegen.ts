@@ -138,7 +138,7 @@ const STATEMENT_CALL_HEADS = new Set(['solve', 'Solve', 'piecewise', 'Piecewise'
 // Set-valued operator heads — setish only when every operand is too
 // (Subsets/Supersets are predicates, not sets, so they don't appear here).
 const SETISH_OP_HEADS = new Set([
-  'Union', 'Intersection', 'SetMinus', 'Complement',
+  'Union', 'Intersection', 'SetMinus', 'Complement', 'CircleTimes',
 ]);
 
 // Heads that emit a Boolean — the only predicates ConditionSet accepts.
@@ -515,6 +515,12 @@ function matrixValuedNode(
     case 'Divide':
     case 'Power':
       return operands.some((a) => matrixValuedNode(a, isMatrixLeaf));
+    case 'CircleTimes':
+    case 'CirclePlus':
+    case 'HadamardProduct':
+      // Kronecker product, direct sum and elementwise product of
+      // matrices are matrices.
+      return operands.some((a) => matrixValuedNode(a, isMatrixLeaf));
     default:
       return false;
   }
@@ -615,6 +621,9 @@ class Emitter {
    * exist there but not on sympy MatrixExpr. */
   private concreteMatrix(node: MathJson | undefined): boolean {
     if (isHead(node, 'Matrix') || this.identityDim(node)) return true;
+    // A matrix-bound name evaluates to a concrete Matrix — method
+    // calls (.inv(), .T, .rref()…) apply to `A + B` compositions too.
+    if (isStr(node)) return this.scope.kinds.matrixNames.has(node);
     if (!isArr(node)) return false;
     const operands = node.slice(1) as MathJson[];
     switch (headOf(node)) {
@@ -629,9 +638,58 @@ class Emitter {
       case 'Divide':
       case 'Power':
         return operands.some((a) => this.concreteMatrix(a));
+      case 'CircleTimes':
+      case 'CirclePlus':
+      case 'HadamardProduct':
+        return operands.some((a) => this.concreteMatrix(a));
       default:
         return false;
     }
+  }
+
+  /** Matrix-ness of an operand for the product ops: `t` is the raw
+   * emission (class calls like KroneckerProduct/HadamardProduct take
+   * it), `abstract` marks MatrixExpr — method-call surfaces
+   * (.dot()/.multiply_elementwise()/sp.diag) need
+   * `(${t}).as_explicit()` first. null when n isn't matrix-like. */
+  private matOperand(
+    n: MathJson,
+  ): { t: string; abstract: boolean } | null {
+    if (
+      isHead(n, 'List') ||
+      isHead(n, 'Tuple') ||
+      (isStr(n) && this.scope.kinds.listNames.has(n))
+    )
+      return { t: `${this.sp}Matrix(${this.emit(n)})`, abstract: false };
+    if (isStr(n) && this.scope.kinds.matrixNames.has(n))
+      return { t: this.emit(n), abstract: false };
+    if (this.identityDim(n))
+      return { t: this.emit(n), abstract: false };
+    if (this.concreteMatrix(n))
+      return { t: this.emit(n, PREC_ATOM), abstract: false };
+    if (this.matrixValued(n, true))
+      return { t: this.emit(n, PREC_ATOM), abstract: true };
+    return null;
+  }
+
+  /** matOperand text for method-call surfaces — .dot() etc. are
+   * MatrixBase-only so MatrixExpr lowers through .as_explicit(). */
+  private vectorOperand(n: MathJson): string | null {
+    const p = this.matOperand(n);
+    return p === null ? null : p.abstract ? `(${p.t}).as_explicit()` : p.t;
+  }
+
+  /** Component count of a vector literal — List length, or a Matrix
+   * node's rows×cols. null for names and opaque expressions. */
+  private vectorLen(n: MathJson): number | null {
+    if (isHead(n, 'List')) return n.length - 1;
+    if (isHead(n, 'Matrix')) {
+      const rows = n.slice(1) as MathJson[];
+      if (rows.length === 0 || !rows.every((r) => isHead(r, 'List')))
+        return null;
+      return rows.length * ((rows[0] as MathJson[]).length - 1);
+    }
+    return null;
   }
 
   /** A matrix body's `m, n` dims (as MatrixSymbol args) — literal
@@ -872,7 +930,9 @@ class Emitter {
     if (
       isHead(set, 'Power') &&
       this.isSetish(set[1]) &&
-      isHead(set[2], 'Multiply') &&
+      (isHead(set[2], 'Multiply') ||
+        isHead(set[2], 'CircleMinus') ||
+        isHead(set[2], 'CircleTimes')) &&
       (set[2] as MathJson[]).length === 3 &&
       (set[2] as MathJson[]).slice(1).every((e) => this.isPosInt(e))
     ) {
@@ -1312,6 +1372,196 @@ class Emitter {
           PREC_MUL,
         ];
       }
+      case 'CircleMinus': {
+        // `u \cdot v` — the dot product. latex.ts rewrites \cdot to
+        // \ominus so CE keeps it distinct from juxtaposition (a
+        // literal \ominus lands on the same head). Operand-typed like
+        // Norm: every operand setish emits the Cartesian `*`; a vector
+        // operand makes it .dot() — MatrixBase-only, so lists wrap in
+        // sp.Matrix and MatrixExpr lowers through .as_explicit().
+        // Nothing vector-like: \cdot stays multiplication.
+        // `\nabla \cdot F` is the divergence — the Error operand the
+        // nabla-gradient rule leaves becomes the Nabla head.
+        if (isHead(args[0], 'Nabla')) {
+          const F = args[1];
+          // Emit F first so its symbols mint before any flag drops the
+          // statement (the mint lines survive like other flagged cells).
+          const f = `(${this.emit(F)})`;
+          const len = this.vectorLen(F);
+          const concrete =
+            len !== null ||
+            (isStr(F) &&
+              (this.scope.kinds.listNames.has(F) ||
+                this.scope.kinds.matrixNames.has(F))) ||
+            this.concreteMatrix(F);
+          if (!concrete) {
+            this.scope.flag(
+              'error',
+              'divergence needs a concrete vector field — \\nabla \\cdot F',
+            );
+            return ['None', PREC_ATOM];
+          }
+          // len null (bound names) assumes the usual R^3 field.
+          const n = len ?? 3;
+          if (n < 2 || n > 3) {
+            this.scope.flag(
+              'error',
+              'divergence needs a 2- or 3-vector field — \\nabla \\cdot F',
+            );
+            return ['None', PREC_ATOM];
+          }
+          const c = ['x', 'y', 'z'];
+          const term = (i: number) =>
+            `${this.sp}diff(${f}[${i}], ${this.sp}Symbol('${c[i]}'))`;
+          return [
+            Array.from({ length: n }, (_, i) => term(i)).join(' + '),
+            PREC_ADD,
+          ];
+        }
+        if (args.some((a) => isHead(a, 'Nabla')))
+          this.scope.flag(
+            'error',
+            'divergence reads \\nabla \\cdot F — \\nabla must be the left operand',
+          );
+        if (args.every((a) => this.isSetish(a)))
+          return [
+            args.map((a) => this.emit(a, PREC_MUL)).join(' * '),
+            PREC_MUL,
+          ];
+        const dtexts = args.map((a) => this.vectorOperand(a));
+        if (dtexts.every((t) => t === null))
+          return [
+            args.map((a) => this.emit(a, PREC_MUL)).join(' * '),
+            PREC_MUL,
+          ];
+        if (dtexts.every((t) => t !== null))
+          return [
+            (dtexts as string[])
+              .slice(1)
+              .reduce((acc, p) => `${acc}.dot(${p})`, dtexts[0] as string),
+            PREC_ATOM,
+          ];
+        // A scalar mixed into a dot is ordinary multiplication —
+        // `u \cdot [1,2,3]` reads as scalar-times-vector, so vector
+        // operands still wrap in sp.Matrix for the `*` broadcast.
+        return [
+          dtexts
+            .map((t, i) => t ?? this.emit(args[i], PREC_MUL))
+            .join(' * '),
+          PREC_MUL,
+        ];
+      }
+      case 'HadamardProduct': {
+        // `A \odot B` — the elementwise (Hadamard/Schur) product. CE
+        // already wraps incompatible scalars in Error; surviving
+        // operands get the same operand typing: all-setish -> `*`,
+        // concrete -> .multiply_elementwise(), MatrixExpr ->
+        // sp.HadamardProduct, scalars -> multiplication.
+        if (args.every((a) => this.isSetish(a)))
+          return [
+            args.map((a) => this.emit(a, PREC_MUL)).join(' * '),
+            PREC_MUL,
+          ];
+        const hp = args.map((a) => this.matOperand(a));
+        if (hp.every((p) => p === null))
+          return [
+            args.map((a) => this.emit(a, PREC_MUL)).join(' * '),
+            PREC_MUL,
+          ];
+        if (hp.some((p) => p === null)) {
+          const a = args[hp.findIndex((p) => p === null)] as MathJson;
+          this.scope.flag(
+            'error',
+            `elementwise product needs matrices — ${isStr(a) ? a : 'an operand'} is a scalar here`,
+          );
+          return ['None', PREC_ATOM];
+        }
+        const hparts = hp as { t: string; abstract: boolean }[];
+        if (hparts.some((p) => p.abstract))
+          return [
+            `${this.sp}HadamardProduct(${hparts.map((p) => p.t).join(', ')})`,
+            PREC_ATOM,
+          ];
+        return [
+          hparts
+            .slice(1)
+            .reduce(
+              (acc, p) => `${acc}.multiply_elementwise(${p.t})`,
+              hparts[0].t,
+            ),
+          PREC_ATOM,
+        ];
+      }
+      case 'CircleTimes': {
+        // `A \otimes B` — the Kronecker product. All-setish emits the
+        // Cartesian `*`; scalars multiply; a scalar mixed into a
+        // matrix kron wraps as Matrix([[s]]); MatrixExpr operands go
+        // to the unevaluated sp.KroneckerProduct class, concrete ones
+        // to variadic sp.kronecker_product.
+        if (args.every((a) => this.isSetish(a)))
+          return [
+            args.map((a) => this.emit(a, PREC_MUL)).join(' * '),
+            PREC_MUL,
+          ];
+        const kp = args.map((a) => this.matOperand(a));
+        if (kp.every((p) => p === null))
+          return [
+            args.map((a) => this.emit(a, PREC_MUL)).join(' * '),
+            PREC_MUL,
+          ];
+        const kparts = kp.map((p, i) =>
+          p !== null
+            ? p
+            : { t: `${this.sp}Matrix([[${this.emit(args[i])}]])`, abstract: false },
+        );
+        if (kparts.some((p) => p.abstract))
+          return [
+            `${this.sp}KroneckerProduct(${kparts.map((p) => p.t).join(', ')})`,
+            PREC_ATOM,
+          ];
+        return [
+          `${this.sp}kronecker_product(${kparts.map((p) => p.t).join(', ')})`,
+          PREC_ATOM,
+        ];
+      }
+      case 'CirclePlus': {
+        // `A \oplus B` — the direct sum: block-diagonal sp.diag on
+        // matrices (scalars count as 1x1 blocks), SymmetricDifference
+        // on sets. Anything else flags — \oplus has no scalar reading.
+        if (args.every((a) => this.isSetish(a)))
+          return [
+            (args as MathJson[]).slice(1).reduce<string>(
+              (acc, a) =>
+                `${this.sp}SymmetricDifference(${acc}, ${this.emit(a)})`,
+              this.emit(args[0]),
+            ),
+            PREC_ATOM,
+          ];
+        const pp = args.map((a) => this.matOperand(a));
+        if (pp.every((p) => p === null)) {
+          this.scope.flag(
+            'error',
+            'direct sum needs matrices or sets — \\oplus has no scalar reading',
+          );
+          return ['None', PREC_ATOM];
+        }
+        // diag takes scalars as 1x1 blocks and needs concrete operands
+        // (MatrixExpr has no .tolist) — as_explicit() bridges both.
+        const pparts = pp.map((p, i) =>
+          p !== null
+            ? p.abstract
+              ? `(${p.t}).as_explicit()`
+              : p.t
+            : this.emit(args[i], PREC_MUL),
+        );
+        return [`${this.sp}diag(${pparts.join(', ')})`, PREC_ATOM];
+      }
+      case 'Nabla':
+        // Stray \nabla — only survives inside CircleMinus/CircledAst
+        // via the nabla-vector-op rule; anywhere else is the
+        // unsupported-command it was.
+        this.scope.flag('error', '\\nabla needs a \\cdot F or \\times F operand');
+        return ['None', PREC_ATOM];
       case 'Divide':
         // int-valued expressions divide to a Python float — keep them
         // exact as Rational (`10^6/3` -> Rational(10**6, 3)).
@@ -1336,6 +1586,19 @@ class Emitter {
             `${this.sp}Complement(${this.sp}S.UniversalSet, ${this.emit(args[0])})`,
             PREC_ATOM,
           ];
+        // `e^{A}` — the matrix exponential. Concrete matrices carry
+        // .exp() directly; MatrixExpr lowers through .as_explicit()
+        // (sympy ships no unevaluated MatrixExp class).
+        if (args[0] === 'ExponentialE') {
+          const me = this.matOperand(args[1]);
+          if (me !== null)
+            return [
+              me.abstract
+                ? `(${me.t}).as_explicit().exp()`
+                : `(${me.t}).exp()`,
+              PREC_ATOM,
+            ];
+        }
         // `3^{-1}` — Python `**` on int operands yields a float before
         // sympy sees it (`Rational(3**-1, 2)` -> a binary fraction);
         // `sp.Pow` keeps the exact reciprocal.
@@ -1578,7 +1841,9 @@ class Emitter {
           // Python and readable.
           const exp = set[2];
           const dims =
-            isHead(exp, 'Multiply') &&
+            (isHead(exp, 'Multiply') ||
+              isHead(exp, 'CircleMinus') ||
+              isHead(exp, 'CircleTimes')) &&
             (exp as MathJson[]).slice(1).every((e) => this.isPosInt(e))
               ? (exp as MathJson[]).slice(1)
               : null;
@@ -2957,12 +3222,37 @@ class Emitter {
         // raises TypeError — flag + honest stub.
         const mm = MATRIX_METHODS[name];
         if (mm !== undefined && args.length === 2) {
-          if (isHead(args[1], 'Matrix') || this.matrixRef(args[1]))
+          if (isHead(args[1], 'Matrix') || this.matrixRef(args[1])) {
+            // A matrixDims name (p ∈ ℝ^{m×n}) mints a MatrixSymbol —
+            // MatrixExpr has only det/inv/T, so the rest route
+            // through .as_explicit() (trace uses the abstract class
+            // like the matrixValued tier below).
+            if (isStr(args[1]) && !this.concreteMatrix(args[1])) {
+              if (name === 'trace' || name === 'Trace' || name === 'tr')
+                return [
+                  `${this.sp}Trace(${this.emit(args[1])})`,
+                  PREC_ATOM,
+                ];
+              if (
+                name === 'inverse' ||
+                name === 'transpose' ||
+                name === 'det' ||
+                name === 'Determinant'
+              )
+                return [`(${this.emit(args[1])}).${mm}`, PREC_ATOM];
+              return [
+                `(${this.emit(args[1])}).as_explicit().${mm}`,
+                PREC_ATOM,
+              ];
+            }
             return [`(${this.emit(args[1])}).${mm}`, PREC_ATOM];
+          }
           if (this.matrixValued(args[1])) {
-            // A matrix-valued expression (`\mathrm{tr}(A + B)`): only
-            // trace/inverse/transpose exist on sympy MatrixExpr — the
-            // rest need every matrix leaf to be a literal.
+            // A matrix-valued expression (`\mathrm{tr}(A + B)`):
+            // trace maps to the abstract sp.Trace; inverse/transpose
+            // are MatrixExpr methods; everything else lowers through
+            // .as_explicit() so concrete-only methods work on
+            // MatrixExpr too (`(u).as_explicit().rref()`).
             if (name === 'trace' || name === 'Trace' || name === 'tr')
               return [
                 `${this.sp}Trace(${this.emit(args[1])})`,
@@ -2974,11 +3264,10 @@ class Emitter {
               this.concreteMatrix(args[1])
             )
               return [`(${this.emit(args[1])}).${mm}`, PREC_ATOM];
-            this.scope.flag(
-              'note',
-              `${name} needs a concrete matrix — the argument is a symbolic matrix expression`,
-            );
-            return [`${this.fn(name)}(${this.emit(args[1])})`, PREC_ATOM];
+            return [
+              `(${this.emit(args[1])}).as_explicit().${mm}`,
+              PREC_ATOM,
+            ];
           }
           this.scope.flag(
             'note',

@@ -119,9 +119,10 @@ const FIXTURES: {
     expectedPython: ["x, a, b = sp.symbols('x a b')", 'sp.integrate(x, (x, a, b))'],
   },
   {
-    // Term order is preserved: Multiply(a, 2), not canonical Multiply(2, a).
+    // Term order is preserved: CircleMinus(a, 2) emits `a * 2` —
+    // scalar \cdot stays multiplication, operands in user order.
     latex: 'a \\cdot 2',
-    expectedIR: ['Multiply', 'a', 2],
+    expectedIR: ['CircleMinus', 'a', 2],
     expectedPython: ['a = sp.Symbol("a")', 'a * 2'],
   },
   {
@@ -323,11 +324,12 @@ const FIXTURES: {
     ],
   },
   {
-    // `\nabla \cdot F` and `\nabla^2` are divergence/laplacian, not the
-    // gradient — flagged honestly rather than guessed.
+    // `\nabla^2` is laplacian, not the gradient — flagged honestly
+    // rather than guessed. `\nabla \cdot F` on an opaque name can't
+    // diff the field either; a concrete vector field works.
     latex: '\\nabla \\cdot F',
     expectedPython: ['F = sp.Symbol("F")'],
-    issues: ['unsupported command'],
+    issues: ['divergence needs a concrete vector field'],
   },
   {
     // A non-name "callee" is juxtaposed factors, not a call — emitting
@@ -1159,7 +1161,7 @@ const FIXTURES: {
     // times row matrix, not u·a·b·c.
     latex: 'u \\cdot (a,b,c)',
     expectedPython: [
-      "u, a, b, c = sp.symbols('u a b c')",
+      "a, b, c, u = sp.symbols('a b c u')",
       'u * sp.Matrix([[a, b, c]])',
     ],
   },
@@ -1433,21 +1435,19 @@ const FIXTURES: {
   },
   {
     // det/trace/inverse/transpose exist on sympy MatrixExpr, so they
-    // emit on symbolic matrix expressions too; rank needs every matrix
-    // leaf literal — flag + stub on declared names.
+    // emit on symbolic matrix expressions too; rank joins them —
+    // concreteMatrix sees through matrix-bound names.
     latex:
       'A = \\begin{pmatrix} 1 & 0 \\\\ 0 & 1 \\end{pmatrix} \\\\ B = \\begin{pmatrix} 2 & 0 \\\\ 0 & 2 \\end{pmatrix} \\\\ \\det(A+B) \\\\ \\mathrm{tr}(A+B) \\\\ \\mathrm{inverse}(A+B) \\\\ \\mathrm{transpose}(A+B) \\\\ \\mathrm{rank}(A+B)',
     expectedPython: [
-      'rank = sp.Function("rank")',
       'A = sp.Matrix([[1, 0], [0, 1]])',
       'B = sp.Matrix([[2, 0], [0, 2]])',
       '(A + B).det()',
       'sp.Trace((A + B))',
       '(A + B).inv()',
       '(A + B).T',
-      'rank(A + B)',
+      '(A + B).rank()',
     ],
-    issues: ['rank needs a concrete matrix'],
   },
   {
     // The \tr alias stores \mathrm{tr} — same lowering as \mathrm{trace}.
