@@ -13379,6 +13379,80 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         return new DefAlias('\\text{def}', h('span', { class: 'mq-text-mode' }, [h.text('def')]), 'def', 'def');
     };
     //======================================================================
+    //  \solve / \dsolve / \pdesolve \u2014 insertion aliases for the
+    //  \text{\u2026} solver statement markers
+    //======================================================================
+    // Each expands to its real \text{\u2026} marker plus a trailing space \u2014 the
+    // statement prefix the compiler reads for equation solving (\text{solve}
+    // -> sp.solve/sp.solveset), ODEs (\text{dsolve} -> sp.dsolve), and PDEs
+    // (\text{pdesolve} -> sp.pdsolve) \u2014 the same insertion-time expansion
+    // \def uses. Pasted latex serializes as \text{\u2026} on the next save.
+    var SolveAlias = /** @class */ (function (_super) {
+        __extends(SolveAlias, _super);
+        function SolveAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        SolveAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{solve}\\ ');
+        };
+        return SolveAlias;
+    }(MQSymbol));
+    LatexCmds.solve = function () {
+        return new SolveAlias('\\text{solve}', h('span', { class: 'mq-text-mode' }, [h.text('solve')]), 'solve', 'solve equations');
+    };
+    var DSolveAlias = /** @class */ (function (_super) {
+        __extends(DSolveAlias, _super);
+        function DSolveAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        DSolveAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{dsolve}\\ ');
+        };
+        return DSolveAlias;
+    }(MQSymbol));
+    LatexCmds.dsolve = function () {
+        return new DSolveAlias('\\text{dsolve}', h('span', { class: 'mq-text-mode' }, [h.text('dsolve')]), 'dsolve', 'solve an ODE');
+    };
+    var OdeAlias = /** @class */ (function (_super) {
+        __extends(OdeAlias, _super);
+        function OdeAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        OdeAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{ode}\\ ');
+        };
+        return OdeAlias;
+    }(MQSymbol));
+    LatexCmds.ode = function () {
+        return new OdeAlias('\\text{ode}', h('span', { class: 'mq-text-mode' }, [h.text('ode')]), 'ode', 'solve an ODE');
+    };
+    var PDSolveAlias = /** @class */ (function (_super) {
+        __extends(PDSolveAlias, _super);
+        function PDSolveAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        PDSolveAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{pdesolve}\\ ');
+        };
+        return PDSolveAlias;
+    }(MQSymbol));
+    LatexCmds.pdesolve = function () {
+        return new PDSolveAlias('\\text{pdesolve}', h('span', { class: 'mq-text-mode' }, [h.text('pdesolve')]), 'pdesolve', 'solve a PDE');
+    };
+    var PdeAlias = /** @class */ (function (_super) {
+        __extends(PdeAlias, _super);
+        function PdeAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        PdeAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{pde}\\ ');
+        };
+        return PdeAlias;
+    }(MQSymbol));
+    LatexCmds.pde = function () {
+        return new PdeAlias('\\text{pde}', h('span', { class: 'mq-text-mode' }, [h.text('pde')]), 'pde', 'solve a PDE');
+    };
+    //======================================================================
     //  \tr \u2014 insertion alias for \mathrm{tr}
     //======================================================================
     // Typing `\tr` expands to \mathrm{tr} \u2014 the word-op form the compiler

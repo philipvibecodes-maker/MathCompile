@@ -733,6 +733,45 @@ export const NOTATION: Notation[] = [
       + 'marker',
   },
   {
+    name: 'Solve',
+    heads: ['Solve'],
+    commands: ['solve'],
+    probes: [
+      {
+        latex: '\\text{solve} x^2 = 1 \\text{ for } x > 0',
+        expect: 'sp.solveset(sp.Eq(x**2, 1), x, domain=sp.Interval.open(0, sp.oo))',
+      },
+    ],
+    note: '\\solve is an insertion alias for the \\text{solve} '
+      + 'statement marker',
+  },
+  {
+    name: 'DSolve',
+    heads: ['DSolve'],
+    commands: ['dsolve', 'ode'],
+    probes: [
+      {
+        latex: '\\text{dsolve} \\frac{dy}{dx} = y, y(0)=1',
+        expect: 'sp.dsolve(sp.Eq(sp.diff(y(x), x), y(x)), y(x), ics={y(0): 1})',
+      },
+    ],
+    note: '\\dsolve/\\ode are insertion aliases for the \\text{dsolve}/'
+      + '\\text{ode} statement markers',
+  },
+  {
+    name: 'PDESolve',
+    heads: ['PDESolve'],
+    commands: ['pdesolve', 'pde'],
+    probes: [
+      {
+        latex: '\\text{pdesolve} u_x + u_t = 0',
+        expect: 'sp.pdsolve(sp.Eq(sp.diff(u(x, t), x) + sp.diff(u(x, t), t), 0), u(x, t))',
+      },
+    ],
+    note: '\\pdesolve/\\pde are insertion aliases for the '
+      + '\\text{pdesolve}/\\text{pde} statement markers',
+  },
+  {
     name: 'Determinant',
     heads: ['Determinant'],
     commands: ['det'],
@@ -873,8 +912,11 @@ const STRUCTURAL_HEADS = [
   'And', 'Or', 'Not', 'Which', 'Piecewise',
   // 'Condition' is a Set literal's predicate child
   'Condition', 'Complement', 'Difference',
-  // statement-level IR
+  // statement-level IR — 'DepVar' and 'IC' are the child shapes inside
+  // DSolve/PDESolve statements (unknowns-to-solve and initial
+  // conditions); they only ever appear as statement children.
   'Assign', 'Declare', 'Block', 'WhereBlock', 'Function',
+  'DepVar', 'IC',
   // verbatim \python{...} source — codegen emits it uninterpreted
   'PythonSource',
   // structural helpers — 'call' marks a node already escaped by the

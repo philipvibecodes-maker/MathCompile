@@ -1751,7 +1751,182 @@ const FIXTURES: {
       'sp.Lambda(sp.Symbol("a"), f(g(sp.Symbol("a"))))',
     ],
   },
+  // ---- \text{solve}/\text{dsolve}/\text{pdesolve} statements --------
+  {
+    latex: '\\text{solve} x^2 = 1',
+    expectedIR: ['Solve', ['Equal', ['Power', 'x', 2], 1], ['List']],
+    expectedPython: ['x = sp.Symbol("x")', 'sp.solve(sp.Eq(x**2, 1))'],
+  },
+  {
+    // Trailing bare symbols are the variables to solve for.
+    latex: '\\text{solve} x^2 - 5x + 6 = 0, x',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.solve(sp.Eq(x**2 - 5 * x + 6, 0), x)',
+    ],
+  },
+  {
+    // A comma list of equations is a system.
+    latex: '\\text{solve} x + y = 3, x - y = 1, x, y',
+    expectedPython: [
+      "x, y = sp.symbols('x y')",
+      'sp.solve([sp.Eq(x + y, 3), sp.Eq(x - y, 1)], [x, y])',
+    ],
+  },
+  {
+    // `\text{for} x > 0` reads as a solveset domain.
+    latex: '\\text{solve} x^2 = 1 \\text{ for } x > 0',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.solveset(sp.Eq(x**2, 1), x, domain=sp.Interval.open(0, sp.oo))',
+    ],
+  },
+  {
+    latex: '\\text{solve} x^2 = 1 \\text{ for } x \\in \\mathbb{R}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.solveset(sp.Eq(x**2, 1), x, domain=sp.S.Reals)',
+    ],
+  },
+  {
+    // The unknown is inferred from the derivative — `y` is a function
+    // of `x` everywhere, including the bare `y` on the rhs.
+    latex: '\\text{dsolve} \\frac{dy}{dx} = y',
+    expectedIR: [
+      'DSolve',
+      ['Equal', ['D', 'y', 'x'], 'y'],
+      ['List', ['DepVar', 'y', 'x']],
+      ['List'],
+    ],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+      'sp.dsolve(sp.Eq(sp.diff(y(x), x), y(x)), y(x))',
+    ],
+  },
+  {
+    // `y(0)=1` with a dependent `y` is an initial condition, not an eq.
+    latex: '\\text{dsolve} \\frac{dy}{dx} = y, y(0)=1',
+    expectedIR: [
+      'DSolve',
+      ['Equal', ['D', 'y', 'x'], 'y'],
+      ['List', ['DepVar', 'y', 'x']],
+      ['List', ['IC', 'y', 'Nothing', 0, 1]],
+    ],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+      'sp.dsolve(sp.Eq(sp.diff(y(x), x), y(x)), y(x), ics={y(0): 1})',
+    ],
+  },
+  {
+    // Prime notation on a dependent name rewrites to a D node.
+    latex: "\\text{dsolve} y^{\\prime\\prime} + y = 0",
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+      'sp.dsolve(sp.Eq(sp.diff(y(x), x, 2) + y(x), 0), y(x))',
+    ],
+  },
+  {
+    latex: '\\text{dsolve} \\dot{x} + x = 0, x(0)=1',
+    expectedPython: [
+      't = sp.Symbol("t")',
+      'x = sp.Function("x")',
+      'sp.dsolve(sp.Eq(sp.diff(x(t), t) + x(t), 0), x(t), ics={x(0): 1})',
+    ],
+  },
+  {
+    // An ODE system: comma-separated equations, several unknowns.
+    latex: '\\text{dsolve} \\frac{dy}{dx} = z, \\frac{dz}{dx} = -y, y(0)=1',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+      'z = sp.Function("z")',
+      'sp.dsolve([sp.Eq(sp.diff(y(x), x), z(x)), sp.Eq(sp.diff(z(x), x), -y(x))], [y(x), z(x)], ics={y(0): 1})',
+    ],
+  },
+  {
+    latex: '\\text{dsolve} \\begin{cases} \\frac{dy}{dx}=z \\\\ \\frac{dz}{dx}=y \\end{cases}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+      'z = sp.Function("z")',
+      'sp.dsolve([sp.Eq(sp.diff(y(x), x), z(x)), sp.Eq(sp.diff(z(x), x), y(x))], [y(x), z(x)])',
+    ],
+  },
+  {
+    // `f^{(k)}(pt)=rhs` — a derivative initial condition.
+    latex: '\\text{dsolve} \\frac{d^2y}{dx^2} = y, y^{\\prime}(0)=0',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+      'sp.dsolve(sp.Eq(sp.diff(sp.diff(y(x), x), x), y(x)), y(x), ics={sp.diff(y(x), x, 1).subs(x, 0): 0})',
+    ],
+  },
+  {
+    latex: '\\text{ode} \\dot{x} = -x',
+    expectedPython: [
+      't = sp.Symbol("t")',
+      'x = sp.Function("x")',
+      'sp.dsolve(sp.Eq(sp.diff(x(t), t), -x(t)), x(t))',
+    ],
+  },
+  {
+    // A `u(x,t)` spec declares the unknown's signature — every
+    // derivative site applies it (u(x,t) at both sites, and the target).
+    latex: '\\text{pdesolve} \\frac{\\partial u}{\\partial x} + \\frac{\\partial u}{\\partial t} = 0, u(x,t)',
+    expectedPython: [
+      "x, t = sp.symbols('x t')",
+      'u = sp.Function("u")',
+      'sp.pdsolve(sp.Eq(sp.diff(u(x, t), x) + sp.diff(u(x, t), t), 0), u(x, t))',
+    ],
+  },
+  {
+    // Subscript derivative notation — `u_x`/`u_t` infer the unknown u
+    // and its variables (first-seen order).
+    latex: '\\text{pdesolve} u_x + u_t = 0',
+    expectedIR: [
+      'PDESolve',
+      ['Equal', ['Add', ['D', 'u', 'x'], ['D', 'u', 't']], 0],
+      ['List', ['DepVar', 'u', 'x', 't']],
+      ['List'],
+    ],
+    expectedPython: [
+      "x, t = sp.symbols('x t')",
+      'u = sp.Function("u")',
+      'sp.pdsolve(sp.Eq(sp.diff(u(x, t), x) + sp.diff(u(x, t), t), 0), u(x, t))',
+    ],
+  },
 ];
+
+describe('solver statement markers', () => {
+  const compile = (latex: string) =>
+    compileWorksheet([{ json: parseCellLatex(latex) }], 'python', {
+      importAll: false,
+    });
+
+  it('a marker with no equation flags an error', () => {
+    const out = compile('\\text{solve}');
+    expect(
+      out.issues.some((i) => i.message.includes('needs an equation')),
+    ).toBe(true);
+  });
+
+  it('\\text{ode} and \\text{pde} are aliases for dsolve/pdesolve', () => {
+    const ir = normalizeIR(
+      parseCellLatex('\\text{ode} \\frac{dx}{dt} = x'),
+    ).ir;
+    expect(Array.isArray(ir) && ir[0]).toBe('DSolve');
+    const pir = normalizeIR(parseCellLatex('\\text{pde} u_t = 0')).ir;
+    expect(Array.isArray(pir) && pir[0]).toBe('PDESolve');
+  });
+
+  it('a bare \\text{solve} call still works — \\mathrm{solve}(eq, x)', () => {
+    const out = compile('\\mathrm{solve}(x^2 - 1, x)');
+    expect(out.cellLines[0].some((l) => l.includes('solve'))).toBe(true);
+  });
+});
 
 describe('worksheet matrix tracking', () => {
   const cells = (...latex: string[]) =>
