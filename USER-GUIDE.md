@@ -45,6 +45,9 @@ right after a letter becomes a subscript:
 | Constants and Greek | `pi`, `theta`, `infty` | \(\pi\), \(\theta\), \(\infty\) |
 | Derivative operator | `derivative` | \(\frac{d}{d}\) — caret lands in the denominator |
 | Function definition | `def` | \(\text{def}\ f(x)\) — the def marker (see *Output*) |
+| Solve equations | `solve` | \(\text{solve}\) — the solve marker |
+| Solve an ODE | `dsolve` | \(\text{dsolve}\) — the dsolve marker |
+| Solve a PDE | `pdesolve` | \(\text{pdesolve}\) — the pdesolve marker |
 | Auto-subscript | `x2` | \(x_2\) |
 
 Operator names like `sin`, `lim`, and `det` stay upright and space
@@ -368,6 +371,34 @@ is `x(t)` differentiated once. `\mathcal{L}` is notation only.
 `\partial_{t}u` compiles to the partial derivative, like the `\frac`
 form. The `\nabla`, `\Delta`, divergence, and curl spellings are
 display notation — no vector-calculus semantics behind them.
+
+### Solving equations
+
+A statement that opens with `\text{solve}`, `\text{dsolve}` (or
+`\text{ode}`), or `\text{pdesolve}` (or `\text{pde}`) compiles to the
+matching SymPy solver — type `solve`, `dsolve`, `pdesolve` in Smart
+mode, or `\solve`, `\dsolve`, `\pdesolve`, `\ode`, `\pde` as commands.
+
+| You write | Emits |
+| --- | --- |
+| `\text{solve} x^2 = 1` | `sp.solve(sp.Eq(x**2, 1))` |
+| `\text{solve} x^2 = 1, x` | `sp.solve(sp.Eq(x**2, 1), x)` — trailing symbols name the variables |
+| `\text{solve} x+y=3, x-y=1, x, y` | `sp.solve([…], [x, y])` — a comma list is a system |
+| `\text{solve} x^2 = 1 \text{ for } x>0` | `sp.solveset(…, domain=sp.Interval.open(0, sp.oo))` |
+| `\text{dsolve} \frac{dy}{dx} = y` | `sp.dsolve(sp.Eq(sp.diff(y(x), x), y(x)), y(x))` |
+| `\text{dsolve} … , y(0)=1` | `ics={y(0): 1}` — `y(0)=1` / `y'(0)=0` are initial conditions |
+| `\text{pdesolve} u_x + u_t = 0` | `sp.pdsolve(…, u(x, t))` |
+
+- The unknown is inferred from the derivative — `\frac{dy}{dx}` makes
+  `y` a function of `x` throughout the statement (a bare `y` emits
+  `y(x)`). A `u(x,t)` spec declares the signature explicitly.
+- `y'`/`y''` work inside a dsolve equation (default variable `x`),
+  and `u_x`/`u_{xx}`/`u_{xt}` subscripts are partial derivatives.
+- A `\text{dsolve}` comma list is an ODE system
+  (`sp.dsolve([eqs], [y(x), z(x)])`); `\text{pdesolve}` takes a
+  single equation — SymPy's `pdsolve` is first-order only, so
+  higher-order PDEs like the heat equation come back as a SymPy
+  `NotImplementedError` rather than a wrong answer.
 
 ### Combinatorics
 

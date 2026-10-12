@@ -172,7 +172,8 @@ plus generated `arc`/`h`/`arh`/`arch` variants of
 `src/editor/attach-field.ts` sets `SMART_AUTO_COMMANDS`:
 
 ```
-int iint antid sum sqrt prod lim pi infty theta derivative def
+int iint antid sum sqrt prod lim pi phi infty theta derivative def
+nabla gradient solve dsolve pdesolve
 ```
 
 These complete to the real command without a backslash when smart mode
@@ -201,3 +202,30 @@ reference multiplies), upright word names (`\mathrm{foo}(x)`,
 (`\sin(x)`, `\sin^{-1}(x)` → `asin`), `f'(x)`, `f^{(2)}(x)` (nth
 derivative), `(x \mapsto x^2)(3)`, and names bound by `\text{def}`/
 `f := x \mapsto …` in arithmetic position (`f + 1` → `f(x) + 1`).
+
+## Solver statements
+
+Like `\text{def}`, a leading `\text{solve}`, `\text{dsolve}` /
+`\text{ode}`, or `\text{pdesolve}` / `\text{pde}` marks the whole
+statement — `src/compile/ir.ts` strips the marker before CE parses
+the body, then lowers it to a `Solve`/`DSolve`/`PDESolve` head. The
+`\solve`, `\dsolve`, `\pdesolve`, `\ode`, `\pde` commands are
+insertion aliases (same shape as `\def`).
+
+```
+\text{solve} x^2 = 1                          →   sp.solve(sp.Eq(x**2, 1))
+\text{solve} x^2 = 1, x                       →   sp.solve(sp.Eq(x**2, 1), x)
+\text{solve} x^2 = 1 \text{ for } x > 0       →   sp.solveset(eq, x, domain=Interval.open(0, oo))
+\text{dsolve} dy/dx = y, y(0)=1               →   sp.dsolve(eq, y(x), ics={y(0): 1})
+\text{pdesolve} u_x + u_t = 0, u(x,t)         →   sp.pdsolve(eq, u(x, t))
+```
+
+Trailing bare symbols after the equations name the variables to solve
+for; a comma list of equations is a system; `eq \text{ for } cond`
+reads the condition as a `solveset` domain. Inside dsolve/pdesolve the
+unknown's signature is inferred from the derivative sites (first-seen
+order) or declared by a `u(x,t)` spec — every bare mention and every
+`D`/`Derivative` site then emits the applied form `y(x)`/`u(x,t)`
+consistently, `y'`/`y''` rewrite to `D` nodes, `u_x`/`u_{xx}`/`u_{xt}`
+subscripts are partial derivatives, and `f(0)=1`/`f'(0)=0` items are
+initial conditions (`ics={…}`).
