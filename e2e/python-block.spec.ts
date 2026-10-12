@@ -89,6 +89,25 @@ test('Enter inserts a newline in the source, not a displaylines row', async ({
   expect(lines).toBe(2);
 });
 
+test('the block gets no hasCursor wash or inset shadow', async ({ page }) => {
+  await openPythonBlock(page);
+  const block = pythonBlock(page);
+  // An empty block is .mq-empty — it still shows no slot box.
+  const styleOf = () =>
+    block.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { bg: cs.backgroundColor, shadow: cs.boxShadow };
+    });
+  expect((await styleOf()).bg).toBe('rgba(0, 0, 0, 0)');
+  await cell(page, 0).pressSequentially('x=1', { delay: 20 });
+  // The caret is inside, so the block carries .mq-hasCursor — the class
+  // stays (focus/aria hooks), only the wash + gloss shadow are gone.
+  await expect(block).toHaveClass(/mq-hasCursor/);
+  const { bg, shadow } = await styleOf();
+  expect(bg).toBe('rgba(0, 0, 0, 0)');
+  expect(shadow).toBe('none');
+});
+
 test('keywords and strings get CSS Highlight ranges', async ({ page }) => {
   await openPythonBlock(page);
   await cell(page, 0).pressSequentially('def f(x):return "s"', { delay: 20 });
