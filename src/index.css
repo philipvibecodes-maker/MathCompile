@@ -1603,14 +1603,15 @@ body {
 /* Slot box while the caret is inside a block — always for an empty
    block, and for a non-empty one only when the command hides its input
    boundary (font/text wrappers: .mq-font/.mq-bf/.mq-text-mode).
+   \python is exempt — its delimiters already mark the editable region.
    Mirrors the MATHCOMPILE rule in mathquill's math.less. */
-:root[data-theme='dark'] .mq-math-mode .mq-empty,
+:root[data-theme='dark'] .mq-math-mode .mq-empty:not(.mq-python),
 :root[data-theme='dark']
   .mq-math-mode
-  .mq-hasCursor:has(> .mq-cursor:only-child):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input),
+  .mq-hasCursor:has(> .mq-cursor:only-child):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):not(.mq-python),
 :root[data-theme='dark']
   .mq-math-mode
-  .mq-hasCursor:has(> .mq-cursor):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):is(.mq-font, .mq-bf, .mq-text-mode) {
+  .mq-hasCursor:has(> .mq-cursor):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):is(.mq-font, .mq-bf, .mq-text-mode):not(.mq-python) {
   background: rgba(255, 255, 255, 0.22);
 }
 
@@ -1624,7 +1625,7 @@ body {
   border-color: var(--border);
 }
 
-:root[data-theme='dark'] .mq-math-mode .mq-text-mode.mq-hasCursor {
+:root[data-theme='dark'] .mq-math-mode .mq-text-mode.mq-hasCursor:not(.mq-python) {
   box-shadow: inset #888 0 0.1em 0.2em;
 }
 
