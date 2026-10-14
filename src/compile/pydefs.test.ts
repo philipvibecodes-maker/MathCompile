@@ -48,6 +48,33 @@ describe('collectPyFns', () => {
     const r = collectPyFns([py('def solve(x):\n    return x')]);
     expect(r.notes.some((n) => n.message.includes('built-in'))).toBe(true);
   });
+
+  it('notes an alias whose call form injects extra operands', () => {
+    // \pm(x) parses as Measurement(0, x) — the user's parens never map
+    // one-to-one onto the def's params, so every call would misfire.
+    const r = collectPyFns([
+      py('# @latex \\pm\ndef goo(x):\n    return x + 2'),
+    ]);
+    expect(r.fns.get('Measurement')?.ident).toBe('goo');
+    expect(
+      r.notes.some((n) =>
+        n.message.includes('expands to Measurement(0, x)'),
+      ),
+    ).toBe(true);
+  });
+
+  it('accepts a multi-param def called through a clean \\mathrm name', () => {
+    const r = collectPyFns([py('def f(a, b):\n    return a')]);
+    expect(r.notes).toEqual([]);
+    // …and the Tuple splat calls it with both args.
+    const out = compileCellsForCalc(
+      [py('def f(a, b):\n    return a'), math('\\mathrm{f}(a,b)')],
+      { importAll: false },
+    );
+    expect(out.cells[1].statements[0].code).toBe(
+      'clean_and_simplify(f(a, b))',
+    );
+  });
 });
 
 describe('python-def calls in math cells', () => {

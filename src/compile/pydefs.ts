@@ -91,22 +91,34 @@ function aliasName(latex: string): string | undefined {
   return undefined;
 }
 
-// Does `<latex>(x)` actually reach codegen's registry lookup? Known
-// heads (Sin, Sum, …) never become `call` nodes; call-tier names the
-// codegen claims (sp.<name> builtins, matrix word-ops, the special-cased
-// names in SHADOWED_CALL_NAMES) never reach the user-function branch.
-function reachable(latex: string, ceName: string): boolean {
+// Does `<latex>(x)` actually reach codegen's registry lookup as a
+// clean call? Known heads (Sin, Sum, …) never become `call` nodes;
+// call-tier names the codegen claims (sp.<name> builtins, matrix
+// word-ops, the special-cased names in SHADOWED_CALL_NAMES) never
+// reach the user-function branch. And the call must be exactly
+// `name(x)` — `\pm(x)` parses to `Measurement(0, x)`, an extra operand
+// CE injects, so the user's parens never map one-to-one onto the def's
+// params. Returns the probe's arg list, undefined when unreachable.
+function probeCall(latex: string, ceName: string): MathJson[] | undefined {
   const probe = normalizeIR(parseCellLatex(`${latex}(x)`)).ir;
-  return (
-    Array.isArray(probe) &&
+  return Array.isArray(probe) &&
     probe[0] === 'call' &&
     probe[1] === ceName &&
     !SHADOWED_CALL_NAMES.has(ceName) &&
     !SP_BUILTIN_CALL.has(ceName) &&
     CALL_RENAMES[ceName] === undefined &&
     !MATRIX_WORD_OPS.has(ceName)
-  );
+    ? probe.slice(2)
+    : undefined;
 }
+
+// Render a probe arg list as python-call text for the note message —
+// `Measurement(0, x)`-style. JSON.stringify handles the leaf shapes
+// (numbers, 'x' strings) without a serializer.
+const callText = (name: string, args: MathJson[]): string =>
+  `${name}(${args
+    .map((a) => (typeof a === 'string' ? a : JSON.stringify(a)))
+    .join(', ')})`;
 
 interface ScannedDef {
   name: string;
@@ -204,10 +216,19 @@ export function collectPyFns(cells: readonly { json?: MathJson }[]): PyRegistry 
               severity: 'note',
               message: `${latex} is annotated for both ${prev.ident} and ${def.name} — the later def wins`,
             });
-          if (!reachable(latex, ceName))
+          const probe = probeCall(latex, ceName);
+          if (probe === undefined)
             cellNotes.push({
               severity: 'note',
               message: `${latex}(…) resolves to a SymPy built-in, not ${def.name} — give it a different # @latex name`,
+            });
+          else if (!(probe.length === 1 && probe[0] === 'x'))
+            // `L(x)` must be exactly `name(x)` — `\pm(x)` expands to
+            // `Measurement(0, x)`, so the parens never map cleanly onto
+            // the def's params.
+            cellNotes.push({
+              severity: 'note',
+              message: `${latex}(x) expands to ${callText(ceName, probe)}, not ${def.name}(x) — give it a different # @latex name`,
             });
         }
       }
