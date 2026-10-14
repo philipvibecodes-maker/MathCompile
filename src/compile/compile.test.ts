@@ -2852,11 +2852,7 @@ describe('\\python{...} source blocks', () => {
 
   it('statement-ending bodies still echo the source', () => {
     // keyword-ending, assignment-ending, and suite-member endings
-    for (const body of [
-      'x = 1\ny = 2',
-      'def f(x):\n    return x + 1',
-      'if True:\n    y = 1',
-    ]) {
+    for (const body of ['x = 1\ny = 2', 'if True:\n    y = 1']) {
       const out = compileCellForCalc({
         json: parseCellLatex(`\\python{${body}}`),
       });
@@ -2864,6 +2860,34 @@ describe('\\python{...} source blocks', () => {
         `clean_and_simplify(${JSON.stringify(body)})`,
       );
     }
+  });
+
+  it('def-only sources exec silently — the defs never echo', () => {
+    for (const body of [
+      'def f(x):\n    return x + 1',
+      'def f(x):\n    return x + 1\n\ndef g(x):\n    return x * 2',
+      'f = lambda x: x + 1',
+      '# @latex \\mathcal{F}\ndef f(x):\n    return x',
+      '@deco\ndef f(x):\n    return x',
+    ]) {
+      const out = compileCellForCalc({
+        json: parseCellLatex(`\\python{${body}}`),
+      });
+      expect(out.statements).toEqual([{ code: body, silent: true }]);
+    }
+  });
+
+  it('a mixed source echoes only its non-def statements', () => {
+    const body = 'import math\ndef f(x):\n    return math.floor(x)';
+    const out = compileCellForCalc({
+      json: parseCellLatex(`\\python{${body}}`),
+    });
+    expect(out.statements).toEqual([
+      {
+        code: body,
+        display: `clean_and_simplify(${JSON.stringify('import math')})`,
+      },
+    ]);
   });
 
   it('an empty \\python{} parses to no statement at all', () => {

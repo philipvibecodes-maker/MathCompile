@@ -3688,6 +3688,9 @@ interface StatementOut {
    * echoes the definition itself, so the shown program drops its
    * `e = …` capture line even in the plumbing view. */
   defines?: boolean;
+  /** Execs for side effects only (a defs-only PythonSource) — the
+   * calculator runs it but produces no result row. */
+  silent?: boolean;
 }
 
 interface CellBody {
@@ -4038,6 +4041,61 @@ const PY_STMT_LINE_RE =
 // `=` that isn't part of ==, !=, <=, >=, :=, +=, **=, … — assignment
 // lines exec but aren't eval'able expressions.
 const PY_ASSIGN_RE = /(?<![=<>!:+\-*/%&|^~@])=(?![=>])/;
+
+// `def`/`async def` blocks (decorators included), `name = lambda` binds,
+// and `# @latex` annotation comments are definitions — worksheet inputs,
+// not results — so they never echo as a result row. The rest of the
+// source still echoes per the REPL convention; an empty remainder means
+// the cell only binds functions and evaluates silently.
+const PY_DEF_LINE_RE = /^(?:async[ \t]+)?def[ \t]/;
+const PY_LAMBDA_ASSIGN_RE =
+  /^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*[ \t]*(?::[^=\n]+)?=[ \t]*lambda\b/;
+const PY_LATEX_NOTE_RE = /^#[ \t]*@?latex\b/;
+
+function pythonSourceSansDefs(code: string): string {
+  const kept: string[] = [];
+  // `dropping` marks lines inside a def region (decorators, signature,
+  // suite, and the blank/comment run that follows it). `cont` is an open
+  // bracket/backslash continuation — those lines belong to whichever
+  // statement opened them.
+  let dropping = false;
+  let cont = false;
+  let depth = 0;
+  for (const raw of code.split('\n')) {
+    const line = raw.trim();
+    if (cont) {
+      for (const c of raw) {
+        if (c === '(' || c === '[' || c === '{') depth++;
+        else if (c === ')' || c === ']' || c === '}') depth--;
+      }
+      cont = depth > 0 || line.endsWith('\\');
+      if (!dropping) kept.push(raw);
+      continue;
+    }
+    if (line === '' || line.startsWith('#')) {
+      if (!dropping && !PY_LATEX_NOTE_RE.test(line)) kept.push(raw);
+      continue;
+    }
+    if (/^\s/.test(raw)) {
+      // Indented lines are suite members of the open region.
+      if (!dropping) kept.push(raw);
+      continue;
+    }
+    // A fresh top-level statement ends any open def suite.
+    dropping =
+      line.startsWith('@') ||
+      PY_DEF_LINE_RE.test(line) ||
+      PY_LAMBDA_ASSIGN_RE.test(line);
+    if (!dropping) kept.push(raw);
+    depth = 0;
+    for (const c of raw) {
+      if (c === '(' || c === '[' || c === '{') depth++;
+      else if (c === ')' || c === ']' || c === '}') depth--;
+    }
+    cont = depth > 0 || line.endsWith('\\');
+  }
+  return kept.join('\n');
+}
 
 function trailingPythonExpr(code: string): string | undefined {
   const lines = code.split('\n');
@@ -4397,12 +4455,19 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
   // `\python{ ... }` — verbatim user source. It execs in the python
   // target's program or the calculator's shared namespace. When the
   // last line is an expression, the row displays its value (REPL
-  // lane — `\python{f(9)}` shows 10); statement-ending bodies echo the
-  // source that ran.
+  // lane — `\python{f(9)}` shows 10). Function defs are inputs, not
+  // results: a defs-only source execs silently, and a mixed source
+  // echoes only its non-def statements.
   if (h === 'PythonSource') {
     const code = isStr(node[1]) ? node[1] : '';
     if (code.trim() === '') return { lines: [] };
-    return { lines: [code], display: trailingPythonExpr(code) ?? JSON.stringify(code) };
+    const trailing = trailingPythonExpr(code);
+    if (trailing !== undefined)
+      return { lines: [code], display: trailing };
+    const rest = pythonSourceSansDefs(code).trim();
+    return rest === ''
+      ? { lines: [code], silent: true }
+      : { lines: [code], display: JSON.stringify(rest) };
   }
   if (h === 'Block' || h === 'WhereBlock')
     return {
@@ -4660,6 +4725,10 @@ export interface CalcStatement {
    * program never inlines its `e = <display>` capture line, even in
    * the plumbing view (the display just echoes the definition). */
   defines?: boolean;
+  /** Execs for side effects only (a defs-only python source) — the
+   * worker binds the names and returns a marker row the client drops,
+   * so no result row shows. */
+  silent?: boolean;
   /** Set when the statement itself failed to emit — reported as an
    * error row in place so the cell keeps written order. */
   error?: string;
@@ -4760,11 +4829,12 @@ function compileCellInScope(
       code:
         out.calcLines !== undefined
           ? out.calcLines.join('\n')
-          : out.display === undefined && out.lines.length === 1
+          : out.display === undefined && !out.silent && out.lines.length === 1
             ? calcEval(out.lines[0])
             : out.lines.join('\n'),
       display: out.display === undefined ? undefined : calcEval(out.display),
       defines: out.defines,
+      silent: out.silent,
       error,
       // Line anchors only matter where an error points back at input.
       ...(error !== undefined ? { line } : {}),
