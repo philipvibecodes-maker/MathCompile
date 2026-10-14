@@ -23,6 +23,7 @@ import {
   type NormalizeOptions,
 } from './ir';
 import { CALC_RUNTIME_PY } from './calc-runtime';
+import { collectPyFns, type PyFnEntry } from './pydefs';
 // The name tables below are derived views over the notation registry —
 // each name lives once in src/compile/notation.ts.
 import {
@@ -224,7 +225,26 @@ class Scope {
      * collides. Each indefinite integral takes and reserves the next
      * free capital. */
     constNames: Set<string>;
+    /** `functions` entries that point at a user python def (python
+     * cell / \python block), not a minted `sp.Function` — decl emission
+     * skips them and a math-side claim (Assign/Def of the same name)
+     * removes the mark so its own decl emits. */
+    pyBacked: Set<string>;
   };
+  /** The worksheet's python-function registry (python cells +
+   *  `\python{}` blocks — see pydefs.ts). `fns` maps a CE call name to
+   *  the def's ident; `usedSrcs` records which source snippets this
+   *  scope's emission touched so a standalone cell script can inline
+   *  the defs it calls; `warned` dedups the call-above-def note. */
+  readonly py: {
+    fns: Map<string, PyFnEntry>;
+    usedSrcs: Set<number>;
+    warned: Set<string>;
+  };
+  /** 0-based worksheet index of the cell currently emitting — the
+   *  registry's `cell` compares against it for the call-above-def
+   *  note. -1 when the scope isn't positioned (unused). */
+  cellIdx: number;
   /** Value-kind typing — what a bound name's value IS. Same
    * worksheet-vs-cell lifetime as `decls`. */
   readonly kinds: {
@@ -277,6 +297,7 @@ class Scope {
     issues: Issue[],
     cellIssues: Issue[][],
     cell: number,
+    pyFns: Map<string, PyFnEntry> = new Map(),
   ) {
     this.qualified = qualified;
     this.decls = { declared, declaredFns, defined: new Set() };
@@ -290,7 +311,10 @@ class Scope {
       lambdaBound: new Set(),
       emitting: new Set(),
       constNames: new Set(),
+      pyBacked: new Set(),
     };
+    this.py = { fns: pyFns, usedSrcs: new Set(), warned: new Set() };
+    this.cellIdx = -1;
     this.kinds = {
       matrixNames,
       setNames: new Set(),
@@ -362,6 +386,9 @@ class Scope {
   claimFunction(name: string, params: MathJson[] = []): void {
     this.decls.defined.add(name);
     this.emit.functions.set(name, pyIdent(name));
+    // A math-side def of a py-backed name wins — its own
+    // `sp.Function`/def decl must emit (pyBacked names emit none).
+    this.emit.pyBacked.delete(name);
     if (params.length > 0) this.emit.fnArgs.set(name, params);
   }
 
@@ -394,9 +421,33 @@ class Scope {
    * defined value (a defined non-declaredFn name isn't callable and
    * can't be differentiated — an ODE unknown is both). */
   claimDepVar(name: string, args: MathJson[]): void {
-    if (!this.emit.functions.has(name))
-      this.emit.functions.set(name, pyIdent(name));
+    if (!this.emit.functions.has(name)) {
+      // A python-def'd name differentiated as `D(f,x)` applies the real
+      // callable — record it py-backed so no `sp.Function` decl emits.
+      const ent = this.py.fns.get(name);
+      this.emit.functions.set(name, ent?.ident ?? pyIdent(name));
+      if (ent !== undefined) this.notePyUse(name, ent);
+    }
     this.noteDepVar(name, args);
+  }
+
+  /** Record a use of a python-cell function: mark its source snippet
+   *  for injection into this cell's standalone script (python target;
+   *  skipped for a same-cell `\python{}` block, which emits its own
+   *  source), and flag when the def sits below the call — sequential
+   *  targets (the calculator's shared namespace, the merged program)
+   *  won't have it bound yet. The note dedups per (cell, name). */
+  notePyUse(name: string, ent: PyFnEntry): void {
+    if (ent.cell !== this.cellIdx) this.py.usedSrcs.add(ent.src);
+    this.emit.pyBacked.add(name);
+    if (ent.cell <= this.cellIdx) return;
+    const key = `${this.cellIdx}:${name}`;
+    if (this.py.warned.has(key)) return;
+    this.py.warned.add(key);
+    this.flag(
+      'note',
+      `"${ent.ident}" is defined in python cell ${ent.cell + 1} — it must sit above this cell for the call to evaluate`,
+    );
   }
 
   /** Bind `name` to an assigned value — the whole transition in one
@@ -823,7 +874,16 @@ class Emitter {
     if (this.scope.emit.functions.has(name)) {
       const ident = this.scope.emit.functions.get(name)!;
       const argNodes = this.scope.emit.fnArgs.get(name);
-      if (argNodes === undefined || this.scope.emit.emitting.has(name))
+      if (
+        argNodes === undefined ||
+        this.scope.emit.emitting.has(name) ||
+        // A python-def'd name IS a callable — the bare operand emits the
+        // function object, not `f(<args recorded elsewhere>)` (that
+        // applied form exists for UndefinedFunction stubs, which can't
+        // sympify bare; depVars still need it — `f` means `f(x)` there).
+        (this.scope.emit.pyBacked.has(name) &&
+          !this.scope.kinds.depVars.has(name))
+      )
         return ident;
       // Bare function name in arithmetic position (`f + 1`) — emit the
       // applied form `f(x)` recorded at the decl/call site: the pointwise
@@ -841,13 +901,35 @@ class Emitter {
     // MatrixSymbol ident instead of minting `v_2`.
     if (this.scope.emit.matrices.has(name))
       return this.scope.emit.matrices.get(name)!;
+    // A bare `\mathrm{relu}` operand is the python function itself when
+    // a python cell defs it — resolved before the name mints a Symbol.
+    const pySym = this.resolvePy(name);
+    if (pySym !== undefined) return pySym;
     const idDim = this.identityDim(name);
     if (idDim) return `${this.sp}eye(${idDim})`;
     return this.alloc(this.scope.emit.symbols, name);
   }
 
+  /** Resolve `name` through the worksheet's python-function registry
+   * (a `def`/`lambda` in a python cell or `\python{}` block). On hit
+   * the `functions` entry mints to the def's own ident — pyBacked, so
+   * no `sp.Function` decl emits — and the source/ordering bookkeeping
+   * runs once. Undefined when the name isn't registered or math-side
+   * machinery already claimed it (a worksheet def wins). */
+  private resolvePy(name: string): string | undefined {
+    const fns = this.scope.emit.functions;
+    if (fns.has(name) && !this.scope.emit.pyBacked.has(name))
+      return undefined;
+    const ent = this.scope.py.fns.get(name);
+    if (ent === undefined) return undefined;
+    if (!fns.has(name)) fns.set(name, ent.ident);
+    this.scope.notePyUse(name, ent);
+    return fns.get(name)!;
+  }
+
   // A name used as a function (f in f'(x)) needs sp.Function, not
-  // sp.symbols — symbols aren't callable.
+  // sp.symbols — symbols aren't callable. A python-cell `def` resolves
+  // to the real callable instead.
   private fn(name: string): string {
     if (this.scope.decls.defined.has(name)) {
       // `x = 5` then `\dot{x}` — the name is already a bound value;
@@ -857,6 +939,8 @@ class Emitter {
         this.scope.flag('error', `${name} is bound to a value — not callable`);
       return pyIdent(name);
     }
+    const py = this.resolvePy(name);
+    if (py !== undefined) return py;
     return this.alloc(this.scope.emit.functions, name);
   }
 
@@ -877,6 +961,11 @@ class Emitter {
   // earlier `A = …` assignment) reuse their own ident instead.
   private mat(name: string): string {
     if (this.scope.decls.defined.has(name)) return pyIdent(name);
+    const py = this.resolvePy(name);
+    if (py !== undefined) {
+      this.scope.flag('error', `${name} is a python function — not a matrix`);
+      return py;
+    }
     const dim = this.identityDim(name);
     if (dim) return `${this.sp}eye(${dim})`;
     return this.alloc(this.scope.emit.matrices, name);
@@ -1198,6 +1287,9 @@ class Emitter {
       isStr(a) &&
       this.scope.emit.functions.has(a) &&
       !this.scope.kinds.depVars.has(a) &&
+      // A python def is already a callable value — pass the function
+      // object (`g(f)`), not the eta expansion `Lambda(x, f(x))`.
+      !this.scope.emit.pyBacked.has(a) &&
       !this.scope.emit.emitting.has(a)
     ) {
       const argNodes = this.scope.emit.fnArgs.get(a);
@@ -3608,6 +3700,9 @@ interface StatementOut {
    * echoes the definition itself, so the shown program drops its
    * `e = …` capture line even in the plumbing view. */
   defines?: boolean;
+  /** Execs for side effects only (a defs-only PythonSource) — the
+   * calculator runs it but produces no result row. */
+  silent?: boolean;
 }
 
 interface CellBody {
@@ -3762,8 +3857,13 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   const newSyms = [...scope.emit.symbols].filter(([raw]) => !preDefined.has(raw));
   // Function-bound names (Def/`f:`) sit in `functions` for call-fold
   // detection but declare themselves — no `sp.Function` def for them.
+  // pyBacked names point at a python-cell def — the real callable, not
+  // a minted stub — so they emit no decl either.
   const newFns = [...scope.emit.functions].filter(
-    ([raw]) => !preDefined.has(raw) && !scope.decls.declaredFns.has(raw),
+    ([raw]) =>
+      !preDefined.has(raw) &&
+      !scope.decls.declaredFns.has(raw) &&
+      !scope.emit.pyBacked.has(raw),
   );
   const newMats = [...scope.emit.matrices].filter(
     ([raw]) => !preDefined.has(raw),
@@ -3953,6 +4053,61 @@ const PY_STMT_LINE_RE =
 // `=` that isn't part of ==, !=, <=, >=, :=, +=, **=, … — assignment
 // lines exec but aren't eval'able expressions.
 const PY_ASSIGN_RE = /(?<![=<>!:+\-*/%&|^~@])=(?![=>])/;
+
+// `def`/`async def` blocks (decorators included), `name = lambda` binds,
+// and `# @latex` annotation comments are definitions — worksheet inputs,
+// not results — so they never echo as a result row. The rest of the
+// source still echoes per the REPL convention; an empty remainder means
+// the cell only binds functions and evaluates silently.
+const PY_DEF_LINE_RE = /^(?:async[ \t]+)?def[ \t]/;
+const PY_LAMBDA_ASSIGN_RE =
+  /^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*[ \t]*(?::[^=\n]+)?=[ \t]*lambda\b/;
+const PY_LATEX_NOTE_RE = /^#[ \t]*@?latex\b/;
+
+function pythonSourceSansDefs(code: string): string {
+  const kept: string[] = [];
+  // `dropping` marks lines inside a def region (decorators, signature,
+  // suite, and the blank/comment run that follows it). `cont` is an open
+  // bracket/backslash continuation — those lines belong to whichever
+  // statement opened them.
+  let dropping = false;
+  let cont = false;
+  let depth = 0;
+  for (const raw of code.split('\n')) {
+    const line = raw.trim();
+    if (cont) {
+      for (const c of raw) {
+        if (c === '(' || c === '[' || c === '{') depth++;
+        else if (c === ')' || c === ']' || c === '}') depth--;
+      }
+      cont = depth > 0 || line.endsWith('\\');
+      if (!dropping) kept.push(raw);
+      continue;
+    }
+    if (line === '' || line.startsWith('#')) {
+      if (!dropping && !PY_LATEX_NOTE_RE.test(line)) kept.push(raw);
+      continue;
+    }
+    if (/^\s/.test(raw)) {
+      // Indented lines are suite members of the open region.
+      if (!dropping) kept.push(raw);
+      continue;
+    }
+    // A fresh top-level statement ends any open def suite.
+    dropping =
+      line.startsWith('@') ||
+      PY_DEF_LINE_RE.test(line) ||
+      PY_LAMBDA_ASSIGN_RE.test(line);
+    if (!dropping) kept.push(raw);
+    depth = 0;
+    for (const c of raw) {
+      if (c === '(' || c === '[' || c === '{') depth++;
+      else if (c === ')' || c === ']' || c === '}') depth--;
+    }
+    cont = depth > 0 || line.endsWith('\\');
+  }
+  return kept.join('\n');
+}
 
 function trailingPythonExpr(code: string): string | undefined {
   const lines = code.split('\n');
@@ -4312,12 +4467,19 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
   // `\python{ ... }` — verbatim user source. It execs in the python
   // target's program or the calculator's shared namespace. When the
   // last line is an expression, the row displays its value (REPL
-  // lane — `\python{f(9)}` shows 10); statement-ending bodies echo the
-  // source that ran.
+  // lane — `\python{f(9)}` shows 10). Function defs are inputs, not
+  // results: a defs-only source execs silently, and a mixed source
+  // echoes only its non-def statements.
   if (h === 'PythonSource') {
     const code = isStr(node[1]) ? node[1] : '';
     if (code.trim() === '') return { lines: [] };
-    return { lines: [code], display: trailingPythonExpr(code) ?? JSON.stringify(code) };
+    const trailing = trailingPythonExpr(code);
+    if (trailing !== undefined)
+      return { lines: [code], display: trailing };
+    const rest = pythonSourceSansDefs(code).trim();
+    return rest === ''
+      ? { lines: [code], silent: true }
+      : { lines: [code], display: JSON.stringify(rest) };
   }
   if (h === 'Block' || h === 'WhereBlock')
     return {
@@ -4341,6 +4503,10 @@ export interface CompileOptions extends NormalizeOptions {
   /** Emit `from sympy import *` and unqualified sympy names (default).
    * `false` emits `import sympy as sp` with `sp.` qualifiers. */
   importAll?: boolean;
+  /** Calc-only: the full worksheet cells when `cells` is a prefix —
+   * python defs below the edit point still resolve (with the
+   * call-above-def note) instead of minting `sp.Function` stubs. */
+  worksheetCells?: CellInput[];
 }
 
 // Compile the whole worksheet. `python` produces a runnable SymPy program;
@@ -4354,7 +4520,14 @@ export function compileWorksheet(
   const importLine = qualified
     ? 'import sympy as sp'
     : 'from sympy import *';
-  const perCell = cells.map((c) => normalizeIR(c.json, undefined, opts));
+  // Python-cell defs (`def`/`lambda`, plus `\python{}` blocks in math
+  // cells) register their call names so a math cell's `\mathrm{name}(x)`
+  // — or a `# @latex`-annotated form — calls the real function.
+  const pyRegistry = collectPyFns(cells);
+  const pyNames = new Set(pyRegistry.fns.keys());
+  const perCell = cells.map((c) =>
+    normalizeIR(c.json, undefined, { ...opts, pyFns: pyNames }),
+  );
   const issues: Issue[] = perCell.flatMap((r, i) =>
     r.issues.map((iss) => ({
       ...iss,
@@ -4412,8 +4585,17 @@ export function compileWorksheet(
   // is a fresh Symbol in cell 2's program, so `\det(A)` there must flag
   // rather than emit `A.det()` on a Symbol (TypeError at exec).
   const genIssues: Issue[][] = cells.map(() => []);
+  // Registry notes (unreachable builtin names, unresolved annotations)
+  // belong to the python cell that raised them.
+  for (const n of pyRegistry.notes) {
+    genIssues[n.cell].push({ severity: n.severity, message: n.message });
+    issues.push({
+      severity: n.severity,
+      message: `cell ${n.cell + 1}: ${n.message}`,
+    });
+  }
   const cellBodies = perCell.map((r, i) => {
-    if (r.ir === undefined) return [];
+    if (r.ir === undefined) return { lines: [] as string[], pySrc: [] as string[] };
     const matrixNames = new Set<string>();
     collectMatrices(r.ir, matrixNames);
     // `declaredFns` is worksheet-wide, but cells are independent
@@ -4422,27 +4604,36 @@ export function compileWorksheet(
     // Assign-rebind in THIS cell drops a pending Function decl.
     const cellDeclaredFns = new Set<string>();
     collectDeclared(r.ir, new Set(), cellDeclaredFns);
-    return cellStatements(
-      r.ir,
-      new Scope(
-        qualified,
-        declared,
-        cellDeclaredFns,
-        matrixNames,
-        issues,
-        genIssues,
-        i + 1,
-      ),
+    const scope = new Scope(
+      qualified,
+      declared,
+      cellDeclaredFns,
+      matrixNames,
+      issues,
+      genIssues,
+      i + 1,
+      pyRegistry.fns,
     );
+    scope.cellIdx = i;
+    const lines = cellStatements(r.ir, scope);
+    // The standalone cell script inlines every python def it calls —
+    // `relu(x)` emits the real call, so the script needs the source.
+    const pySrc = [...scope.py.usedSrcs]
+      .map((s) => pyRegistry.sources[s])
+      .sort((a, b) => a.cell - b.cell)
+      .map((s) => s.code);
+    return { lines, pySrc };
   });
-  const cellLines = cellBodies.map((body) =>
-    body.length === 0 ? [] : [importLine, ...body],
+  const cellLines = cellBodies.map(({ lines, pySrc }) =>
+    lines.length === 0 ? [] : [importLine, ...pySrc, ...lines],
   );
 
   // The one-script copy is the concatenation of the per-cell outputs
-  // with the import emitted once at the top.
+  // with the import emitted once at the top. Python cells' source emits
+  // in place — the program stays sequential, so a call must sit below
+  // its def (the registry notes flag it otherwise).
   const lines: string[] = [importLine];
-  cellBodies.forEach((stmts, i) => {
+  cellBodies.forEach(({ lines: stmts }, i) => {
     if (stmts.length === 0) return;
     lines.push('', `# cell ${i + 1}`, ...stmts);
   });
@@ -4546,6 +4737,10 @@ export interface CalcStatement {
    * program never inlines its `e = <display>` capture line, even in
    * the plumbing view (the display just echoes the definition). */
   defines?: boolean;
+  /** Execs for side effects only (a defs-only python source) — the
+   * worker binds the names and returns a marker row the client drops,
+   * so no result row shows. */
+  silent?: boolean;
   /** Set when the statement itself failed to emit — reported as an
    * error row in place so the cell keeps written order. */
   error?: string;
@@ -4646,11 +4841,12 @@ function compileCellInScope(
       code:
         out.calcLines !== undefined
           ? out.calcLines.join('\n')
-          : out.display === undefined && out.lines.length === 1
+          : out.display === undefined && !out.silent && out.lines.length === 1
             ? calcEval(out.lines[0])
             : out.lines.join('\n'),
       display: out.display === undefined ? undefined : calcEval(out.display),
       defines: out.defines,
+      silent: out.silent,
       error,
       // Line anchors only matter where an error points back at input.
       ...(error !== undefined ? { line } : {}),
@@ -4713,6 +4909,10 @@ export function compileCellsForCalc(
   opts: CompileOptions = {},
 ): CalcWorksheetProgram {
   const qualified = opts.importAll === false;
+  // Python-cell defs register worksheet-wide so a call above its def
+  // resolves (with the ordering note) instead of minting a stub.
+  const pyRegistry = collectPyFns(opts.worksheetCells ?? cells);
+  const pyNames = new Set(pyRegistry.fns.keys());
   const scope = new Scope(
     qualified,
     new Set<string>(),
@@ -4721,6 +4921,7 @@ export function compileCellsForCalc(
     [],
     [],
     0,
+    pyRegistry.fns,
   );
   return {
     // The CALC_RUNTIME_PY block defines the mc_* helpers the statements
@@ -4729,14 +4930,20 @@ export function compileCellsForCalc(
     // is written `sp.`-qualified; the import-* mode strips the prefix
     // so the shown program stays self-contained under a star import.
     prelude: [calcImportLine(qualified), calcRuntimePy(qualified)],
-    cells: cells.map((cell) => {
+    cells: cells.map((cell, i) => {
+      scope.cellIdx = i;
       // The shared declaredFns set both seeds this cell's normalize
       // (a `g(4)` below a `\def g` is a call, not juxtaposition) and
       // collects the names this cell declares for the cells below it.
-      const { ir, issues } = normalizeIR(
-        cell.json,
-        scope.decls.declaredFns,
-        opts,
+      const { ir, issues } = normalizeIR(cell.json, scope.decls.declaredFns, {
+        ...opts,
+        pyFns: pyNames,
+      });
+      // Registry notes on this cell (its own python defs) surface here.
+      issues.push(
+        ...pyRegistry.notes
+          .filter((n) => n.cell === i)
+          .map(({ severity, message }) => ({ severity, message }) as Issue),
       );
       if (ir === undefined)
         return { defs: [], statements: [], issues, statementLines: [] };
@@ -4753,7 +4960,11 @@ export function compileCellForCalc(
   opts: CompileOptions = {},
 ): CalcProgram {
   const qualified = opts.importAll === false;
-  const { ir, issues } = normalizeIR(cell.json, undefined, opts);
+  const pyRegistry = collectPyFns([cell]);
+  const { ir, issues } = normalizeIR(cell.json, undefined, {
+    ...opts,
+    pyFns: new Set(pyRegistry.fns.keys()),
+  });
   if (ir === undefined)
     return { prelude: [], statements: [], issues, statementLines: [] };
   const scope = new Scope(
@@ -4764,7 +4975,9 @@ export function compileCellForCalc(
     [],
     [],
     0,
+    pyRegistry.fns,
   );
+  scope.cellIdx = 0;
   const c = compileCellInScope(ir, issues, scope);
   return {
     prelude: [calcImportLine(qualified), calcRuntimePy(qualified), ...c.defs],

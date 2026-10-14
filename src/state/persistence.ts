@@ -1,4 +1,4 @@
-import type { Cell } from './store.svelte';
+import type { CellKind } from './store.svelte';
 import { TARGETS, type TargetId } from '../compile/targets';
 import type { PairTupleMode } from '../compile/ir';
 
@@ -75,11 +75,14 @@ export function savePrefs(prefs: Required<Prefs>): void {
 // ── Workbook: every worksheet in one document ────────────────────────
 //
 // localStorage['mathcompile-worksheets'] holds { version, active, sheets }
-// where each sheet is { id, name, cells: [{ id, latex }] }. `active` is the
-// sheet shown on load. Everything else the app stores is prefs/theme.
+// where each sheet is { id, name, cells: [{ id, latex, kind? }] }. `active`
+// is the sheet shown on load. `kind` is 'python' for source cells (whose
+// `latex` holds the raw python source); absent means a math cell.
+// Everything else the app stores is prefs/theme.
 export interface StoredCell {
   id: number;
   latex: string;
+  kind?: 'python';
 }
 
 export interface WorksheetMeta {
@@ -133,11 +136,18 @@ const isStoredCell = (c: unknown): c is StoredCell =>
   typeof c === 'object' &&
   c !== null &&
   typeof (c as StoredCell).id === 'number' &&
-  typeof (c as StoredCell).latex === 'string';
+  typeof (c as StoredCell).latex === 'string' &&
+  ((c as StoredCell).kind === undefined || (c as StoredCell).kind === 'python');
 
 function parseCellsArray(parsed: unknown): StoredCell[] {
   if (!Array.isArray(parsed)) return [];
-  return parsed.filter(isStoredCell).map((c) => ({ id: c.id, latex: c.latex }));
+  return parsed
+    .filter(isStoredCell)
+    .map((c) =>
+      c.kind === 'python'
+        ? { id: c.id, latex: c.latex, kind: 'python' }
+        : { id: c.id, latex: c.latex },
+    );
 }
 
 // Returns the stored cells plus the highest id seen so the caller can
@@ -264,7 +274,13 @@ export function removeStoredWorksheet(id: string): void {
 }
 
 let timer: ReturnType<typeof setTimeout> | undefined;
-let pending: { sheet: WorksheetMeta; cells: Cell[] } | undefined;
+let pending:
+  | { sheet: WorksheetMeta; cells: CellLike[] }
+  | undefined;
+
+// The snapshot needs only id/source/kind — a structural subset of the
+// store's Cell so callers and tests can pass plain literals.
+type CellLike = { id: number; latex: string; kind?: CellKind };
 
 function flushCells(): void {
   clearTimeout(timer);
@@ -272,7 +288,11 @@ function flushCells(): void {
   if (pending === undefined) return;
   const { sheet, cells } = pending;
   pending = undefined;
-  const snapshot = cells.map((c) => ({ id: c.id, latex: c.latex }));
+  const snapshot = cells.map((c) =>
+    c.kind === 'python'
+      ? { id: c.id, latex: c.latex, kind: 'python' as const }
+      : { id: c.id, latex: c.latex },
+  );
   mutateWorkbook((wb) => {
     const i = wb.sheets.findIndex((s) => s.id === sheet.id);
     // An existing record keeps its stored name (a rename may have landed
@@ -286,7 +306,7 @@ function flushCells(): void {
 // from the store's mutating methods, so it must stay cheap: it only
 // schedules; the stringify + setItem happen at most once per DEBOUNCE_MS
 // after edits settle.
-export function persistCells(sheet: WorksheetMeta, cells: Cell[]): void {
+export function persistCells(sheet: WorksheetMeta, cells: CellLike[]): void {
   if (typeof window === 'undefined') return;
   pending = { sheet, cells };
   clearTimeout(timer);

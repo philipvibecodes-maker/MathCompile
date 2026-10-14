@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
   import MathField from './components/MathField.svelte';
+  import PythonField from './components/PythonField.svelte';
   import CalcOutput from './components/CalcOutput.svelte';
   import CalcIssues from './components/CalcIssues.svelte';
   import CopyButton from './components/CopyButton.svelte';
@@ -74,16 +75,24 @@
   let issuesVisible = $state<Record<number, boolean>>({});
   const issueTimers: Record<number, ReturnType<typeof setTimeout>> = {};
   const prevLatex: Record<number, string> = {};
+  // prevIssues tracks issue presence, not count — the debounce only
+  // needs re-arming on a keystroke or a cross-cell appear/disappear.
+  const prevIssues: Record<number, boolean> = {};
   // pre-effect: hides the overlay before the render that a keystroke
   // triggers — a normal $effect runs post-render and the panel would
   // mount for a frame, fade out, then re-fade in after the debounce.
   // Once shown it stays latched until the cell has no issues left.
   $effect.pre(() => {
     appStore.cells.forEach((c, i) => {
-      if (prevLatex[c.id] === c.latex) return;
-      prevLatex[c.id] = c.latex;
-      clearTimeout(issueTimers[c.id]);
       const hasIssues = (compiled?.cellIssues[i]?.length ?? 0) > 0;
+      // A latex change re-arms the debounce; so does an issue flipping
+      // without one — cross-cell notes (a python cell below flagging a
+      // caller's ordering) produce issues with no keystroke here.
+      if (prevLatex[c.id] === c.latex && prevIssues[c.id] === hasIssues)
+        return;
+      prevLatex[c.id] = c.latex;
+      prevIssues[c.id] = hasIssues;
+      clearTimeout(issueTimers[c.id]);
       if (hasIssues && !issuesVisible[c.id]) {
         const id = c.id;
         issueTimers[id] = setTimeout(
@@ -560,12 +569,12 @@
               <div
                 class="cell-input"
                 onpointerdown={(e) => {
-                  // The issue chips need native pointer behavior:
-                  // preventDefault here would kill text selection and
-                  // the copy button's click.
+                  // The issue chips and the python textarea need native
+                  // pointer behavior: preventDefault here would kill
+                  // text selection and the copy button's click.
                   if (
                     !(e.target as HTMLElement).closest(
-                      'math-field, .calc-issues',
+                      'math-field, .calc-issues, .py-field',
                     )
                   ) {
                     e.preventDefault();
@@ -573,7 +582,11 @@
                   }
                 }}
               >
-                <MathField {cell} />
+                {#if cell.kind === 'python'}
+                  <PythonField {cell} />
+                {:else}
+                  <MathField {cell} />
+                {/if}
                 {#if appStore.target === 'calculator'}
                   <CalcIssues {cell} />
                 {/if}
@@ -593,14 +606,25 @@
             {/if}
             {#if appStore.target === 'latex'}
               <div class="cell-output">
-                <code class="cell-latex">{displayLatex(cell.latex)}</code>
-                <button
-                  class="cell-copy"
-                  title="Copy LaTeX"
-                  disabled={cell.latex.trim() === ''}
-                  onclick={() => copyLatex(cell)}
-                  >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
-                >
+                {#if cell.kind === 'python'}
+                  <div class="cell-code-body">
+                    <code class="cell-python"
+                      >{#each highlightPython(cell.latex) as tok, j (j)}<span
+                          class={tok.cls ? `tok-${tok.cls}` : undefined}
+                          >{tok.text}</span
+                        >{/each}</code
+                    >
+                  </div>
+                {:else}
+                  <code class="cell-latex">{displayLatex(cell.latex)}</code>
+                  <button
+                    class="cell-copy"
+                    title="Copy LaTeX"
+                    disabled={cell.latex.trim() === ''}
+                    onclick={() => copyLatex(cell)}
+                    >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
+                  >
+                {/if}
               </div>
             {:else if appStore.target === 'python'}
               <div class="cell-output cell-code">
@@ -667,9 +691,18 @@
           </li>
         {/each}
       </ol>
-      <button class="add-expr" onclick={() => appStore.addCell()}>
-        + Add expression
-      </button>
+      <div class="add-row">
+        <button class="add-expr" onclick={() => appStore.addCell()}>
+          + Add expression
+        </button>
+        <button
+          class="add-python"
+          title={'Python source cell — def f(x): … defines a function math cells can call as \\mathrm{f}(x); annotate a def with # @latex <latex> to name its call form'}
+          onclick={() => appStore.addPythonCell()}
+        >
+          + Python cell
+        </button>
+      </div>
       <HowToGuide />
     </section>
   </div>

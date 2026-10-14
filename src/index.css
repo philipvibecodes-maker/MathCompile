@@ -369,6 +369,109 @@ body {
   pointer-events: none;
 }
 
+/* ── Python source cell ───────────────────────────────────
+   A plain textarea whose text is transparent over a highlight-only
+   <pre> underlay — the highlightPython tokens paint the glyphs, the
+   textarea owns caret/selection. Both share font/padding metrics so
+   the layers stay pixel-aligned. */
+.expr-row .py-field {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  transition: border-color 0.12s ease;
+}
+
+.expr-row:hover .py-field:not(:focus-within) {
+  border-color: var(--faint);
+}
+
+.expr-row:focus-within .py-field {
+  border-color: var(--accent);
+}
+
+/* Kind chip in the corner — the textarea's right padding leaves it room. */
+.py-tag {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  user-select: none;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.expr-row:focus-within .py-tag {
+  color: var(--accent-text);
+}
+
+.py-stack {
+  position: relative;
+}
+
+.py-highlight,
+.py-input {
+  margin: 0;
+  /* Extra right padding clears the corner 'py' chip. */
+  padding: 10px 34px 10px 12px;
+  font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  tab-size: 4;
+  /* wrap="off" on the textarea — the underlay must not wrap either. */
+  white-space: pre;
+  border: 0;
+}
+
+.py-highlight {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: var(--text);
+  pointer-events: none;
+}
+
+.py-input {
+  position: relative;
+  display: block;
+  width: 100%;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  /* Glyphs come from the underlay; only caret + selection paint here. */
+  color: transparent;
+  caret-color: var(--text);
+  outline: none;
+}
+
+.py-input::placeholder {
+  color: var(--faint);
+  /* The underlay already paints nothing behind a placeholder. */
+  font-style: italic;
+}
+
+.py-input::selection {
+  background: var(--selected-bg);
+  color: transparent;
+}
+
+/* Empty-field hint mirrors the math cell's ghost text. */
+.py-field.empty::after {
+  content: 'python — def f(x): … is callable as \\mathrm{f}(x) below';
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  font-size: 12px;
+  color: var(--faint);
+  pointer-events: none;
+}
+
 /* Autocomplete dropdown anchored under the caret/command input. */
 .mc-ac {
   position: absolute;
@@ -1275,23 +1378,28 @@ body {
 }
 
 .calc-code .tok-kw,
-.cell-python .tok-kw {
+.cell-python .tok-kw,
+.py-highlight .tok-kw {
   color: #a626a4;
 }
 .calc-code .tok-str,
-.cell-python .tok-str {
+.cell-python .tok-str,
+.py-highlight .tok-str {
   color: #50a14f;
 }
 .calc-code .tok-comment,
-.cell-python .tok-comment {
+.cell-python .tok-comment,
+.py-highlight .tok-comment {
   color: var(--faint);
 }
 .calc-code .tok-num,
-.cell-python .tok-num {
+.cell-python .tok-num,
+.py-highlight .tok-num {
   color: #986801;
 }
 .calc-code .tok-call,
-.cell-python .tok-call {
+.cell-python .tok-call,
+.py-highlight .tok-call {
   color: #4078f2;
 }
 
@@ -1383,19 +1491,23 @@ body {
 }
 
 :root[data-theme='dark'] .calc-code .tok-kw,
-:root[data-theme='dark'] .cell-python .tok-kw {
+:root[data-theme='dark'] .cell-python .tok-kw,
+:root[data-theme='dark'] .py-highlight .tok-kw {
   color: #c678dd;
 }
 :root[data-theme='dark'] .calc-code .tok-str,
-:root[data-theme='dark'] .cell-python .tok-str {
+:root[data-theme='dark'] .cell-python .tok-str,
+:root[data-theme='dark'] .py-highlight .tok-str {
   color: #98c379;
 }
 :root[data-theme='dark'] .calc-code .tok-num,
-:root[data-theme='dark'] .cell-python .tok-num {
+:root[data-theme='dark'] .cell-python .tok-num,
+:root[data-theme='dark'] .py-highlight .tok-num {
   color: #d19a66;
 }
 :root[data-theme='dark'] .calc-code .tok-call,
-:root[data-theme='dark'] .cell-python .tok-call {
+:root[data-theme='dark'] .cell-python .tok-call,
+:root[data-theme='dark'] .py-highlight .tok-call {
   color: #61afef;
 }
 
@@ -1435,8 +1547,17 @@ body {
   color: var(--danger);
 }
 
-.add-expr {
+/* The add buttons sit in one row. `.add-expr` stays on the
+ * expression button as the e2e hook — the python button shares the
+ * look through .add-row without carrying the class (strict-mode
+ * locators resolve `.add-expr` to exactly one element). */
+.add-row {
+  display: flex;
+  gap: 8px;
   margin: 8px 0 0 32px;
+}
+
+.add-row button {
   padding: 8px 14px;
   font-size: 13px;
   color: var(--accent-text);
@@ -1446,7 +1567,7 @@ body {
   cursor: pointer;
 }
 
-.add-expr:hover {
+.add-row button:hover {
   background: var(--selected-bg);
 }
 

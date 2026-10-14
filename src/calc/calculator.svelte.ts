@@ -22,6 +22,9 @@ export interface CalcRowOk {
   latex?: string;
   text?: string;
   approx?: string;
+  /** Marker row for an exec-only statement (defs-only python source) —
+   * keeps rows aligned with statementLines; filtered before display. */
+  silent?: boolean;
 }
 export interface CalcRowErr {
   ok: false;
@@ -195,7 +198,10 @@ export function evaluate(
       resolve: (r) => {
         clearTimeout(timer);
         const merged = [
-          ...r.map((row, i) => ({ row, line: last.statementLines[i] })),
+          ...r
+            .map((row, i) => ({ row, line: last.statementLines[i] }))
+            // Exec-only statements (defs) leave marker rows behind.
+            .filter(({ row }) => !(row.ok && row.silent)),
           ...issueRows.map((row) => ({ row, line: row.line })),
         ]
           .sort(
@@ -276,11 +282,13 @@ export function shownPrograms(prog: CalcWorksheetProgram): {
       ...marker(i),
       ...c.defs,
       ...okStmts(c).flatMap((s) =>
-        s.display === undefined || s.defines
-          ? s.display === undefined
-            ? [`e = ${s.code}`]
-            : [s.code]
-          : [s.code, `e = ${s.display}`],
+        s.silent
+          ? [s.code]
+          : s.display === undefined || s.defines
+            ? s.display === undefined
+              ? [`e = ${s.code}`]
+              : [s.code]
+            : [s.code, `e = ${s.display}`],
       ),
     ]),
   ].join('\n');

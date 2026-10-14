@@ -31,6 +31,27 @@ export const buildCommands = (store: AppStore): Command[] => {
       run: () => store.addCell(focusId),
     },
     {
+      id: 'insert-python',
+      title: 'Insert Python cell below',
+      keywords: 'code script def function custom python',
+      run: () => store.addPythonCell(focusId),
+    },
+    // Cell-kind conversions — the source text is kept through the flip.
+    {
+      id: 'to-python',
+      title: 'Convert cell to Python',
+      keywords: 'code script def function custom',
+      current: store.cells.find((c) => c.id === focusId)?.kind === 'python',
+      run: () => store.setCellKind(focusId, 'python'),
+    },
+    {
+      id: 'to-math',
+      title: 'Convert cell to math',
+      keywords: 'latex expression formula',
+      current: store.cells.find((c) => c.id === focusId)?.kind !== 'python',
+      run: () => store.setCellKind(focusId, 'math'),
+    },
+    {
       id: 'duplicate',
       title: 'Duplicate current expression',
       keywords: 'copy clone cell',
