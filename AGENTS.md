@@ -202,6 +202,12 @@ and empty blocks serialize as `{ }`.
   (see SYMBOLS.md "Solver statements").
 - `\tr` is an insertion alias for `\mathrm{tr}` — the matrix-trace
   word-op codegen lowers to `(A).trace()` / `sp.Trace(A)`.
+- `\operatorname{…}` is a real one-block group (a `mq-roman mq-font`
+  wrapper, like `\mathrm`) — typed `\operatorname{f}` types into the
+  arg block and round-trips. Interior letters stay one upright word:
+  autoCommands/autoParenthesize are skipped and `autoUnItalicize` marks
+  the run without splitting it into built-ins (`\operatorname{argmin}`
+  stays `argmin`, unlike `\mathrm{argmin}` → `\mathrm{\arg\min}`).
 - Matrices: `\begin{matrix|pmatrix|…}` environments + bare
   `\pmatrix{a&b\\c&d}`. Typed `\name` shortcuts (`\cases`, `\aligned`,
   `\gathered`, …) open the same grid `\begin{name}` resolves to;

@@ -247,6 +247,21 @@ suite('typing with auto-replaces', function () {
       mq.typedText('x{');
       assertLatex('x\\left\\{\\right\\}');
     });
+
+    test('\\operatorname{f} types into the arg block', function () {
+      mq.typedText('\\operatorname{f}');
+      assertLatex('\\operatorname{f}');
+    });
+
+    test('\\operatorname{ opens an empty arg block', function () {
+      mq.typedText('\\operatorname{');
+      assertLatex('\\operatorname{ }');
+    });
+
+    test('\\operatorname interior stays one upright word', function () {
+      mq.typedText('\\operatorname{argmin}');
+      assertLatex('\\operatorname{argmin}');
+    });
   });
 
   suite('typed \\begin{env}', function () {

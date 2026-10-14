@@ -117,7 +117,13 @@ Inline `// MATHCOMPILE:` edits, by file:
   strings — needed for the smartMode toggle); a letter run inside
   `\operatorname{…}`/`\mathrm{…}` is kept whole instead of re-scanned
   for built-in names, and `sign` serializes as `\operatorname{sign}`
-  for SymPy; `\operatorname*` consumes the star (limits form);
+  for SymPy; `\operatorname{…}` is a real one-block editable group —
+  upstream's `createLeftOf` no-op made a typed `\operatorname{` delete
+  the command input, and parse now keeps the group (with the
+  `\operatorname*` limits-form star) instead of flattening to bare
+  letters; the interior letter run renders upright and stays whole —
+  no autoCommands substitution and no auto-op re-split
+  (`\operatorname{argmin}` doesn't become `\arg \min`);
   `\<char>` escape commands (`\,` `\:` `\;` `\!` `\{` `\}` `\|`) and
   other escaped specials (`\_` …) register on backslash-prefixed keys.
 - `src/commands/math/commands.ts` — `\textcolor[model]{color}{…}` takes
