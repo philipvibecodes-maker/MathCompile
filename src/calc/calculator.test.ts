@@ -69,6 +69,33 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
   });
 
+  it('passes the solve var to clean_and_simplify so the row shows x = a1, a2, …', () => {
+    // The python target keeps the bare `sp.solve(…)` line; the calc
+    // statement carries the solved-for name as a second arg.
+    expect(calc('\\text{solve} x^2-5x+6=0, x').statements[0].code).toBe(
+      'clean_and_simplify(sp.solve(sp.Eq(x**2 - 5 * x + 6, 0), x), x)',
+    );
+    expect(
+      calc('\\text{solve} x+y=3, x-y=1, x, y').statements[0].code,
+    ).toBe(
+      'clean_and_simplify(sp.solve([sp.Eq(x + y, 3), sp.Eq(x - y, 1)], [x, y]), sp.Tuple(x, y))',
+    );
+    expect(
+      calc('\\text{solve} x^2=1 \\text{ for } x>0').statements[0].code,
+    ).toBe(
+      'clean_and_simplify(sp.solveset(sp.Eq(x**2, 1), x, domain=sp.Interval.open(0, sp.oo)), x)',
+    );
+    // No var named — the lone free symbol still labels the answers.
+    expect(calc('\\text{solve} x^2-5x+6=0').statements[0].code).toBe(
+      'clean_and_simplify(sp.solve(sp.Eq(x**2 - 5 * x + 6, 0)), x)',
+    );
+    // dsolve/pdesolve rows keep the plain pipeline — a `y(x) = …`
+    // equation already reads as an answer.
+    expect(calc('\\text{dsolve} \\frac{dy}{dx}=y').statements[0].code).toBe(
+      F('sp.dsolve(sp.Eq(sp.diff(y(x), x), y(x)), y(x))'),
+    );
+  });
+
   it('gives an indefinite integral a constant of integration', () => {
     expect(calc('\\int x\\,dx').statements[0].code).toBe(
       F('sp.integrate(x, x) + sp.Symbol("C")'),

@@ -10,7 +10,7 @@
 // `clean_and_simplify` is a reserved identifier — pyIdent mangles a user
 // symbol of the same name to `clean_and_simplify_` so a cell can't
 // shadow it.
-export const CALC_RUNTIME_PY = `def clean_and_simplify(val):  # display cleanup
+export const CALC_RUNTIME_PY = `def clean_and_simplify(val, ans_var=None):  # display cleanup
     """Post-process a computed result for display.
 
     Three best-effort passes — each keeps the value and returns its
@@ -18,6 +18,9 @@ export const CALC_RUNTIME_PY = `def clean_and_simplify(val):  # display cleanup
       mc_doit      finish pending operations (integrals, sums, limits)
       mc_simplify  reduce the expression (sp.simplify)
       mc_order     write sums in decreasing degree, constants last
+
+    With ans_var (a Symbol or Tuple of them) a solver result displays
+    as 'x = a1, a2, ...' instead of a bare list/set.
     """
     def mc_deg(term, gens):
         # Bare capital letters are constants of integration — they go last.
@@ -88,4 +91,57 @@ export const CALC_RUNTIME_PY = `def clean_and_simplify(val):  # display cleanup
         except Exception:
             return val
 
-    return mc_order(mc_simplify(mc_doit(val)))`;
+    def mc_tex(v):
+        return sp.latex(v, order='none', inv_trig_style='full')
+
+    class McTex:
+        # A row value carrying ready-made latex — sp.latex() prints it
+        # verbatim through the _latex hook.
+        def __init__(self, tex):
+            self.tex = tex
+
+        def _latex(self, printer):
+            return self.tex
+
+    def mc_answers(var, sol):
+        """Render a solver result as 'x = a1, a2, ...' — var is the
+        solved-for Symbol (or Tuple of symbols for a system). Dicts are
+        simultaneous solutions; a non-finite Set means 'var in S' —
+        solve's bare relational output already reads as a statement."""
+        def eq_tex(k, v):
+            return mc_tex(k) + ' = ' + mc_tex(v)
+        if getattr(sol, 'is_Relational', False) or getattr(sol, 'is_Boolean', False):
+            return McTex(mc_tex(sol))
+        if isinstance(sol, (dict, sp.Dict)):
+            return McTex(',\\ '.join(eq_tex(k, v) for k, v in sol.items()))
+        if isinstance(sol, sp.Set):
+            if isinstance(sol, sp.FiniteSet):
+                sol = list(sol.args)
+            else:
+                return McTex(mc_tex(sol) if var is None else mc_tex(var) + ' \\in ' + mc_tex(sol))
+        if not isinstance(sol, (list, tuple)):
+            return McTex(mc_tex(sol) if var is None else eq_tex(var, sol))
+        if len(sol) == 0:
+            return McTex('\\varnothing' if var is None else mc_tex(var) + ' \\in \\varnothing')
+        if all(isinstance(s, (dict, sp.Dict)) for s in sol):
+            return McTex(';\\ '.join(',\\ '.join(eq_tex(k, v) for k, v in s.items()) for s in sol))
+        vars_ = list(var.args) if isinstance(var, sp.Tuple) else ([var] if var is not None else [])
+        if len(vars_) == 1 and all(
+                not (getattr(s, 'is_Relational', False) or getattr(s, 'is_Boolean', False)
+                     or isinstance(s, (list, tuple)))
+                for s in sol):
+            return McTex(mc_tex(vars_[0]) + ' = ' + ',\\ '.join(mc_tex(s) for s in sol))
+
+        def one(s):
+            if getattr(s, 'is_Relational', False) or getattr(s, 'is_Boolean', False):
+                return mc_tex(s)
+            if len(vars_) > 1 and isinstance(s, (list, tuple)) and len(s) == len(vars_):
+                return ',\\ '.join(eq_tex(v_, s_) for v_, s_ in zip(vars_, s))
+            return eq_tex(vars_[0], s) if len(vars_) == 1 else mc_tex(s)
+
+        return McTex(';\\ '.join(one(s) for s in sol))
+
+    out = mc_order(mc_simplify(mc_doit(val)))
+    if ans_var is not None:
+        out = mc_answers(ans_var, out)
+    return out`;
