@@ -23,8 +23,15 @@ import {
   type WorksheetMeta,
 } from './persistence';
 
+// 'math' cells edit latex in a math-field; 'python' cells edit raw
+// python source in a plain code field. For a python cell `latex` is
+// the source text and `json` is the PythonSource statement node —
+// codegen emits it verbatim either way.
+export type CellKind = 'math' | 'python';
+
 export interface Cell {
   id: number;
+  kind: CellKind;
   latex: string;
   // Parsed MathJSON for the compile pipeline; undefined while unparseable
   // or empty. Kept in sync by setLatex/createCell.
@@ -33,11 +40,20 @@ export interface Cell {
 
 export type Edge = 'start' | 'end';
 
+// The cell source's pipeline form: latex parses to MathJSON; python
+// source wraps whole as the verbatim PythonSource statement.
+function sourceJson(kind: CellKind, src: string): MathJson | undefined {
+  if (kind === 'python')
+    return src.trim() === '' ? undefined : ['PythonSource', src];
+  return parseCellLatex(src);
+}
+
 let nextId = 1;
-const createCell = (latex = ''): Cell => ({
+const createCell = (latex = '', kind: CellKind = 'math'): Cell => ({
   id: nextId++,
+  kind,
   latex,
-  json: parseCellLatex(latex),
+  json: sourceJson(kind, latex),
 });
 
 const SEED_LATEX = '2^n = \\sum_{i=0}^n\\binom{n}{i}';
@@ -48,7 +64,10 @@ const SEED_LATEX = '2^n = \\sum_{i=0}^n\\binom{n}{i}';
 // stored sheet opens as one blank cell.
 function hydrateCells(stored: StoredCell[]): Cell[] {
   nextId = Math.max(nextId, Math.max(0, ...stored.map((c) => c.id)) + 1);
-  const cells = stored.map((c) => ({ ...c, json: parseCellLatex(c.latex) }));
+  const cells: Cell[] = stored.map((c) => {
+    const kind = c.kind ?? 'math';
+    return { id: c.id, kind, latex: c.latex, json: sourceJson(kind, c.latex) };
+  });
   return cells.length > 0 ? cells : [createCell()];
 }
 
@@ -188,7 +207,11 @@ export class AppStore {
   // they can't collide with ids already in the workbook.
   importWorksheet(name: string, cells: StoredCell[]) {
     flushPendingCells();
-    const remapped = cells.map((c) => ({ id: nextId++, latex: c.latex }));
+    const remapped = cells.map((c) => ({
+      id: nextId++,
+      latex: c.latex,
+      ...(c.kind === 'python' ? { kind: 'python' as const } : {}),
+    }));
     const meta: WorksheetMeta = {
       id: newWorksheetId(),
       name: uniqueWorksheetName(name.trim() || 'Imported', this.worksheets),
@@ -205,7 +228,11 @@ export class AppStore {
     if (!meta) return null;
     const cells =
       id === this.activeWorksheetId
-        ? this.cells.map((c) => ({ id: c.id, latex: c.latex }))
+        ? this.cells.map((c) => ({
+            id: c.id,
+            latex: c.latex,
+            ...(c.kind === 'python' ? { kind: 'python' as const } : {}),
+          }))
         : (loadWorksheetCells(id) ?? []);
     return { name: meta.name, cells };
   }
@@ -242,13 +269,24 @@ export class AppStore {
     // object would remount the field and lose the caret every keystroke.
     if (c) {
       c.latex = latex;
-      c.json = parseCellLatex(latex);
+      c.json = sourceJson(c.kind, latex);
       this.persist();
     }
   }
 
-  addCell(afterId?: number, latex = ''): number {
-    const cell = createCell(latex);
+  // Flip a cell between math and python editing. The source text is
+  // kept — a `def` reads as garbage latex and vice versa, but nothing
+  // is silently destroyed; the field remounts on the kind change.
+  setCellKind(id: number, kind: CellKind) {
+    const c = this.cells.find((e) => e.id === id);
+    if (!c || c.kind === kind) return;
+    c.kind = kind;
+    c.json = sourceJson(kind, c.latex);
+    this.persist();
+  }
+
+  addCell(afterId?: number, latex = '', kind: CellKind = 'math'): number {
+    const cell = createCell(latex, kind);
     const at =
       afterId == null
         ? this.cells.length
@@ -259,15 +297,25 @@ export class AppStore {
     return cell.id;
   }
 
+  // Python source cells define functions a math cell can call as
+  // `\mathrm{name}(x)` (or via a `# @latex` annotation) — same insert
+  // position as addCell.
+  addPythonCell(afterId?: number): number {
+    return this.addCell(afterId, '', 'python');
+  }
+
   removeCell(id: number) {
     if (this.cells.length > 1) this.cells = this.cells.filter((e) => e.id !== id);
-    else if (this.cells[0]?.id === id) this.cells[0].latex = '';
+    else if (this.cells[0]?.id === id) {
+      this.cells[0].latex = '';
+      this.cells[0].json = undefined;
+    }
     this.persist();
   }
 
   duplicateCell(id: number) {
     const cur = this.cells.find((e) => e.id === id);
-    if (cur) this.addCell(cur.id, cur.latex);
+    if (cur) this.addCell(cur.id, cur.latex, cur.kind);
   }
 
   deleteFocused() {

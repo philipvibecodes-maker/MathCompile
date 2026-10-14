@@ -84,7 +84,9 @@
     // subscription covers the whole prefix's latex, not just ours.
     const prefixLatex = appStore.cells
       .slice(0, index + 1)
-      .map((c) => c.latex);
+      // Python cells contribute nothing parseable to the interim
+      // engine's context — their source isn't latex.
+      .map((c) => (c.kind === 'python' ? '' : c.latex));
     const latex = prefixLatex[prefixLatex.length - 1] ?? '';
     // Read here so toggling the (a,b) pref re-triggers the eval below.
     const pairTuple = appStore.pairTuple;
@@ -92,7 +94,11 @@
     // import line + qualifiers, so the eval must re-run with it.
     const importAll = appStore.importAll;
     const mine = ++seq;
-    if (latexToStatementStrings(latex).length === 0) {
+    if (
+      cell.kind === 'python'
+        ? latex.trim() === ''
+        : latexToStatementStrings(latex).length === 0
+    ) {
       rows = [];
       pending = false;
       interim = false;
@@ -110,7 +116,7 @@
       // result — rendered dimmed since the real eval is still pending.
       // The `pending` guard keeps a late interim from overwriting real
       // rows that already landed.
-      if (calcEngine.status !== 'ready') {
+      if (calcEngine.status !== 'ready' && cell.kind === 'math') {
         interimEvaluate(latex, prefixLatex.slice(0, -1), {
           pairTuple,
         }).then((r) => {
@@ -123,6 +129,9 @@
       evaluate(appStore.cells.slice(0, index + 1), {
         pairTuple,
         importAll,
+        // The registry spans the whole worksheet so a def below the
+        // call still resolves (with the ordering note).
+        worksheetCells: appStore.cells,
       }).then(
         (r) => {
           if (mine !== seq) return;

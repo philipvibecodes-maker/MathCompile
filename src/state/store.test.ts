@@ -149,6 +149,73 @@ describe('app store', () => {
     expect(s.focusedId).toBe(b);
   });
 
+  it('a python cell keeps its source in latex and wraps it as PythonSource json', () => {
+    const s = new AppStore();
+    const id = s.addPythonCell();
+    s.setLatex(id, 'def relu(x):\n    return x');
+    expect(s.cells[1].kind).toBe('python');
+    expect(s.cells[1].json).toEqual([
+      'PythonSource',
+      'def relu(x):\n    return x',
+    ]);
+  });
+
+  it('setCellKind flips the editor and reparses the source', () => {
+    const s = new AppStore();
+    s.setLatex(s.cells[0].id, 'x + 1');
+    s.setCellKind(s.cells[0].id, 'python');
+    expect(s.cells[0].kind).toBe('python');
+    expect(s.cells[0].json).toEqual(['PythonSource', 'x + 1']);
+    s.setCellKind(s.cells[0].id, 'math');
+    expect(s.cells[0].kind).toBe('math');
+    expect(s.cells[0].json).toEqual(['Add', 'x', 1]);
+  });
+
+  it('duplicateCell preserves the python kind', () => {
+    const s = new AppStore();
+    s.addPythonCell();
+    s.duplicateCell(s.cells[1].id);
+    expect(s.cells.map((c) => c.kind)).toEqual(['math', 'python', 'python']);
+  });
+
+  it('a python cell round-trips its kind through workbook storage', () => {
+    const { map } = stubStorage();
+    const s = new AppStore();
+    s.addPythonCell();
+    s.setLatex(s.cells[1].id, 'def f(x):\n    return x');
+    flushPendingCells();
+    expect(storedWorkbook(map).sheets[0].cells[1].kind).toBe('python');
+    const again = new AppStore();
+    expect(again.cells.map((c) => c.kind)).toEqual(['math', 'python']);
+    expect(again.cells[1].json).toEqual([
+      'PythonSource',
+      'def f(x):\n    return x',
+    ]);
+  });
+
+  it('importWorksheet keeps imported cell kinds', () => {
+    stubStorage();
+    const s = new AppStore();
+    s.importWorksheet('Imported', [
+      { id: 1, latex: 'z' },
+      { id: 2, latex: 'def f(x): return x', kind: 'python' },
+    ]);
+    expect(s.cells.map((c) => c.kind)).toEqual(['math', 'python']);
+  });
+
+  it('worksheetSnapshot carries cell kind for export', () => {
+    stubStorage();
+    const s = new AppStore();
+    s.addPythonCell();
+    s.setLatex(s.cells[1].id, 'def f(x): return x');
+    const snap = s.worksheetSnapshot();
+    expect(snap?.cells[1]).toEqual({
+      id: s.cells[1].id,
+      latex: 'def f(x): return x',
+      kind: 'python',
+    });
+  });
+
   it('toggles option state and the palette', () => {
     const s = new AppStore();
     s.target = 'glsl';

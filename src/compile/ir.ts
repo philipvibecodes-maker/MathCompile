@@ -1337,6 +1337,10 @@ function normalizeStatementEqual(
 export type PairTupleMode = 'interval' | 'matrix';
 export interface NormalizeOptions {
   pairTuple?: PairTupleMode;
+  /** Names a python cell's `def`/`lambda` resolves to (pydefs.ts) —
+   *  `\mathrm{relu}(x)` lowers to a `call` like a declared fn instead
+   *  of raising the unknown-head note. */
+  pyFns?: ReadonlySet<string>;
 }
 
 interface NormalizeCtx {
@@ -2598,7 +2602,7 @@ export function normalizeIR(
       // about a stub that never reaches the output. A worksheet-declared
       // name isn't unknown either — `f(3)` after `f(x) = …` calls the
       // def the cell already made.
-      if (!CALL_RENAMED.has(h) && !declaredFns.has(h))
+      if (!CALL_RENAMED.has(h) && !declaredFns.has(h) && !opts.pyFns?.has(h))
         pushIssue('note', `unknown head "${h}" — emitted as ${h}(...)`);
       return ['call', h, ...node.slice(1).map((n) => normalize(n, false))];
     }

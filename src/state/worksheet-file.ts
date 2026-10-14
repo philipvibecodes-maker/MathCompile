@@ -23,7 +23,8 @@ const isStoredCell = (c: unknown): c is StoredCell =>
   typeof c === 'object' &&
   c !== null &&
   typeof (c as StoredCell).id === 'number' &&
-  typeof (c as StoredCell).latex === 'string';
+  typeof (c as StoredCell).latex === 'string' &&
+  ((c as StoredCell).kind === undefined || (c as StoredCell).kind === 'python');
 
 export function parseWorksheetFile(text: string): WorksheetFile | null {
   let parsed: unknown;
