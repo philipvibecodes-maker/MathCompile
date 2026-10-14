@@ -94,7 +94,8 @@ describe('derived codegen views equal the replaced literals', () => {
       eigenvals: 'eigenvals()', eigenvects: 'eigenvects()',
       inverse: 'inv()', transpose: 'T', norm: 'norm()',
       rref: 'rref()[0]', charpoly: 'charpoly().as_expr()',
-      nullspace: 'nullspace()', columnspace: 'columnspace()',
+      nullspace: 'nullspace()', Kernel: 'nullspace()', ker: 'nullspace()',
+      columnspace: 'columnspace()',
       diagonalize: 'diagonalize()', adjugate: 'adjugate()',
     });
   });
@@ -243,7 +244,7 @@ describe('derived ir.ts views equal the replaced literals', () => {
   it('MATRIX_WORD_OPS', () => {
     expect(sort(MATRIX_WORD_OPS)).toEqual(
       sort(['trace', 'rank', 'eigenvals', 'eigenvects', 'inverse',
-        'transpose', 'norm', 'rref', 'charpoly', 'nullspace',
+        'transpose', 'norm', 'rref', 'charpoly', 'nullspace', 'ker',
         'columnspace', 'diagonalize', 'adjugate']),
     );
   });
@@ -281,8 +282,8 @@ describe('derived ir.ts views equal the replaced literals', () => {
       'nCk', 'nCr', 'nPr', 'perm', 'Pi',
       'Trace', 'trace', 'tr', 'rank', 'eigenvals', 'eigenvects',
       'inverse', 'transpose', 'norm',
-      'rref', 'charpoly', 'nullspace', 'columnspace', 'diagonalize',
-      'adjugate',
+      'rref', 'charpoly', 'nullspace', 'Kernel', 'ker',
+      'columnspace', 'diagonalize', 'adjugate',
       'Ring', 'GoldenRatio', 'Mean', 'ForAll', 'Exists', 'Comprehension',
       'PseudoInverse', 'Superminus', 'Superplus', 'KroneckerDelta',
       'Arsinh', 'Arcosh', 'Artanh',

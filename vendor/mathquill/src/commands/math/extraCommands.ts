@@ -1434,3 +1434,66 @@ LatexCmds.gradient = () =>
     '∇',
     'gradient'
   );
+
+//======================================================================
+//  \dotproduct — insertion alias for \bullet
+//======================================================================
+
+// Typing `\dotproduct` expands to the \bullet sign the compiler reads
+// as the dot product (`u \bullet v` -> u·v); a pasted `\dotproduct`
+// renders the same • glyph and serializes as \bullet — the same
+// insertion-time expansion \gradient uses.
+class DotProductAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\bullet ');
+  }
+}
+LatexCmds.dotproduct = () =>
+  new DotProductAlias(
+    '\\bullet ',
+    h('span', { class: 'mq-binary-operator' }, [
+      h.entityText('&bull;')
+    ]) as HTMLElement,
+    '•',
+    'dot product'
+  );
+
+//======================================================================
+//  Matrix word-op aliases — \rank, \eigenvals, \eigenvects, \inverse,
+//  \transpose, \norm, \rref, \charpoly, \nullspace, \columnspace,
+//  \diagonalize, \adjugate
+//======================================================================
+
+// Each expands to its `\mathrm{<word>}` form — the word-op spelling the
+// compiler reads for the matrix method (`\mathrm{rank} A` /
+// `\mathrm{rank}(A)` -> `(A).rank()`), the same insertion-time
+// expansion \tr uses. None is a real LaTeX command, so stored latex
+// canonicalizes to \mathrm{…} on the next save. No trailing space (see
+// \tr): it would put a space node between the name and the parens.
+function mathrmWordAlias(name: string, speak: string) {
+  return class extends MQSymbol {
+    createLeftOf(cursor: Cursor) {
+      cursor.parent.writeLatex(cursor, '\\mathrm{' + name + '}');
+    }
+    constructor() {
+      super(
+        '\\mathrm{' + name + '}',
+        h('span', { class: 'mq-roman' }, [h.text(name)]) as HTMLElement,
+        name,
+        speak
+      );
+    }
+  };
+}
+LatexCmds.rank = mathrmWordAlias('rank', 'rank');
+LatexCmds.eigenvals = mathrmWordAlias('eigenvals', 'eigenvalues');
+LatexCmds.eigenvects = mathrmWordAlias('eigenvects', 'eigenvectors');
+LatexCmds.inverse = mathrmWordAlias('inverse', 'inverse');
+LatexCmds.transpose = mathrmWordAlias('transpose', 'transpose');
+LatexCmds.norm = mathrmWordAlias('norm', 'norm');
+LatexCmds.rref = mathrmWordAlias('rref', 'reduced row echelon form');
+LatexCmds.charpoly = mathrmWordAlias('charpoly', 'characteristic polynomial');
+LatexCmds.nullspace = mathrmWordAlias('nullspace', 'null space');
+LatexCmds.columnspace = mathrmWordAlias('columnspace', 'column space');
+LatexCmds.diagonalize = mathrmWordAlias('diagonalize', 'diagonalize');
+LatexCmds.adjugate = mathrmWordAlias('adjugate', 'adjugate');

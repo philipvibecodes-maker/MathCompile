@@ -1406,10 +1406,10 @@ const ACCENT_SUFFIX: Record<string, string> = {
 // Exported so tests can enumerate the folds (name-uniqueness and the
 // coverage probe in compile.test.ts) — not mutated by callers.
 // `\nabla` reaches CE as an unexpected-command Error (the
-// nabla-gradient latex rule leaves it alone before \cdot/\times);
-// inside a vector op it becomes the Nabla head so codegen can emit
-// divergence/curl. CircleMinus is the \cdot disguise; CircledAst the
-// \times one.
+// nabla-gradient latex rule leaves it alone before \cdot/\bullet/
+// \times); inside a vector op it becomes the Nabla head so codegen can
+// emit divergence/curl. CircleMinus is the \bullet disguise (\nabla\cdot
+// arrives pre-rewritten to \nabla\bullet); CircledAst the \times one.
 const isNablaError = (v: MathJson | undefined): boolean =>
   isArray(v) &&
   head(v) === 'Error' &&
@@ -1868,7 +1868,10 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
         ];
       // `\mathrm{trace}(M)`-style word ops fused to a matrix literal
       // arrive as InvisibleOperator(word, Matrix) — a method call, not
-      // a product (the Delimiter-less pmatrix shape).
+      // a product (the Delimiter-less pmatrix shape). On a bare name
+      // (`\mathrm{eigenvects} A`) it folds to the same `call` node the
+      // parenthesized form produces — codegen's matrix-method branch
+      // mints the MatrixSymbol.
       if (args.length === 2) {
         const [w, m] =
           isString(args[0]) && MATRIX_WORD_OPS.has(args[0])
@@ -1876,12 +1879,10 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
             : isString(args[1]) && MATRIX_WORD_OPS.has(args[1])
               ? ([args[1], args[0]] as const)
               : [undefined, undefined];
-        if (
-          w !== undefined &&
-          isArray(m) &&
-          head(m as MathJson) === 'Matrix'
-        )
+        if (w !== undefined && isArray(m) && head(m as MathJson) === 'Matrix')
           return ['MatrixMethod', w, m as MathJson];
+        if (w !== undefined && isString(m))
+          return ['call', w, m as MathJson];
       }
       const folded = foldDQuotient(args);
       if (folded) {
@@ -1939,6 +1940,12 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
               : [undefined, undefined];
         if (w !== undefined && isArray(m) && head(m) === 'Matrix')
           return ['MatrixMethod', w, ctx.norm(m)];
+        // A bare name — `\mathrm{rank} A` — is the same call node the
+        // parenthesized spelling produces (codegen mints the
+        // MatrixSymbol). A defined scalar still flows through and gets
+        // the honest "needs a matrix" flag there.
+        if (w !== undefined && isString(m))
+          return ['call', w, ctx.norm(m)];
       }
       return DECLINE;
     },

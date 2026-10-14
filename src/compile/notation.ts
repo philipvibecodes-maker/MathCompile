@@ -447,42 +447,84 @@ export const NOTATION: Notation[] = [
     name: 'rank',
     matrixMethod: 'rank()',
     wordOps: ['rank'],
+    commands: ['rank'],
+    completion: {
+      name: 'rank',
+      hint: 'matrix rank',
+      preview: '\\mathrm{rank} A',
+    },
     spellings: ['\\mathrm{rank}(A)', '\\operatorname{rank}(A)', '\\text{rank}(A)'],
   },
   {
     name: 'eigenvals',
     matrixMethod: 'eigenvals()',
     wordOps: ['eigenvals'],
+    commands: ['eigenvals'],
+    completion: {
+      name: 'eigenvals',
+      hint: 'eigenvalues',
+      preview: '\\mathrm{eigenvals} A',
+    },
     spellings: ['\\mathrm{eigenvals}(A)', '\\operatorname{eigenvals}(A)'],
   },
   {
     name: 'eigenvects',
     matrixMethod: 'eigenvects()',
     wordOps: ['eigenvects'],
+    commands: ['eigenvects'],
+    completion: {
+      name: 'eigenvects',
+      hint: 'eigenvectors',
+      preview: '\\mathrm{eigenvects} A',
+    },
     spellings: ['\\mathrm{eigenvects}(A)', '\\operatorname{eigenvects}(A)'],
   },
   {
     name: 'inverse',
     matrixMethod: 'inv()',
     wordOps: ['inverse'],
+    commands: ['inverse'],
+    completion: {
+      name: 'inverse',
+      hint: 'matrix inverse',
+      preview: '\\mathrm{inverse} A',
+    },
     spellings: ['\\mathrm{inverse}(A)', '\\operatorname{inverse}(A)'],
   },
   {
     name: 'transpose',
     matrixMethod: 'T',
     wordOps: ['transpose'],
+    commands: ['transpose'],
+    completion: {
+      name: 'transpose',
+      hint: 'matrix transpose',
+      preview: '\\mathrm{transpose} A',
+    },
     spellings: ['\\mathrm{transpose}(A)', '\\operatorname{transpose}(A)'],
   },
   {
     name: 'norm',
     matrixMethod: 'norm()',
     wordOps: ['norm'],
+    commands: ['norm'],
+    completion: {
+      name: 'norm',
+      hint: 'matrix/vector norm',
+      preview: '\\mathrm{norm} A',
+    },
     spellings: ['\\mathrm{norm}(A)', '\\operatorname{norm}(A)'],
   },
   {
     name: 'rref',
     matrixMethod: 'rref()[0]',
     wordOps: ['rref'],
+    commands: ['rref'],
+    completion: {
+      name: 'rref',
+      hint: 'reduced row echelon form',
+      preview: '\\mathrm{rref} A',
+    },
     spellings: ['\\mathrm{rref}(A)', '\\operatorname{rref}(A)'],
     probes: [
       {
@@ -497,6 +539,12 @@ export const NOTATION: Notation[] = [
     name: 'charpoly',
     matrixMethod: 'charpoly().as_expr()',
     wordOps: ['charpoly'],
+    commands: ['charpoly'],
+    completion: {
+      name: 'charpoly',
+      hint: 'characteristic polynomial',
+      preview: '\\mathrm{charpoly} A',
+    },
     spellings: ['\\mathrm{charpoly}(A)', '\\operatorname{charpoly}(A)'],
     note: '.charpoly() is a PurePoly; .as_expr() reads it as a '
       + 'polynomial in lambda_.',
@@ -504,19 +552,44 @@ export const NOTATION: Notation[] = [
   {
     name: 'nullspace',
     matrixMethod: 'nullspace()',
-    wordOps: ['nullspace'],
-    spellings: ['\\mathrm{nullspace}(A)', '\\operatorname{nullspace}(A)'],
+    callNames: ['Kernel', 'ker'],
+    wordOps: ['nullspace', 'ker'],
+    commands: ['nullspace', 'ker'],
+    completion: {
+      name: 'nullspace',
+      hint: 'null space / kernel',
+      preview: '\\mathrm{nullspace} A',
+    },
+    spellings: [
+      '\\mathrm{nullspace}(A)',
+      '\\operatorname{nullspace}(A)',
+      '\\ker(A)',
+      '\\ker A',
+    ],
+    note: '\\ker is a real LaTeX command — CE files it as Kernel.',
   },
   {
     name: 'columnspace',
     matrixMethod: 'columnspace()',
     wordOps: ['columnspace'],
+    commands: ['columnspace'],
+    completion: {
+      name: 'columnspace',
+      hint: 'column space',
+      preview: '\\mathrm{columnspace} A',
+    },
     spellings: ['\\mathrm{columnspace}(A)', '\\operatorname{columnspace}(A)'],
   },
   {
     name: 'diagonalize',
     matrixMethod: 'diagonalize()',
     wordOps: ['diagonalize'],
+    commands: ['diagonalize'],
+    completion: {
+      name: 'diagonalize',
+      hint: 'diagonalize (P, D)',
+      preview: '\\mathrm{diagonalize} A',
+    },
     spellings: ['\\mathrm{diagonalize}(A)', '\\operatorname{diagonalize}(A)'],
     note: 'returns the (P, D) pair.',
   },
@@ -524,6 +597,12 @@ export const NOTATION: Notation[] = [
     name: 'adjugate',
     matrixMethod: 'adjugate()',
     wordOps: ['adjugate'],
+    commands: ['adjugate'],
+    completion: {
+      name: 'adjugate',
+      hint: 'adjugate matrix',
+      preview: '\\mathrm{adjugate} A',
+    },
     spellings: ['\\mathrm{adjugate}(A)', '\\operatorname{adjugate}(A)'],
   },
 
@@ -773,18 +852,25 @@ export const NOTATION: Notation[] = [
   {
     name: 'Dot',
     heads: ['CircleMinus', 'Nabla'],
-    commands: ['cdot'],
-    spellings: ['u \\cdot v'],
+    commands: ['bullet', 'dotproduct'],
+    spellings: ['u \\bullet v', 'u \\dotproduct v'],
     probes: [
       {
-        latex: '[1,2,3] \\cdot [4,5,6]',
+        latex: '[1,2,3] \\bullet [4,5,6]',
         expect: 'sp.Matrix([1, 2, 3]).dot(sp.Matrix([4, 5, 6]))',
       },
       { latex: '2 \\cdot 3', expect: '2 * 3' },
     ],
-    note: '\\cdot rewrites to \\ominus in latex.ts — the CircleMinus '
-      + 'head keeps it distinct from juxtaposition. Codegen is '
-      + 'operand-typed: vectors -> .dot(), \\nabla\\cdot -> divergence, '
+    completion: {
+      name: 'dotproduct',
+      hint: 'dot product •',
+      preview: 'u \\bullet v',
+    },
+    note: '\\bullet/\\dotproduct rewrite to \\ominus in latex.ts — the '
+      + 'CircleMinus head keeps the dot product distinct from '
+      + 'juxtaposition/\\cdot (always plain multiplication now). Codegen '
+      + 'is operand-typed: vectors -> .dot(), \\nabla\\bullet (and '
+      + '\\nabla\\cdot, pre-rewritten by nabla-div) -> divergence, '
       + 'all-sets -> the Cartesian *, scalars -> multiplication.',
   },
   {

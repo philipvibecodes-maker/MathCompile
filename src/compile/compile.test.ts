@@ -119,11 +119,43 @@ const FIXTURES: {
     expectedPython: ["x, a, b = sp.symbols('x a b')", 'sp.integrate(x, (x, a, b))'],
   },
   {
-    // Term order is preserved: CircleMinus(a, 2) emits `a * 2` —
-    // scalar \cdot stays multiplication, operands in user order.
+    // \cdot is plain multiplication now — a real Multiply, operands in
+    // user order. (The dot product lives on \bullet/\dotproduct.)
     latex: 'a \\cdot 2',
-    expectedIR: ['CircleMinus', 'a', 2],
+    expectedIR: ['Multiply', 'a', 2],
     expectedPython: ['a = sp.Symbol("a")', 'a * 2'],
+  },
+  {
+    // `\bullet` is the dot product — vectors emit .dot(), scalars
+    // multiply. `\dotproduct` is the insertion alias for \bullet.
+    latex: '[1,2,3] \\bullet [4,5,6]',
+    expectedIR: [
+      'CircleMinus',
+      ['List', 1, 2, 3],
+      ['List', 4, 5, 6],
+    ],
+    expectedPython: ['sp.Matrix([1, 2, 3]).dot(sp.Matrix([4, 5, 6]))'],
+  },
+  {
+    latex: '[1,2,3] \\dotproduct [4,5,6]',
+    expectedIR: [
+      'CircleMinus',
+      ['List', 1, 2, 3],
+      ['List', 4, 5, 6],
+    ],
+    expectedPython: ['sp.Matrix([1, 2, 3]).dot(sp.Matrix([4, 5, 6]))'],
+  },
+  {
+    // \cdot is real multiplication even between vectors — bracket
+    // lists wrap in sp.Matrix so `*` is a genuine matmul (a column·
+    // column shape error is the honest answer, not a dot product).
+    latex: '[1,2,3] \\cdot [4,5,6]',
+    expectedIR: [
+      'Multiply',
+      ['List', 1, 2, 3],
+      ['List', 4, 5, 6],
+    ],
+    expectedPython: ['sp.Matrix([1, 2, 3]) * sp.Matrix([4, 5, 6])'],
   },
   {
     // Implicit multiplication keeps user order too.
@@ -133,8 +165,8 @@ const FIXTURES: {
   },
   {
     // `u \times v` — the cross product. latex.ts rewrites \times to
-    // \text{mc-cross} so CE keeps it distinct from \cdot: vector
-    // operands emit .cross(), and scalar \times stays multiplication.
+    // \circledast so CE keeps it distinct from \cdot/juxtaposition:
+    // vector operands emit .cross(), and scalar \times stays multiplication.
     latex: '[1,2,3] \\times [4,5,6]',
     expectedIR: [
       'CircledAst',
@@ -203,8 +235,35 @@ const FIXTURES: {
     latex: '\\nabla \\times [x^2, y, z]',
     expectedIR: ['CircledAst', ['Nabla'], ['List', ['Power', 'x', 2], 'y', 'z']],
     expectedPython: [
+      "z, y, x = sp.symbols('z y x')",
+      'sp.Matrix([sp.diff(z, y) - sp.diff(y, z), sp.diff(x**2, z) - sp.diff(z, x), sp.diff(y, x) - sp.diff(x**2, y)])',
+    ],
+  },
+  {
+    // \nabla \cdot F is the divergence — \cdot rewrites to \bullet on
+    // the way in. Literal vectors emit per-component diffs (no
+    // re-emitted Matrix literal per term).
+    latex: '\\nabla \\cdot [x^2, y, z]',
+    expectedIR: ['CircleMinus', ['Nabla'], ['List', ['Power', 'x', 2], 'y', 'z']],
+    expectedPython: [
       "x, y, z = sp.symbols('x y z')",
-      'sp.Matrix([sp.diff(([x**2, y, z])[2], y) - sp.diff(([x**2, y, z])[1], z), sp.diff(([x**2, y, z])[0], z) - sp.diff(([x**2, y, z])[2], x), sp.diff(([x**2, y, z])[1], x) - sp.diff(([x**2, y, z])[0], y)])',
+      "sp.diff(x**2, sp.Symbol('x')) + sp.diff(y, sp.Symbol('y')) + sp.diff(z, sp.Symbol('z'))",
+    ],
+  },
+  {
+    // A row-vector/paren-tuple field is the same 3-vector.
+    latex: '\\nabla \\cdot \\begin{bmatrix}x^2&y&z\\end{bmatrix}',
+    expectedPython: [
+      "x, y, z = sp.symbols('x y z')",
+      "sp.diff(x**2, sp.Symbol('x')) + sp.diff(y, sp.Symbol('y')) + sp.diff(z, sp.Symbol('z'))",
+    ],
+  },
+  {
+    latex: '\\nabla \\bullet [x^2, y, z]',
+    expectedIR: ['CircleMinus', ['Nabla'], ['List', ['Power', 'x', 2], 'y', 'z']],
+    expectedPython: [
+      "x, y, z = sp.symbols('x y z')",
+      "sp.diff(x**2, sp.Symbol('x')) + sp.diff(y, sp.Symbol('y')) + sp.diff(z, sp.Symbol('z'))",
     ],
   },
   {
@@ -1234,10 +1293,11 @@ const FIXTURES: {
   },
   {
     // A juxtaposed tuple keeps its matrix value — u·(a,b,c) is scalar
-    // times row matrix, not u·a·b·c.
+    // times row matrix, not u·a·b·c. (\cdot is plain multiplication;
+    // the tuple was already a row-matrix node.)
     latex: 'u \\cdot (a,b,c)',
     expectedPython: [
-      "a, b, c, u = sp.symbols('a b c u')",
+      "u, a, b, c = sp.symbols('u a b c')",
       'u * sp.Matrix([[a, b, c]])',
     ],
   },
@@ -1531,13 +1591,57 @@ const FIXTURES: {
     expectedPython: ['(sp.Matrix([[1, 2], [3, 4]])).trace()'],
   },
   {
+    // A bare name under a matrix word-op mints a MatrixSymbol (the
+    // \det A convention) instead of a `word(M)` Function stub.
     latex: '\\mathrm{trace}(M)',
     expectedPython: [
-      'M = sp.Symbol("M")',
-      'trace = sp.Function("trace")',
-      'trace(M)',
+      'M = sp.MatrixSymbol("M", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
+      'sp.Trace(M)',
     ],
-    issues: ['trace needs a matrix'],
+  },
+  {
+    // `\mathrm{eigenvects}(A)` on a bare name — same MatrixSymbol mint,
+    // concrete-only methods lower through .as_explicit().
+    latex: '\\mathrm{eigenvects}(A)',
+    expectedPython: [
+      'A = sp.MatrixSymbol("A", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
+      '(A).as_explicit().eigenvects()',
+    ],
+  },
+  {
+    // The juxtaposed form folds to the same call.
+    latex: '\\mathrm{eigenvects} A',
+    expectedPython: [
+      'A = sp.MatrixSymbol("A", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
+      '(A).as_explicit().eigenvects()',
+    ],
+  },
+  {
+    // `\ker` is the kernel — CE files it as Kernel; it lowers to
+    // .nullspace() like \mathrm{nullspace}.
+    latex: '\\ker A',
+    expectedPython: [
+      'A = sp.MatrixSymbol("A", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
+      '(A).as_explicit().nullspace()',
+    ],
+  },
+  {
+    latex: '\\ker(\\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix})',
+    expectedPython: ['(sp.Matrix([[1, 2], [3, 4]])).nullspace()'],
+  },
+  {
+    // I_n lowers to sp.eye(n) — already a concrete matrix, so no
+    // .as_explicit() (MutableDenseMatrix has no such method).
+    latex: '\\ker I_{2}',
+    expectedPython: ['(sp.eye(2)).nullspace()'],
+  },
+  {
+    // A name already bound to a scalar flags an error — the broken
+    // statement emits nothing (the Function decl is minted while
+    // emitting, before the flag lands).
+    latex: 'x = 5 \\\\ \\mathrm{rank}(x)',
+    expectedPython: ['rank = sp.Function("rank")', 'x = 5'],
+    issues: ['rank needs a matrix'],
   },
   {
     // M^{\mathrm{T}} reads as transpose — CE wraps the text superscript

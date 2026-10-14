@@ -290,19 +290,20 @@ export const LATEX_RULES: LatexRule[] = [
     name: 'nabla-gradient',
     why: '\\nabla/\\gradient spell the gradient operator — CE has no '
       + 'latex for it, so they rewrite to \\operatorname{grad} which the '
-      + 'normalizer folds to a Gradient node. \\nabla\\cdot/\\times '
-      + '(div/curl), \\nabla^2 (laplacian) and \\nabla_v stay '
+      + 'normalizer folds to a Gradient node. \\nabla\\cdot/\\bullet/'
+      + '\\times (div/curl), \\nabla^2 (laplacian) and \\nabla_v stay '
       + 'unsupported-command errors — only the gradient reading exists.',
     applies: /\\(?:nabla|gradient)(?![a-zA-Z])/,
     rewrite: (s) =>
       s.replace(
-        /(?<!\\)((?:\\\\)*)\\(?:nabla|gradient)(?![a-zA-Z])(?!\s*(?:\\cdot|\\times|\^|_))/g,
+        /(?<!\\)((?:\\\\)*)\\(?:nabla|gradient)(?![a-zA-Z])(?!\s*(?:\\cdot|\\times|\\bullet|\\dotproduct|\^|_))/g,
         '$1\\operatorname{grad}',
       ),
     tests: [
       ['\\nabla f', '\\operatorname{grad} f'],
       ['\\gradient f', '\\operatorname{grad} f'],
       ['\\nabla \\cdot F', '\\nabla \\cdot F'],
+      ['\\nabla \\bullet F', '\\nabla \\bullet F'],
       ['\\nabla^2 f', '\\nabla^2 f'],
       ['\\nablas', '\\nablas'],
       ['x\\\\nabla y', 'x\\\\nabla y'],
@@ -336,30 +337,52 @@ export const LATEX_RULES: LatexRule[] = [
     ],
   },
   {
-    // Must run after nabla-gradient: its lookahead still needs the raw
-    // \cdot to leave \nabla\cdot alone.
-    name: 'cdot-dot',
-    why: '\\cdot is the dot product — CE folds it into Multiply with '
-      + 'juxtaposition, so it masquerades as \\ominus: a real but '
-      + 'effectively-unused CE infix that mints the CircleMinus head, '
-      + 'which codegen lowers operand-typed: vectors to .dot(), '
-      + '\\nabla\\cdot to divergence, all-set operands to the '
-      + 'Cartesian *, scalar \\cdot to multiplication. Literal '
-      + '\\ominus reads as \\cdot. An even backslash count before it '
-      + 'is a row separator + literal text, not the command.',
-    applies: /\\cdot(?![a-zA-Z])/,
+    // Must run after nabla-gradient (its lookahead leaves \nabla\cdot
+    // alone) and before bullet-dot: a `\nabla \cdot` pair is the
+    // divergence — the \cdot is rewritten to \bullet so it joins the
+    // CircleMinus/Nabla path while every other \cdot is ordinary
+    // multiplication now.
+    name: 'nabla-div',
+    why: '\\nabla\\cdot F is the divergence spelling — \\cdot itself '
+      + 'is plain multiplication, so the pair rewrites to '
+      + '\\nabla\\bullet and bullet-dot carries it to the '
+      + 'CircleMinus/Nabla divergence codegen.',
+    applies: /\\(?:nabla|gradient)(?![a-zA-Z])\s*\\cdot(?![a-zA-Z])/,
     rewrite: (s) =>
       s.replace(
-        /(?<!\\)((?:\\\\)*)\\cdot(?![a-zA-Z])/g,
+        /(?<!\\)((?:\\\\)*)\\(nabla|gradient)(?![a-zA-Z])(\s*)\\cdot(?![a-zA-Z])/g,
+        '$1\\$2$3\\bullet',
+      ),
+    tests: [
+      ['\\nabla \\cdot F', '\\nabla \\bullet F'],
+      ['\\gradient\\cdot F', '\\gradient\\bullet F'],
+      ['a \\cdot b', 'a \\cdot b'],
+      ['x\\\\nabla\\cdot y', 'x\\\\nabla\\cdot y'],
+    ],
+  },
+  {
+    name: 'bullet-dot',
+    why: '\\bullet (and the \\dotproduct insertion alias) is the dot '
+      + 'product — CE folds it into Multiply with juxtaposition, so it '
+      + 'masquerades as \\ominus: a real but effectively-unused CE '
+      + 'infix that mints the CircleMinus head, which codegen lowers '
+      + 'operand-typed: vectors to .dot(), \\nabla\\bullet to '
+      + 'divergence, all-set operands to the Cartesian *, scalar '
+      + '\\bullet to multiplication. Literal \\ominus reads as '
+      + '\\bullet. An even backslash count before it is a row '
+      + 'separator + literal text, not the command.',
+    applies: /\\(?:bullet|dotproduct)(?![a-zA-Z])/,
+    rewrite: (s) =>
+      s.replace(
+        /(?<!\\)((?:\\\\)*)\\(?:bullet|dotproduct)(?![a-zA-Z])/g,
         '$1\\ominus',
       ),
     tests: [
-      ['u \\cdot v', 'u \\ominus v'],
-      ['2 \\cdot 3', '2 \\ominus 3'],
-      ['\\mathbb{R}^{m\\cdot n}', '\\mathbb{R}^{m\\ominus n}'],
-      ['\\cdots', '\\cdots'],
-      ['x\\\\cdot y', 'x\\\\cdot y'],
-      ['x\\\\\\cdot y', 'x\\\\\\ominus y'],
+      ['u \\bullet v', 'u \\ominus v'],
+      ['u \\dotproduct v', 'u \\ominus v'],
+      ['2 \\cdot 3', '2 \\cdot 3'],
+      ['x\\\\bullet y', 'x\\\\bullet y'],
+      ['x\\\\\\bullet y', 'x\\\\\\ominus y'],
     ],
   },
 ];
@@ -419,8 +442,9 @@ export const PRE_PARSE_RULES = [
   'big-set-ops',
   'd-total-alias',
   'nabla-gradient',
+  'nabla-div',
   'times-cross',
-  'cdot-dot',
+  'bullet-dot',
 ];
 
 // Display form for the output column: unwrapped like outputLatex, with
