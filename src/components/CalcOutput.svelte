@@ -87,7 +87,9 @@
       // Python cells contribute nothing parseable to the interim
       // engine's context — their source isn't latex.
       .map((c) => (c.kind === 'python' ? '' : c.latex));
-    const latex = prefixLatex[prefixLatex.length - 1] ?? '';
+    // The empty check reads the cell's own text, not the masked prefix —
+    // a python cell's source is what it evaluates.
+    const latex = cell.latex;
     // Read here so toggling the (a,b) pref re-triggers the eval below.
     const pairTuple = appStore.pairTuple;
     // Same for the import-* pref: it rewrites the emitted program's

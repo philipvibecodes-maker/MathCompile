@@ -141,6 +141,26 @@ test('# @latex aliases a def to custom notation', async ({ page }) => {
   );
 });
 
+test('python cells evaluate in the calculator — source echo and notes', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await addPythonCell(page);
+  await typePython(page, '# @latex \\pm\ndef goo(x):\n  return x + 2');
+  await setTarget(page, 'calculator');
+  // The python cell's own eval shows the def echo plus the
+  // malformed-alias note (needs the real engine — no interim for
+  // python cells).
+  const row = page.locator('.expr-row').nth(1);
+  await expect(row.locator('.issue-note')).toContainText(
+    'expands to Measurement(0, x)',
+    { timeout: 150_000 },
+  );
+  await expect(row.locator('.calc-issues')).toContainText(
+    'different # @latex name',
+  );
+});
+
 test('a call above its python def flags the ordering note', async ({
   page,
 }) => {
