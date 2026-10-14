@@ -304,10 +304,11 @@ real SymPy calls — `integrate`, `diff`, `Sum`/`Product`, `limit`
 | Vector | `\vec{v}` | \(\vec{v}\) |
 
 `\partial_{x}u` compiles to the partial derivative like the `\frac`
-form. `\nabla \cdot F` compiles to divergence on a concrete vector
-field; otherwise `\nabla` and `\Delta` are display notation — the
-compiler reads `\nabla` as an ordinary symbol, so `\nabla f` stays
-symbolic rather than becoming a gradient call.
+form. `\nabla f` is the gradient over the canonical coordinates
+(x, y, z): a bare name reads as a field of all three, `\nabla x`
+gives (1, 0, 0), and a coordinate bound to a value contributes a 0
+in its slot. `\nabla \cdot F` compiles to divergence on a concrete
+vector field; `\Delta` stays display notation.
 
 ### Topology
 
@@ -394,8 +395,9 @@ is `x(t)` differentiated once. `\mathcal{L}` is notation only.
 | Condition at infinity | `\infty` | \(\infty\) |
 
 `\partial_{t}u` compiles to the partial derivative, like the `\frac`
-form. The `\nabla`, `\Delta`, divergence, and curl spellings are
-display notation — no vector-calculus semantics behind them.
+form. `\nabla u` is the gradient over (x, y, z), and `\nabla \cdot F`
+/ `\nabla \times F` compute divergence and curl on concrete vector
+fields; `\Delta` stays display notation.
 
 ### Solving equations
 
