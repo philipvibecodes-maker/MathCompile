@@ -75,16 +75,24 @@
   let issuesVisible = $state<Record<number, boolean>>({});
   const issueTimers: Record<number, ReturnType<typeof setTimeout>> = {};
   const prevLatex: Record<number, string> = {};
+  // prevIssues tracks issue presence, not count — the debounce only
+  // needs re-arming on a keystroke or a cross-cell appear/disappear.
+  const prevIssues: Record<number, boolean> = {};
   // pre-effect: hides the overlay before the render that a keystroke
   // triggers — a normal $effect runs post-render and the panel would
   // mount for a frame, fade out, then re-fade in after the debounce.
   // Once shown it stays latched until the cell has no issues left.
   $effect.pre(() => {
     appStore.cells.forEach((c, i) => {
-      if (prevLatex[c.id] === c.latex) return;
-      prevLatex[c.id] = c.latex;
-      clearTimeout(issueTimers[c.id]);
       const hasIssues = (compiled?.cellIssues[i]?.length ?? 0) > 0;
+      // A latex change re-arms the debounce; so does an issue flipping
+      // without one — cross-cell notes (a python cell below flagging a
+      // caller's ordering) produce issues with no keystroke here.
+      if (prevLatex[c.id] === c.latex && prevIssues[c.id] === hasIssues)
+        return;
+      prevLatex[c.id] = c.latex;
+      prevIssues[c.id] = hasIssues;
+      clearTimeout(issueTimers[c.id]);
       if (hasIssues && !issuesVisible[c.id]) {
         const id = c.id;
         issueTimers[id] = setTimeout(
@@ -688,7 +696,7 @@
           + Add expression
         </button>
         <button
-          class="add-expr add-python"
+          class="add-python"
           title={'Python source cell — def f(x): … defines a function math cells can call as \\mathrm{f}(x); annotate a def with # @latex <latex> to name its call form'}
           onclick={() => appStore.addPythonCell()}
         >

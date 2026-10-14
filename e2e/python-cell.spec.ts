@@ -154,7 +154,7 @@ test('a call above its python def flags the ordering note', async ({
 
   // The call resolves (no Function stub) but carries the ordering note.
   const note = page
-    .locator('.cell-row')
+    .locator('.expr-row')
     .first()
     .locator('.issue-note .issue-text');
   await expect(note).toContainText('must sit above this cell');

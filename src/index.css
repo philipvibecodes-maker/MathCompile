@@ -1547,8 +1547,17 @@ body {
   color: var(--danger);
 }
 
-.add-expr {
+/* The add buttons sit in one row. `.add-expr` stays on the
+ * expression button as the e2e hook — the python button shares the
+ * look through .add-row without carrying the class (strict-mode
+ * locators resolve `.add-expr` to exactly one element). */
+.add-row {
+  display: flex;
+  gap: 8px;
   margin: 8px 0 0 32px;
+}
+
+.add-row button {
   padding: 8px 14px;
   font-size: 13px;
   color: var(--accent-text);
@@ -1558,19 +1567,8 @@ body {
   cursor: pointer;
 }
 
-.add-expr:hover {
+.add-row button:hover {
   background: var(--selected-bg);
-}
-
-/* The add buttons sit in one row — the margin moves to the wrapper. */
-.add-row {
-  display: flex;
-  gap: 8px;
-  margin: 8px 0 0 32px;
-}
-
-.add-row .add-expr {
-  margin: 0;
 }
 
 /* ── Header controls ────────────────────────────────── */
