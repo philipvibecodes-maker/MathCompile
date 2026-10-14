@@ -874,7 +874,16 @@ class Emitter {
     if (this.scope.emit.functions.has(name)) {
       const ident = this.scope.emit.functions.get(name)!;
       const argNodes = this.scope.emit.fnArgs.get(name);
-      if (argNodes === undefined || this.scope.emit.emitting.has(name))
+      if (
+        argNodes === undefined ||
+        this.scope.emit.emitting.has(name) ||
+        // A python-def'd name IS a callable — the bare operand emits the
+        // function object, not `f(<args recorded elsewhere>)` (that
+        // applied form exists for UndefinedFunction stubs, which can't
+        // sympify bare; depVars still need it — `f` means `f(x)` there).
+        (this.scope.emit.pyBacked.has(name) &&
+          !this.scope.kinds.depVars.has(name))
+      )
         return ident;
       // Bare function name in arithmetic position (`f + 1`) — emit the
       // applied form `f(x)` recorded at the decl/call site: the pointwise
@@ -1278,6 +1287,9 @@ class Emitter {
       isStr(a) &&
       this.scope.emit.functions.has(a) &&
       !this.scope.kinds.depVars.has(a) &&
+      // A python def is already a callable value — pass the function
+      // object (`g(f)`), not the eta expansion `Lambda(x, f(x))`.
+      !this.scope.emit.pyBacked.has(a) &&
       !this.scope.emit.emitting.has(a)
     ) {
       const argNodes = this.scope.emit.fnArgs.get(a);

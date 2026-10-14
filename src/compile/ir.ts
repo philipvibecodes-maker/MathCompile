@@ -1346,6 +1346,10 @@ export interface NormalizeOptions {
 interface NormalizeCtx {
   /** Names declared callable by statements seen so far, in cell order. */
   declaredFns: Set<string>;
+  /** Names a python cell's `def`/`lambda` binds (pydefs.ts) — a
+   *  registered name juxtaposed to an argument is a call even when no
+   *  Delimiter group marks it (a pmatrix absorbs the parens). */
+  pyFns: ReadonlySet<string>;
   /** The 2-element paren-tuple lowering for this pass. */
   pairTuple: PairTupleMode;
   /** True when the node sits in statement position (a top-level child of
@@ -1368,6 +1372,8 @@ interface NormalizeCtx {
   /** Push an issue into the current cell's issue list. */
   issue(severity: Issue['severity'], message: string): void;
 }
+
+const NO_NAMES: ReadonlySet<string> = new Set();
 
 // Sentinel for "shape matched but the fold doesn't apply" — see above.
 const DECLINE = Symbol('normalize-decline');
@@ -1887,6 +1893,12 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
           return ['MatrixMethod', w, m as MathJson];
         if (w !== undefined && isString(m))
           return ['call', w, m as MathJson];
+        // `\mathrm{f}\left(\begin{pmatrix}…\end{pmatrix}\right)` — a
+        // registered python def applied to a self-delimiting operand
+        // arrives Delimiter-less (the pmatrix absorbs the parens), the
+        // same shape as the word-op fold above: call it, don't multiply.
+        if (isString(args[0]) && ctx.pyFns.has(args[0]))
+          return ['call', args[0], args[1]];
       }
       const folded = foldDQuotient(args);
       if (folded) {
@@ -2582,6 +2594,7 @@ export function normalizeIR(
 
     const ctx: NormalizeCtx = {
       declaredFns,
+      pyFns: opts.pyFns ?? NO_NAMES,
       pairTuple: opts.pairTuple ?? 'interval',
       atStatement,
       allowNothing,

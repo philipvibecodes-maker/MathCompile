@@ -180,3 +180,35 @@ test('a call above its python def flags the ordering note', async ({
     .locator('.issue-note .issue-text');
   await expect(note).toContainText('must sit above this cell');
 });
+
+test('a matrix-literal argument calls the def — not implicit multiply', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await addPythonCell(page);
+  await typePython(
+    page,
+    'def addonetomatrix(A):\n  return A + eye(A.shape[0])',
+  );
+  // Shift+Enter drops a math cell below the def; a \left(\begin{pmatrix}
+  // argument absorbs the parens, arriving Delimiter-less — the call must
+  // still resolve, and each statement keeps its own argument.
+  await page.keyboard.press('Shift+Enter');
+  await cell(page, 1).evaluate(
+    (el) =>
+      ((el as unknown as { value: string }).value =
+        '\\displaylines{\\mathrm{addonetomatrix}\\left(I_{1}\\right)\\\\ \\mathrm{addonetomatrix}\\left(\\begin{pmatrix}1&2\\\\2&3\\end{pmatrix}\\right)}'),
+  );
+  await setTarget(page, 'calculator');
+  const row = page.locator('.expr-row').nth(2);
+  await expect(row.locator('.calc-result')).toHaveCount(2, {
+    timeout: 150_000,
+  });
+  await row.locator('.calc-code-toggle input').check();
+  await expect(row.locator('.calc-code')).toContainText(
+    'addonetomatrix(eye(1))',
+  );
+  await expect(row.locator('.calc-code')).toContainText(
+    'addonetomatrix(Matrix([[1, 2], [2, 3]]))',
+  );
+});

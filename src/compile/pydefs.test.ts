@@ -141,6 +141,45 @@ describe('python-def calls in math cells', () => {
     );
   });
 
+  it('a matrix literal argument still calls — the pmatrix absorbs the parens', () => {
+    // `\mathrm{f}\left(\begin{pmatrix}…\end{pmatrix}\right)` arrives
+    // Delimiter-less as InvisibleOperator(f, Matrix) — the registry
+    // makes it a call, not an implicit product.
+    const out = compileCellsForCalc(
+      [
+        py('def addonetomatrix(A):\n    return A + eye(A.shape[0])'),
+        math(
+          '\\mathrm{addonetomatrix}\\left(\\begin{pmatrix}1&2\\\\2&3\\end{pmatrix}\\right)',
+        ),
+      ],
+      { importAll: false },
+    );
+    expect(out.cells[1].statements[0].code).toBe(
+      'clean_and_simplify(addonetomatrix(sp.Matrix([[1, 2], [2, 3]])))',
+    );
+  });
+
+  it('each call re-reads its own args — no stale applied form', () => {
+    // A bare-name operand emitting `f(<last call's args>)` is for
+    // UndefinedFunction stubs; a python def is a real callable, so the
+    // second statement keeps its own matrix argument.
+    const out = compileCellsForCalc(
+      [
+        py('def addonetomatrix(A):\n    return A + eye(A.shape[0])'),
+        math(
+          '\\displaylines{\\mathrm{addonetomatrix}\\left(I_{1}\\right)\\\\ \\mathrm{addonetomatrix}\\left(\\begin{pmatrix}1&2\\\\2&3\\end{pmatrix}\\right)\\\\ 2\\mathrm{addonetomatrix}}',
+        ),
+      ],
+      { importAll: false },
+    );
+    expect(out.cells[1].statements.map((s) => s.code)).toEqual([
+      'clean_and_simplify(addonetomatrix(sp.eye(1)))',
+      'clean_and_simplify(addonetomatrix(sp.Matrix([[1, 2], [2, 3]])))',
+      // …and a bare py-def operand emits the callable itself.
+      'clean_and_simplify(2 * addonetomatrix)',
+    ]);
+  });
+
   it('an unregistered \\mathrm name still falls back to a Function stub', () => {
     const out = compileCellsForCalc([math('\\mathrm{relu}(x)')], {
       importAll: false,
