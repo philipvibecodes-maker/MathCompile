@@ -214,7 +214,10 @@ and empty blocks serialize as `{ }`.
   `.mq-int`, not `.mq-boundless-int` — and before real brackets; a
   following `.mq-supsub` carries the right-hand space, like
   `mq-after-operator-name`). `.mq-binomial` marks `\binom` so it isn't
-  mistaken for a real bracket.
+  mistaken for a real bracket. A caret sitting at a block edge next to
+  the group keeps the space (the caret is the "next atom" — the next
+  char lands in the gap instead of the gap popping in), while a truly
+  last-child node drops it, so rendered output gets no trailing space.
 - Matrices: `\begin{matrix|pmatrix|…}` environments + bare
   `\pmatrix{a&b\\c&d}`. Typed `\name` shortcuts (`\cases`, `\aligned`,
   `\gathered`, …) open the same grid `\begin{name}` resolves to;
