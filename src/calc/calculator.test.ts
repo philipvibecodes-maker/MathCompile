@@ -715,6 +715,21 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(t.statements[2].display).toContain('evaluate=False');
   });
 
+  it('displays a list-bound name as a column vector, not a raw list', () => {
+    // `u = [1,2,3]` binds a python list — `Eq(Symbol, <raw list>)`
+    // SympifyError'd at eval; the display wraps sp.Matrix and stays
+    // unevaluated like other matrix RHSes.
+    const l = calc('u = [1,2,3]');
+    expect(l.statements[0].code).toBe('u = [1, 2, 3]');
+    expect(l.statements[0].display).toBe(
+      F('sp.Eq(sp.Symbol("u"), sp.Matrix([1, 2, 3]), evaluate=False)'),
+    );
+    // Assigning a list-bound name on keeps the wrap.
+    const v = calc('u = [1,2,3] \\ \\\\ \\ v = u');
+    expect(v.statements[1].display).toContain('sp.Matrix(u)');
+    expect(v.statements[1].display).toContain('evaluate=False');
+  });
+
   it('marks an `a = I_2` binding matrix-typed for later ops', () => {
     // `det a` reads `a` as its bound DenseMatrix, not a new MatrixSymbol.
     const prog = calc('a = I_2 \\ \\\\ \\ \\det a');

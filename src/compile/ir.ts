@@ -492,7 +492,7 @@ const bigSetOps = (node: MathJson): MathJson => {
   if (!isArray(node)) return node;
   const h = head(node);
   const args = node.slice(1).map(bigSetOps) as MathJson[];
-  if (h !== 'InvisibleOperator' && h !== 'Multiply')
+  if (h !== 'InvisibleOperator' && h !== 'Multiply' && h !== 'CircleTimes')
     return [h, ...args] as MathJson;
   const markerAt = args.findIndex(
     (a) => a === "'mc-bigunion'" || a === "'mc-bigintersect'",
@@ -1405,7 +1405,32 @@ const ACCENT_SUFFIX: Record<string, string> = {
 
 // Exported so tests can enumerate the folds (name-uniqueness and the
 // coverage probe in compile.test.ts) — not mutated by callers.
+// `\nabla` reaches CE as an unexpected-command Error (the
+// nabla-gradient latex rule leaves it alone before \cdot/\bullet/
+// \times); inside a vector op it becomes the Nabla head so codegen can
+// emit divergence/curl. CircleMinus is the \bullet disguise (\nabla\cdot
+// arrives pre-rewritten to \nabla\bullet); CircledAst the \times one.
+const isNablaError = (v: MathJson | undefined): boolean =>
+  isArray(v) &&
+  head(v) === 'Error' &&
+  isArray(v[2]) &&
+  head(v[2]) === 'LatexString' &&
+  v[2][1] === "'\\nabla'";
+
 export const NORMALIZE_RULES: NormalizeRule[] = [
+  {
+    name: 'nabla-vector-op',
+    why: 'translate the \nabla Error operand in \nabla\\cdot/\\times into the Nabla head so codegen sees divergence/curl instead of an error',
+    when: (h, node) =>
+      (h === 'CircleMinus' || h === 'CircledAst') &&
+      (node as MathJson[]).slice(1).some(isNablaError),
+    rewrite: (node, ctx) => [
+      head(node),
+      ...(node as MathJson[])
+        .slice(1)
+        .map((a) => (isNablaError(a) ? (['Nabla'] as MathJson) : ctx.norm(a))),
+    ] as MathJson,
+  },
   {
     name: 'eval-bar',
     // \left. f \right|_{a}^{b}: CE emits the evaluation bar as
@@ -1843,7 +1868,10 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
         ];
       // `\mathrm{trace}(M)`-style word ops fused to a matrix literal
       // arrive as InvisibleOperator(word, Matrix) — a method call, not
-      // a product (the Delimiter-less pmatrix shape).
+      // a product (the Delimiter-less pmatrix shape). On a bare name
+      // (`\mathrm{eigenvects} A`) it folds to the same `call` node the
+      // parenthesized form produces — codegen's matrix-method branch
+      // mints the MatrixSymbol.
       if (args.length === 2) {
         const [w, m] =
           isString(args[0]) && MATRIX_WORD_OPS.has(args[0])
@@ -1851,12 +1879,10 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
             : isString(args[1]) && MATRIX_WORD_OPS.has(args[1])
               ? ([args[1], args[0]] as const)
               : [undefined, undefined];
-        if (
-          w !== undefined &&
-          isArray(m) &&
-          head(m as MathJson) === 'Matrix'
-        )
+        if (w !== undefined && isArray(m) && head(m as MathJson) === 'Matrix')
           return ['MatrixMethod', w, m as MathJson];
+        if (w !== undefined && isString(m))
+          return ['call', w, m as MathJson];
       }
       const folded = foldDQuotient(args);
       if (folded) {
@@ -1914,6 +1940,12 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
               : [undefined, undefined];
         if (w !== undefined && isArray(m) && head(m) === 'Matrix')
           return ['MatrixMethod', w, ctx.norm(m)];
+        // A bare name — `\mathrm{rank} A` — is the same call node the
+        // parenthesized spelling produces (codegen mints the
+        // MatrixSymbol). A defined scalar still flows through and gets
+        // the honest "needs a matrix" flag there.
+        if (w !== undefined && isString(m))
+          return ['call', w, ctx.norm(m)];
       }
       return DECLINE;
     },
@@ -2299,11 +2331,16 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
         node.length === 3 &&
         isString(node[1]) &&
         SET_LEAF.has(node[1]) &&
-        isArray(node[2]) &&
-        head(node[2]) === 'Error' &&
-        isArray(node[2][2]) &&
-        isString(node[2][2][1]) &&
-        node[2][2][1] === "'\\times'"
+        // `^{\times}` reads as an Error after latex.ts's times-cross
+        // rewrite mints `\circledast`; keep the raw \times/\otimes
+        // Error shapes for IR that bypasses parseCellLatex.
+        (isArray(node[2]) &&
+          head(node[2]) === 'Error' &&
+          isArray(node[2][2]) &&
+          isString(node[2][2][1]) &&
+          (node[2][2][1] === "'\\times'" ||
+            node[2][2][1] === "'\\otimes'" ||
+            node[2][2][1] === "'\\circledast'"))
       );
     },
     rewrite: (node) => {

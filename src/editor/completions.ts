@@ -58,9 +58,24 @@ export const COMPLETIONS: CompletionItem[] = [
   { name: 'ode', hint: 'solve an ODE (alias)', preview: '\\text{ode} ' },
   { name: 'pde', hint: 'solve a PDE (alias)', preview: '\\text{pde} ' },
   { name: 'python', hint: 'inline Python code', preview: '\\python{x = 1}' },
-  // `\tr` is an insertion alias — it expands to `\mathrm{tr}`; the item
-  // comes from the trace registry entry.
+  // `\tr` and the other matrix word-ops are insertion aliases — they
+  // expand to `\mathrm{<word>}`; the items come from their registry
+  // entries. `\ker` is a real LaTeX command (the kernel, emitted as
+  // nullspace).
   fromRegistry('tr'),
+  fromRegistry('rank'),
+  fromRegistry('eigenvals'),
+  fromRegistry('eigenvects'),
+  fromRegistry('inverse'),
+  fromRegistry('transpose'),
+  fromRegistry('norm'),
+  fromRegistry('rref'),
+  fromRegistry('charpoly'),
+  fromRegistry('nullspace'),
+  { name: 'ker', hint: 'kernel / null space', preview: '\\ker A' },
+  fromRegistry('columnspace'),
+  fromRegistry('diagonalize'),
+  fromRegistry('adjugate'),
   { name: 'matrix', hint: 'matrix grid', preview: '\\begin{matrix}a&b\\\\c&d\\end{matrix}' },
   { name: 'bmatrix', hint: '[ ] matrix', preview: '\\begin{bmatrix}a&b\\\\c&d\\end{bmatrix}' },
   { name: 'Bmatrix', hint: '{ } matrix', preview: '\\begin{Bmatrix}a&b\\\\c&d\\end{Bmatrix}' },
@@ -163,7 +178,10 @@ export const COMPLETIONS: CompletionItem[] = [
   { name: 'mp', hint: '∓' },
   { name: 'times', hint: '×' },
   { name: 'div', hint: '÷' },
-  { name: 'cdot', hint: '·' },
+  { name: 'cdot', hint: '· multiplication' },
+  // `\dotproduct` is an insertion alias for `\bullet` — the dot product
+  // (\cdot is multiplication/matrix multiplication now).
+  fromRegistry('dotproduct'),
   { name: 'circ', hint: '∘' },
   { name: 'bullet', hint: '•' },
   { name: 'wedge', hint: '∧' },

@@ -10,7 +10,7 @@
 // `clean_and_simplify` is a reserved identifier — pyIdent mangles a user
 // symbol of the same name to `clean_and_simplify_` so a cell can't
 // shadow it.
-export const CALC_RUNTIME_PY = `def clean_and_simplify(val, ans_var=None):  # display cleanup
+export const CALC_RUNTIME_PY = `def clean_and_simplify(val, ans_var=None, layout=None):  # display cleanup
     """Post-process a computed result for display.
 
     Three best-effort passes — each keeps the value and returns its
@@ -20,7 +20,9 @@ export const CALC_RUNTIME_PY = `def clean_and_simplify(val, ans_var=None):  # di
       mc_order     write sums in decreasing degree, constants last
 
     With ans_var (a Symbol or Tuple of them) a solver result displays
-    as 'x = a1, a2, ...' instead of a bare list/set.
+    as 'x = a1, a2, ...' instead of a bare list/set. With layout the
+    result is structured display data: 'span' renders a basis as
+    span{...} and 'eigenvects' renders eigen-triples as labeled blocks.
     """
     def mc_deg(term, gens):
         # Bare capital letters are constants of integration — they go last.
@@ -122,7 +124,7 @@ export const CALC_RUNTIME_PY = `def clean_and_simplify(val, ans_var=None):  # di
         if not isinstance(sol, (list, tuple)):
             return McTex(mc_tex(sol) if var is None else eq_tex(var, sol))
         if len(sol) == 0:
-            return McTex('\\varnothing' if var is None else mc_tex(var) + ' \\in \\varnothing')
+            return McTex(r'\\varnothing' if var is None else mc_tex(var) + r' \\in \\varnothing')
         if all(isinstance(s, (dict, sp.Dict)) for s in sol):
             return McTex(';\\ '.join(',\\ '.join(eq_tex(k, v) for k, v in s.items()) for s in sol))
         vars_ = list(var.args) if isinstance(var, sp.Tuple) else ([var] if var is not None else [])
@@ -141,7 +143,39 @@ export const CALC_RUNTIME_PY = `def clean_and_simplify(val, ans_var=None):  # di
 
         return McTex(';\\ '.join(one(s) for s in sol))
 
+    def mc_span(vecs):
+        """A basis result (nullspace/columnspace) displays as the span
+        it generates — an empty basis is the trivial space \\varnothing.
+        Non-list results pass through (they weren't a basis)."""
+        if not isinstance(vecs, (list, tuple)):
+            return vecs
+        if len(vecs) == 0:
+            return McTex(r'\\varnothing')
+        inner = ',\\ '.join(mc_tex(v) for v in vecs)
+        return McTex(r'\\mathrm{span}\\left\\{ ' + inner + r' \\right\\}')
+
+    def mc_eigenvects(triples):
+        """eigenvects() yields (eigenvalue, multiplicity, [vectors])
+        triples — sympy's latex nests them as a list of
+        (value, mult, [matrix]) tuples. Display each triple as one
+        labeled row instead."""
+        if not isinstance(triples, list):
+            return triples
+        def one(t):
+            ev, mult, vecs = t
+            span = (r'\\mathrm{span}\\left\\{ '
+                    + ',\\ '.join(mc_tex(v) for v in vecs)
+                    + r' \\right\\}')
+            return (r'\\text{Eigenvalue: }' + mc_tex(ev)
+                    + r',\\ \\text{multiplicity: }' + mc_tex(mult)
+                    + r',\\ \\text{eigenspace: }' + span)
+        return McTex(r'\\displaylines{ ' + r' \\\\ '.join(one(t) for t in triples) + r' }')
+
     out = mc_order(mc_simplify(mc_doit(val)))
+    if layout == 'span':
+        return mc_span(out)
+    if layout == 'eigenvects':
+        return mc_eigenvects(out)
     if ans_var is not None:
         out = mc_answers(ans_var, out)
     return out`;

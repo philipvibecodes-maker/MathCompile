@@ -13514,6 +13514,63 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds.gradient = function () {
         return new GradientAlias('\\nabla ', h('span', {}, [h.entityText('&nabla;')]), '\u2207', 'gradient');
     };
+    //======================================================================
+    //  \dotproduct \u2014 insertion alias for \bullet
+    //======================================================================
+    // Typing `\dotproduct` expands to the \bullet sign the compiler reads
+    // as the dot product (`u \bullet v` -> u\u00b7v); a pasted `\dotproduct`
+    // renders the same \u2022 glyph and serializes as \bullet \u2014 the same
+    // insertion-time expansion \gradient uses.
+    var DotProductAlias = /** @class */ (function (_super) {
+        __extends(DotProductAlias, _super);
+        function DotProductAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        DotProductAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\bullet ');
+        };
+        return DotProductAlias;
+    }(MQSymbol));
+    LatexCmds.dotproduct = function () {
+        return new DotProductAlias('\\bullet ', h('span', { class: 'mq-binary-operator' }, [
+            h.entityText('&bull;')
+        ]), '\u2022', 'dot product');
+    };
+    //======================================================================
+    //  Matrix word-op aliases \u2014 \rank, \eigenvals, \eigenvects, \inverse,
+    //  \transpose, \norm, \rref, \charpoly, \nullspace, \columnspace,
+    //  \diagonalize, \adjugate
+    //======================================================================
+    // Each expands to its `\mathrm{<word>}` form \u2014 the word-op spelling the
+    // compiler reads for the matrix method (`\mathrm{rank} A` /
+    // `\mathrm{rank}(A)` -> `(A).rank()`), the same insertion-time
+    // expansion \tr uses. None is a real LaTeX command, so stored latex
+    // canonicalizes to \mathrm{\u2026} on the next save. No trailing space (see
+    // \tr): it would put a space node between the name and the parens.
+    function mathrmWordAlias(name, speak) {
+        return /** @class */ (function (_super) {
+            __extends(class_34, _super);
+            function class_34() {
+                return _super.call(this, '\\mathrm{' + name + '}', h('span', { class: 'mq-roman' }, [h.text(name)]), name, speak) || this;
+            }
+            class_34.prototype.createLeftOf = function (cursor) {
+                cursor.parent.writeLatex(cursor, '\\mathrm{' + name + '}');
+            };
+            return class_34;
+        }(MQSymbol));
+    }
+    LatexCmds.rank = mathrmWordAlias('rank', 'rank');
+    LatexCmds.eigenvals = mathrmWordAlias('eigenvals', 'eigenvalues');
+    LatexCmds.eigenvects = mathrmWordAlias('eigenvects', 'eigenvectors');
+    LatexCmds.inverse = mathrmWordAlias('inverse', 'inverse');
+    LatexCmds.transpose = mathrmWordAlias('transpose', 'transpose');
+    LatexCmds.norm = mathrmWordAlias('norm', 'norm');
+    LatexCmds.rref = mathrmWordAlias('rref', 'reduced row echelon form');
+    LatexCmds.charpoly = mathrmWordAlias('charpoly', 'characteristic polynomial');
+    LatexCmds.nullspace = mathrmWordAlias('nullspace', 'null space');
+    LatexCmds.columnspace = mathrmWordAlias('columnspace', 'column space');
+    LatexCmds.diagonalize = mathrmWordAlias('diagonalize', 'diagonalize');
+    LatexCmds.adjugate = mathrmWordAlias('adjugate', 'adjugate');
     // Triple-quoted strings come first \u2014 docstrings span lines and must not get
     // keyword/call coloring on their contents.
     var PY_TOKEN_RE = /("""[\s\S]*?"""|'''[\s\S]*?'''|'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*")|(#[^\n]*)|(\b(?:and|as|assert|async|await|break|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|not|or|pass|raise|return|try|while|with|yield|True|False)\b)|(\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|([A-Za-z_]\w*(?=\s*\())/g;
@@ -13904,8 +13961,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
      *************************************************/
     var Environments = {};
     LatexCmds.begin = /** @class */ (function (_super) {
-        __extends(class_34, _super);
-        function class_34() {
+        __extends(class_35, _super);
+        function class_35() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.ctrlSeq = '\\begin';
             _this_1.domView = new DOMView(1, function (blocks) {
@@ -13917,7 +13974,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             });
             return _this_1;
         }
-        class_34.prototype.createBlocks = function () {
+        class_35.prototype.createBlocks = function () {
             _super.prototype.createBlocks.call(this);
             var beginNode = this;
             var nameBlock = this.getEnd(L);
@@ -13968,7 +14025,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 return origKeystroke.call(this, key, e, ctrlr);
             };
         };
-        class_34.prototype.parser = function () {
+        class_35.prototype.parser = function () {
             var string = Parser.string;
             var regex = Parser.regex;
             return string('{')
@@ -13988,7 +14045,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     .skip(string('\\end{' + env + '}'));
             });
         };
-        return class_34;
+        return class_35;
     }(MathCommand));
     // A MathCommand whose children ("cells") are laid out in a grid:
     // the matrix family (N columns, optional bracket delimiters) and
@@ -15218,15 +15275,15 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     // and the \begin parser's .skip('\\end{...}') consumes it as the close.
     LatexCmds.end = function () {
         return new (/** @class */ (function (_super) {
-            __extends(class_35, _super);
-            function class_35() {
+            __extends(class_36, _super);
+            function class_36() {
                 var _this_1 = _super.call(this, '\\end', new DOMView(0, function () {
                     return h('span', { class: 'mq-non-leaf' }, [h.text('\\end')]);
                 })) || this;
                 _this_1.env = '';
                 return _this_1;
             }
-            class_35.prototype.parser = function () {
+            class_36.prototype.parser = function () {
                 var self = this;
                 return Parser.string('{')
                     .then(Parser.regex(/^[a-z*]+/i))
@@ -15238,12 +15295,12 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     return Parser.succeed(self);
                 });
             };
-            class_35.prototype.latexRecursive = function (ctx) {
+            class_36.prototype.latexRecursive = function (ctx) {
                 this.checkCursorContextOpen(ctx);
                 ctx.uncleanedLatex += '\\end{' + this.env + '}';
                 this.checkCursorContextClose(ctx);
             };
-            return class_35;
+            return class_36;
         }(MathCommand)))();
     };
     // \begin{tabular}{spec} \u2014 the text-mode twin of \begin{array}, same
