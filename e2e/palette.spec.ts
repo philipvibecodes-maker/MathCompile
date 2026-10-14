@@ -92,9 +92,9 @@ test('clicking the backdrop closes the palette', async ({ page }) => {
 
 test('empty query lists every command', async ({ page }) => {
   await page.keyboard.press('Control+k');
-  // 8 fixed commands + 3 enabled targets + 1 worksheet switch + 1 goto
+  // 9 fixed commands + 3 enabled targets + 1 worksheet switch + 1 goto
   // per cell (single cell, single worksheet here).
-  await expect(page.locator('.cmd-item')).toHaveCount(13);
+  await expect(page.locator('.cmd-item')).toHaveCount(14);
 });
 
 test('a query matching nothing shows the empty state', async ({ page }) => {
@@ -229,6 +229,39 @@ test('palette input keeps focus after opening right after an edit', async ({
   await expect(page.locator('.palette-input')).toBeFocused();
   await page.waitForTimeout(200);
   await expect(page.locator('.palette-input')).toBeFocused();
+});
+
+test('rename worksheet prompts for a name and commits on Enter', async ({
+  page,
+}) => {
+  await page.keyboard.press('Control+k');
+  await page.locator('.palette-input').pressSequentially('rename worksheet');
+  await page.keyboard.press('Enter');
+  // Prompt mode: input prefilled with the current name, list hidden.
+  await expect(page.locator('.palette')).toBeVisible();
+  await expect(page.locator('.palette-input')).toHaveValue('Worksheet 1');
+  await expect(page.locator('.cmd-item')).toHaveCount(0);
+  await page.locator('.palette-input').fill('derivations');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.palette')).not.toBeVisible();
+  await expect(page.locator('.worksheets-current')).toHaveText('derivations');
+});
+
+test('Escape in the rename prompt backs out to the command list', async ({
+  page,
+}) => {
+  await page.keyboard.press('Control+k');
+  await page.locator('.palette-input').pressSequentially('rename worksheet');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.cmd-item')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.palette')).toBeVisible();
+  await expect(page.locator('.palette-input')).toHaveValue('');
+  await expect(page.locator('.cmd-item').first()).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.palette')).not.toBeVisible();
+  // No rename happened.
+  await expect(page.locator('.worksheets-current')).toHaveText('Worksheet 1');
 });
 
 test('exposes dialog/listbox semantics for assistive tech', async ({ page }) => {

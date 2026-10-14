@@ -8,7 +8,10 @@ export interface Command {
   hint?: string;
   current?: boolean;
   keywords?: string;
-  run: () => void;
+  run?: () => void;
+  // Commands that need a text argument swap the palette input into a
+  // prompt instead of running on pick; Enter submits, Escape cancels.
+  prompt?: { placeholder: string; initial: string; run: (value: string) => void };
 }
 
 // The command list reads the store directly; wrap the call in $derived at
@@ -47,6 +50,16 @@ export const buildCommands = (store: AppStore): Command[] => {
       title: 'New worksheet',
       keywords: 'create sheet notebook',
       run: () => store.createWorksheet(),
+    },
+    {
+      id: 'rename-worksheet',
+      title: `Rename worksheet (${store.activeWorksheet?.name ?? 'Worksheet'})`,
+      keywords: 'name title sheet notebook',
+      prompt: {
+        placeholder: 'New worksheet name…',
+        initial: store.activeWorksheet?.name ?? '',
+        run: (v) => store.renameWorksheet(store.activeWorksheetId, v),
+      },
     },
     {
       id: 'save-worksheet-file',
