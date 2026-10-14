@@ -24,7 +24,7 @@ test.beforeEach(async ({ page }) => {
   await clearFirstCell(page);
 });
 
-test('typed cells are restored after reload', async ({ page }) => {
+test('typed cells are restored after reload', { tag: '@smoke' }, async ({ page }) => {
   await cell(page, 0).pressSequentially('x+1', { delay: 40 });
   await page.locator('.add-expr').click();
   await cell(page, 1).pressSequentially('y^2', { delay: 40 });

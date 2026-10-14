@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test --grep @smoke",
     "test:perf": "playwright test -c playwright.perf.config.ts",
     "docs:pdf": "node scripts/build-reference-pdf.mjs"
   },

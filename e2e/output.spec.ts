@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { clearFirstCell } from './helpers';
@@ -44,6 +45,21 @@ test('header shows the commands button, smart mode sits above the input column',
   await expect(colField.locator('.option-checkbox input')).toHaveCount(1);
   await expect(colField).toContainText('Smart mode');
 });
+
+test(
+  'dev header shows the git branch badge',
+  { tag: '@smoke' },
+  async ({ page }) => {
+    // e2e runs against `vite dev`, which bakes the checked-out branch
+    // into __APP_BRANCH__; production builds compile it out entirely.
+    const badge = page.locator('.app-header .branch-badge');
+    await expect(badge).toBeVisible();
+    const branch = execSync('git rev-parse --abbrev-ref HEAD')
+      .toString()
+      .trim();
+    if (branch !== 'HEAD') await expect(badge).toHaveText(branch);
+  },
+);
 
 test('output select sits at the right end of the output column', async ({
   page,
@@ -145,7 +161,9 @@ test('calculator output stacks beneath its input; latex and python keep two colu
   await expect(page.locator('.col-resize')).toHaveCount(0);
 });
 
-test('latex target shows per-cell output with a copy button', async ({
+test('latex target shows per-cell output with a copy button',
+  { tag: '@smoke' },
+  async ({
   page,
   context,
 }) => {
@@ -170,7 +188,7 @@ test('latex target shows per-cell output with a copy button', async ({
   await expect(page.locator('.cell-python').first()).toContainText('x + 1');
 });
 
-test('python target shows standalone per-cell scripts', async ({
+test('python target shows standalone per-cell scripts', { tag: '@smoke' }, async ({
   page,
   context,
 }) => {

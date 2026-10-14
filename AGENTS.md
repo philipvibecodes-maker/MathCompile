@@ -21,6 +21,13 @@ through a MathJSON IR to LaTeX or SymPy-flavored Python (`src/compile/`).
   (MathQuill API + adapter checks via `e2e/spike.html`) and
   `vendor.spec.ts` (the upstream mocha suite run headlessly through the
   dev server).
+- `npm run test:e2e:smoke` — the `@smoke`-tagged subset (~20 tests) for
+  frequent runs: cell lifecycle, displaylines, adapter contract,
+  matrices, limits, palette/focus ownership, codegen targets,
+  persistence, worksheets, python cells, the branch badge. Deliberately
+  excludes `calculator.spec.ts` (real Pyodide/SymPy boot, ~90s waits)
+  and `vendor.spec.ts` (whole mocha suite); run the full suite before
+  merging or after touching `vendor/`/`src/calc/`.
 - `npm run test:perf` — framework-agnostic perf battery (`perf/`); builds and
   serves the production bundle on :4173. For another implementation: serve
   its prod build and run `PERF_BASE_URL=<url> PERF_LABEL=<name> npm run
@@ -228,6 +235,24 @@ and empty blocks serialize as `{ }`.
 
 ## Testing notes
 
+- While iterating, run the e2e spec(s) covering the area you changed —
+  `npx playwright test e2e/<area>.spec.ts` reuses or starts the dev
+  server on :5573. `@smoke` is a sanity floor, not coverage of your
+  diff: matrices → `matrix` + `matrix-menu`; codegen/output → `output`
+  (+ `npm test`); calc target → `calculator` (Pyodide boot — slow, run
+  anyway); vendored MathQuill → `spike` + `vendor`; focus/palette →
+  `palette` + `escape` + `autocomplete`; storage → `persistence` +
+  `worksheets`; editing keys → `cells` + `standard-keys` + `limits` +
+  `empty-slot`. Run the full `npm run test:e2e` before merging.
+- The header shows a `.branch-badge` chip with the checked-out git
+  branch on `vite dev` (so it appears in e2e runs and screenshots).
+  `vite.config.ts` bakes `__APP_BRANCH__` via `define` only for
+  dev-server mode (`command === 'serve' && !isPreview`); production
+  builds get `''` and the chip never renders. `VITE_BRANCH_BADGE=1` opts
+  a `vite build`/`preview` in for test deployments. Detached HEAD falls
+  back to the short sha; the value is read once at server start, so a
+  branch switch needs a dev-server restart to refresh it. Declared in
+  `src/vite-env.d.ts`.
 - `caretInfo` in `e2e/limits.spec.ts` reads `.mq-cursor` ancestors:
   `\int` uses `.mq-sub`/`.mq-sup`; `\sum` (over/under) uses
   `.mq-from`/`.mq-to`; `.mq-large-operator`/`.mq-int` is the atom; on

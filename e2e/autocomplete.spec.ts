@@ -25,7 +25,7 @@ test.beforeEach(async ({ page }) => {
   await clearFirstCell(page);
 });
 
-test('typing a \\ prefix shows matching commands', async ({ page }) => {
+test('typing a \\ prefix shows matching commands', { tag: '@smoke' }, async ({ page }) => {
   await cell(page, 0).focus();
   await page.keyboard.type('\\sq');
   await expect(menu(page)).toBeVisible();

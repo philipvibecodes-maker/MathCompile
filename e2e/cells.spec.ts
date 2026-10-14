@@ -42,7 +42,9 @@ test.beforeEach(async ({ page }) => {
   await clearFirstCell(page);
 });
 
-test('starts with a single focused cell seeded with the default expression', async ({
+test('starts with a single focused cell seeded with the default expression',
+  { tag: '@smoke' },
+  async ({
   page,
 }) => {
   // beforeEach cleared the field. Wait for that debounced write to land
@@ -76,7 +78,9 @@ test('cells are numbered 1..n', async ({ page }) => {
   await expect(page.locator('.expr-index')).toHaveText(['1', '2', '3']);
 });
 
-test('Shift+Enter inserts a cell directly below the current one', async ({
+test('Shift+Enter inserts a cell directly below the current one',
+  { tag: '@smoke' },
+  async ({
   page,
 }) => {
   await cell(page, 0).click();
@@ -122,7 +126,9 @@ test('deleting the last remaining cell clears it instead of removing it', async 
   expect(await cellValue(cell(page, 0))).toBe('');
 });
 
-test('Backspace in an empty cell removes it and focuses a neighbor', async ({
+test('Backspace in an empty cell removes it and focuses a neighbor',
+  { tag: '@smoke' },
+  async ({
   page,
 }) => {
   await cell(page, 0).click();
@@ -182,7 +188,7 @@ test('Backspace unwinds blank displaylines lines before removing the cell', asyn
   expect(await cellValue(cell(page, 0))).toBe('a');
 });
 
-test('Enter splits the cell into multiple lines', async ({ page }) => {
+test('Enter splits the cell into multiple lines', { tag: '@smoke' }, async ({ page }) => {
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('x', { delay: 40 });
   await page.keyboard.press('Enter');
@@ -244,7 +250,9 @@ test('Enter accepts an open latex command instead of line-breaking', async ({
   expect(v).not.toContain('displaylines');
 });
 
-test('ArrowDown at the bottom edge hops to the next cell', async ({ page }) => {
+test('ArrowDown at the bottom edge hops to the next cell',
+  { tag: '@smoke' },
+  async ({ page }) => {
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('a', { delay: 40 });
   await page.locator('.add-expr').click();

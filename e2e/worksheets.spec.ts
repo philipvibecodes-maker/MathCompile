@@ -32,7 +32,9 @@ test.beforeEach(async ({ page }) => {
   await clearFirstCell(page);
 });
 
-test('each worksheet autosaves and the active sheet restores on reload', async ({
+test('each worksheet autosaves and the active sheet restores on reload',
+  { tag: '@smoke' },
+  async ({
   page,
 }) => {
   await cell(page, 0).pressSequentially('x+1', { delay: 40 });

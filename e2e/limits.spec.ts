@@ -53,7 +53,9 @@ test.beforeEach(async ({ page }) => {
 
 // `\int` through the latex command input: Enter accepts it and lands the
 // caret in the lower bound (MathQuill visits sub before sup).
-test('\\int a Right b Right x^2 produces \\int_{a}^{b}x^{2}', async ({
+test('\\int a Right b Right x^2 produces \\int_{a}^{b}x^{2}',
+  { tag: '@smoke' },
+  async ({
   page,
 }) => {
   const mf = page.locator('math-field').first();

@@ -219,6 +219,11 @@
         /></svg
       ><span class="stack-name">mathquill</span>
     </span>
+    {#if __APP_BRANCH__}
+      <span class="branch-badge" title="Dev build — branch under test"
+        >{__APP_BRANCH__}</span
+      >
+    {/if}
     <WorksheetMenu />
     <div class="output-options">
       <button
