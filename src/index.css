@@ -673,6 +673,41 @@ body {
   flex: 0 0 auto;
 }
 
+/* Selectable issue message + its copy button (error rows, issue
+   panels, input-column chips). */
+.issue-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.issue-text {
+  min-width: 0;
+  font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
+  font-size: 11.5px;
+  user-select: text;
+  cursor: text;
+  overflow-wrap: break-word;
+}
+
+.issue-copy {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  font-family: inherit;
+  color: var(--accent-text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.issue-copy:hover {
+  border-color: var(--accent);
+}
+
 /* Generated code in the per-cell output column (target = python). */
 .cell-python {
   flex: 1;
@@ -1125,6 +1160,8 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  user-select: text;
+  cursor: text;
 }
 
 .calc-issues-inline li:hover .chip-text {

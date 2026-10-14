@@ -4,6 +4,7 @@
   import MathField from './components/MathField.svelte';
   import CalcOutput from './components/CalcOutput.svelte';
   import CalcIssues from './components/CalcIssues.svelte';
+  import CopyButton from './components/CopyButton.svelte';
   import { TARGETS } from './compile/targets';
   import type { TargetId } from './compile/targets';
   import CommandPalette from './components/CommandPalette.svelte';
@@ -559,7 +560,14 @@
               <div
                 class="cell-input"
                 onpointerdown={(e) => {
-                  if (!(e.target as HTMLElement).closest('math-field')) {
+                  // The issue chips need native pointer behavior:
+                  // preventDefault here would kill text selection and
+                  // the copy button's click.
+                  if (
+                    !(e.target as HTMLElement).closest(
+                      'math-field, .calc-issues',
+                    )
+                  ) {
                     e.preventDefault();
                     appStore.focusCell(cell.id);
                   }
@@ -633,7 +641,8 @@
                               ? UNPARSEABLE_MSG
                               : iss.message}>!</span
                           >
-                        {/if}{iss.message}
+                        {/if}<code class="issue-text">{iss.message}</code
+                        ><CopyButton text={iss.message} />
                       </li>
                     {/each}
                     {#if hasParseError(i) && shownIssues(i).length === 0}
@@ -641,7 +650,8 @@
                         <span
                           class="parse-error-icon"
                           title={UNPARSEABLE_MSG}>!</span
-                        >
+                        ><code class="issue-text">{UNPARSEABLE_MSG}</code
+                        ><CopyButton text={UNPARSEABLE_MSG} />
                       </li>
                     {/if}
                   </ul>

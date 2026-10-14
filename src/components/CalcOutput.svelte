@@ -11,6 +11,7 @@
   import { mountStaticMath } from '../editor/static-math';
   import { highlightPython } from '../calc/python-highlight';
   import { appStore, type Cell } from '../state/store.svelte';
+  import CopyButton from './CopyButton.svelte';
 
   // Per-cell SymPy output for the calculator target. Edits are debounced,
   // then the cell evaluates through the codegen pipeline in the context
@@ -47,9 +48,10 @@
   }
 
   // Issue reporting is split like the python overlay's marker/panel:
-  // the failing row keeps just its ! / i severity marker here, while
-  // the messages go to cellIssues — the input column's CalcIssues
-  // mounts the panel under the field once typing has paused.
+  // the failing row keeps its ! / i severity marker plus a selectable
+  // copyable message here, while the same messages go to cellIssues —
+  // the input column's CalcIssues mounts the panel under the field
+  // once typing has paused.
   $effect(() => {
     const issues: Issue[] =
       failed !== ''
@@ -250,7 +252,11 @@
     </div>
   {/if}
   {#if failed !== ''}
-    <span class="parse-error-icon" title={failed}>!</span>
+    <div class="issue-line issue-error">
+      <span class="parse-error-icon">!</span>
+      <code class="issue-text">{failed}</code>
+      <CopyButton text={failed} />
+    </div>
   {:else if rows.length > 0}
     <div class="calc-rows" class:pending={pending}>
       {#each rows as row, i (i)}
@@ -266,10 +272,20 @@
                 <span class="calc-approx">≈ {row.approx}</span>
               {/if}
             </div>
-          {:else if (row.severity ?? 'error') === 'error'}
-            <span class="parse-error-icon" title={row.error}>!</span>
           {:else}
-            <span class="note-icon" title={row.error}>i</span>
+            <div
+              class="issue-line issue-{(row.severity ?? 'error') === 'error'
+                ? 'error'
+                : 'note'}"
+            >
+              {#if (row.severity ?? 'error') === 'error'}
+                <span class="parse-error-icon">!</span>
+              {:else}
+                <span class="note-icon">i</span>
+              {/if}
+              <code class="issue-text">{row.error}</code>
+              <CopyButton text={row.error} />
+            </div>
           {/if}
         </div>
       {/each}
