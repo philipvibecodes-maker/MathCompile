@@ -2,7 +2,7 @@
   import { appStore } from '../state/store.svelte';
   import {
     downloadWorksheetFile,
-    parseWorksheetFile,
+    readWorksheetFile,
   } from '../state/worksheet-file';
 
   // Header dropdown over the workbook: switch, rename, delete sheets and
@@ -55,12 +55,9 @@
     const file = input.files?.[0];
     input.value = '';
     if (!file) return;
-    const parsed = parseWorksheetFile(await file.text());
-    if (!parsed) return;
-    appStore.importWorksheet(
-      parsed.name ?? file.name.replace(/\.json$/i, ''),
-      parsed.cells,
-    );
+    const picked = await readWorksheetFile(file);
+    if (!picked) return;
+    appStore.importWorksheet(picked.name, picked.cells);
     close();
   }
 </script>

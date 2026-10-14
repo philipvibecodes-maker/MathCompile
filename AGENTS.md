@@ -280,8 +280,9 @@ and empty blocks serialize as `{ }`.
 - The header worksheet menu (`WorksheetMenu.svelte`) switches, renames,
   and deletes sheets and moves them through files —
   `src/state/worksheet-file.ts` serializes a sheet to a downloadable
-  `.mathcompile.json` and parses files back (`Open from file` imports
-  as a new sheet).
+  `.mathcompile.json` and parses files back (`Open from file` — in the
+  header menu and the command palette — imports as a new sheet named
+  after the file, `foo.mathcompile.json` → `foo`).
 - E2e caveat: a mid-test `localStorage.clear()` is undone by the
   pagehide flush if a write is still pending — wait for
   `mathcompile-worksheets` to land first (see `e2e/cells.spec.ts`).
