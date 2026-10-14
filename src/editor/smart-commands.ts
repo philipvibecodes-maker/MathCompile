@@ -4,5 +4,8 @@
 // spelling, and math-field/attach-field import the list.
 // `D` is deliberately absent: a one-letter autoCommand would rewrite
 // every typed D — it only expands through the `\D` command input.
+// `ode`/`pde` are deliberately absent: a three-letter autoCommand would
+// rewrite the tail of typed words like "node"/"mode" — they only expand
+// through the `\ode`/`\pde` command input.
 export const SMART_AUTO_COMMANDS =
-  'int iint antid sum sqrt prod lim pi phi infty theta derivative def nabla gradient';
+  'int iint antid sum sqrt prod lim pi phi infty theta derivative def nabla gradient solve dsolve pdesolve';

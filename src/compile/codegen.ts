@@ -82,6 +82,7 @@ const RESERVED_IDENTS = new Set([
   'mc_doit',
   'mc_simplify',
   'mc_order',
+  'mc_answers',
   'clean_and_simplify',
 ]);
 
@@ -127,7 +128,7 @@ function pyIdent(name: string): string {
 // Statement-position heads that only lower to Python.
 const STATEMENT_HEADS = new Set([
   'Assign', 'Def', 'Declare', 'Block', 'WhereBlock', 'Which', 'Piecewise',
-  'PythonSource',
+  'PythonSource', 'Solve', 'DSolve', 'PDESolve',
 ]);
 const CMP_NESTABLE_HEADS = new Set([
   'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
@@ -354,10 +355,29 @@ class Scope {
 
   /** Mark `name` a dependent variable (derivative-notation decls:
    * `\dot{x}`, `y'`, `f^{(n)}`, `D(f,x)`) — `fnArgs` and `depVars`
-   * move together: the name reads as the applied `x(t)` ever after. */
+   * move together: the name reads as the applied `x(t)` ever after.
+   * Args merge into the recorded list (first-seen order) — a PDE
+   * unknown differentiated by `t` at one site and `x` at another is
+   * `u(t,x)` everywhere, never `u(t)` then `u(x)`. */
   noteDepVar(name: string, args: MathJson[]): void {
-    this.emit.fnArgs.set(name, args);
+    const prev = this.emit.fnArgs.get(name) ?? [];
+    const merged = [...prev];
+    for (const a of args)
+      if (!merged.some((p) => JSON.stringify(p) === JSON.stringify(a)))
+        merged.push(a);
+    this.emit.fnArgs.set(name, merged);
     this.kinds.depVars.add(name);
+  }
+
+  /** Claim `name` as the unknown function of a `\text{dsolve}`/
+   * `\text{pdesolve}` statement — mints the `sp.Function` ident and
+   * records the arg list like noteDepVar, without marking the name a
+   * defined value (a defined non-declaredFn name isn't callable and
+   * can't be differentiated — an ODE unknown is both). */
+  claimDepVar(name: string, args: MathJson[]): void {
+    if (!this.emit.functions.has(name))
+      this.emit.functions.set(name, pyIdent(name));
+    this.noteDepVar(name, args);
   }
 
   /** Bind `name` to an assigned value — the whole transition in one
@@ -759,7 +779,7 @@ class Emitter {
   /** Lower `x cmp b`/`b cmp x` into a real domain emit for
    * `expr for x <cond>` — returns [domain code, var name] or
    * undefined when neither side is a bare variable. */
-  private relationalDomain(
+  relationalDomain(
     cond: MathJson | undefined,
   ): [string, string] | undefined {
     if (!isArr(cond) || cond.length !== 3) return undefined;
@@ -1739,8 +1759,16 @@ class Emitter {
               args[0] !== args[1] &&
               !this.scope.decls.defined.has(args[0])
             ) {
-              f = `${this.fn(args[0])}(${this.emit(args[1])})`;
-              this.scope.noteDepVar(args[0], [args[1]]);
+              // A dependent variable's full arg list applies at every
+              // site — `D(u,t) = D(u,x,x)` emits diff(u(t,x), t), not
+              // u(t) here / u(x) there. cellBody seeds the union before
+              // emission; args[1] is always part of it.
+              const call = [
+                ...(this.scope.emit.fnArgs.get(args[0]) ?? []),
+                args[1],
+              ].filter((v, i, a) => a.indexOf(v) === i);
+              f = `${this.fn(args[0])}(${call.map((a) => this.emit(a)).join(', ')})`;
+              this.scope.noteDepVar(args[0], call);
             } else {
               f = this.emit(args[0]);
               // `\dot{x}` after `x = 5` — sp.diff(5, t) evaluates to 0,
@@ -1788,8 +1816,12 @@ class Emitter {
               body !== v &&
               !this.scope.decls.defined.has(body)
             ) {
-              f = `${this.fn(body)}(${this.emit(v)})`;
-              this.scope.noteDepVar(body, [v]);
+              const call = [
+                ...(this.scope.emit.fnArgs.get(body) ?? []),
+                v,
+              ].filter((a, i, arr) => arr.indexOf(a) === i);
+              f = `${this.fn(body)}(${call.map((a) => this.emit(a)).join(', ')})`;
+              this.scope.noteDepVar(body, call);
             } else {
               f = this.emit(body);
             }
@@ -3031,6 +3063,12 @@ function unwrapLambda(node: MathJson): { body: MathJson; params: string[] } {
 
 interface StatementOut {
   lines: string[];
+  /** Code lines for the calculator target when they differ from
+   * `lines` — solver statements show the bare `sp.solve` call in the
+   * python target but eval `clean_and_simplify(call, var)` in the
+   * worker so the row displays `x = a1, a2, …`. Emitted verbatim (no
+   * calcEval wrap) since the pipeline call is part of the line. */
+  calcLines?: string[];
   /** Expression to eval for the statement's displayed value — set only
    * for non-expression statements (Assign/Def), whose `lines` exec first
    * and this evals for the row (e.g. `a = 5` shows `a = 5`). Undefined
@@ -3142,6 +3180,11 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   // Reserve the cell's own names (and worksheet Assign/Def targets) so
   // constants of integration start at the first free capital.
   scope.reserveConstNames(ir);
+  // A dependent variable's full arg list is the union over every
+  // derivative site in the cell — `D(u,t) = D(u,x,x)` and a later bare
+  // `u` all emit `u(t,x)`, never u(t) at one site and u(x) at another.
+  // Def'd names keep their declared parameter list instead.
+  seedDepVarArgs(ir, scope);
   // `\text{where}`-style blocks arrive condition-first: `x² where x>0`
   // parses as WhereBlock(Gt, x²) — a single written statement CE split
   // internally (parseCellLatex tags them). Emit the body row before its
@@ -3257,6 +3300,50 @@ function cellStatements(ir: MathJson | undefined, scope: Scope): string[] {
     isStr(stmt) && newNames.has(stmt) ? [] : out.lines,
   );
   return [...defs, ...stmts];
+}
+
+// First pass over a cell's IR: union the variable slots each name is
+// differentiated/applied by into `fnArgs`, so every site emits the same
+// applied call. Without the union `D(u,t) = D(u,x,x)` records u as a
+// function of t at the first site and emits `diff(u(t), x, x)` — a
+// silently-zero second derivative — at the second.
+function seedDepVarArgs(ir: MathJson, scope: Scope): void {
+  const slots = new Map<string, MathJson[]>();
+  const add = (name: string, vars: MathJson[]) => {
+    if (vars.length === 0) return;
+    const prev = slots.get(name) ?? [];
+    for (const v of vars)
+      if (!prev.some((p) => JSON.stringify(p) === JSON.stringify(v)))
+        prev.push(v);
+    slots.set(name, prev);
+  };
+  const walk = (n: MathJson): void => {
+    if (!isArr(n)) return;
+    const h = headOf(n);
+    // A name is never a dependent of its own differentiation
+    // variable — `D(x,x)` is `diff(x, x)` = 1, not a function claim.
+    const varsOf = (name: MathJson, xs: MathJson[]) =>
+      xs.filter((v): v is string => isStr(v) && v !== name);
+    if (h === 'D' && isStr(n[1])) add(n[1], varsOf(n[1], n.slice(2)));
+    else if (
+      h === 'Apply' &&
+      isArr(n[1]) &&
+      headOf(n[1]) === 'Derivative' &&
+      isStr(n[1][1])
+    )
+      add(n[1][1], varsOf(n[1][1], n.slice(2)));
+    // A DepVar spec inside a Solve-family node declares the same list.
+    else if (h === 'DepVar' && isStr(n[1]))
+      add(n[1], varsOf(n[1], n.slice(2)));
+    for (const c of n.slice(1)) walk(c);
+  };
+  walk(ir);
+  for (const [name, vars] of slots) {
+    // A def'd name's parameters are its arg list — `f(x) = …` then
+    // `D(f,t)` does not turn f into a function of t.
+    if (scope.decls.declaredFns.has(name)) continue;
+    scope.claimDepVar(name, vars);
+  }
 }
 
 // Emit a single expression statement, dropping it when emission flagged
@@ -3470,6 +3557,157 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       display: assignDisplay(sp, name, rhs),
       defines: true,
     };
+  }
+  // `\text{solve}` / `\text{dsolve}` / `\text{pdesolve}` statements.
+  // IR: ['Solve', eqs, vars, domain?] — eqs a node or List, vars a List
+  // of bare names, domain the `\text{for}` condition (Element or a
+  // relational bound). ['DSolve'|'PDESolve', eqs, depVars, ics] — depVars
+  // a List of ['DepVar', name, var…], ics a List of
+  // ['IC', name, order|'Nothing', pt, rhs].
+  if (h === 'Solve') {
+    const eqNodes = isHead(node[1], 'List') ? node[1].slice(1) : [node[1]];
+    const varNames = isHead(node[2], 'List')
+      ? node[2].slice(1).filter(isStr)
+      : [];
+    const before = emitter.scope.errorCount;
+    const eqTexts = eqNodes.map((e) => emitter.emit(e));
+    if (emitter.scope.errorCount !== before) return { lines: [] };
+    const eqText =
+      eqTexts.length === 1 ? eqTexts[0] : `[${eqTexts.join(', ')}]`;
+    // The names the answer row displays on the left of `x = a1, a2, …` —
+    // explicit solve vars, or the `\text{for}` domain variable.
+    let dispVars = varNames;
+    let call: string;
+    const domain = node[3];
+    let rd: [string, string] | undefined;
+    if (domain !== undefined) {
+      // `eq \text{ for } x \in S` / `x > a` — solveset over the domain.
+      if (isHead(domain, 'Element') && isStr(domain[1])) {
+        call = `${sp}solveset(${eqText}, ${emitter.emit(domain[1])}, domain=${emitter.emit(domain[2])})`;
+        if (dispVars.length === 0) dispVars = [domain[1]];
+      } else if ((rd = emitter.relationalDomain(domain)) !== undefined) {
+        call = `${sp}solveset(${eqText}, ${emitter.emit(rd[1])}, domain=${rd[0]})`;
+        if (dispVars.length === 0) dispVars = [rd[1]];
+      } else if (isStr(domain)) {
+        // `eq \text{ for } x` — a bare variable is just the solve-var.
+        call = `${sp}solve(${eqText}, ${emitter.emit(domain)})`;
+        if (dispVars.length === 0) dispVars = [domain];
+      } else {
+        emitter.scope.flag(
+          'note',
+          'the \\text{for} condition could not be read as a domain — solving without one',
+        );
+        call = '';
+      }
+    } else call = '';
+    if (call === '') {
+      const vs = varNames.map((v) => emitter.emit(v));
+      const varText =
+        vs.length === 0
+          ? ''
+          : `, ${vs.length === 1 ? vs[0] : `[${vs.join(', ')}]`}`;
+      call = `${sp}solve(${eqText}${varText})`;
+    }
+    if (dispVars.length === 0) {
+      // `\text{solve} x^2 = 1` with no var — let SymPy infer it like
+      // before, but still name the answer `x = …` when the equation
+      // has exactly one free symbol.
+      const free = [
+        ...new Set(eqNodes.flatMap((e) => freeNames(e))),
+      ].filter(
+        (n) =>
+          !emitter.scope.decls.declaredFns.has(n) &&
+          !emitter.scope.emit.functions.has(n) &&
+          !emitter.scope.emit.matrices.has(n),
+      );
+      if (free.length === 1) dispVars = free;
+    }
+    const varExpr =
+      dispVars.length === 0
+        ? 'None'
+        : dispVars.length === 1
+          ? emitter.emit(dispVars[0])
+          : `${sp}Tuple(${dispVars.map((v) => emitter.emit(v)).join(', ')})`;
+    return {
+      lines: [call],
+      // Calculator rows show the answer as `x = a1, a2, …` — the calc
+      // line carries the solve var as clean_and_simplify's second arg.
+      calcLines: [`clean_and_simplify(${call}, ${varExpr})`],
+    };
+  }
+  if (h === 'DSolve' || h === 'PDESolve') {
+    const fn = h === 'DSolve' ? 'dsolve' : 'pdsolve';
+    const depSpecs = isHead(node[2], 'List') ? node[2].slice(1) : [];
+    // Claim the unknowns first: every D site and bare name in the eqs
+    // then applies the declared arg list (u(t,x), not u(t) and u(x)).
+    const targets: string[] = [];
+    const specIvars = new Map<string, string[]>();
+    for (const d of depSpecs) {
+      if (!isArr(d) || headOf(d) !== 'DepVar' || !isStr(d[1])) continue;
+      const vars = d.slice(2).filter(isStr);
+      specIvars.set(d[1], vars);
+      emitter.scope.claimDepVar(d[1], vars);
+      // The declared signature is authoritative for arg order — a
+      // `u(x,t)` spec emits u(x,t) at every site even when the
+      // derivative sites first saw `D(u,t)` (the seeded union's order).
+      if (vars.length > 0) emitter.scope.emit.fnArgs.set(d[1], vars);
+      // dsolve/pdsolve want the applied unknown `y(x)` — an unapplied
+      // `y` raises TypeError, so a var-less spec contributes no target
+      // (sympy then infers the unknown from the equation).
+      if (vars.length > 0)
+        targets.push(
+          `${emitter.scope.emit.functions.get(d[1])!}(${vars
+            .map((v) => emitter.emit(v))
+            .join(', ')})`,
+        );
+    }
+    const eqNodes = isHead(node[1], 'List') ? node[1].slice(1) : [node[1]];
+    const before = emitter.scope.errorCount;
+    const eqTexts = eqNodes.map((e) => emitter.emit(e));
+    if (emitter.scope.errorCount !== before) return { lines: [] };
+    if (h === 'PDESolve' && eqTexts.length > 1) {
+      emitter.scope.flag(
+        'error',
+        'pdsolve solves a single equation — a system is not supported',
+      );
+      return { lines: [] };
+    }
+    const eqText =
+      eqTexts.length === 1 ? eqTexts[0] : `[${eqTexts.join(', ')}]`;
+    const targetText =
+      targets.length === 0
+        ? ''
+        : `, ${targets.length === 1 ? targets[0] : `[${targets.join(', ')}]`}`;
+    const icNodes = isHead(node[3], 'List') ? node[3].slice(1) : [];
+    const icTexts: string[] = [];
+    for (const ic of icNodes) {
+      if (!isArr(ic) || headOf(ic) !== 'IC' || !isStr(ic[1])) continue;
+      const ident =
+        emitter.scope.emit.functions.get(ic[1]) ?? pyIdent(ic[1]);
+      const pt = emitter.emit(ic[3]);
+      const rhs = emitter.emit(ic[4]);
+      const order = ic[2];
+      if (order === 'Nothing' || order === undefined) {
+        icTexts.push(`${ident}(${pt}): ${rhs}`);
+      } else {
+        // `f^{(k)}(pt)=rhs` — the derivative is in the unknown's first
+        // variable, evaluated at the point.
+        const v0 = specIvars.get(ic[1])?.[0] ?? 'x';
+        icTexts.push(
+          `${sp}diff(${ident}(${v0}), ${v0}, ${emitter.emit(order)}).subs(${v0}, ${pt}): ${rhs}`,
+        );
+      }
+    }
+    if (h === 'PDESolve' && icTexts.length > 0) {
+      emitter.scope.flag(
+        'note',
+        'pdsolve takes no boundary/initial conditions — the equation is solved without them',
+      );
+      icTexts.length = 0;
+    }
+    const icsText =
+      icTexts.length === 0 ? '' : `, ics={${icTexts.join(', ')}}`;
+    return { lines: [`${sp}${fn}(${eqText}${targetText}${icsText})`] };
   }
   // `\python{ ... }` — verbatim user source. It execs in the python
   // target's program or the calculator's shared namespace. When the
@@ -3806,9 +4044,11 @@ function compileCellInScope(
       // the code that produced the row. The mc_* helpers are the
       // worker runtime in calculator.worker.ts.
       code:
-        out.display === undefined && out.lines.length === 1
-          ? calcEval(out.lines[0])
-          : out.lines.join('\n'),
+        out.calcLines !== undefined
+          ? out.calcLines.join('\n')
+          : out.display === undefined && out.lines.length === 1
+            ? calcEval(out.lines[0])
+            : out.lines.join('\n'),
       display: out.display === undefined ? undefined : calcEval(out.display),
       defines: out.defines,
       error,

@@ -188,6 +188,11 @@ and empty blocks serialize as `{ }`.
   `src/compile/ir.ts` reads as the function-definition prefix
   (`\text{def} g(x) = 2x` → `def g(x): return 2*x`); a bare `f(x)` is
   `f * x`, not a call or signature.
+- `\solve`, `\dsolve`/`\ode`, `\pdesolve`/`\pde` are the same kind of
+  insertion alias for the `\text{solve}`/`\text{dsolve}`/`\text{pdesolve}`
+  solver statement markers — a cell statement that opens with one
+  compiles to `sp.solve`/`sp.solveset`, `sp.dsolve`, or `sp.pdsolve`
+  (see SYMBOLS.md "Solver statements").
 - `\tr` is an insertion alias for `\mathrm{tr}` — the matrix-trace
   word-op codegen lowers to `(A).trace()` / `sp.Trace(A)`.
 - Matrices: `\begin{matrix|pmatrix|…}` environments + bare

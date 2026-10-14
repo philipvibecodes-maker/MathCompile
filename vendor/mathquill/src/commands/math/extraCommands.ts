@@ -1300,6 +1300,77 @@ LatexCmds.def = () =>
   );
 
 //======================================================================
+//  \solve / \dsolve / \pdesolve — insertion aliases for the
+//  \text{…} solver statement markers
+//======================================================================
+
+// Each expands to its real \text{…} marker plus a trailing space — the
+// statement prefix the compiler reads for equation solving (\text{solve}
+// -> sp.solve/sp.solveset), ODEs (\text{dsolve} -> sp.dsolve), and PDEs
+// (\text{pdesolve} -> sp.pdsolve) — the same insertion-time expansion
+// \def uses. Pasted latex serializes as \text{…} on the next save.
+class SolveAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{solve}\\ ');
+  }
+}
+LatexCmds.solve = () =>
+  new SolveAlias(
+    '\\text{solve}',
+    h('span', { class: 'mq-text-mode' }, [h.text('solve')]) as HTMLElement,
+    'solve',
+    'solve equations'
+  );
+class DSolveAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{dsolve}\\ ');
+  }
+}
+LatexCmds.dsolve = () =>
+  new DSolveAlias(
+    '\\text{dsolve}',
+    h('span', { class: 'mq-text-mode' }, [h.text('dsolve')]) as HTMLElement,
+    'dsolve',
+    'solve an ODE'
+  );
+class OdeAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{ode}\\ ');
+  }
+}
+LatexCmds.ode = () =>
+  new OdeAlias(
+    '\\text{ode}',
+    h('span', { class: 'mq-text-mode' }, [h.text('ode')]) as HTMLElement,
+    'ode',
+    'solve an ODE'
+  );
+class PDSolveAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{pdesolve}\\ ');
+  }
+}
+LatexCmds.pdesolve = () =>
+  new PDSolveAlias(
+    '\\text{pdesolve}',
+    h('span', { class: 'mq-text-mode' }, [h.text('pdesolve')]) as HTMLElement,
+    'pdesolve',
+    'solve a PDE'
+  );
+class PdeAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{pde}\\ ');
+  }
+}
+LatexCmds.pde = () =>
+  new PdeAlias(
+    '\\text{pde}',
+    h('span', { class: 'mq-text-mode' }, [h.text('pde')]) as HTMLElement,
+    'pde',
+    'solve a PDE'
+  );
+
+//======================================================================
 //  \tr — insertion alias for \mathrm{tr}
 //======================================================================
 
