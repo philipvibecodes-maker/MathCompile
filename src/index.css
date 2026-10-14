@@ -534,8 +534,9 @@ body {
   position: absolute;
   z-index: 30;
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
   background: var(--panel-bg);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -548,6 +549,22 @@ body {
 /* display:flex beats the UA [hidden] rule — keep it in sync. */
 .mc-mat[hidden] {
   display: none;
+}
+
+.mc-mat-dims {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Live preview of the grid the menu will insert; big dimensions clip
+   rather than growing the popover past the field. */
+.mc-mat-prev {
+  display: flex;
+  justify-content: center;
+  max-height: 140px;
+  overflow: hidden;
+  padding: 0 4px;
 }
 
 .mc-mat-dim {
