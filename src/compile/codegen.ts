@@ -203,6 +203,10 @@ class Scope {
      * arithmetic) raises TypeError, so later references emit the
      * applied form `f(x)`. */
     fnArgs: Map<string, MathJson[]>;
+    /** Declared parameter list of a lambda-bound name
+     * (`f = x \mapsto x^2`) — its signature, not an observed call:
+     * derivative sites apply `f` at this arity. */
+    lambdaParams: Map<string, MathJson[]>;
     /** Python-local bound names (Def params) while inside a def body.
      * Call-stack-lifetime: see withBound/withBoundOnly. */
     bound: Set<string>;
@@ -281,6 +285,7 @@ class Scope {
       functions: new Map(),
       matrices: new Map(),
       fnArgs: new Map(),
+      lambdaParams: new Map(),
       bound: new Set(),
       lambdaBound: new Set(),
       emitting: new Set(),
@@ -335,6 +340,20 @@ class Scope {
    * pre-scan sense so a later `f(…)` call-folds like a def'd name. */
   declareFn(name: string): void {
     this.decls.declaredFns.add(name);
+  }
+
+  /** `name` is bound to a concrete VALUE — an Assign target already
+   * emitted (`x = 5`), not merely declared by a `sp.Symbol`/`sp.Function`/
+   * `sp.MatrixSymbol` def line. Symbol-bound names stay free variables:
+   * `x = Symbol("x")` doesn't pin a value, so `\D`/`\nabla` can still
+   * differentiate w.r.t. it — `decls.defined` alone can't tell the two
+   * apart, since it also covers every emitted decl line. */
+  isValueBound(name: string): boolean {
+    return (
+      this.decls.declared.has(name) &&
+      this.decls.defined.has(name) &&
+      !this.decls.declaredFns.has(name)
+    );
   }
 
   /** Claim `name` as a function — the Def/Declare/colon-def binding
@@ -402,6 +421,7 @@ class Scope {
       else names.delete(name);
     }
     this.emit.fnArgs.delete(name);
+    this.emit.lambdaParams.delete(name);
     this.kinds.depVars.delete(name);
   }
 
@@ -515,6 +535,15 @@ function matrixValuedNode(
     case 'Divide':
     case 'Power':
       return operands.some((a) => matrixValuedNode(a, isMatrixLeaf));
+    case 'Gradient':
+      // `\nabla` always emits a 1×3 Matrix.
+      return true;
+    case 'TotalD':
+      // `\D` on a matrix body differentiates elementwise / Jacobians —
+      // matrix-valued; on a scalar body it's a scalar unless several
+      // free vars force the Jacobian row (caught at emission by the
+      // `.jacobian(` text check in emitStatement).
+      return matrixValuedNode(node[1], isMatrixLeaf);
     case 'CircleTimes':
     case 'CirclePlus':
     case 'HadamardProduct':
@@ -2184,12 +2213,9 @@ class Emitter {
               // `\dot{x}` after `x = 5` — sp.diff(5, t) evaluates to 0,
               // so the emitted equation silently says `0 = rhs` instead
               // of a derivative; flag rather than emit a plausible
-              // falsehood.
-              if (
-                isStr(args[0]) &&
-                this.scope.decls.defined.has(args[0]) &&
-                !this.scope.decls.declaredFns.has(args[0])
-              )
+              // falsehood. A symbol-bound name is still a variable —
+              // diff(f, x) = 0 is the honest partial.
+              if (isStr(args[0]) && this.scope.isValueBound(args[0]))
                 this.scope.flag(
                   'error',
                   `${args[0]} is bound to a value — cannot differentiate`,
@@ -2208,7 +2234,8 @@ class Emitter {
       case 'TotalD': {
         // `\D f` — the TOTAL derivative: the best linear approximation
         // of f at a point, expressed as the Jacobian —
-        // `sp.derive_by_array`. It takes no variable: `\D_x f` is a
+        // `sp.Matrix([body]).jacobian(vars)`. It takes no variable:
+        // `\D_x f` is a
         // partial and folds to the ordinary D path, and the
         // `\frac{\D}{\D}` spelling is not the notation — flagged, with
         // the plausible univariate derivative emitted as a fallback.
@@ -2250,15 +2277,19 @@ class Emitter {
         // scalar emits the Jacobian `sp.Matrix([body]).jacobian(vars)`.
         let vars: string[];
         let bodyIsFn = false;
+        let recordedArgs: MathJson[] | undefined;
         if (isStr(body)) {
           // `\D f` on a bare name — a field, not a symbol. Its recorded
           // args define the variables; an undeclared f becomes f(x) —
           // unless the name IS the variable (`\D x` → `diff(x, x)`),
           // which must not mark x as a function of anything.
-          if (
-            this.scope.decls.defined.has(body) &&
-            !this.scope.decls.declaredFns.has(body)
-          ) {
+          recordedArgs =
+            this.scope.emit.fnArgs.get(body) ??
+            this.scope.emit.lambdaParams.get(body);
+          if (recordedArgs !== undefined) {
+            vars = recordedArgs.filter((a): a is string => isStr(a));
+            bodyIsFn = true;
+          } else if (this.scope.isValueBound(body)) {
             this.scope.flag(
               'error',
               `${body} is bound to a value — not a field`,
@@ -2267,17 +2298,14 @@ class Emitter {
               `${this.sp}diff(${this.emit(body)}, x)`,
               PREC_ATOM,
             ];
-          }
-          const recorded = this.scope.emit.fnArgs.get(body);
-          if (recorded !== undefined) {
-            vars = recorded.filter((a): a is string => isStr(a));
-            bodyIsFn = true;
           } else if (this.scope.emit.matrices.has(body)) {
             // `\D A` — differentiate the matrix entries: `diff` handles
             // matrices elementwise.
             vars = ['x'];
-          } else if (body === 'x') {
-            vars = ['x'];
+          } else if (body === 'x' || this.scope.emit.symbols.has(body)) {
+            // A coordinate or a symbol-bound name is its own variable —
+            // `\D x`/`diff(u, u)` = 1, not a field claim.
+            vars = [body];
           } else {
             this.fn(body);
             this.scope.noteDepVar(body, ['x']);
@@ -2287,7 +2315,7 @@ class Emitter {
         } else {
           vars = freeNames(body).filter(
             (n) =>
-              !this.scope.decls.defined.has(n) &&
+              !this.scope.isValueBound(n) &&
               !this.scope.emit.matrices.has(n) &&
               !this.scope.emit.functions.has(n) &&
               !this.scope.decls.declaredFns.has(n) &&
@@ -2315,7 +2343,18 @@ class Emitter {
             );
           }
         }
-        const emitted = this.emit(body);
+        // A callable bound by `f = x \mapsto …` lives in `lambdaParams`,
+        // not `functions` — sym() would emit the bare Lambda object, so
+        // apply it at its declared signature here.
+        const emitted =
+          isStr(body) &&
+          bodyIsFn &&
+          recordedArgs !== undefined &&
+          !this.scope.emit.functions.has(body)
+            ? `${this.fn(body)}(${recordedArgs
+                .map((a) => this.emit(a))
+                .join(', ')})`
+            : this.emit(body);
         if (vars.length === 1) {
           const x = this.emit(vars[0]);
           return [
@@ -2342,59 +2381,83 @@ class Emitter {
         return [out, PREC_ATOM];
       }
       case 'Gradient': {
-        // `\nabla f` — the gradient: a row of partials over the body's
-        // free variables; `sp.derive_by_array` emits the textbook vector.
+        // `\nabla f` — the gradient over the canonical coordinates
+        // (x, y, z), emitted as a 1×3 Matrix (the Jacobian of the scalar
+        // body) — an sp.Array doesn't carry matrix ops. `\nabla x` is
+        // the coordinate field itself -> (1, 0, 0); a coordinate bound
+        // to a value can't be a diff variable, so its column is a
+        // literal 0.
         const body = args[0];
-        let vars: string[];
+        const COORDS = ['x', 'y', 'z'];
+        const grad = (b: string): [string, number] => {
+          if (COORDS.every((c) => !this.scope.isValueBound(c)))
+            return [
+              `${this.sp}Matrix([${b}]).jacobian([${COORDS.map((c) =>
+                this.sym(c),
+              ).join(', ')}])`,
+              PREC_ATOM,
+            ];
+          return [
+            `${this.sp}Matrix([[${COORDS.map((c) =>
+              this.scope.isValueBound(c)
+                ? '0'
+                : `${this.sp}diff(${b}, ${this.sym(c)})`,
+            ).join(', ')}]])`,
+            PREC_ATOM,
+          ];
+        };
         if (isStr(body)) {
-          // ∇f on a bare name — like `\frac{df}{dx}`: a field, not a
-          // symbol. Its recorded args define the variables; an
-          // undeclared f becomes f(x) of one variable.
+          // ∇f on a bare name: a def'd/called name is the field
+          // f(<args>) — applied at its recorded signature — a
+          // coordinate or symbol-bound name is the symbol itself
+          // (∇x → (1,0,0)), a fresh name becomes a field of all three
+          // coords, and a name bound to a scalar value differentiates
+          // as that value (∇x after `x = 5` is the zero row).
+          // Matrix/set/list bindings aren't scalar fields.
+          const recorded =
+            this.scope.emit.fnArgs.get(body) ??
+            this.scope.emit.lambdaParams.get(body);
+          if (recorded !== undefined) {
+            const applied = this.scope.emit.functions.has(body)
+              ? this.emit(body)
+              : `${this.fn(body)}(${recorded
+                  .map((a) => this.emit(a))
+                  .join(', ')})`;
+            return grad(applied);
+          }
           if (
-            this.scope.decls.defined.has(body) &&
-            !this.scope.decls.declaredFns.has(body)
+            this.scope.emit.matrices.has(body) ||
+            this.scope.kinds.matrixNames.has(body) ||
+            this.scope.kinds.setNames.has(body) ||
+            this.scope.kinds.listNames.has(body)
           ) {
             this.scope.flag(
               'error',
               `${body} is bound to a value — not a scalar field`,
             );
-            return [
-              `${this.sp}derive_by_array(${this.emit(body)}, [])`,
-              PREC_ATOM,
-            ];
+            return [`${this.sp}Matrix([[0, 0, 0]])`, PREC_ATOM];
           }
-          const recorded = this.scope.emit.fnArgs.get(body);
-          if (recorded !== undefined) {
-            vars = recorded.filter((a): a is string => isStr(a));
-          } else {
-            const v = body === 'x' ? 't' : 'x';
+          if (
+            !COORDS.includes(body) &&
+            !this.scope.emit.symbols.has(body) &&
+            !this.scope.isValueBound(body)
+          ) {
             this.fn(body);
-            this.scope.noteDepVar(body, [v]);
-            vars = [v];
+            this.scope.noteDepVar(body, COORDS);
+            const applied = this.scope.emit.functions.has(body)
+              ? this.emit(body)
+              : `${this.fn(body)}(${COORDS.map((c) => this.sym(c)).join(', ')})`;
+            return grad(applied);
           }
-        } else {
-          vars = freeNames(body).filter(
-            (n) =>
-              !this.scope.decls.defined.has(n) &&
-              !this.scope.emit.matrices.has(n) &&
-              !this.scope.emit.functions.has(n) &&
-              !this.scope.decls.declaredFns.has(n) &&
-              !this.scope.kinds.depVars.has(n),
-          );
+          return grad(this.emit(body));
         }
-        if (vars.length === 0) {
-          this.scope.flag('error', 'gradient needs a free variable');
-          return [
-            `${this.sp}derive_by_array(${this.emit(body)}, [])`,
-            PREC_ATOM,
-          ];
-        }
-        return [
-          `${this.sp}derive_by_array(${this.emit(body)}, [${vars
-            .map((v) => this.sym(v))
-            .join(', ')}])`,
-          PREC_ATOM,
-        ];
+        for (const n of freeNames(body))
+          if (this.scope.isValueBound(n))
+            this.scope.flag(
+              'error',
+              `${n} is bound to a value — cannot differentiate`,
+            );
+        return grad(this.emit(body));
       }
       case 'Apply': {
         const callee = args[0];
@@ -3802,6 +3865,25 @@ function seedDepVarArgs(ir: MathJson, scope: Scope): void {
     // A DepVar spec inside a Solve-family node declares the same list.
     else if (h === 'DepVar' && isStr(n[1]))
       add(n[1], varsOf(n[1], n.slice(2)));
+    // `\D f` / `\nabla u` on a bare name claims it a field — of x for the
+    // total derivative, of all three coords for the gradient — matching
+    // the noteDepVar their codegen makes. A name already bound (symbol,
+    // value, matrix) or a coordinate stays itself: `\D x`/`∇x` don't
+    // turn x into x(…).
+    else if (
+      h === 'TotalD' &&
+      isStr(n[1]) &&
+      n[1] !== 'x' &&
+      !scope.decls.defined.has(n[1])
+    )
+      add(n[1], ['x']);
+    else if (
+      h === 'Gradient' &&
+      isStr(n[1]) &&
+      !['x', 'y', 'z'].includes(n[1]) &&
+      !scope.decls.defined.has(n[1])
+    )
+      add(n[1], ['x', 'y', 'z']);
     for (const c of n.slice(1)) walk(c);
   };
   walk(ir);
@@ -3940,8 +4022,12 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       emitter.scope.declareFn(node[1]);
     // Matrix-valued by shape, not by emitted text — `I_2` emits
     // `sp.eye(2)`, `B = A^T` emits `Transpose`, and Eq(Symbol, <matrix>)
-    // collapses to literal False without evaluate=False.
-    const matrixRhs = emitter.matrixValued(node[2], true);
+    // collapses to literal False without evaluate=False. `\nabla` always
+    // emits a Matrix; a multivariate `\D` takes the Jacobian branch —
+    // the emitted text is the ground truth for which one it took.
+    const matrixRhs =
+      emitter.matrixValued(node[2], true) ||
+      (isHead(node[2], 'TotalD') && rhs.includes('.jacobian('));
     const setRhs = emitter.isSetish(node[2]);
     const finiteRhs = emitter.isFiniteSet(node[2]);
     const listRhs =
@@ -3956,6 +4042,12 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
         finite: finiteRhs,
         list: listRhs,
       });
+    // The lambda's params are the callable's declared signature — after
+    // bindAssigned so the record isn't cleared, and kept out of `fnArgs`
+    // (which carries observed call-site args that merge across sites).
+    // A later `\D f`/`\nabla f` applies f at its own arity.
+    if (isStr(node[1]) && isHead(node[2], 'Function'))
+      emitter.scope.emit.lambdaParams.set(node[1], node[2].slice(2));
     if (emitter.scope.errorCount > before) return { lines: [] };
     // A python-list RHS binds a raw list (`u = [1, 2, 3]`), which
     // Eq can't sympify — display it as the column vector the ops

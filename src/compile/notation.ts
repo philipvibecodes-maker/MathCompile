@@ -837,7 +837,7 @@ export const NOTATION: Notation[] = [
     probes: [
       {
         latex: '\\nabla (x^2+y^2)',
-        expect: 'sp.derive_by_array(x**2 + y**2, [x, y])',
+        expect: 'sp.Matrix([x**2 + y**2]).jacobian([x, y, z])',
       },
     ],
     completion: {

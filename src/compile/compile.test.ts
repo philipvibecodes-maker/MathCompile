@@ -428,23 +428,33 @@ const FIXTURES: {
     issues: ['not the notation'],
   },
   {
-    // `\nabla`/`\gradient` lower to `\operatorname{grad}` pre-parse;
-    // a bare-name body reads as a field of one variable like `df/dx`.
+    // `\nabla`/`\gradient` lower to `\operatorname{grad}` pre-parse; the
+    // gradient is over the canonical coordinates (x, y, z), so a
+    // bare-name body reads as a field of all three.
     latex: '\\nabla f',
     expectedIR: ['Gradient', 'f'],
     expectedPython: [
-      'x = sp.Symbol("x")',
+      "x, y, z = sp.symbols('x y z')",
       'f = sp.Function("f")',
-      'sp.derive_by_array(f(x), [x])',
+      'sp.Matrix([f(x, y, z)]).jacobian([x, y, z])',
     ],
   },
   {
     latex: '\\gradient f',
     expectedIR: ['Gradient', 'f'],
     expectedPython: [
-      'x = sp.Symbol("x")',
+      "x, y, z = sp.symbols('x y z')",
       'f = sp.Function("f")',
-      'sp.derive_by_array(f(x), [x])',
+      'sp.Matrix([f(x, y, z)]).jacobian([x, y, z])',
+    ],
+  },
+  {
+    // `\nabla x` — the coordinate field itself: (1, 0, 0).
+    latex: '\\nabla x',
+    expectedIR: ['Gradient', 'x'],
+    expectedPython: [
+      "x, y, z = sp.symbols('x y z')",
+      'sp.Matrix([x]).jacobian([x, y, z])',
     ],
   },
   {
@@ -454,8 +464,8 @@ const FIXTURES: {
       ['Add', ['Power', 'x', 2], ['Power', 'y', 2]],
     ],
     expectedPython: [
-      "x, y = sp.symbols('x y')",
-      'sp.derive_by_array(x**2 + y**2, [x, y])',
+      "x, y, z = sp.symbols('x y z')",
+      'sp.Matrix([x**2 + y**2]).jacobian([x, y, z])',
     ],
   },
   {

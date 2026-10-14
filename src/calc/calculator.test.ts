@@ -941,6 +941,101 @@ describe('compileCellsForCalc (worksheet cells share one scope)', () => {
     expect(prog.cells[1].issues).toEqual([]);
     expect(prog.cells[1].statementLines).toEqual([0]);
   });
+
+  describe('derivatives over names bound in earlier cells', () => {
+    // `decls.defined` used to conflate a `sp.Symbol` def line — still a
+    // free symbolic variable — with a concrete value binding, so `\D`
+    // and `\nabla` below saw no free variables (or a shrunken
+    // coordinate basis).
+    it('total-differentiates over symbols bound above', () => {
+      const prog = calcAll('x + y', '\\text{D}xy^{2}');
+      expect(prog.cells[1].defs).toEqual([]);
+      expect(prog.cells[1].statements).toEqual([
+        {
+          code: F('sp.Matrix([x * y**2]).jacobian([x, y])'),
+          display: undefined,
+        },
+      ]);
+    });
+
+    it('gradients a coordinate symbol bound above to (1, 0, 0)', () => {
+      const prog = calcAll('x + y', '\\nabla x');
+      expect(prog.cells[1].defs).toEqual(['z = sp.Symbol("z")']);
+      expect(prog.cells[1].statements).toEqual([
+        {
+          code: F('sp.Matrix([x]).jacobian([x, y, z])'),
+          display: undefined,
+        },
+      ]);
+    });
+
+    it('gradients a product over the full (x, y, z) basis', () => {
+      for (const [latex, expected] of [
+        ['\\nabla xy', 'sp.Matrix([x * y]).jacobian([x, y, z])'],
+        ['\\nabla xyz', 'sp.Matrix([x * y * z]).jacobian([x, y, z])'],
+      ] as const) {
+        const prog = calcAll('x + y', latex);
+        expect(prog.cells[1].statements).toEqual([
+          { code: F(expected), display: undefined },
+        ]);
+      }
+    });
+
+    it('a value-bound coordinate differentiates as its value: ∇x = (0,0,0)', () => {
+      const prog = calcAll('x = 5', '\\nabla x');
+      expect(prog.cells[1].statements).toEqual([
+        {
+          code: F('sp.Matrix([[0, sp.diff(x, y), sp.diff(x, z)]])'),
+          display: undefined,
+        },
+      ]);
+    });
+
+    it('still flags a value-bound name inside the gradient body', () => {
+      const prog = calcAll('x = 5', '\\nabla xy');
+      expect(prog.cells[1].statements[0].error).toContain(
+        'bound to a value',
+      );
+    });
+
+    it('applies a lambda-bound name at its declared signature', () => {
+      // `f = x \mapsto x^2` binds a one-param Lambda — `\nabla f` is
+      // f(x)'s gradient, not f(x, y, z)'s.
+      const prog = calcAll('f = x\\mapsto x^2', '\\nabla f');
+      expect(prog.cells[1].statements).toEqual([
+        {
+          code: F('sp.Matrix([f(x)]).jacobian([x, y, z])'),
+          display: undefined,
+        },
+      ]);
+      const prog2 = calcAll(
+        'f = \\left(x,y\\right)\\mapsto x+y',
+        '\\nabla f',
+      );
+      expect(prog2.cells[1].statements).toEqual([
+        {
+          code: F('sp.Matrix([f(x, y)]).jacobian([x, y, z])'),
+          display: undefined,
+        },
+      ]);
+    });
+
+    it('applies a lambda-bound name under \\D at its own arity', () => {
+      const prog = calcAll('f = x\\mapsto x^2', '\\D f');
+      expect(prog.cells[1].statements).toEqual([
+        { code: F('sp.diff(f(x), x)'), display: undefined },
+      ]);
+    });
+
+    it('types a gradient/jacobian assign target as a matrix', () => {
+      // `Eq(Symbol, Matrix)` collapses to literal False without
+      // evaluate=False — `a = \nabla xyz` displayed `false`.
+      for (const latex of ['a = \\nabla xyz', 'a = \\text{D}xy']) {
+        const prog = calc(latex);
+        expect(prog.statements[0].display).toContain('evaluate=False');
+      }
+    });
+  });
 });
 
 describe('codegen edge cases', () => {
