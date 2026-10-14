@@ -842,6 +842,159 @@ body {
   text-align: right;
 }
 
+/* Worksheet switcher — a settings-menu-style popover under the header
+   button that shows the active sheet's name. */
+.worksheets {
+  position: relative;
+  display: flex;
+  margin-left: 16px;
+}
+
+.worksheets-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.worksheets-btn:hover {
+  border-color: var(--faint);
+}
+
+.worksheets-current {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worksheets-caret {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.worksheets-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 30;
+  margin-top: 4px;
+  width: 230px;
+  padding: 4px 0;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 6px 16px var(--shadow);
+}
+
+.worksheets-list {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.ws-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px 0 0;
+}
+
+.ws-row .ws-name {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 4px 6px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  color: var(--text);
+  background: none;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-row:hover {
+  background: var(--selected-bg);
+}
+
+.ws-row.active .ws-name {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.ws-icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--faint);
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.ws-icon:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.ws-delete.confirming {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.ws-rename {
+  flex: 1;
+  margin: 4px 8px;
+  padding: 4px 6px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+}
+
+.ws-actions {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.ws-action {
+  padding: 6px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  color: var(--text);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.ws-action:hover {
+  background: var(--selected-bg);
+}
+
+.ws-file {
+  display: none;
+}
+
 .issue-error {
   color: var(--danger);
 }

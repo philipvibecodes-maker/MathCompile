@@ -8,6 +8,7 @@
   import type { TargetId } from './compile/targets';
   import CommandPalette from './components/CommandPalette.svelte';
   import HowToGuide from './components/HowToGuide.svelte';
+  import WorksheetMenu from './components/WorksheetMenu.svelte';
   import { appStore, THEME_STORAGE_KEY } from './state/store.svelte';
   import { savePrefs } from './state/persistence';
   import { copyableLatex, displayLatex } from './compile/latex';
@@ -208,6 +209,7 @@
         /></svg
       ><span class="stack-name">mathquill</span>
     </span>
+    <WorksheetMenu />
     <div class="output-options">
       <button
         class="theme-toggle"

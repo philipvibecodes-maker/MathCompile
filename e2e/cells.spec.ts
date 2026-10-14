@@ -50,7 +50,7 @@ test('starts with a single focused cell seeded with the default expression', asy
   // observes the empty-storage boot state — the seeded cell — rather
   // than the persisted edit.
   await page.waitForFunction(() =>
-    localStorage.getItem('mathcompile-cells')?.includes('""'),
+    localStorage.getItem('mathcompile-worksheets')?.includes('""'),
   );
   await page.evaluate(() => localStorage.clear());
   await page.reload();

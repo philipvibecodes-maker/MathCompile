@@ -145,7 +145,7 @@ test('the cell value round-trips through reload', async ({ page }) => {
   expect(latex).toBe('\\python{x = {"a": 1}}');
   // the debounced persist lands ~300ms after the last keystroke
   await page.waitForFunction(() =>
-    localStorage.getItem('mathcompile-cells')?.includes('python'),
+    localStorage.getItem('mathcompile-worksheets')?.includes('python'),
   );
   await page.reload();
   await page.waitForSelector('math-field');

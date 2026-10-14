@@ -259,22 +259,32 @@ and empty blocks serialize as `{ }`.
 ## Persistence
 
 - `src/state/persistence.ts` owns all `localStorage` access: `mathcompile-theme`
-  (read pre-paint by `index.html`), `mathcompile-cells` (the worksheet),
-  `mathcompile-prefs` (smartMode + target + guideOpen). Everything is node-guarded so
+  (read pre-paint by `index.html`), `mathcompile-worksheets` (the workbook:
+  `{version, active, sheets:[{id, name, cells}]}`, one record per worksheet),
+  `mathcompile-prefs` (smartMode + target + guideOpen). `mathcompile-cells`
+  was the single-worksheet format — `loadWorkbook()` migrates it on first
+  read, then removes the key. Everything is node-guarded so
   the store stays importable in vitest.
-- Writes are **debounced ~300ms** (`persistCells`) and flushed on
-  `pagehide`/`visibilitychange:hidden` — the keystroke path never calls
-  `setItem` synchronously. The store triggers writes from its mutating
-  methods (`setLatex`, `addCell`, `removeCell`, `clearAll`), not an
-  `$effect`.
+- Writes are **debounced ~300ms** (`persistCells`, into the active sheet's
+  record) and flushed on `pagehide`/`visibilitychange:hidden` and before
+  every worksheet structural op (switch/create/rename/delete/import) — the
+  keystroke path never calls `setItem` synchronously. The store triggers
+  writes from its mutating methods (`setLatex`, `addCell`, `removeCell`,
+  `clearAll`), not an `$effect`.
 - Hydration is synchronous in the `AppStore` field initializers:
-  `initCells()` restores cells and bumps `nextId` past `maxId`;
+  `initWorkbook()` restores the active sheet's cells and bumps `nextId`
+  past `maxId` (imports remap their cell ids instead);
   `MathField.svelte`'s existing mount-time `setValue(cell.latex)` does
   the field hydration for free. Corrupt/missing data falls back to the
-  seeded example cell.
+  seeded example cell; a stored sheet with no cells opens as one blank cell.
+- The header worksheet menu (`WorksheetMenu.svelte`) switches, renames,
+  and deletes sheets and moves them through files —
+  `src/state/worksheet-file.ts` serializes a sheet to a downloadable
+  `.mathcompile.json` and parses files back (`Open from file` imports
+  as a new sheet).
 - E2e caveat: a mid-test `localStorage.clear()` is undone by the
   pagehide flush if a write is still pending — wait for
-  `mathcompile-cells` to land first (see `e2e/cells.spec.ts`).
+  `mathcompile-worksheets` to land first (see `e2e/cells.spec.ts`).
 
 ## Rebuilding the vendor bundle
 

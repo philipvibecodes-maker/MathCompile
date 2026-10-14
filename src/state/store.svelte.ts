@@ -6,10 +6,21 @@ import {
   type PairTupleMode,
 } from '../compile/ir';
 import {
+  flushPendingCells,
   installFlushOnHide,
-  loadCells,
   loadPrefs,
+  loadWorkbook,
+  loadWorksheetCells,
+  newWorksheetId,
+  nextWorksheetName,
   persistCells,
+  removeStoredWorksheet,
+  renameStoredWorksheet,
+  setActiveWorksheet,
+  uniqueWorksheetName,
+  upsertWorksheet,
+  type StoredCell,
+  type WorksheetMeta,
 } from './persistence';
 
 export interface Cell {
@@ -31,14 +42,34 @@ const createCell = (latex = ''): Cell => ({
 
 const SEED_LATEX = '2^n = \\sum_{i=0}^n\\binom{n}{i}';
 
-// Hydrate from localStorage; fall back to the seeded example cell.
-// Restored ids push nextId forward so later cells never collide.
-function initCells(): Cell[] {
-  const saved = loadCells();
-  if (!saved) return [createCell(SEED_LATEX)];
-  nextId = saved.maxId + 1;
-  // Persisted cells carry no json — recompute it on hydrate.
-  return saved.cells.map((c) => ({ ...c, json: parseCellLatex(c.latex) }));
+// Restored ids push nextId forward so later cells never collide — across
+// every sheet, not just the active one (imports remap their ids too).
+// Persisted cells carry no json — recompute it on hydrate. An empty
+// stored sheet opens as one blank cell.
+function hydrateCells(stored: StoredCell[]): Cell[] {
+  nextId = Math.max(nextId, Math.max(0, ...stored.map((c) => c.id)) + 1);
+  const cells = stored.map((c) => ({ ...c, json: parseCellLatex(c.latex) }));
+  return cells.length > 0 ? cells : [createCell()];
+}
+
+// Hydrate the workbook; a first run gets one ephemeral "Worksheet 1"
+// holding the seeded example cell, persisted only on the first edit.
+function initWorkbook(): {
+  sheets: WorksheetMeta[];
+  activeId: string;
+  cells: Cell[];
+} {
+  const wb = loadWorkbook();
+  if (!wb) {
+    const meta = { id: newWorksheetId(), name: 'Worksheet 1' };
+    return { sheets: [meta], activeId: meta.id, cells: [createCell(SEED_LATEX)] };
+  }
+  const active = wb.sheets.find((s) => s.id === wb.active) ?? wb.sheets[0];
+  return {
+    sheets: wb.sheets.map(({ id, name }) => ({ id, name })),
+    activeId: active.id,
+    cells: hydrateCells(active.cells),
+  };
 }
 
 export const THEME_STORAGE_KEY = 'mathcompile-theme';
@@ -58,7 +89,12 @@ function initDarkMode(): boolean {
 // no-ops when no field is registered for the id — so this is fully
 // unit-testable in node.
 export class AppStore {
-  cells = $state<Cell[]>(initCells());
+  private readonly boot = initWorkbook();
+  // Every worksheet in the workbook (active sheet's cells live in
+  // `cells`; the rest sit in storage until switched to).
+  worksheets = $state<WorksheetMeta[]>(this.boot.sheets);
+  activeWorksheetId = $state<string>(this.boot.activeId);
+  cells = $state<Cell[]>(this.boot.cells);
   focusedId = $state<number>(this.cells[0].id);
   focusEdge = $state<Edge | undefined>(undefined);
   target = $state<TargetId>(loadPrefs().target ?? 'latex');
@@ -91,10 +127,87 @@ export class AppStore {
     installFlushOnHide();
   }
 
-  // Debounced snapshot of the worksheet; persistence.ts coalesces the
-  // writes so the keystroke path never touches setItem directly.
+  // Debounced snapshot of the active worksheet; persistence.ts
+  // coalesces the writes so the keystroke path never touches setItem
+  // directly.
   private persist() {
-    persistCells(this.cells);
+    const meta = this.worksheets.find((w) => w.id === this.activeWorksheetId);
+    if (meta) persistCells(meta, this.cells);
+  }
+
+  get activeWorksheet(): WorksheetMeta | undefined {
+    return this.worksheets.find((w) => w.id === this.activeWorksheetId);
+  }
+
+  switchWorksheet(id: string) {
+    if (id === this.activeWorksheetId) return;
+    if (!this.worksheets.some((w) => w.id === id)) return;
+    flushPendingCells();
+    this.cells = hydrateCells(loadWorksheetCells(id) ?? []);
+    this.activeWorksheetId = id;
+    setActiveWorksheet(id);
+    this.focusCell(this.cells[0].id);
+  }
+
+  createWorksheet(name?: string): string {
+    flushPendingCells();
+    const meta: WorksheetMeta = {
+      id: newWorksheetId(),
+      name: name?.trim() || nextWorksheetName(this.worksheets),
+    };
+    upsertWorksheet({ ...meta, cells: [] });
+    this.worksheets = [...this.worksheets, meta];
+    this.switchWorksheet(meta.id);
+    return meta.id;
+  }
+
+  renameWorksheet(id: string, name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    // Flush so a pending write can't land after the rename and upsert the
+    // sheet back under its old name.
+    flushPendingCells();
+    renameStoredWorksheet(id, trimmed);
+    this.worksheets = this.worksheets.map((w) =>
+      w.id === id ? { ...w, name: trimmed } : w,
+    );
+  }
+
+  deleteWorksheet(id: string) {
+    if (this.worksheets.length <= 1) return;
+    // Flush before removing so the deleted sheet's pending write can't
+    // resurrect it.
+    flushPendingCells();
+    removeStoredWorksheet(id);
+    const remaining = this.worksheets.filter((w) => w.id !== id);
+    this.worksheets = remaining;
+    if (id === this.activeWorksheetId) this.switchWorksheet(remaining[0].id);
+  }
+
+  // A saved file opens as a new worksheet; its cell ids are remapped so
+  // they can't collide with ids already in the workbook.
+  importWorksheet(name: string, cells: StoredCell[]) {
+    flushPendingCells();
+    const remapped = cells.map((c) => ({ id: nextId++, latex: c.latex }));
+    const meta: WorksheetMeta = {
+      id: newWorksheetId(),
+      name: uniqueWorksheetName(name.trim() || 'Imported', this.worksheets),
+    };
+    upsertWorksheet({ ...meta, cells: remapped });
+    this.worksheets = [...this.worksheets, meta];
+    this.switchWorksheet(meta.id);
+  }
+
+  // Cells + name as a downloadable snapshot — the active sheet reads its
+  // live cells so a just-typed edit is included.
+  worksheetSnapshot(id = this.activeWorksheetId) {
+    const meta = this.worksheets.find((w) => w.id === id);
+    if (!meta) return null;
+    const cells =
+      id === this.activeWorksheetId
+        ? this.cells.map((c) => ({ id: c.id, latex: c.latex }))
+        : (loadWorksheetCells(id) ?? []);
+    return { name: meta.name, cells };
   }
 
   focusCell(id: number, edge?: Edge) {

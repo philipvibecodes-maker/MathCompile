@@ -308,7 +308,7 @@ test('reload evaluates each persisted cell to its own result', async ({
   await page.locator('.add-expr').click();
   await cell(page, 1).pressSequentially('9+9', { delay: 40 });
   await page.waitForFunction(() =>
-    localStorage.getItem('mathcompile-cells')?.includes('9+9'),
+    localStorage.getItem('mathcompile-worksheets')?.includes('9+9'),
   );
   await setTarget(page, 'calculator');
   await page.waitForFunction(() =>
