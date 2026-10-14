@@ -262,6 +262,38 @@ suite('typing with auto-replaces', function () {
       mq.typedText('\\operatorname{argmin}');
       assertLatex('\\operatorname{argmin}');
     });
+
+    test('\\operatorname takes operator-name spacing', function () {
+      // LaTeX \mathop spacing: a thin space separates the name from a
+      // following ordinary atom. The node carries it via .mq-operatorname
+      // CSS (see math.less) since it's a one-block command.
+      mq.typedText('\\operatorname{f}x');
+      assertLatex('\\operatorname{f}x');
+      var el = mq.el().querySelector('.mq-operatorname');
+      assert.ok(el, 'expected .mq-operatorname element');
+      var pad = parseFloat(getComputedStyle(el).paddingRight);
+      assert.ok(pad > 0, 'expected thin space after \\operatorname, got ' + pad);
+
+      // but not before a bracket (LaTeX Op-Open) or a binary operator
+      // (which pads itself)
+      mq.latex('\\operatorname{f}\\left(x\\right)');
+      assert.equal(
+        getComputedStyle(mq.el().querySelector('.mq-operatorname'))
+          .paddingRight,
+        '0px'
+      );
+      mq.latex('\\operatorname{f}+x');
+      assert.equal(
+        getComputedStyle(mq.el().querySelector('.mq-operatorname'))
+          .paddingRight,
+        '0px'
+      );
+      // nor at the edges of a block
+      mq.latex('\\operatorname{f}');
+      var cs = getComputedStyle(mq.el().querySelector('.mq-operatorname'));
+      assert.equal(cs.paddingLeft, '0px');
+      assert.equal(cs.paddingRight, '0px');
+    });
   });
 
   suite('typed \\begin{env}', function () {

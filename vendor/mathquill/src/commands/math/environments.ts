@@ -879,9 +879,10 @@ class Matrix extends CellGrid {
         cursor.insRightOf(left as MQNode);
       else if (!left) cursor.insAtLeftEnd(parent);
     };
-    // The resolved command input leaves its wrapper behind holding the
-    // blurred selection DOM; remove it once the caret is re-anchored or
-    // it renders as a grayed ghost and swallows DOM writes.
+    // Legacy safety net: a resolved command input used to leave its
+    // wrapper behind holding the blurred selection DOM — a grayed ghost
+    // that swallowed DOM writes. renderCommand removes the wrapper
+    // itself now; this just sweeps any residue left by older paths.
     const removeResidue = () => {
       const rootEl = parent.domFrag().oneElement() as
         | HTMLElement

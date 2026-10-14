@@ -9407,7 +9407,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         __extends(class_12, _super);
         function class_12() {
             var _this_1 = _super.call(this, '\\operatorname', new DOMView(1, function (blocks) {
-                return h.block('span', { class: 'mq-roman mq-font' }, blocks[0]);
+                return h.block('span', { class: 'mq-roman mq-font mq-operatorname' }, blocks[0]);
             })) || this;
             _this_1.starred = false;
             return _this_1;
@@ -11914,7 +11914,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.ctrlSeq = '\\binom';
             _this_1.domView = new DOMView(2, function (blocks) {
-                return h('span', { class: 'mq-non-leaf mq-bracket-container' }, [
+                // MATHCOMPILE: mq-binomial distinguishes \binom from real Brackets
+                // for \operatorname spacing in math.less (flat letter-runs drop
+                // their trailing space only before `instanceof Bracket`)
+                return h('span', { class: 'mq-non-leaf mq-bracket-container mq-binomial' }, [
                     h('span', {
                         style: 'width:' + leftBinomialSymbol.width,
                         class: 'mq-paren mq-bracket-l mq-scaled'
@@ -12166,8 +12169,15 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                         // \! \, \| \_ \# resolve to their atoms, \{ / \} take the
                         // usual bracket paths (auto-pair / close), anything else just
                         // writes the char.
+                        var inputWrapper = input.domFrag();
                         input.setDOM(input.domFrag().children().lastElement());
                         input.remove();
+                        // MATHCOMPILE: setDOM repoints the node at the wrapper's
+                        // inner input span, so remove() detaches only that \u2014 the
+                        // empty wrapper would linger as a dead DOM sibling and break
+                        // sibling selectors (.mq-operatorname spacing, bracket+supsub
+                        // rules). Drop it here instead of sweeping it up later.
+                        inputWrapper.remove();
                         if (input[R])
                             cursor.insLeftOf(input[R]);
                         else
@@ -12248,8 +12258,15 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             this.checkCursorContextClose(ctx);
         };
         LatexCommandInput.prototype.renderCommand = function (cursor) {
+            // MATHCOMPILE: setDOM repoints the node at the wrapper's inner
+            // input span, so remove() detaches only that \u2014 the empty wrapper
+            // would linger as a dead DOM sibling and break sibling selectors
+            // (.mq-operatorname spacing, bracket+supsub rules). Drop it here
+            // instead of sweeping it up later.
+            var wrapper = this.domFrag();
             this.setDOM(this.domFrag().children().lastElement());
             this.remove();
+            wrapper.remove();
             if (this[R]) {
                 cursor.insLeftOf(this[R]);
             }
@@ -12659,7 +12676,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     }(MQSymbol));
     var boundlessIntegral = function (ctrlSeq, glyph, speak) {
         return function () {
-            return new BoundlessIntegral(ctrlSeq, h('span', { class: 'mq-int' }, [
+            return new BoundlessIntegral(ctrlSeq, 
+            // MATHCOMPILE: mq-boundless-int distinguishes these from \int
+            // (a SummationNotation) for \operatorname spacing in math.less
+            h('span', { class: 'mq-int mq-boundless-int' }, [
                 h('big', {}, [h.entityText(glyph)])
             ]), undefined, speak);
         };
@@ -14806,9 +14826,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 else if (!left)
                     cursor.insAtLeftEnd(parent);
             };
-            // The resolved command input leaves its wrapper behind holding the
-            // blurred selection DOM; remove it once the caret is re-anchored or
-            // it renders as a grayed ghost and swallows DOM writes.
+            // Legacy safety net: a resolved command input used to leave its
+            // wrapper behind holding the blurred selection DOM \u2014 a grayed ghost
+            // that swallowed DOM writes. renderCommand removes the wrapper
+            // itself now; this just sweeps any residue left by older paths.
             var removeResidue = function () {
                 var _c;
                 var rootEl = parent.domFrag().oneElement();

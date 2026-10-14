@@ -208,6 +208,13 @@ and empty blocks serialize as `{ }`.
   autoCommands/autoParenthesize are skipped and `autoUnItalicize` marks
   the run without splitting it into built-ins (`\operatorname{argmin}`
   stays `argmin`, unlike `\mathrm{argmin}` → `\mathrm{\arg\min}`).
+  The group wears `mq-operatorname`; `math.less` gives it LaTeX
+  `\mathop` spacing (thin space each side, dropped at block edges and
+  before/after binary ops, summation signs — `.mq-large-operator` and
+  `.mq-int`, not `.mq-boundless-int` — and before real brackets; a
+  following `.mq-supsub` carries the right-hand space, like
+  `mq-after-operator-name`). `.mq-binomial` marks `\binom` so it isn't
+  mistaken for a real bracket.
 - Matrices: `\begin{matrix|pmatrix|…}` environments + bare
   `\pmatrix{a&b\\c&d}`. Typed `\name` shortcuts (`\cases`, `\aligned`,
   `\gathered`, …) open the same grid `\begin{name}` resolves to;

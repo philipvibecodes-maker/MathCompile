@@ -612,6 +612,44 @@
 .mq-math-mode .mq-supsub.mq-after-operator-name {
   padding-right: 0.2em;
 }
+.mq-math-mode .mq-operatorname {
+  padding-left: 0.2em;
+  padding-right: 0.2em;
+}
+.mq-math-mode .mq-operatorname:first-child,
+.mq-math-mode .mq-cursor:first-child + .mq-operatorname {
+  padding-left: 0;
+}
+.mq-math-mode .mq-operatorname:last-child,
+.mq-math-mode .mq-operatorname:has(+ .mq-cursor:last-child) {
+  padding-right: 0;
+}
+.mq-math-mode .mq-binary-operator + .mq-operatorname,
+.mq-math-mode .mq-binary-operator + .mq-cursor + .mq-operatorname,
+.mq-math-mode .mq-large-operator + .mq-operatorname,
+.mq-math-mode .mq-large-operator + .mq-cursor + .mq-operatorname,
+.mq-math-mode .mq-int:not(.mq-boundless-int) + .mq-operatorname,
+.mq-math-mode .mq-int:not(.mq-boundless-int) + .mq-cursor + .mq-operatorname {
+  padding-left: 0;
+}
+.mq-math-mode .mq-operatorname:has(+ .mq-binary-operator),
+.mq-math-mode .mq-operatorname:has(+ .mq-cursor + .mq-binary-operator),
+.mq-math-mode .mq-operatorname:has(+ .mq-large-operator),
+.mq-math-mode .mq-operatorname:has(+ .mq-cursor + .mq-large-operator),
+.mq-math-mode .mq-operatorname:has( + .mq-int:not(.mq-boundless-int)),
+.mq-math-mode .mq-operatorname:has( + .mq-cursor + .mq-int:not(.mq-boundless-int)),
+.mq-math-mode .mq-operatorname:has( + .mq-bracket-container:not(.mq-binomial)),
+.mq-math-mode .mq-operatorname:has( + .mq-cursor + .mq-bracket-container:not(.mq-binomial)) {
+  padding-right: 0;
+}
+.mq-math-mode .mq-operatorname:has(+ .mq-supsub),
+.mq-math-mode .mq-operatorname:has(+ .mq-cursor + .mq-supsub) {
+  padding-right: 0;
+}
+.mq-math-mode .mq-operatorname + .mq-supsub:not( :has( + .mq-bracket-container:not(.mq-binomial))):not( :has( + .mq-cursor + .mq-bracket-container:not(.mq-binomial))),
+.mq-math-mode .mq-operatorname + .mq-cursor + .mq-supsub:not( :has( + .mq-bracket-container:not(.mq-binomial))):not( :has( + .mq-cursor + .mq-bracket-container:not(.mq-binomial))) {
+  padding-right: 0.2em;
+}
 .mq-math-mode .mq-fraction {
   font-size: 90%;
   text-align: center;

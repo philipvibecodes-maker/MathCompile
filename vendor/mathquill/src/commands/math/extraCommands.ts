@@ -401,7 +401,9 @@ const boundlessIntegral = (ctrlSeq: string, glyph: string, speak: string) => {
   return () =>
     new BoundlessIntegral(
       ctrlSeq,
-      h('span', { class: 'mq-int' }, [
+      // MATHCOMPILE: mq-boundless-int distinguishes these from \int
+      // (a SummationNotation) for \operatorname spacing in math.less
+      h('span', { class: 'mq-int mq-boundless-int' }, [
         h('big', {}, [h.entityText(glyph)])
       ]) as HTMLElement,
       undefined,

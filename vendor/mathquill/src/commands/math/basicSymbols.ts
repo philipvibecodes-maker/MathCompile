@@ -886,7 +886,11 @@ LatexCmds.operatorname = class extends MathCommand {
     super(
       '\\operatorname',
       new DOMView(1, (blocks) =>
-        h.block('span', { class: 'mq-roman mq-font' }, blocks[0])
+        h.block(
+          'span',
+          { class: 'mq-roman mq-font mq-operatorname' },
+          blocks[0]
+        )
       )
     );
   }
