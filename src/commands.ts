@@ -1,6 +1,9 @@
 import { TARGETS } from './compile/targets';
 import type { AppStore } from './state/store.svelte';
-import { downloadWorksheetFile } from './state/worksheet-file';
+import {
+  downloadWorksheetFile,
+  pickWorksheetFile,
+} from './state/worksheet-file';
 
 export interface Command {
   id: string;
@@ -68,6 +71,17 @@ export const buildCommands = (store: AppStore): Command[] => {
       run: () => {
         const snap = store.worksheetSnapshot();
         if (snap) downloadWorksheetFile(snap.name, snap.cells);
+      },
+    },
+    {
+      id: 'open-worksheet-file',
+      title: 'Open worksheet from file',
+      keywords: 'import load json upload',
+      // Opens the OS picker; the imported sheet arrives async.
+      run: () => {
+        void pickWorksheetFile().then((w) => {
+          if (w) store.importWorksheet(w.name, w.cells);
+        });
       },
     },
     {

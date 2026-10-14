@@ -97,16 +97,39 @@ test('save to file downloads a .mathcompile.json that opens back', async ({
   expect(saved.cells.map((c: { latex: string }) => c.latex)).toEqual(['x+1']);
 
   // Open it back: a new sheet appears, switched to, holding the cells.
+  // The display name comes from the file name, not the embedded name.
   await openMenu(page);
   await page.locator('.ws-file').setInputFiles({
     name: 'back.mathcompile.json',
     mimeType: 'application/json',
     buffer: Buffer.from(text),
   });
-  await expect(page.locator('.worksheets-current')).toHaveText(
-    'Worksheet 1 (2)',
-  );
+  await expect(page.locator('.worksheets-current')).toHaveText('back');
   expect(await cellValue(cell(page, 0))).toBe('x+1');
+});
+
+test('the command palette opens a worksheet file', async ({ page }) => {
+  const payload = JSON.stringify({
+    app: 'mathcompile',
+    kind: 'worksheet',
+    version: 1,
+    name: 'ignored-embedded-name',
+    cells: [{ id: 1, latex: 'z+3' }],
+  });
+  await page.keyboard.press('Control+k');
+  await page.locator('.palette-input').pressSequentially('open worksheet');
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    page.keyboard.press('Enter'),
+  ]);
+  await chooser.setFiles({
+    name: 'derivs.mathcompile.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(payload),
+  });
+  // The sheet takes the file's name and is switched to.
+  await expect(page.locator('.worksheets-current')).toHaveText('derivs');
+  expect(await cellValue(cell(page, 0))).toBe('z+3');
 });
 
 test('the last remaining worksheet cannot be deleted', async ({ page }) => {

@@ -92,9 +92,9 @@ test('clicking the backdrop closes the palette', async ({ page }) => {
 
 test('empty query lists every command', async ({ page }) => {
   await page.keyboard.press('Control+k');
-  // 9 fixed commands + 3 enabled targets + 1 worksheet switch + 1 goto
+  // 10 fixed commands + 3 enabled targets + 1 worksheet switch + 1 goto
   // per cell (single cell, single worksheet here).
-  await expect(page.locator('.cmd-item')).toHaveCount(14);
+  await expect(page.locator('.cmd-item')).toHaveCount(15);
 });
 
 test('a query matching nothing shows the empty state', async ({ page }) => {
