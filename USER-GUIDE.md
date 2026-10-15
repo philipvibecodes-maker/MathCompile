@@ -21,14 +21,16 @@ in your browser and saves your worksheet automatically.
   dark-mode toggle, the **User guide** link (this document as a PDF),
   the **?** help-search button, and the Commands button (or press
   `Ctrl+K` / `⌘K`).
-- **How do I…**, under the cell list, is a quick keystroke cheat sheet.
+- **How do I…**, under the cell list, is a quick keystroke cheat sheet
+  built from your pinned topics (it ships with a default set).
   `Ctrl+/` (or the **?** button, the *Search help* command, or the
   *Search all topics…* link in the section) opens a centered search over
   the full help catalog; **Enter**/click writes the topic's input into
   the active cell (topics with no single input, like *Greek letters*,
   pin instead), **Shift+Enter** or the **pin** button keeps a topic in
-  the list, **×** hides one, and *n hidden — restore* brings them back.
-  This document is the long version.
+  the list, **unpin** removes one, **×** hides one (still findable in
+  search, dimmed), and *restore default help topics* brings the
+  original set back. This document is the long version.
 
 The command palette (`Ctrl+K`) covers: insert an expression below,
 duplicate the current one, delete it, clear all expressions, toggle

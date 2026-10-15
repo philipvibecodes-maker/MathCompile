@@ -1,6 +1,6 @@
 import type { FieldHandle } from '../editor/attach-field';
 import type { TargetId } from '../compile/targets';
-import { TOPIC_BY_ID } from '../help/topics';
+import { DEFAULT_HELP_IDS, TOPIC_BY_ID } from '../help/topics';
 import {
   parseCellLatex,
   type MathJson,
@@ -122,12 +122,15 @@ export class AppStore {
   // Calculator code blocks show the `e = ...` capture lines when on.
   showPlumbing = $state(loadPrefs().showPlumbing ?? false);
   guideOpen = $state(loadPrefs().guideOpen ?? true);
-  // "How do I…" customization: pinned topics float to the top of the
-  // list (non-featured ones only appear while pinned), hidden ones drop
-  // out of the default list entirely. Ids not in the catalog are
-  // dropped on load.
+  // "How do I…" customization: the section lists pinnedHelp, which
+  // starts as the catalog's default set on a fresh install — an empty
+  // stored array is respected (the user unpinned everything on
+  // purpose). Hidden topics drop out of the list but stay findable in
+  // search. Ids not in the catalog are dropped on load.
   pinnedHelp = $state<string[]>(
-    (loadPrefs().pinnedHelp ?? []).filter((id) => TOPIC_BY_ID.has(id)),
+    (loadPrefs().pinnedHelp ?? DEFAULT_HELP_IDS).filter((id) =>
+      TOPIC_BY_ID.has(id),
+    ),
   );
   hiddenHelp = $state<string[]>(
     (loadPrefs().hiddenHelp ?? []).filter((id) => TOPIC_BY_ID.has(id)),
@@ -399,8 +402,15 @@ export class AppStore {
     this.hiddenHelp = this.hiddenHelp.filter((h) => h !== id);
   }
 
-  restoreHiddenHelp() {
+  // "restore default help topics": unhide everything and put the
+  // default set back at the front of the pin list — topics the user
+  // pinned themselves stay pinned after it.
+  restoreDefaultHelp() {
     this.hiddenHelp = [];
+    this.pinnedHelp = [
+      ...DEFAULT_HELP_IDS,
+      ...this.pinnedHelp.filter((id) => !DEFAULT_HELP_IDS.includes(id)),
+    ];
   }
 
   // Every "search help" entry point funnels here. paletteOpen is

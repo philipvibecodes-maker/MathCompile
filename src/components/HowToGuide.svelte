@@ -1,27 +1,33 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
   import { appStore } from '../state/store.svelte';
-  import { HELP_TOPICS, TOPIC_BY_ID, type HelpTopic } from '../help/topics';
+  import {
+    DEFAULT_HELP_IDS,
+    TOPIC_BY_ID,
+    type HelpTopic,
+  } from '../help/topics';
 
   // `smart` shows when smart mode is on, `plain` when off; `how` is shared.
   const howText = (t: HelpTopic) =>
     t.how ?? (appStore.smartMode ? t.smart : t.plain) ?? '';
 
-  // Pinned topics first (in pin order — non-featured topics only appear
-  // while pinned), then the featured defaults, minus anything hidden.
-  // Search lives in the centered HelpSearch overlay (Ctrl+/); results
-  // pin into this list.
+  // The list is the pin set (in pin order), minus anything hidden — the
+  // catalog's `default` topics are just its initial value, so unpin and
+  // hide behave identically on every row. Search lives in the centered
+  // HelpSearch overlay (Ctrl+/); results pin into this list.
   let listed = $derived.by(() => {
     const hidden = new Set(appStore.hiddenHelp);
-    const pinned = appStore.pinnedHelp
+    return appStore.pinnedHelp
       .map((id) => TOPIC_BY_ID.get(id))
       .filter((t): t is HelpTopic => t !== undefined && !hidden.has(t.id));
-    const pinnedIds = new Set(appStore.pinnedHelp);
-    const featured = HELP_TOPICS.filter(
-      (t) => t.featured && !hidden.has(t.id) && !pinnedIds.has(t.id),
-    );
-    return [...pinned, ...featured];
   });
+
+  // The restore button appears only when it would do something: a topic
+  // is hidden, or a default has been unpinned away.
+  let needsRestore = $derived(
+    appStore.hiddenHelp.length > 0 ||
+      !DEFAULT_HELP_IDS.every((id) => appStore.pinnedHelp.includes(id)),
+  );
 </script>
 
 {#snippet topicRow(t: HelpTopic)}
@@ -55,19 +61,19 @@
       {@render topicRow(t)}
     {:else}
       <div class="howto-item howto-empty">
-        <dt>All topics hidden</dt>
+        <dt>No topics pinned</dt>
         <dd></dd>
         <dd class="howto-acts"></dd>
       </div>
     {/each}
   </dl>
   <div class="howto-foot">
-    {#if appStore.hiddenHelp.length > 0}
+    {#if needsRestore}
       <button
         class="howto-restore"
-        onclick={() => appStore.restoreHiddenHelp()}
+        onclick={() => appStore.restoreDefaultHelp()}
       >
-        {appStore.hiddenHelp.length} hidden — restore
+        restore default help topics
       </button>
     {/if}
     <button

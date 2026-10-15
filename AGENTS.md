@@ -44,10 +44,10 @@ src/
                       two-column layout under .two-col), header
   commands.ts         Command type + command list factory
   fuzzy.ts            palette search scoring (also the help search)
-  help/topics.ts      "How do I…" catalog — one input per topic:
-                      featured rows plus the wider searchable/
-                      pinnable/hidable set, each with an `insert` latex
-                      for mq.cmd where a single input makes sense
+  help/topics.ts      "How do I…" catalog — one input per topic: the
+                      `default` rows seed the pin set on first run, all
+                      topics are searchable/pinnable/hidable, and most
+                      carry an `insert` latex for mq.cmd
   state/
     store.svelte.ts   $state app store + field registry + focusCell() —
                       the single focus owner

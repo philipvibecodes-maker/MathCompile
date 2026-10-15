@@ -1937,7 +1937,7 @@ body {
 }
 
 /* Entry point into the centered help-search overlay — the section's
-   own list only holds pinned/featured topics. */
+   own list only holds pinned topics. */
 .howto-find {
   margin-left: auto;
   padding: 0;

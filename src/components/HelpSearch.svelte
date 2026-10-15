@@ -44,18 +44,13 @@
   const howText = (t: HelpTopic) =>
     t.how ?? (appStore.smartMode ? t.smart : t.plain) ?? '';
 
-  // The default list — same set the section shows (pinned first, then
-  // featured, minus hidden) — so an empty query still offers topics.
+  // The default list — the same pin set the section shows, minus
+  // hidden — so an empty query still offers topics.
   let listed = $derived.by(() => {
     const hidden = new Set(appStore.hiddenHelp);
-    const pinned = appStore.pinnedHelp
+    return appStore.pinnedHelp
       .map((id) => TOPIC_BY_ID.get(id))
       .filter((t): t is HelpTopic => t !== undefined && !hidden.has(t.id));
-    const pinnedIds = new Set(appStore.pinnedHelp);
-    const featured = HELP_TOPICS.filter(
-      (t) => t.featured && !hidden.has(t.id) && !pinnedIds.has(t.id),
-    );
-    return [...pinned, ...featured];
   });
 
   // Search looks at the whole catalog — hidden topics stay findable so
@@ -66,15 +61,16 @@
   const scoreTopic = (q: string, t: HelpTopic): number => {
     const field = (s: string | undefined, loose = true) =>
       s === undefined ? -Infinity : (fuzzyTextScore(q, s, loose) ?? -Infinity);
-    // Featured topics win close calls — 'root' finds Square root (the
-    // everyday answer) over nth root, which contains the same substring
-    // slightly earlier in its goal.
+    // Pinned topics win close calls — they're the answers the user
+    // keeps at hand. 'root' finds Square root (a default pin) over
+    // nth root, which contains the same substring slightly earlier
+    // in its goal.
     return (
       Math.max(
         field(t.goal) * 3,
         Math.max(field(t.how), field(t.smart), field(t.plain)) * 2,
         field(t.keywords, false),
-      ) + (t.featured ? 15 : 0)
+      ) + (appStore.pinnedHelp.includes(t.id) ? 15 : 0)
     );
   };
 
@@ -173,12 +169,18 @@
       }, 0);
   };
 
-  // A pin lands in the "How do I…" section — open it so the new pin is
-  // visible once the dialog closes.
+  // The row's pin button toggles; Enter's pin fallback only ever adds —
+  // activating an already-pinned topic must not unpin it. A pin lands
+  // in the "How do I…" section — open it so the new pin is visible
+  // once the dialog closes.
   const pin = (t: HelpTopic) => {
-    const willPin = !appStore.pinnedHelp.includes(t.id);
+    if (!appStore.pinnedHelp.includes(t.id)) appStore.guideOpen = true;
     appStore.toggleHelpPin(t.id);
-    if (willPin) appStore.guideOpen = true;
+  };
+  const ensurePinned = (t: HelpTopic) => {
+    if (appStore.pinnedHelp.includes(t.id)) return;
+    appStore.toggleHelpPin(t.id);
+    appStore.guideOpen = true;
   };
 
   // Enter/click does the row's primary action: write the topic's input
@@ -190,7 +192,7 @@
       close();
       return;
     }
-    pin(t);
+    ensurePinned(t);
   };
 
   const onKeydown = (e: KeyboardEvent) => {
@@ -207,7 +209,7 @@
       const t = live[Math.min(index, live.length - 1)];
       if (t) {
         e.preventDefault();
-        if (e.shiftKey) pin(t);
+        if (e.shiftKey) ensurePinned(t);
         else activate(t);
       }
     }

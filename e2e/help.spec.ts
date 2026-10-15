@@ -2,9 +2,10 @@ import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { clearFirstCell } from './helpers';
 
-// The "How do I…" section lists pinned + featured topics; the wider
-// catalog is searched through a centered overlay (Ctrl+/, the header ?
-// button, or the palette's Search help command). Results pin into the
+// The "How do I…" section lists the pinned topics — the catalog's
+// default set until the user customizes it; the wider catalog is
+// searched through a centered overlay (Ctrl+/, the header ? button,
+// or the palette's Search help command). Results pin into the
 // section and rows hide — all persisted in mathcompile-prefs.
 
 const guide = (page: Page): Locator => page.locator('details.howto');
@@ -35,7 +36,7 @@ test.beforeEach(async ({ page }) => {
 test('search finds topics beyond the default list and pins them', async ({
   page,
 }) => {
-  // 'Solve equations' is not a featured row — only reachable via search.
+  // 'Solve equations' is not a default row — only reachable via search.
   await expect(row(page, 'Solve equations')).toHaveCount(0);
   await openSearch(page);
   await search(page).fill('solve equations');
@@ -47,8 +48,8 @@ test('search finds topics beyond the default list and pins them', async ({
   ).toHaveText('unpin');
   await closeSearch(page);
 
-  // Pinned rows lead the section's list and stay until unpinned.
-  await expect(guide(page).locator('.howto-item dt').first()).toContainText(
+  // The new pin appends after the default set and stays until unpinned.
+  await expect(guide(page).locator('.howto-item dt').last()).toContainText(
     'Solve equations',
   );
   await expect(row(page, 'Solve equations').locator('.howto-pin')).toHaveText(
@@ -91,23 +92,45 @@ test('Shift+Enter pins the selected result; the dialog stays open', async ({
 });
 
 test('clicking a result row pins it', async ({ page }) => {
+  // 'Absolute value' has no insert input, so clicking the row falls
+  // back to pinning it.
   await openSearch(page);
-  await search(page).fill('greek');
-  await hit(page, 'Greek letters').click();
-  await expect(hit(page, 'Greek letters').locator('.howto-pin')).toHaveText(
-    'unpin',
-  );
+  await search(page).fill('absolute value');
+  await hit(page, 'Absolute value').click();
+  await expect(
+    hit(page, 'Absolute value').locator('.howto-pin'),
+  ).toHaveText('unpin');
   await closeSearch(page);
-  await expect(row(page, 'Greek letters')).toHaveCount(1);
+  await expect(row(page, 'Absolute value')).toHaveCount(1);
 });
 
-test('hiding a row removes it; the restore link brings it back', async ({
+test('hiding a row removes it; restore default help topics brings it back', async ({
   page,
 }) => {
   await expect(row(page, 'Fraction')).toHaveCount(1);
   await page.getByRole('button', { name: 'Hide Fraction' }).click();
   await expect(row(page, 'Fraction')).toHaveCount(0);
-  await expect(page.locator('.howto-restore')).toHaveText('1 hidden — restore');
+  await expect(page.locator('.howto-restore')).toHaveText(
+    'restore default help topics',
+  );
+
+  await page.locator('.howto-restore').click();
+  await expect(row(page, 'Fraction')).toHaveCount(1);
+  await expect(page.locator('.howto-restore')).toHaveCount(0);
+});
+
+test('default topics unpin like any topic; restore re-pins them', async ({
+  page,
+}) => {
+  // There is no special featured class — a default row is just a pin
+  // the section starts with, and unpin removes it like any other.
+  await expect(page.locator('.howto-restore')).toHaveCount(0);
+  await expect(row(page, 'Fraction')).toHaveCount(1);
+  await row(page, 'Fraction').locator('.howto-pin').click();
+  await expect(row(page, 'Fraction')).toHaveCount(0);
+  await expect(page.locator('.howto-restore')).toHaveText(
+    'restore default help topics',
+  );
 
   await page.locator('.howto-restore').click();
   await expect(row(page, 'Fraction')).toHaveCount(1);
@@ -226,5 +249,7 @@ test('pins and hidden topics persist across reload', async ({ page }) => {
   await page.waitForSelector('math-field');
   await expect(row(page, 'Solve equations')).toHaveCount(1);
   await expect(row(page, 'Fraction')).toHaveCount(0);
-  await expect(page.locator('.howto-restore')).toHaveText('1 hidden — restore');
+  await expect(page.locator('.howto-restore')).toHaveText(
+    'restore default help topics',
+  );
 });

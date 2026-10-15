@@ -1,6 +1,8 @@
-// Help-topic catalog for the "How do I…" section. `featured` topics
-// appear in the list by default; every topic is reachable through the
-// help search (Ctrl+/) and can be pinned into the list or hidden.
+// Help-topic catalog for the "How do I…" section. The section shows
+// pinned topics — `default` marks the topics the pin set starts with
+// on a fresh install (and what "restore default help topics" brings
+// back); every topic is reachable through the help search (Ctrl+/)
+// and can be pinned into the list or hidden.
 // `how` is the keystroke text shown regardless of Smart mode;
 // `smart`/`plain` split the text on it (smart when on, plain when off).
 // One input per topic: `insert` is the latex written into the active
@@ -15,18 +17,18 @@ export interface HelpTopic {
   smart?: string;
   plain?: string;
   insert?: string;
-  featured?: boolean;
+  default?: boolean;
 }
 
 export const HELP_TOPICS: HelpTopic[] = [
-  // ── Featured ──────────────────────────────────────────────
+  // ── Default pinned set ────────────────────────────────────
   {
     id: 'fraction',
     goal: 'Fraction',
     keywords: 'divide numerator denominator over',
     how: 'type 1/2 or \\frac ⏎',
     insert: '\\frac',
-    featured: true,
+    default: true,
   },
   {
     id: 'subsup',
@@ -34,7 +36,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     keywords: 'sub super script power exponent index',
     smart: 'x2 or _ or ^',
     plain: '_ or ^',
-    featured: true,
+    default: true,
   },
   {
     id: 'sqrt',
@@ -43,7 +45,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     smart: 'sqrt',
     plain: '\\sqrt ⏎',
     insert: '\\sqrt',
-    featured: true,
+    default: true,
   },
   {
     id: 'sum',
@@ -52,7 +54,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     smart: 'sum — caret lands in the bound',
     plain: '\\sum ⏎ — caret lands in the bound',
     insert: '\\sum',
-    featured: true,
+    default: true,
   },
   {
     id: 'int-def',
@@ -61,7 +63,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     smart: 'int — bounds fill in',
     plain: '\\int ⏎ — bounds fill in',
     insert: '\\int',
-    featured: true,
+    default: true,
   },
   {
     id: 'int-indef',
@@ -70,7 +72,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     smart: 'antid — _ and ^ add bounds',
     plain: '\\antid ⏎ — _ and ^ add bounds',
     insert: '\\antid',
-    featured: true,
+    default: true,
   },
   {
     id: 'limit',
@@ -79,7 +81,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     smart: 'lim — the bound takes x\\to0',
     plain: '\\lim ⏎ — the bound takes x\\to0',
     insert: '\\lim',
-    featured: true,
+    default: true,
   },
   {
     id: 'binom',
@@ -87,7 +89,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     keywords: 'choose ncr combinatorics',
     how: '\\binom ⏎',
     insert: '\\binom',
-    featured: true,
+    default: true,
   },
   {
     id: 'matrix',
@@ -95,7 +97,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     keywords: 'grid pmatrix bmatrix vmatrix rows columns',
     how: '\\pmatrix ⏎ — Enter adds a row or Shift+Space a column',
     insert: '\\pmatrix{a&b\\\\c&d}',
-    featured: true,
+    default: true,
   },
   {
     id: 'greek',
@@ -104,21 +106,21 @@ export const HELP_TOPICS: HelpTopic[] = [
       'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi rho sigma tau upsilon chi psi omega greek',
     smart: 'pi · phi · theta — or \\alpha ⏎ for the rest',
     plain: '\\alpha ⏎ \\beta ⏎ … \\omega ⏎',
-    featured: true,
+    default: true,
   },
   {
     id: 'newline',
     goal: 'New line',
     keywords: 'break row displaylines cell',
     how: 'Enter or Shift+Enter for a new cell',
-    featured: true,
+    default: true,
   },
   {
     id: 'autocomplete',
     goal: 'Autocomplete',
     keywords: 'suggest command menu symbol picker',
     how: 'type \\… or a word — Ctrl+Space for the symbol picker',
-    featured: true,
+    default: true,
   },
   {
     id: 'text',
@@ -126,7 +128,7 @@ export const HELP_TOPICS: HelpTopic[] = [
     keywords: 'words upright label',
     how: '\\text ⏎',
     insert: '\\text',
-    featured: true,
+    default: true,
   },
 
   // ── More calculus / algebra ───────────────────────────────
@@ -860,3 +862,8 @@ export const HELP_TOPICS: HelpTopic[] = [
 ];
 
 export const TOPIC_BY_ID = new Map(HELP_TOPICS.map((t) => [t.id, t]));
+
+// The pin set the "How do I…" section starts with, in catalog order.
+export const DEFAULT_HELP_IDS = HELP_TOPICS.filter((t) => t.default).map(
+  (t) => t.id,
+);
