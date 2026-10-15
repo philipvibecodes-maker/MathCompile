@@ -125,11 +125,11 @@ test('the command palette opens a worksheet file', async ({ page }) => {
   await expect(page.locator('.cmd-item.selected')).toContainText(
     'Open worksheet from file',
   );
-  const [chooser] = await Promise.all([
-    page.waitForEvent('filechooser'),
-    page.keyboard.press('Enter'),
-  ]);
-  await chooser.setFiles({
+  await page.keyboard.press('Enter');
+  // The command appends a hidden input[type=file] to the DOM — set the
+  // file on it directly. Racing waitForEvent('filechooser') with the
+  // Enter press drops the chooser ~1-in-6 runs under parallel load.
+  await page.locator('input[type=file]').setInputFiles({
     name: 'derivs.mathcompile.json',
     mimeType: 'application/json',
     buffer: Buffer.from(payload),
