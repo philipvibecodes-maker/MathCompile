@@ -18,6 +18,11 @@
     { goal: 'New line', how: 'Enter or Shift+Enter for a new cell' },
     { goal: 'Autocomplete', how: 'type \\… or a word — Ctrl+Space for the symbol picker' },
     { goal: 'Text', how: '\\text ⏎' },
+    {
+      goal: 'Plot',
+      smart: 'plot — then the expression; Output → Calculator renders it',
+      plain: '\\plot ⏎ — then the expression; Output → Calculator renders it',
+    },
   ];
 </script>
 
