@@ -335,14 +335,58 @@ const hasHead = (n: MathJson): boolean =>
 const hasDef = (n: MathJson): boolean =>
   n === "'def'" || (isArr(n) && n.some(hasDef));
 
+// An Error node anywhere in the result (e.g. \det applied to a
+// scalar-bound name) serializes to \mathtip{\error{…}} — no row is
+// better than an error blob MathQuill can't read; the SymPy row lands
+// with the real diagnostic.
+const hasError = (n: MathJson): boolean =>
+  isArr(n) && (headOf(n) === 'Error' || n.slice(1).some(hasError));
+
+// CE evaluates a Matrix to a bare List of row Lists, and its serializer
+// writes lists as \bigl\lbrack…\bigr\rbrack — vendored MathQuill has no
+// \lbrack sized-delimiter glyph and prints "lbrack" literally. Reboxing
+// a List-of-flat-Lists as Matrix restores the \begin{pmatrix} latex.
+// Flat rows only: a List inside a row is a deeper nest (3-tensor), not
+// a matrix.
+const restoreMatrices = (n: MathJson): MathJson => {
+  if (!isArr(n)) return n;
+  // A Matrix head's List arg is structural — don't descend or rewrap it.
+  if (headOf(n) === 'Matrix') return n;
+  const kids = n.slice(1).map(restoreMatrices);
+  const node = [n[0], ...kids] as MathJson;
+  if (
+    headOf(node) === 'List' &&
+    kids.length > 0 &&
+    kids.every(
+      (k) =>
+        isArr(k) &&
+        headOf(k) === 'List' &&
+        !k.slice(1).some((g) => isArr(g) && headOf(g) === 'List'),
+    )
+  )
+    return ['Matrix', node];
+  return node;
+};
+
+// Serialize an evaluated json for a row: rebox so restored Matrix nodes
+// emit \begin{pmatrix}, then map CE-only names MathQuill can't read.
+const resultLatex = (ce: ComputeEngine, json: MathJson): string =>
+  cleanLatex(ce.box(restoreMatrices(json) as never).latex);
+
 // CE's serializer emits names MathQuill doesn't know (they'd render as
-// italic letters) — map them to the plain forms.
+// italic letters or literal command-name text) — map them to the plain
+// forms. \lbrack/\rbrack/\lbrace/\rbrace land here for flat lists and
+// sets once list-of-lists is restored to Matrix.
 const cleanLatex = (s: string): string =>
   s
     .replaceAll('\\exponentialE', 'e')
     .replaceAll('\\imaginaryI', 'i')
     .replaceAll('\\lparen', '(')
     .replaceAll('\\rparen', ')')
+    .replaceAll('\\lbrack', '[')
+    .replaceAll('\\rbrack', ']')
+    .replaceAll('\\lbrace', '\\{')
+    .replaceAll('\\rbrace', '\\}')
     .replaceAll('\\lvert', '|')
     .replaceAll('\\rvert', '|')
     .replaceAll('\\vert', '|')
@@ -531,17 +575,19 @@ const evalStatement = (
       .box(['Assign', repaired[1], addConstants(repaired[2], nextConst)] as never)
       .evaluate()
       .evaluate();
-    const latex = cleanLatex(`${repaired[1]}=${val.latex}`);
+    const valJson = val.json as MathJson;
+    if (hasError(valJson)) return null;
+    const latex = `${repaired[1]}=${resultLatex(ce, valJson)}`;
     return latex === `${repaired[1]}=` ? null : { ok: true as const, latex };
   }
   // A second evaluate() resolves integrals nested inside an outer one —
   // CE's first pass only evaluates the outermost sign.
-  const latex = cleanLatex(
-    ce
-      .box(addConstants(repaired, nextConst) as never)
-      .evaluate()
-      .evaluate().latex,
-  );
+  const json = ce
+    .box(addConstants(repaired, nextConst) as never)
+    .evaluate()
+    .evaluate().json as MathJson;
+  if (hasError(json)) return null;
+  const latex = resultLatex(ce, json);
   return latex === '' || /Nothing|Error/.test(latex)
     ? null
     : { ok: true as const, latex };

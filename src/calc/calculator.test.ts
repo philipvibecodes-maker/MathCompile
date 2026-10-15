@@ -1417,6 +1417,58 @@ describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
     expect(rows[0].ok).toBe(true);
   });
 
+  it('renders evaluated matrices as \\begin{pmatrix}, not \\lbrack lists', async () => {
+    // CE evaluates a Matrix to a List of row Lists whose serializer
+    // emits \bigl\lbrack…\bigr\rbrack — MathQuill has no \lbrack
+    // sized-delimiter glyph and prints "lbrack" literally. The interim
+    // reboxes list-of-lists as Matrix so the grid renders.
+    for (const s of [
+      '\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}',
+      '\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}^{-1}',
+      '\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}^{T}',
+      '\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}\\begin{pmatrix}5&6\\\\7&8\\end{pmatrix}',
+      '\\begin{pmatrix}x&y\\\\z&w\\end{pmatrix}',
+    ]) {
+      const rows = await interimEvaluate(s);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].ok).toBe(true);
+      const latex = (rows[0] as { latex?: string }).latex ?? '';
+      expect(latex).toContain('\\begin{pmatrix}');
+      expect(latex).not.toContain('lbrack');
+    }
+  });
+
+  it('renders the matrix on a `name = matrix` assign row', async () => {
+    const rows = await interimEvaluate(
+      'A = \\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}\\\\ A^{-1}',
+    );
+    expect(rows).toHaveLength(2);
+    expect((rows[0] as { latex?: string }).latex).toContain(
+      '\\begin{pmatrix}',
+    );
+    // The bound name resolves — the inverse row is a pmatrix too.
+    expect((rows[1] as { latex?: string }).latex).toContain(
+      '\\begin{pmatrix}',
+    );
+  });
+
+  it('still renders flat list results with real brackets', async () => {
+    // Non-matrix List results (intervals, tuples, sets) serialize with
+    // \lbrack/\lbrace — map them to the delimiters MathQuill knows.
+    const rows = await interimEvaluate('\\{1,2,3\\}');
+    const latex = (rows[0] as { latex?: string }).latex ?? '';
+    expect(latex).not.toContain('lbrace');
+    expect(latex).not.toContain('lbrack');
+  });
+
+  it('suppresses rows whose result is a CE Error node', async () => {
+    // \det on a scalar-bound name produces an Error tree — serializing
+    // it would emit \mathtip{\error{…}} junk MathQuill can't read.
+    const rows = await interimEvaluate('a = 2\\\\ \\det a');
+    expect(rows).toHaveLength(1);
+    expect((rows[0] as { latex?: string }).latex).toBe('a=2');
+  });
+
   it('shows no row for a call on a skipped def', async () => {
     // \text{def} statements don't bind in the interim, so g(3) can't be
     // evaluated honestly — no row rather than a wrong one.

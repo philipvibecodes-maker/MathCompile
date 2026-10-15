@@ -112,7 +112,8 @@ and the Compute Engine interim below.
 own front end: `parseCellLatex` → `normalizeIR` (the same tree codegen
 emits — chained `Equal` flattens, `name = rhs` becomes `Assign`,
 `\text{def}` becomes a `Def` head) → per-statement
-`ce.box(json).evaluate().evaluate().latex`.
+`ce.box(json).evaluate().evaluate()` → `restoreMatrices` on the result
+json → rebox → `.latex`.
 One interim row per statement row the real engine emits, matching its
 row-per-statement shape so results swap in place. CE lives in the main
 bundle already (the compiler needs it), so there is no lazy chunk — the
@@ -169,6 +170,18 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   `\lparen`/`\rparen` — `cleanLatex` maps them to `e`, `i`, `(`, `)` so
   MathQuill renders the names instead of italicizing the command text.
   `arcTrigNames` isn't needed here — CE already writes `\arcsin`.
+- **Matrices rebox before serializing**: CE evaluates a `Matrix` to a
+  bare `List` of row `List`s and serializes lists as
+  `\bigl\lbrack…\bigr\rbrack` — MathQuill has no `\lbrack`
+  sized-delimiter glyph and prints "lbrack" literally. `restoreMatrices`
+  rewrites a `List`-of-flat-`List`s back to `Matrix` (flat rows only;
+  deeper nests stay lists) so results emit `\begin{pmatrix}`, and
+  `cleanLatex` maps `\lbrack`/`\rbrack`/`\lbrace`/`\rbrace` to the plain
+  delimiters for the flat lists and sets that remain.
+- **Error results emit no row**: a result json containing an `Error`
+  node (`\det` on a scalar-bound name) serializes to
+  `\mathtip{\error{…}}` junk — suppressed like the other unevaluable
+  heads; the SymPy row lands with the real diagnostic.
 
 
 ## Related incident fixed during this work
