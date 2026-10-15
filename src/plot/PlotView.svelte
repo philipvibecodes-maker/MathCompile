@@ -15,10 +15,13 @@
   let Plotly = $state<typeof PlotlyT | undefined>();
   let failed = $state('');
 
-  // Plot height, adjustable by dragging the bottom grip.
+  // Plot height and width, adjustable by dragging the bottom and
+  // right-edge grips. Width is capped by the row's available space.
   let height = $state(360);
+  let width = $state(780);
   const MIN_H = 160;
   const MAX_H = 1200;
+  const MIN_W = 240;
 
   function onGripDown(e: PointerEvent) {
     e.preventDefault();
@@ -28,6 +31,26 @@
       height = Math.min(MAX_H, Math.max(MIN_H, startH + ev.clientY - startY));
       // Live-resize without waiting for a themed re-render —
       // Plotly.react picks the size up on the next render anyway.
+      if (el && Plotly) Plotly.Plots.resize(el);
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  }
+
+  function onSideGripDown(e: PointerEvent) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = width;
+    // The row is the clamp — the css max-width keeps the box inside it.
+    const maxW = el?.parentElement?.parentElement?.clientWidth ?? 1200;
+    const move = (ev: PointerEvent) => {
+      width = Math.min(maxW, Math.max(MIN_W, startW + ev.clientX - startX));
       if (el && Plotly) Plotly.Plots.resize(el);
     };
     const up = () => {
@@ -171,7 +194,7 @@
   });
 </script>
 
-<div class="plot-view">
+<div class="plot-view" style:width="{width}px">
   {#if failed}
     <div class="plot-fail">couldn't render the plot: {failed}</div>
   {:else}
@@ -180,8 +203,15 @@
       class="plot-grip"
       role="separator"
       aria-orientation="horizontal"
-      aria-label="Resize plot"
+      aria-label="Resize plot height"
       onpointerdown={onGripDown}
+    ></div>
+    <div
+      class="plot-grip-side"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize plot width"
+      onpointerdown={onSideGripDown}
     ></div>
   {/if}
 </div>
@@ -189,8 +219,10 @@
 <style>
   .plot-view {
     /* Explicit width — as a column-flex item inside .calc-row, auto
-       margins can only center the block when its width is resolved. */
-    width: min(640px, 100%);
+       margins can only center the block when its width is resolved.
+       The right-edge grip can grow it up to the row's full width. */
+    position: relative;
+    max-width: 100%;
     margin: 4px auto;
   }
   .plot-el {
@@ -215,6 +247,31 @@
   }
   .plot-grip:hover::before,
   .plot-grip:active::before {
+    background: var(--muted, #94a3b8);
+  }
+  .plot-grip-side {
+    position: absolute;
+    top: 0;
+    right: -6px;
+    bottom: 12px;
+    width: 12px;
+    cursor: ew-resize;
+    touch-action: none;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .plot-grip-side::before {
+    content: '';
+    width: 4px;
+    height: 36px;
+    border-radius: 2px;
+    background: var(--faint, #cbd2dc);
+    transition: background 0.15s;
+  }
+  .plot-grip-side:hover::before,
+  .plot-grip-side:active::before {
     background: var(--muted, #94a3b8);
   }
   .plot-fail {

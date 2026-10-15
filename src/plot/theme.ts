@@ -130,6 +130,9 @@ export function themedFigure(plot: PlotData, dark: boolean) {
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
     font: { color: t.font },
+    // Pan on drag — plotly's 2-D default is zoom-box, which surprises.
+    // (gl3d scenes ignore this; their dragmode is per-scene 'orbit'.)
+    dragmode: 'pan',
     ...src,
   };
   // Overlay axis colors on the 2D axes (created if absent — plotly

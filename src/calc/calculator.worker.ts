@@ -406,14 +406,21 @@ def _mc_desmos_axes(fig, bounds):
     # labels at 0 and +-half-extent (rounded to the grid step so the
     # labels read 1, 9, ... rather than the raw sampled extents).
     import math as _mc_math
-    span = max(b[1] - b[0] for b in bounds)
-    sizeref = 0.045 * span
+    # Arrowheads scale with the xy-plane span — the grid they sit over —
+    # not the widest axis: a tall z range (z = (xy)^2 tops 80 on a
+    # +-3 plane) would otherwise blow the cones up to match it.
+    sizeref = 0.022 * max(bounds[0][1] - bounds[0][0],
+                          bounds[1][1] - bounds[1][0])
     for i, letter in enumerate(('x', 'y', 'z')):
         lo, hi = bounds[i]
         half = (hi - lo) / 2.0
         step = _mc_grid_step(hi - lo)
         decimals = max(0, -int(_mc_math.floor(_mc_math.log10(step))))
-        line = [[0.0], [0.0], [0.0]]
+        # Two-element coords on every axis — a 1-element constant next
+        # to the 2-element stem is a mismatched trace plotly drops
+        # silently (the stems never drew; the plane's heavy gridlines
+        # at 0 passed for them).
+        line = [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]]
         line[i] = [lo, hi]
         fig.add_scatter3d(
             x=line[0], y=line[1], z=line[2], mode='lines',
