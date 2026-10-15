@@ -20,7 +20,9 @@ through a MathJSON IR to LaTeX or SymPy-flavored Python (`src/compile/`).
   server on :5573 or starts `npm run dev`). Includes `spike.spec.ts`
   (MathQuill API + adapter checks via `e2e/spike.html`) and
   `vendor.spec.ts` (the upstream mocha suite run headlessly through the
-  dev server).
+  dev server — a fresh clone needs `npm ci` inside `vendor/mathquill`
+  first: unit.html loads mocha from its node_modules, and the root
+  install doesn't recurse into vendor/).
 - `npm run test:e2e:smoke` — the `@smoke`-tagged subset (~20 tests) for
   frequent runs: cell lifecycle, displaylines, adapter contract,
   matrices, limits, palette/focus ownership, codegen targets,
