@@ -29,6 +29,9 @@ export interface CalcRowOk {
   /** The literal program a plot row ran — the generating-code block
    * shows it in place of the opaque `_mc_plot` statement. */
   code?: string;
+  /** Marker row for an exec-only statement (defs-only python source) —
+   * keeps rows aligned with statementLines; filtered before display. */
+  silent?: boolean;
 }
 export interface CalcRowErr {
   ok: false;
@@ -209,7 +212,10 @@ export function evaluate(
         const rowCode = r.map((row) => (row.ok ? row.code : undefined));
         const { code, displayCode } = shownPrograms(prog, rowCode);
         const merged = [
-          ...r.map((row, i) => ({ row, line: last.statementLines[i] })),
+          ...r
+            .map((row, i) => ({ row, line: last.statementLines[i] }))
+            // Exec-only statements (defs) leave marker rows behind.
+            .filter(({ row }) => !(row.ok && row.silent)),
           ...issueRows.map((row) => ({ row, line: row.line })),
         ]
           .sort(
@@ -292,6 +298,7 @@ export function shownPrograms(
       const over = i === lastIdx ? rowCode?.[si] : undefined;
       if (over !== undefined) return [over];
       if (!display) return [s.code];
+      if (s.silent) return [s.code];
       return s.display === undefined || s.defines
         ? s.display === undefined
           ? [`e = ${s.code}`]

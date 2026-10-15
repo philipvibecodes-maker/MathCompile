@@ -401,7 +401,9 @@ const boundlessIntegral = (ctrlSeq: string, glyph: string, speak: string) => {
   return () =>
     new BoundlessIntegral(
       ctrlSeq,
-      h('span', { class: 'mq-int' }, [
+      // MATHCOMPILE: mq-boundless-int distinguishes these from \int
+      // (a SummationNotation) for \operatorname spacing in math.less
+      h('span', { class: 'mq-int mq-boundless-int' }, [
         h('big', {}, [h.entityText(glyph)])
       ]) as HTMLElement,
       undefined,
@@ -1300,6 +1302,77 @@ LatexCmds.def = () =>
   );
 
 //======================================================================
+//  \solve / \dsolve / \pdesolve — insertion aliases for the
+//  \text{…} solver statement markers
+//======================================================================
+
+// Each expands to its real \text{…} marker plus a trailing space — the
+// statement prefix the compiler reads for equation solving (\text{solve}
+// -> sp.solve/sp.solveset), ODEs (\text{dsolve} -> sp.dsolve), and PDEs
+// (\text{pdesolve} -> sp.pdsolve) — the same insertion-time expansion
+// \def uses. Pasted latex serializes as \text{…} on the next save.
+class SolveAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{solve}\\ ');
+  }
+}
+LatexCmds.solve = () =>
+  new SolveAlias(
+    '\\text{solve}',
+    h('span', { class: 'mq-text-mode' }, [h.text('solve')]) as HTMLElement,
+    'solve',
+    'solve equations'
+  );
+class DSolveAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{dsolve}\\ ');
+  }
+}
+LatexCmds.dsolve = () =>
+  new DSolveAlias(
+    '\\text{dsolve}',
+    h('span', { class: 'mq-text-mode' }, [h.text('dsolve')]) as HTMLElement,
+    'dsolve',
+    'solve an ODE'
+  );
+class OdeAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{ode}\\ ');
+  }
+}
+LatexCmds.ode = () =>
+  new OdeAlias(
+    '\\text{ode}',
+    h('span', { class: 'mq-text-mode' }, [h.text('ode')]) as HTMLElement,
+    'ode',
+    'solve an ODE'
+  );
+class PDSolveAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{pdesolve}\\ ');
+  }
+}
+LatexCmds.pdesolve = () =>
+  new PDSolveAlias(
+    '\\text{pdesolve}',
+    h('span', { class: 'mq-text-mode' }, [h.text('pdesolve')]) as HTMLElement,
+    'pdesolve',
+    'solve a PDE'
+  );
+class PdeAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{pde}\\ ');
+  }
+}
+LatexCmds.pde = () =>
+  new PdeAlias(
+    '\\text{pde}',
+    h('span', { class: 'mq-text-mode' }, [h.text('pde')]) as HTMLElement,
+    'pde',
+    'solve a PDE'
+  );
+
+//======================================================================
 //  \tr — insertion alias for \mathrm{tr}
 //======================================================================
 
@@ -1386,3 +1459,66 @@ LatexCmds.plot = () =>
     'plot',
     'plot'
   );
+
+//======================================================================
+//  \dotproduct — insertion alias for \bullet
+//======================================================================
+
+// Typing `\dotproduct` expands to the \bullet sign the compiler reads
+// as the dot product (`u \bullet v` -> u·v); a pasted `\dotproduct`
+// renders the same • glyph and serializes as \bullet — the same
+// insertion-time expansion \gradient uses.
+class DotProductAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\bullet ');
+  }
+}
+LatexCmds.dotproduct = () =>
+  new DotProductAlias(
+    '\\bullet ',
+    h('span', { class: 'mq-binary-operator' }, [
+      h.entityText('&bull;')
+    ]) as HTMLElement,
+    '•',
+    'dot product'
+  );
+
+//======================================================================
+//  Matrix word-op aliases — \rank, \eigenvals, \eigenvects, \inverse,
+//  \transpose, \norm, \rref, \charpoly, \nullspace, \columnspace,
+//  \diagonalize, \adjugate
+//======================================================================
+
+// Each expands to its `\mathrm{<word>}` form — the word-op spelling the
+// compiler reads for the matrix method (`\mathrm{rank} A` /
+// `\mathrm{rank}(A)` -> `(A).rank()`), the same insertion-time
+// expansion \tr uses. None is a real LaTeX command, so stored latex
+// canonicalizes to \mathrm{…} on the next save. No trailing space (see
+// \tr): it would put a space node between the name and the parens.
+function mathrmWordAlias(name: string, speak: string) {
+  return class extends MQSymbol {
+    createLeftOf(cursor: Cursor) {
+      cursor.parent.writeLatex(cursor, '\\mathrm{' + name + '}');
+    }
+    constructor() {
+      super(
+        '\\mathrm{' + name + '}',
+        h('span', { class: 'mq-roman' }, [h.text(name)]) as HTMLElement,
+        name,
+        speak
+      );
+    }
+  };
+}
+LatexCmds.rank = mathrmWordAlias('rank', 'rank');
+LatexCmds.eigenvals = mathrmWordAlias('eigenvals', 'eigenvalues');
+LatexCmds.eigenvects = mathrmWordAlias('eigenvects', 'eigenvectors');
+LatexCmds.inverse = mathrmWordAlias('inverse', 'inverse');
+LatexCmds.transpose = mathrmWordAlias('transpose', 'transpose');
+LatexCmds.norm = mathrmWordAlias('norm', 'norm');
+LatexCmds.rref = mathrmWordAlias('rref', 'reduced row echelon form');
+LatexCmds.charpoly = mathrmWordAlias('charpoly', 'characteristic polynomial');
+LatexCmds.nullspace = mathrmWordAlias('nullspace', 'null space');
+LatexCmds.columnspace = mathrmWordAlias('columnspace', 'column space');
+LatexCmds.diagonalize = mathrmWordAlias('diagonalize', 'diagonalize');
+LatexCmds.adjugate = mathrmWordAlias('adjugate', 'adjugate');

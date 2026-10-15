@@ -12,6 +12,7 @@
   import { highlightPython } from '../calc/python-highlight';
   import { appStore, type Cell } from '../state/store.svelte';
   import PlotView from '../plot/PlotView.svelte';
+  import CopyButton from './CopyButton.svelte';
 
   // Per-cell SymPy output for the calculator target. Edits are debounced,
   // then the cell evaluates through the codegen pipeline in the context
@@ -48,9 +49,10 @@
   }
 
   // Issue reporting is split like the python overlay's marker/panel:
-  // the failing row keeps just its ! / i severity marker here, while
-  // the messages go to cellIssues — the input column's CalcIssues
-  // mounts the panel under the field once typing has paused.
+  // the failing row keeps its ! / i severity marker plus a selectable
+  // copyable message here, while the same messages go to cellIssues —
+  // the input column's CalcIssues mounts the panel under the field
+  // once typing has paused.
   $effect(() => {
     const issues: Issue[] =
       failed !== ''
@@ -83,15 +85,23 @@
     // subscription covers the whole prefix's latex, not just ours.
     const prefixLatex = appStore.cells
       .slice(0, index + 1)
-      .map((c) => c.latex);
-    const latex = prefixLatex[prefixLatex.length - 1] ?? '';
+      // Python cells contribute nothing parseable to the interim
+      // engine's context — their source isn't latex.
+      .map((c) => (c.kind === 'python' ? '' : c.latex));
+    // The empty check reads the cell's own text, not the masked prefix —
+    // a python cell's source is what it evaluates.
+    const latex = cell.latex;
     // Read here so toggling the (a,b) pref re-triggers the eval below.
     const pairTuple = appStore.pairTuple;
     // Same for the import-* pref: it rewrites the emitted program's
     // import line + qualifiers, so the eval must re-run with it.
     const importAll = appStore.importAll;
     const mine = ++seq;
-    if (latexToStatementStrings(latex).length === 0) {
+    if (
+      cell.kind === 'python'
+        ? latex.trim() === ''
+        : latexToStatementStrings(latex).length === 0
+    ) {
       rows = [];
       pending = false;
       interim = false;
@@ -109,7 +119,7 @@
       // result — rendered dimmed since the real eval is still pending.
       // The `pending` guard keeps a late interim from overwriting real
       // rows that already landed.
-      if (calcEngine.status !== 'ready') {
+      if (calcEngine.status !== 'ready' && cell.kind === 'math') {
         interimEvaluate(latex, prefixLatex.slice(0, -1), {
           pairTuple,
         }).then((r) => {
@@ -122,6 +132,9 @@
       evaluate(appStore.cells.slice(0, index + 1), {
         pairTuple,
         importAll,
+        // The registry spans the whole worksheet so a def below the
+        // call still resolves (with the ordering note).
+        worksheetCells: appStore.cells,
       }).then(
         (r) => {
           if (mine !== seq) return;
@@ -257,7 +270,11 @@
     </div>
   {/if}
   {#if failed !== ''}
-    <span class="parse-error-icon" title={failed}>!</span>
+    <div class="issue-line issue-error">
+      <span class="parse-error-icon">!</span>
+      <code class="issue-text">{failed}</code>
+      <CopyButton text={failed} />
+    </div>
   {:else if rows.length > 0}
     <div class="calc-rows" class:pending={pending}>
       {#each rows as row, i (i)}
@@ -278,10 +295,20 @@
                 {/if}
               </div>
             {/if}
-          {:else if (row.severity ?? 'error') === 'error'}
-            <span class="parse-error-icon" title={row.error}>!</span>
           {:else}
-            <span class="note-icon" title={row.error}>i</span>
+            <div
+              class="issue-line issue-{(row.severity ?? 'error') === 'error'
+                ? 'error'
+                : 'note'}"
+            >
+              {#if (row.severity ?? 'error') === 'error'}
+                <span class="parse-error-icon">!</span>
+              {:else}
+                <span class="note-icon">i</span>
+              {/if}
+              <code class="issue-text">{row.error}</code>
+              <CopyButton text={row.error} />
+            </div>
           {/if}
         </div>
       {/each}

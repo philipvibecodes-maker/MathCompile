@@ -447,37 +447,163 @@ export const NOTATION: Notation[] = [
     name: 'rank',
     matrixMethod: 'rank()',
     wordOps: ['rank'],
+    commands: ['rank'],
+    completion: {
+      name: 'rank',
+      hint: 'matrix rank',
+      preview: '\\mathrm{rank} A',
+    },
     spellings: ['\\mathrm{rank}(A)', '\\operatorname{rank}(A)', '\\text{rank}(A)'],
   },
   {
     name: 'eigenvals',
     matrixMethod: 'eigenvals()',
     wordOps: ['eigenvals'],
+    commands: ['eigenvals'],
+    completion: {
+      name: 'eigenvals',
+      hint: 'eigenvalues',
+      preview: '\\mathrm{eigenvals} A',
+    },
     spellings: ['\\mathrm{eigenvals}(A)', '\\operatorname{eigenvals}(A)'],
   },
   {
     name: 'eigenvects',
     matrixMethod: 'eigenvects()',
     wordOps: ['eigenvects'],
+    commands: ['eigenvects'],
+    completion: {
+      name: 'eigenvects',
+      hint: 'eigenvectors',
+      preview: '\\mathrm{eigenvects} A',
+    },
     spellings: ['\\mathrm{eigenvects}(A)', '\\operatorname{eigenvects}(A)'],
   },
   {
     name: 'inverse',
     matrixMethod: 'inv()',
     wordOps: ['inverse'],
+    commands: ['inverse'],
+    completion: {
+      name: 'inverse',
+      hint: 'matrix inverse',
+      preview: '\\mathrm{inverse} A',
+    },
     spellings: ['\\mathrm{inverse}(A)', '\\operatorname{inverse}(A)'],
   },
   {
     name: 'transpose',
     matrixMethod: 'T',
     wordOps: ['transpose'],
+    commands: ['transpose'],
+    completion: {
+      name: 'transpose',
+      hint: 'matrix transpose',
+      preview: '\\mathrm{transpose} A',
+    },
     spellings: ['\\mathrm{transpose}(A)', '\\operatorname{transpose}(A)'],
   },
   {
     name: 'norm',
     matrixMethod: 'norm()',
     wordOps: ['norm'],
+    commands: ['norm'],
+    completion: {
+      name: 'norm',
+      hint: 'matrix/vector norm',
+      preview: '\\mathrm{norm} A',
+    },
     spellings: ['\\mathrm{norm}(A)', '\\operatorname{norm}(A)'],
+  },
+  {
+    name: 'rref',
+    matrixMethod: 'rref()[0]',
+    wordOps: ['rref'],
+    commands: ['rref'],
+    completion: {
+      name: 'rref',
+      hint: 'reduced row echelon form',
+      preview: '\\mathrm{rref} A',
+    },
+    spellings: ['\\mathrm{rref}(A)', '\\operatorname{rref}(A)'],
+    probes: [
+      {
+        latex: '\\mathrm{rref}(\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix})',
+        expect: '.rref()[0]',
+      },
+    ],
+    note: '.rref() returns (Matrix, pivot-cols) — the [0] keeps the '
+      + 'reduced matrix.',
+  },
+  {
+    name: 'charpoly',
+    matrixMethod: 'charpoly().as_expr()',
+    wordOps: ['charpoly'],
+    commands: ['charpoly'],
+    completion: {
+      name: 'charpoly',
+      hint: 'characteristic polynomial',
+      preview: '\\mathrm{charpoly} A',
+    },
+    spellings: ['\\mathrm{charpoly}(A)', '\\operatorname{charpoly}(A)'],
+    note: '.charpoly() is a PurePoly; .as_expr() reads it as a '
+      + 'polynomial in lambda_.',
+  },
+  {
+    name: 'nullspace',
+    matrixMethod: 'nullspace()',
+    callNames: ['Kernel', 'ker'],
+    wordOps: ['nullspace', 'ker'],
+    commands: ['nullspace', 'ker'],
+    completion: {
+      name: 'nullspace',
+      hint: 'null space / kernel',
+      preview: '\\mathrm{nullspace} A',
+    },
+    spellings: [
+      '\\mathrm{nullspace}(A)',
+      '\\operatorname{nullspace}(A)',
+      '\\ker(A)',
+      '\\ker A',
+    ],
+    note: '\\ker is a real LaTeX command — CE files it as Kernel.',
+  },
+  {
+    name: 'columnspace',
+    matrixMethod: 'columnspace()',
+    wordOps: ['columnspace'],
+    commands: ['columnspace'],
+    completion: {
+      name: 'columnspace',
+      hint: 'column space',
+      preview: '\\mathrm{columnspace} A',
+    },
+    spellings: ['\\mathrm{columnspace}(A)', '\\operatorname{columnspace}(A)'],
+  },
+  {
+    name: 'diagonalize',
+    matrixMethod: 'diagonalize()',
+    wordOps: ['diagonalize'],
+    commands: ['diagonalize'],
+    completion: {
+      name: 'diagonalize',
+      hint: 'diagonalize (P, D)',
+      preview: '\\mathrm{diagonalize} A',
+    },
+    spellings: ['\\mathrm{diagonalize}(A)', '\\operatorname{diagonalize}(A)'],
+    note: 'returns the (P, D) pair.',
+  },
+  {
+    name: 'adjugate',
+    matrixMethod: 'adjugate()',
+    wordOps: ['adjugate'],
+    commands: ['adjugate'],
+    completion: {
+      name: 'adjugate',
+      hint: 'adjugate matrix',
+      preview: '\\mathrm{adjugate} A',
+    },
+    spellings: ['\\mathrm{adjugate}(A)', '\\operatorname{adjugate}(A)'],
   },
 
   // — constants and leaf sets —
@@ -711,7 +837,7 @@ export const NOTATION: Notation[] = [
     probes: [
       {
         latex: '\\nabla (x^2+y^2)',
-        expect: 'sp.derive_by_array(x**2 + y**2, [x, y])',
+        expect: 'sp.Matrix([x**2 + y**2]).jacobian([x, y, z])',
       },
     ],
     completion: {
@@ -720,7 +846,79 @@ export const NOTATION: Notation[] = [
       preview: '\\nabla f',
     },
     note: '\\nabla/\\gradient lower to \\operatorname{grad} — '
-      + '\\nabla\\cdot/\\times/\\nabla^2 stay unsupported-command errors',
+      + '\\nabla\\cdot reads as divergence through the cdot-dot '
+      + 'disguise; \\times/\\nabla^2 stay unsupported-command errors',
+  },
+  {
+    name: 'Dot',
+    heads: ['CircleMinus', 'Nabla'],
+    commands: ['bullet', 'dotproduct'],
+    spellings: ['u \\bullet v', 'u \\dotproduct v'],
+    probes: [
+      {
+        latex: '[1,2,3] \\bullet [4,5,6]',
+        expect: 'sp.Matrix([1, 2, 3]).dot(sp.Matrix([4, 5, 6]))',
+      },
+      { latex: '2 \\cdot 3', expect: '2 * 3' },
+    ],
+    completion: {
+      name: 'dotproduct',
+      hint: 'dot product •',
+      preview: 'u \\bullet v',
+    },
+    note: '\\bullet/\\dotproduct rewrite to \\ominus in latex.ts — the '
+      + 'CircleMinus head keeps the dot product distinct from '
+      + 'juxtaposition/\\cdot (always plain multiplication now). Codegen '
+      + 'is operand-typed: vectors -> .dot(), \\nabla\\bullet (and '
+      + '\\nabla\\cdot, pre-rewritten by nabla-div) -> divergence, '
+      + 'all-sets -> the Cartesian *, scalars -> multiplication.',
+  },
+  {
+    name: 'HadamardProduct',
+    heads: ['HadamardProduct'],
+    commands: ['odot'],
+    spellings: ['A \\odot B'],
+    probes: [
+      {
+        latex:
+          '\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix} \\odot ' +
+          '\\begin{pmatrix}5&6\\\\7&8\\end{pmatrix}',
+        expect: '.multiply_elementwise(',
+      },
+    ],
+    note: 'concrete matrices -> .multiply_elementwise(); MatrixExpr '
+      + '-> sp.HadamardProduct; scalars -> multiplication.',
+  },
+  {
+    name: 'KroneckerProduct',
+    heads: ['CircleTimes'],
+    commands: ['otimes'],
+    spellings: ['A \\otimes B'],
+    probes: [
+      {
+        latex: '[1,2,3] \\otimes [4,5,6]',
+        expect: 'sp.kronecker_product(sp.Matrix([1, 2, 3]), sp.Matrix([4, 5, 6]))',
+      },
+    ],
+    note: 'concrete -> sp.kronecker_product; MatrixExpr -> '
+      + 'sp.KroneckerProduct; scalars -> multiplication (a scalar '
+      + 'mixed into a kron wraps as Matrix([[s]])).',
+  },
+  {
+    name: 'DirectSum',
+    heads: ['CirclePlus'],
+    commands: ['oplus'],
+    spellings: ['A \\oplus B'],
+    probes: [
+      {
+        latex:
+          '\\begin{pmatrix}1\\\\2\\end{pmatrix} \\oplus ' +
+          '\\begin{pmatrix}3\\\\4\\end{pmatrix}',
+        expect: 'sp.diag(',
+      },
+    ],
+    note: 'matrices -> sp.diag (block diagonal); sets -> '
+      + 'sp.SymmetricDifference; anything else flags.',
   },
   {
     name: 'Def',
@@ -740,11 +938,68 @@ export const NOTATION: Notation[] = [
       + 'marker — the calculator target samples and renders it',
   },
   {
+    name: 'Solve',
+    heads: ['Solve'],
+    commands: ['solve'],
+    probes: [
+      {
+        latex: '\\text{solve} x^2 = 1 \\text{ for } x > 0',
+        expect: 'sp.solveset(sp.Eq(x**2, 1), x, domain=sp.Interval.open(0, sp.oo))',
+      },
+    ],
+    note: '\\solve is an insertion alias for the \\text{solve} '
+      + 'statement marker',
+  },
+  {
+    name: 'DSolve',
+    heads: ['DSolve'],
+    commands: ['dsolve', 'ode'],
+    probes: [
+      {
+        latex: '\\text{dsolve} \\frac{dy}{dx} = y, y(0)=1',
+        expect: 'sp.dsolve(sp.Eq(sp.diff(y(x), x), y(x)), y(x), ics={y(0): 1})',
+      },
+    ],
+    note: '\\dsolve/\\ode are insertion aliases for the \\text{dsolve}/'
+      + '\\text{ode} statement markers',
+  },
+  {
+    name: 'PDESolve',
+    heads: ['PDESolve'],
+    commands: ['pdesolve', 'pde'],
+    probes: [
+      {
+        latex: '\\text{pdesolve} u_x + u_t = 0',
+        expect: 'sp.pdsolve(sp.Eq(sp.diff(u(x, t), x) + sp.diff(u(x, t), t), 0), u(x, t))',
+      },
+    ],
+    note: '\\pdesolve/\\pde are insertion aliases for the '
+      + '\\text{pdesolve}/\\text{pde} statement markers',
+  },
+  {
     name: 'Determinant',
     heads: ['Determinant'],
     commands: ['det'],
     spellings: ['\\det(A)', '\\det A'],
     probes: [{ latex: '\\det(A)', expect: 'sp.Determinant(A)' }],
+  },
+  {
+    name: 'Cross',
+    heads: ['CircledAst', 'Nabla'],
+    commands: ['times', 'cross', 'circledast'],
+    spellings: ['u \\times v'],
+    probes: [
+      {
+        latex: '[1,2,3] \\times [4,5,6]',
+        expect: 'sp.Matrix([1, 2, 3]).cross(sp.Matrix([4, 5, 6]))',
+      },
+      { latex: '2 \\times 3', expect: '2 * 3' },
+    ],
+    note: '\\times rewrites to \\circledast in latex.ts — the '
+      + 'CircledAst head keeps it distinct from \\cdot/juxtaposition '
+      + 'while literal \\otimes stays the Kronecker product. Codegen is '
+      + 'operand-typed: vectors -> .cross(), \\nabla\\times -> curl, '
+      + 'all-sets -> the Cartesian *, scalars -> multiplication.',
   },
   // `x'` parses to a distinct leaf symbol, not a Derivative head — the
   // spelling pair pins that both prime syntaxes mint the same leaf.
@@ -880,8 +1135,11 @@ const STRUCTURAL_HEADS = [
   'And', 'Or', 'Not', 'Which', 'Piecewise',
   // 'Condition' is a Set literal's predicate child
   'Condition', 'Complement', 'Difference',
-  // statement-level IR
+  // statement-level IR — 'DepVar' and 'IC' are the child shapes inside
+  // DSolve/PDESolve statements (unknowns-to-solve and initial
+  // conditions); they only ever appear as statement children.
   'Assign', 'Declare', 'Block', 'WhereBlock', 'Function',
+  'DepVar', 'IC',
   // verbatim \python{...} source — codegen emits it uninterpreted
   'PythonSource',
   // structural helpers — 'call' marks a node already escaped by the

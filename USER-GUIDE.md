@@ -16,7 +16,8 @@ in your browser and saves your worksheet automatically.
 - **The output beside or beneath each cell** shows whatever the
   current output target produces for that cell — beside it for LaTeX
   and Python, beneath it for the calculator.
-- **The header** holds Smart mode, the Output target picker, the
+- **The header** holds the worksheet menu (switch, rename, delete,
+  save/open files), Smart mode, the Output target picker, the
   dark-mode toggle, and the Commands button (or press `Ctrl+K` /
   `⌘K`).
 - **How do I…**, under the cell list, is a quick keystroke cheat sheet.
@@ -24,7 +25,8 @@ in your browser and saves your worksheet automatically.
 
 The command palette (`Ctrl+K`) covers: insert an expression below,
 duplicate the current one, delete it, clear all expressions, toggle
-Smart mode and dark mode, switch the output target, and jump to any
+Smart mode and dark mode, switch the output target, switch worksheets
+or create a new one, save the worksheet to a file, and jump to any
 cell by number.
 
 ## Typing math
@@ -45,6 +47,9 @@ right after a letter becomes a subscript:
 | Constants and Greek | `pi`, `theta`, `infty` | \(\pi\), \(\theta\), \(\infty\) |
 | Derivative operator | `derivative` | \(\frac{d}{d}\) — caret lands in the denominator |
 | Function definition | `def` | \(\text{def}\ f(x)\) — the def marker (see *Output*) |
+| Solve equations | `solve` | \(\text{solve}\) — the solve marker |
+| Solve an ODE | `dsolve` | \(\text{dsolve}\) — the dsolve marker |
+| Solve a PDE | `pdesolve` | \(\text{pdesolve}\) — the pdesolve marker |
 | Auto-subscript | `x2` | \(x_2\) |
 
 Operator names like `sin`, `lim`, and `det` stay upright and space
@@ -152,6 +157,28 @@ Calculator and Python targets. A name that isn't built in, like
 | Eigenvalues | `\mathrm{eigenvals}` | \(\mathrm{eigenvals}(A)\) |
 | Eigenvectors | `\mathrm{eigenvects}` | \(\mathrm{eigenvects}(A)\) |
 | Kernel / null space | `\ker` | \(\ker A\) |
+| Reduced row echelon form | `\mathrm{rref}` | \(\mathrm{rref}(A)\) |
+| Characteristic polynomial | `\mathrm{charpoly}` | \(\mathrm{charpoly}(A)\) |
+| Null-space basis | `\mathrm{nullspace}` | \(\mathrm{nullspace}(A)\) |
+| Column-space basis | `\mathrm{columnspace}` | \(\mathrm{columnspace}(A)\) |
+| Diagonalization | `\mathrm{diagonalize}` | \(\mathrm{diagonalize}(A)\) |
+| Adjugate | `\mathrm{adjugate}` | \(\mathrm{adjugate}(A)\) |
+| Matrix exponential | `e^{A}` | \(e^{A}\) |
+| Cross product | `\times` between vectors | \(u \times v\) |
+| Dot product | `u \cdot v` | \(u \cdot v\) |
+| Divergence | `\nabla \cdot` then a vector field | \(\nabla \cdot F\) |
+| Elementwise product | `A \odot B` | \(A \odot B\) |
+| Kronecker product | `A \otimes B` | \(A \otimes B\) |
+| Direct sum (block diagonal) | `A \oplus B` | \(A \oplus B\) |
+
+The infix ops type themselves by operand: on scalars `\cdot`, `\times`,
+`\odot`, and `\otimes` are ordinary multiplication, on sets they
+emit the Cartesian product, and `\oplus` on sets is the symmetric
+difference. `\nabla \cdot F` and `\nabla \times F` differentiate a
+concrete vector field (`[x^2, y, z]`); on an opaque name they flag
+rather than guess. A symbolic vector operand is declared with
+`u \in \mathbb{R}^{3\times1}`; a list- or matrix-bound name already
+counts as one.
 
 ### Multi-line equations
 
@@ -277,9 +304,11 @@ real SymPy calls — `integrate`, `diff`, `Sum`/`Product`, `limit`
 | Vector | `\vec{v}` | \(\vec{v}\) |
 
 `\partial_{x}u` compiles to the partial derivative like the `\frac`
-form. `\nabla` and `\Delta` are display notation — the compiler reads
-`\nabla` as an ordinary symbol, so `\nabla f` stays symbolic rather
-than becoming a gradient call.
+form. `\nabla f` is the gradient over the canonical coordinates
+(x, y, z): a bare name reads as a field of all three, `\nabla x`
+gives (1, 0, 0), and a coordinate bound to a value contributes a 0
+in its slot. `\nabla \cdot F` compiles to divergence on a concrete
+vector field; `\Delta` stays display notation.
 
 ### Topology
 
@@ -366,8 +395,37 @@ is `x(t)` differentiated once. `\mathcal{L}` is notation only.
 | Condition at infinity | `\infty` | \(\infty\) |
 
 `\partial_{t}u` compiles to the partial derivative, like the `\frac`
-form. The `\nabla`, `\Delta`, divergence, and curl spellings are
-display notation — no vector-calculus semantics behind them.
+form. `\nabla u` is the gradient over (x, y, z), and `\nabla \cdot F`
+/ `\nabla \times F` compute divergence and curl on concrete vector
+fields; `\Delta` stays display notation.
+
+### Solving equations
+
+A statement that opens with `\text{solve}`, `\text{dsolve}` (or
+`\text{ode}`), or `\text{pdesolve}` (or `\text{pde}`) compiles to the
+matching SymPy solver — type `solve`, `dsolve`, `pdesolve` in Smart
+mode, or `\solve`, `\dsolve`, `\pdesolve`, `\ode`, `\pde` as commands.
+
+| You write | Emits |
+| --- | --- |
+| `\text{solve} x^2 = 1` | `sp.solve(sp.Eq(x**2, 1))` |
+| `\text{solve} x^2 = 1, x` | `sp.solve(sp.Eq(x**2, 1), x)` — trailing symbols name the variables |
+| `\text{solve} x+y=3, x-y=1, x, y` | `sp.solve([…], [x, y])` — a comma list is a system |
+| `\text{solve} x^2 = 1 \text{ for } x>0` | `sp.solveset(…, domain=sp.Interval.open(0, sp.oo))` |
+| `\text{dsolve} \frac{dy}{dx} = y` | `sp.dsolve(sp.Eq(sp.diff(y(x), x), y(x)), y(x))` |
+| `\text{dsolve} … , y(0)=1` | `ics={y(0): 1}` — `y(0)=1` / `y'(0)=0` are initial conditions |
+| `\text{pdesolve} u_x + u_t = 0` | `sp.pdsolve(…, u(x, t))` |
+
+- The unknown is inferred from the derivative — `\frac{dy}{dx}` makes
+  `y` a function of `x` throughout the statement (a bare `y` emits
+  `y(x)`). A `u(x,t)` spec declares the signature explicitly.
+- `y'`/`y''` work inside a dsolve equation (default variable `x`),
+  and `u_x`/`u_{xx}`/`u_{xt}` subscripts are partial derivatives.
+- A `\text{dsolve}` comma list is an ODE system
+  (`sp.dsolve([eqs], [y(x), z(x)])`); `\text{pdesolve}` takes a
+  single equation — SymPy's `pdsolve` is first-order only, so
+  higher-order PDEs like the heat equation come back as a SymPy
+  `NotImplementedError` rather than a wrong answer.
 
 ### Combinatorics
 
@@ -446,9 +504,15 @@ mode) to define a function — the generated code is `def f(x): return
 
 ## Saving
 
-The worksheet, theme, Smart mode, and target choice persist in your
-browser's local storage — there's nothing to click. Clearing the
-site's data resets everything.
+Every worksheet autosaves to your browser's local storage — there's
+nothing to click. The header shows the active worksheet's name; its
+menu switches between sheets, creates new ones (**+ New worksheet**),
+renames (✎), and deletes (×, click twice to confirm).
+
+**Save to file** downloads the active worksheet as a
+`.mathcompile.json` you can keep or share; **Open from file…** imports
+such a file back as a new worksheet. Clearing the site's data resets
+everything still in the browser.
 
 ---
 

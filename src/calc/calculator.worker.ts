@@ -25,6 +25,10 @@ interface PyodideLike {
 interface CalcStatementMsg {
   code: string;
   display?: string;
+  /** Exec-only statements (defs-only python source) — the code execs
+   * for its bindings and the row is a marker the client drops, so
+   * nothing displays. */
+  silent?: boolean;
   /** Statements that failed to emit keep their error — the row reports
    * it in place instead of vanishing. */
   error?: string;
@@ -1105,6 +1109,13 @@ def _mc_run_cell(cell, ns):
             err = stmt.get('error')
             if err is not None:
                 out.append({'ok': False, 'error': err})
+                continue
+            if stmt.get('silent'):
+                # Definition-only source — exec binds the names; the
+                # marker row keeps out[] aligned with the client's
+                # statementLines, and the client drops it.
+                exec(stmt['code'], ns)
+                out.append({'ok': True, 'silent': True})
                 continue
             val = _mc_eval_stmt(stmt, ns)
             # A _mc_plot marker isn't a value row — sample the

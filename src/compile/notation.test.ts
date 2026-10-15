@@ -93,6 +93,10 @@ describe('derived codegen views equal the replaced literals', () => {
       rank: 'rank()',
       eigenvals: 'eigenvals()', eigenvects: 'eigenvects()',
       inverse: 'inv()', transpose: 'T', norm: 'norm()',
+      rref: 'rref()[0]', charpoly: 'charpoly().as_expr()',
+      nullspace: 'nullspace()', Kernel: 'nullspace()', ker: 'nullspace()',
+      columnspace: 'columnspace()',
+      diagonalize: 'diagonalize()', adjugate: 'adjugate()',
     });
   });
 
@@ -218,11 +222,13 @@ describe('derived ir.ts views equal the replaced literals', () => {
         'NotSupersetNotEqual', 'And', 'Or', 'Not', 'Which', 'Piecewise',
         'Set', 'Condition', 'Complement', 'Difference',
         'Assign', 'Def', 'Declare', 'Block', 'WhereBlock', 'Function',
-        'PythonSource', 'Plot',
+        'PythonSource', 'Plot', 'DepVar', 'IC', 'Solve', 'DSolve',
+        'PDESolve',
         'Limits', 'Tuple', 'List', 'Subscript', 'Delimiters', 'Error',
         'call', 'MatrixMethod',
         'Integrate', 'Sum', 'Product', 'Limit', 'D', 'TotalD', 'Gradient',
-        'Determinant', 'Congruent',
+        'Determinant', 'CircleMinus', 'CirclePlus', 'CircleTimes',
+        'CircledAst', 'Congruent', 'HadamardProduct', 'Nabla',
         'Sqrt', 'Root', 'Abs', 'Sign', 'Floor', 'Ceil', 'Min', 'Max',
         'Factorial', 'Gamma', 'Binomial', 'GCD', 'LCM', 'Mod',
         'Exp', 'Ln', 'Log',
@@ -239,7 +245,8 @@ describe('derived ir.ts views equal the replaced literals', () => {
   it('MATRIX_WORD_OPS', () => {
     expect(sort(MATRIX_WORD_OPS)).toEqual(
       sort(['trace', 'rank', 'eigenvals', 'eigenvects', 'inverse',
-        'transpose', 'norm']),
+        'transpose', 'norm', 'rref', 'charpoly', 'nullspace', 'ker',
+        'columnspace', 'diagonalize', 'adjugate']),
     );
   });
 
@@ -276,6 +283,8 @@ describe('derived ir.ts views equal the replaced literals', () => {
       'nCk', 'nCr', 'nPr', 'perm', 'Pi',
       'Trace', 'trace', 'tr', 'rank', 'eigenvals', 'eigenvects',
       'inverse', 'transpose', 'norm',
+      'rref', 'charpoly', 'nullspace', 'Kernel', 'ker',
+      'columnspace', 'diagonalize', 'adjugate',
       'Ring', 'GoldenRatio', 'Mean', 'ForAll', 'Exists', 'Comprehension',
       'PseudoInverse', 'Superminus', 'Superplus', 'KroneckerDelta',
       'Arsinh', 'Arcosh', 'Artanh',

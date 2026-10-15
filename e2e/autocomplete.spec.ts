@@ -25,7 +25,7 @@ test.beforeEach(async ({ page }) => {
   await clearFirstCell(page);
 });
 
-test('typing a \\ prefix shows matching commands', async ({ page }) => {
+test('typing a \\ prefix shows matching commands', { tag: '@smoke' }, async ({ page }) => {
   await cell(page, 0).focus();
   await page.keyboard.type('\\sq');
   await expect(menu(page)).toBeVisible();
@@ -161,8 +161,10 @@ test('a programmatic blur refocuses the cell (Vimium Escape)', async ({
   page,
 }) => {
   await cell(page, 0).focus();
+  // .mc-mat-prev (the matrix-menu preview) mounts a second, hidden MQ
+  // instance inside math-field — scope to the editable field's textarea.
   await cell(page, 0)
-    .locator('.mq-textarea textarea')
+    .locator('.mq-editable-field > .mq-textarea textarea')
     .evaluate((el: HTMLElement) => el.blur());
   await expect(
     cell(page, 0).locator('.mq-editable-field'),

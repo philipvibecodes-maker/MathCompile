@@ -23,7 +23,9 @@ test.beforeEach(async ({ page }) => {
   await clearFirstCell(page);
 });
 
-test('a typed \\pmatrix opens the menu; Enter inserts the default 2x2', async ({
+test('a typed \\pmatrix opens the menu; Enter inserts the default 2x2',
+  { tag: '@smoke' },
+  async ({
   page,
 }) => {
   const mf = cell(page);
@@ -52,6 +54,48 @@ test('entered dimensions size the grid', async ({ page }) => {
   expect(await cellValue(mf)).toBe(
     '\\begin{pmatrix}&&&\\\\&&&\\\\&&&\\end{pmatrix}',
   );
+});
+
+test('Tab cycles between the rows and columns inputs', async ({ page }) => {
+  const mf = cell(page);
+  await page.keyboard.type('\\pmatrix');
+  await page.keyboard.press('Enter');
+  await expect(menu(mf)).toBeVisible();
+  const rows = mf.locator('input[aria-label=rows]');
+  const cols = mf.locator('input[aria-label=columns]');
+  await expect(rows).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(cols).toBeFocused();
+  // Tab at the last input wraps back to rows instead of exiting.
+  await page.keyboard.press('Tab');
+  await expect(rows).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(cols).toBeFocused();
+});
+
+test('the menu previews the grid as dimensions change', async ({ page }) => {
+  const mf = cell(page);
+  await page.keyboard.type('\\pmatrix');
+  await page.keyboard.press('Enter');
+  await expect(menu(mf)).toBeVisible();
+  const prev = menu(mf).locator('.mc-mat-prev');
+  await expect(prev.locator('.mq-matrix tr')).toHaveCount(2);
+  await page.keyboard.type('3');
+  await page.keyboard.press('Tab');
+  await page.keyboard.type('4');
+  await expect(prev.locator('.mq-matrix tr')).toHaveCount(3);
+  await expect(prev.locator('.mq-matrix td')).toHaveCount(12);
+});
+
+test('the preview uses the requested environment', async ({ page }) => {
+  const mf = cell(page);
+  await page.keyboard.type('\\bmatrix');
+  await page.keyboard.press('Enter');
+  await expect(menu(mf)).toBeVisible();
+  // bmatrix parens render as bracketed spans around the grid.
+  await expect(
+    menu(mf).locator('.mc-mat-prev .mq-bracket-l'),
+  ).toBeVisible();
 });
 
 test('ArrowUp/ArrowDown step the focused dimension', async ({ page }) => {

@@ -21,6 +21,13 @@ through a MathJSON IR to LaTeX or SymPy-flavored Python (`src/compile/`).
   (MathQuill API + adapter checks via `e2e/spike.html`) and
   `vendor.spec.ts` (the upstream mocha suite run headlessly through the
   dev server).
+- `npm run test:e2e:smoke` — the `@smoke`-tagged subset (~20 tests) for
+  frequent runs: cell lifecycle, displaylines, adapter contract,
+  matrices, limits, palette/focus ownership, codegen targets,
+  persistence, worksheets, python cells, the branch badge. Deliberately
+  excludes `calculator.spec.ts` (real Pyodide/SymPy boot, ~90s waits)
+  and `vendor.spec.ts` (whole mocha suite); run the full suite before
+  merging or after touching `vendor/`/`src/calc/`.
 - `npm run test:perf` — framework-agnostic perf battery (`perf/`); builds and
   serves the production bundle on :4173. For another implementation: serve
   its prod build and run `PERF_BASE_URL=<url> PERF_LABEL=<name> npm run
@@ -188,8 +195,29 @@ and empty blocks serialize as `{ }`.
   `src/compile/ir.ts` reads as the function-definition prefix
   (`\text{def} g(x) = 2x` → `def g(x): return 2*x`); a bare `f(x)` is
   `f * x`, not a call or signature.
+- `\solve`, `\dsolve`/`\ode`, `\pdesolve`/`\pde` are the same kind of
+  insertion alias for the `\text{solve}`/`\text{dsolve}`/`\text{pdesolve}`
+  solver statement markers — a cell statement that opens with one
+  compiles to `sp.solve`/`sp.solveset`, `sp.dsolve`, or `sp.pdsolve`
+  (see SYMBOLS.md "Solver statements").
 - `\tr` is an insertion alias for `\mathrm{tr}` — the matrix-trace
   word-op codegen lowers to `(A).trace()` / `sp.Trace(A)`.
+- `\operatorname{…}` is a real one-block group (a `mq-roman mq-font`
+  wrapper, like `\mathrm`) — typed `\operatorname{f}` types into the
+  arg block and round-trips. Interior letters stay one upright word:
+  autoCommands/autoParenthesize are skipped and `autoUnItalicize` marks
+  the run without splitting it into built-ins (`\operatorname{argmin}`
+  stays `argmin`, unlike `\mathrm{argmin}` → `\mathrm{\arg\min}`).
+  The group wears `mq-operatorname`; `math.less` gives it LaTeX
+  `\mathop` spacing (thin space each side, dropped at block edges and
+  before/after binary ops, summation signs — `.mq-large-operator` and
+  `.mq-int`, not `.mq-boundless-int` — and before real brackets; a
+  following `.mq-supsub` carries the right-hand space, like
+  `mq-after-operator-name`). `.mq-binomial` marks `\binom` so it isn't
+  mistaken for a real bracket. A caret sitting at a block edge next to
+  the group keeps the space (the caret is the "next atom" — the next
+  char lands in the gap instead of the gap popping in), while a truly
+  last-child node drops it, so rendered output gets no trailing space.
 - Matrices: `\begin{matrix|pmatrix|…}` environments + bare
   `\pmatrix{a&b\\c&d}`. Typed `\name` shortcuts (`\cases`, `\aligned`,
   `\gathered`, …) open the same grid `\begin{name}` resolves to;
@@ -223,6 +251,24 @@ and empty blocks serialize as `{ }`.
 
 ## Testing notes
 
+- While iterating, run the e2e spec(s) covering the area you changed —
+  `npx playwright test e2e/<area>.spec.ts` reuses or starts the dev
+  server on :5573. `@smoke` is a sanity floor, not coverage of your
+  diff: matrices → `matrix` + `matrix-menu`; codegen/output → `output`
+  (+ `npm test`); calc target → `calculator` (Pyodide boot — slow, run
+  anyway); vendored MathQuill → `spike` + `vendor`; focus/palette →
+  `palette` + `escape` + `autocomplete`; storage → `persistence` +
+  `worksheets`; editing keys → `cells` + `standard-keys` + `limits` +
+  `empty-slot`. Run the full `npm run test:e2e` before merging.
+- The header shows a `.branch-badge` chip with the checked-out git
+  branch on `vite dev` (so it appears in e2e runs and screenshots).
+  `vite.config.ts` bakes `__APP_BRANCH__` via `define` only for
+  dev-server mode (`command === 'serve' && !isPreview`); production
+  builds get `''` and the chip never renders. `VITE_BRANCH_BADGE=1` opts
+  a `vite build`/`preview` in for test deployments. Detached HEAD falls
+  back to the short sha; the value is read once at server start, so a
+  branch switch needs a dev-server restart to refresh it. Declared in
+  `src/vite-env.d.ts`.
 - `caretInfo` in `e2e/limits.spec.ts` reads `.mq-cursor` ancestors:
   `\int` uses `.mq-sub`/`.mq-sup`; `\sum` (over/under) uses
   `.mq-from`/`.mq-to`; `.mq-large-operator`/`.mq-int` is the atom; on
@@ -254,22 +300,33 @@ and empty blocks serialize as `{ }`.
 ## Persistence
 
 - `src/state/persistence.ts` owns all `localStorage` access: `mathcompile-theme`
-  (read pre-paint by `index.html`), `mathcompile-cells` (the worksheet),
-  `mathcompile-prefs` (smartMode + target + guideOpen). Everything is node-guarded so
+  (read pre-paint by `index.html`), `mathcompile-worksheets` (the workbook:
+  `{version, active, sheets:[{id, name, cells}]}`, one record per worksheet),
+  `mathcompile-prefs` (smartMode + target + guideOpen). `mathcompile-cells`
+  was the single-worksheet format — `loadWorkbook()` migrates it on first
+  read, then removes the key. Everything is node-guarded so
   the store stays importable in vitest.
-- Writes are **debounced ~300ms** (`persistCells`) and flushed on
-  `pagehide`/`visibilitychange:hidden` — the keystroke path never calls
-  `setItem` synchronously. The store triggers writes from its mutating
-  methods (`setLatex`, `addCell`, `removeCell`, `clearAll`), not an
-  `$effect`.
+- Writes are **debounced ~300ms** (`persistCells`, into the active sheet's
+  record) and flushed on `pagehide`/`visibilitychange:hidden` and before
+  every worksheet structural op (switch/create/rename/delete/import) — the
+  keystroke path never calls `setItem` synchronously. The store triggers
+  writes from its mutating methods (`setLatex`, `addCell`, `removeCell`,
+  `clearAll`), not an `$effect`.
 - Hydration is synchronous in the `AppStore` field initializers:
-  `initCells()` restores cells and bumps `nextId` past `maxId`;
+  `initWorkbook()` restores the active sheet's cells and bumps `nextId`
+  past `maxId` (imports remap their cell ids instead);
   `MathField.svelte`'s existing mount-time `setValue(cell.latex)` does
   the field hydration for free. Corrupt/missing data falls back to the
-  seeded example cell.
+  seeded example cell; a stored sheet with no cells opens as one blank cell.
+- The header worksheet menu (`WorksheetMenu.svelte`) switches, renames,
+  and deletes sheets and moves them through files —
+  `src/state/worksheet-file.ts` serializes a sheet to a downloadable
+  `.mathcompile.json` and parses files back (`Open from file` — in the
+  header menu and the command palette — imports as a new sheet named
+  after the file, `foo.mathcompile.json` → `foo`).
 - E2e caveat: a mid-test `localStorage.clear()` is undone by the
   pagehide flush if a write is still pending — wait for
-  `mathcompile-cells` to land first (see `e2e/cells.spec.ts`).
+  `mathcompile-worksheets` to land first (see `e2e/cells.spec.ts`).
 
 ## Rebuilding the vendor bundle
 

@@ -14,7 +14,7 @@ const cellValue = (mf: Locator): Promise<string> =>
 
 const waitStored = (page: import('@playwright/test').Page, latex: string) =>
   page.waitForFunction(
-    (needle) => localStorage.getItem('mathcompile-cells')?.includes(needle),
+    (needle) => localStorage.getItem('mathcompile-worksheets')?.includes(needle),
     latex,
   );
 
@@ -24,7 +24,7 @@ test.beforeEach(async ({ page }) => {
   await clearFirstCell(page);
 });
 
-test('typed cells are restored after reload', async ({ page }) => {
+test('typed cells are restored after reload', { tag: '@smoke' }, async ({ page }) => {
   await cell(page, 0).pressSequentially('x+1', { delay: 40 });
   await page.locator('.add-expr').click();
   await cell(page, 1).pressSequentially('y^2', { delay: 40 });
@@ -43,7 +43,7 @@ test('deleted cells stay deleted after reload', async ({ page }) => {
   await cell(page, 1).pressSequentially('z', { delay: 40 });
   await page.locator('.expr-delete').first().click();
   await page.waitForFunction(
-    () => !localStorage.getItem('mathcompile-cells')?.includes('},{'),
+    () => !localStorage.getItem('mathcompile-worksheets')?.includes('},{'),
   );
 
   await page.reload();
@@ -58,7 +58,8 @@ test('unparseable stored latex does not linger in the output column', async ({
   // A persisted value the field can't accept gets wiped on hydration —
   // the store must learn that so .cell-latex doesn't show text the
   // field doesn't contain ('a}b' is a permanently unparseable stray
-  // close-brace).
+  // close-brace). Seeds the legacy single-worksheet key so the test
+  // also covers the migration into 'mathcompile-worksheets'.
   await page.addInitScript(() => {
     localStorage.setItem(
       'mathcompile-cells',

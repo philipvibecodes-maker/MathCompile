@@ -110,7 +110,7 @@
   }
 
   // TODO: what's the difference between these?
-  .mq-empty {
+  .mq-empty:not(.mq-python) {
     background: rgba(0, 0, 0, 0.2);
     &.mq-root-block {
       background: transparent;
@@ -129,9 +129,11 @@
   // scripts, fraction slots and roots already show their structure.
   // The root block and quiet delimiters show everything, the command
   // input has a border, and <td> blocks are grid cells (a
-  // \displaylines row would paint the whole line).
-  .mq-hasCursor:has(> .mq-cursor:only-child):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input),
-  .mq-hasCursor:has(> .mq-cursor):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):is(.mq-font, .mq-bf, .mq-text-mode) {
+  // \displaylines row would paint the whole line). \python is exempt —
+  // its \python{ } delimiters already mark the editable region, so the
+  // slot box (and the inset text-mode shadow below) would just be gloss.
+  .mq-hasCursor:has(> .mq-cursor:only-child):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):not(.mq-python),
+  .mq-hasCursor:has(> .mq-cursor):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):is(.mq-font, .mq-bf, .mq-text-mode):not(.mq-python) {
     background: rgba(0, 0, 0, 0.2);
   }
 
@@ -144,7 +146,7 @@
     white-space: pre;
   }
 
-  .mq-text-mode.mq-hasCursor {
+  .mq-text-mode.mq-hasCursor:not(.mq-python) {
     box-shadow: inset darkgray 0 0.1em 0.2em;
     padding: 0 0.1em;
     margin: 0 -0.1em;
@@ -249,9 +251,11 @@
         vertical-align: -1.5em;
 
         // Lift the lone bound to the definite-bound height (same top as
-        // the .mq-sup-inner bound of the large-operator template).
+        // the .mq-sup-inner bound of the large-operator template) — the
+        // boundless sign's own box is just the baseline band, so measure
+        // against the 330% glyph's ink, not the element box.
         > .mq-sup {
-          vertical-align: 2.55em;
+          vertical-align: 3.25em;
         }
       }
 
@@ -265,7 +269,7 @@
 
       &:not(.mq-sup-only) > .mq-sup {
         position: relative;
-        top: -0.7em;
+        top: -2.1em;
       }
 
       > .mq-sub {
@@ -660,6 +664,74 @@
   var.mq-operator-name.mq-last,
   .mq-supsub.mq-after-operator-name {
     padding-right: 0.2em;
+  }
+
+  // MATHCOMPILE: \operatorname{...} is a one-block node, so the thin
+  // space a flat letter-run gets via mq-first/mq-last lives on the
+  // node itself — sibling selectors cover every tree shape no matter
+  // how it got there (typing, parsing, serialization). Same drop rules
+  // as Letter.shouldOmitPadding + the mq-last/mq-after-operator-name
+  // checks: no pad at the block edges, next to binary operators and
+  // SummationNotation-family signs (.mq-large-operator plus \int's
+  // .mq-int — boundless \iint-style signs are .mq-boundless-int, not
+  // SummationNotations, and keep the space), or before a real bracket
+  // (\binom is .mq-binomial so it doesn't count, matching the flat
+  // form's `instanceof Bracket` check); a following SupSub carries the
+  // padding itself, like mq-after-operator-name. The caret can sit
+  // between the node and a neighbor, so each rule has a .mq-cursor-gap
+  // twin — except at the block edges, where the caret is the "next
+  // atom": the space stays put so the caret sits in the gap it will
+  // occupy, rather than the gap popping in on the next keystroke.
+  // '.' shares .mq-digit with real digits so it can't be told
+  // apart — keeping the space matches TeX's Op-Pun spacing anyway.
+  .mq-operatorname {
+    padding-left: @operator-padding;
+    padding-right: @operator-padding;
+  }
+  .mq-operatorname:first-child {
+    padding-left: 0;
+  }
+  .mq-operatorname:last-child {
+    padding-right: 0;
+  }
+  .mq-binary-operator + .mq-operatorname,
+  .mq-binary-operator + .mq-cursor + .mq-operatorname,
+  .mq-large-operator + .mq-operatorname,
+  .mq-large-operator + .mq-cursor + .mq-operatorname,
+  .mq-int:not(.mq-boundless-int) + .mq-operatorname,
+  .mq-int:not(.mq-boundless-int) + .mq-cursor + .mq-operatorname {
+    padding-left: 0;
+  }
+  .mq-operatorname:has(+ .mq-binary-operator),
+  .mq-operatorname:has(+ .mq-cursor + .mq-binary-operator),
+  .mq-operatorname:has(+ .mq-large-operator),
+  .mq-operatorname:has(+ .mq-cursor + .mq-large-operator),
+  .mq-operatorname:has(+ .mq-int:not(.mq-boundless-int)),
+  .mq-operatorname:has(+ .mq-cursor + .mq-int:not(.mq-boundless-int)),
+  .mq-operatorname:has(+ .mq-bracket-container:not(.mq-binomial)),
+  .mq-operatorname:has(
+      + .mq-cursor + .mq-bracket-container:not(.mq-binomial)
+    ) {
+    padding-right: 0;
+  }
+  .mq-operatorname:has(+ .mq-supsub),
+  .mq-operatorname:has(+ .mq-cursor + .mq-supsub) {
+    padding-right: 0;
+  }
+  .mq-operatorname
+    + .mq-supsub:not(
+      :has(+ .mq-bracket-container:not(.mq-binomial))
+    ):not(
+      :has(+ .mq-cursor + .mq-bracket-container:not(.mq-binomial))
+    ),
+  .mq-operatorname
+    + .mq-cursor
+    + .mq-supsub:not(
+      :has(+ .mq-bracket-container:not(.mq-binomial))
+    ):not(
+      :has(+ .mq-cursor + .mq-bracket-container:not(.mq-binomial))
+    ) {
+    padding-right: @operator-padding;
   }
 
   ////

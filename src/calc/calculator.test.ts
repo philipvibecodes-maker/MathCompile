@@ -69,6 +69,33 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     );
   });
 
+  it('passes the solve var to clean_and_simplify so the row shows x = a1, a2, …', () => {
+    // The python target keeps the bare `sp.solve(…)` line; the calc
+    // statement carries the solved-for name as a second arg.
+    expect(calc('\\text{solve} x^2-5x+6=0, x').statements[0].code).toBe(
+      'clean_and_simplify(sp.solve(sp.Eq(x**2 - 5 * x + 6, 0), x), x)',
+    );
+    expect(
+      calc('\\text{solve} x+y=3, x-y=1, x, y').statements[0].code,
+    ).toBe(
+      'clean_and_simplify(sp.solve([sp.Eq(x + y, 3), sp.Eq(x - y, 1)], [x, y]), sp.Tuple(x, y))',
+    );
+    expect(
+      calc('\\text{solve} x^2=1 \\text{ for } x>0').statements[0].code,
+    ).toBe(
+      'clean_and_simplify(sp.solveset(sp.Eq(x**2, 1), x, domain=sp.Interval.open(0, sp.oo)), x)',
+    );
+    // No var named — the lone free symbol still labels the answers.
+    expect(calc('\\text{solve} x^2-5x+6=0').statements[0].code).toBe(
+      'clean_and_simplify(sp.solve(sp.Eq(x**2 - 5 * x + 6, 0)), x)',
+    );
+    // dsolve/pdesolve rows keep the plain pipeline — a `y(x) = …`
+    // equation already reads as an answer.
+    expect(calc('\\text{dsolve} \\frac{dy}{dx}=y').statements[0].code).toBe(
+      F('sp.dsolve(sp.Eq(sp.diff(y(x), x), y(x)), y(x))'),
+    );
+  });
+
   it('gives an indefinite integral a constant of integration', () => {
     expect(calc('\\int x\\,dx').statements[0].code).toBe(
       F('sp.integrate(x, x) + sp.Symbol("C")'),
@@ -688,6 +715,21 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(t.statements[2].display).toContain('evaluate=False');
   });
 
+  it('displays a list-bound name as a column vector, not a raw list', () => {
+    // `u = [1,2,3]` binds a python list — `Eq(Symbol, <raw list>)`
+    // SympifyError'd at eval; the display wraps sp.Matrix and stays
+    // unevaluated like other matrix RHSes.
+    const l = calc('u = [1,2,3]');
+    expect(l.statements[0].code).toBe('u = [1, 2, 3]');
+    expect(l.statements[0].display).toBe(
+      F('sp.Eq(sp.Symbol("u"), sp.Matrix([1, 2, 3]), evaluate=False)'),
+    );
+    // Assigning a list-bound name on keeps the wrap.
+    const v = calc('u = [1,2,3] \\ \\\\ \\ v = u');
+    expect(v.statements[1].display).toContain('sp.Matrix(u)');
+    expect(v.statements[1].display).toContain('evaluate=False');
+  });
+
   it('marks an `a = I_2` binding matrix-typed for later ops', () => {
     // `det a` reads `a` as its bound DenseMatrix, not a new MatrixSymbol.
     const prog = calc('a = I_2 \\ \\\\ \\ \\det a');
@@ -898,6 +940,101 @@ describe('compileCellsForCalc (worksheet cells share one scope)', () => {
     );
     expect(prog.cells[1].issues).toEqual([]);
     expect(prog.cells[1].statementLines).toEqual([0]);
+  });
+
+  describe('derivatives over names bound in earlier cells', () => {
+    // `decls.defined` used to conflate a `sp.Symbol` def line — still a
+    // free symbolic variable — with a concrete value binding, so `\D`
+    // and `\nabla` below saw no free variables (or a shrunken
+    // coordinate basis).
+    it('total-differentiates over symbols bound above', () => {
+      const prog = calcAll('x + y', '\\text{D}xy^{2}');
+      expect(prog.cells[1].defs).toEqual([]);
+      expect(prog.cells[1].statements).toEqual([
+        {
+          code: F('sp.Matrix([x * y**2]).jacobian([x, y])'),
+          display: undefined,
+        },
+      ]);
+    });
+
+    it('gradients a coordinate symbol bound above to (1, 0, 0)', () => {
+      const prog = calcAll('x + y', '\\nabla x');
+      expect(prog.cells[1].defs).toEqual(['z = sp.Symbol("z")']);
+      expect(prog.cells[1].statements).toEqual([
+        {
+          code: F('sp.Matrix([x]).jacobian([x, y, z])'),
+          display: undefined,
+        },
+      ]);
+    });
+
+    it('gradients a product over the full (x, y, z) basis', () => {
+      for (const [latex, expected] of [
+        ['\\nabla xy', 'sp.Matrix([x * y]).jacobian([x, y, z])'],
+        ['\\nabla xyz', 'sp.Matrix([x * y * z]).jacobian([x, y, z])'],
+      ] as const) {
+        const prog = calcAll('x + y', latex);
+        expect(prog.cells[1].statements).toEqual([
+          { code: F(expected), display: undefined },
+        ]);
+      }
+    });
+
+    it('a value-bound coordinate differentiates as its value: ∇x = (0,0,0)', () => {
+      const prog = calcAll('x = 5', '\\nabla x');
+      expect(prog.cells[1].statements).toEqual([
+        {
+          code: F('sp.Matrix([[0, sp.diff(x, y), sp.diff(x, z)]])'),
+          display: undefined,
+        },
+      ]);
+    });
+
+    it('still flags a value-bound name inside the gradient body', () => {
+      const prog = calcAll('x = 5', '\\nabla xy');
+      expect(prog.cells[1].statements[0].error).toContain(
+        'bound to a value',
+      );
+    });
+
+    it('applies a lambda-bound name at its declared signature', () => {
+      // `f = x \mapsto x^2` binds a one-param Lambda — `\nabla f` is
+      // f(x)'s gradient, not f(x, y, z)'s.
+      const prog = calcAll('f = x\\mapsto x^2', '\\nabla f');
+      expect(prog.cells[1].statements).toEqual([
+        {
+          code: F('sp.Matrix([f(x)]).jacobian([x, y, z])'),
+          display: undefined,
+        },
+      ]);
+      const prog2 = calcAll(
+        'f = \\left(x,y\\right)\\mapsto x+y',
+        '\\nabla f',
+      );
+      expect(prog2.cells[1].statements).toEqual([
+        {
+          code: F('sp.Matrix([f(x, y)]).jacobian([x, y, z])'),
+          display: undefined,
+        },
+      ]);
+    });
+
+    it('applies a lambda-bound name under \\D at its own arity', () => {
+      const prog = calcAll('f = x\\mapsto x^2', '\\D f');
+      expect(prog.cells[1].statements).toEqual([
+        { code: F('sp.diff(f(x), x)'), display: undefined },
+      ]);
+    });
+
+    it('types a gradient/jacobian assign target as a matrix', () => {
+      // `Eq(Symbol, Matrix)` collapses to literal False without
+      // evaluate=False — `a = \nabla xyz` displayed `false`.
+      for (const latex of ['a = \\nabla xyz', 'a = \\text{D}xy']) {
+        const prog = calc(latex);
+        expect(prog.statements[0].display).toContain('evaluate=False');
+      }
+    });
   });
 });
 

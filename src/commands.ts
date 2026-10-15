@@ -1,5 +1,9 @@
 import { TARGETS } from './compile/targets';
 import type { AppStore } from './state/store.svelte';
+import {
+  downloadWorksheetFile,
+  pickWorksheetFile,
+} from './state/worksheet-file';
 
 export interface Command {
   id: string;
@@ -7,7 +11,10 @@ export interface Command {
   hint?: string;
   current?: boolean;
   keywords?: string;
-  run: () => void;
+  run?: () => void;
+  // Commands that need a text argument swap the palette input into a
+  // prompt instead of running on pick; Enter submits, Escape cancels.
+  prompt?: { placeholder: string; initial: string; run: (value: string) => void };
 }
 
 // The command list reads the store directly; wrap the call in $derived at
@@ -22,6 +29,27 @@ export const buildCommands = (store: AppStore): Command[] => {
       keywords: 'new add cell row',
       hint: 'Shift+Enter',
       run: () => store.addCell(focusId),
+    },
+    {
+      id: 'insert-python',
+      title: 'Insert Python cell below',
+      keywords: 'code script def function custom python',
+      run: () => store.addPythonCell(focusId),
+    },
+    // Cell-kind conversions — the source text is kept through the flip.
+    {
+      id: 'to-python',
+      title: 'Convert cell to Python',
+      keywords: 'code script def function custom',
+      current: store.cells.find((c) => c.id === focusId)?.kind === 'python',
+      run: () => store.setCellKind(focusId, 'python'),
+    },
+    {
+      id: 'to-math',
+      title: 'Convert cell to math',
+      keywords: 'latex expression formula',
+      current: store.cells.find((c) => c.id === focusId)?.kind !== 'python',
+      run: () => store.setCellKind(focusId, 'math'),
     },
     {
       id: 'duplicate',
@@ -40,6 +68,42 @@ export const buildCommands = (store: AppStore): Command[] => {
       title: 'Clear all expressions',
       keywords: 'reset delete remove',
       run: () => store.clearAll(),
+    },
+    {
+      id: 'new-worksheet',
+      title: 'New worksheet',
+      keywords: 'create sheet notebook',
+      run: () => store.createWorksheet(),
+    },
+    {
+      id: 'rename-worksheet',
+      title: `Rename worksheet (${store.activeWorksheet?.name ?? 'Worksheet'})`,
+      keywords: 'name title sheet notebook',
+      prompt: {
+        placeholder: 'New worksheet name…',
+        initial: store.activeWorksheet?.name ?? '',
+        run: (v) => store.renameWorksheet(store.activeWorksheetId, v),
+      },
+    },
+    {
+      id: 'save-worksheet-file',
+      title: 'Save worksheet to file',
+      keywords: 'export download json backup',
+      run: () => {
+        const snap = store.worksheetSnapshot();
+        if (snap) downloadWorksheetFile(snap.name, snap.cells);
+      },
+    },
+    {
+      id: 'open-worksheet-file',
+      title: 'Open worksheet from file',
+      keywords: 'import load json upload',
+      // Opens the OS picker; the imported sheet arrives async.
+      run: () => {
+        void pickWorksheetFile().then((w) => {
+          if (w) store.importWorksheet(w.name, w.cells);
+        });
+      },
     },
     {
       id: 'toggle-smart',
@@ -61,6 +125,13 @@ export const buildCommands = (store: AppStore): Command[] => {
       keywords: 'set compile codegen language output',
       current: t.id === store.target,
       run: () => (store.target = t.id),
+    })),
+    ...store.worksheets.map((w) => ({
+      id: `worksheet-${w.id}`,
+      title: `Worksheet: ${w.name}`,
+      keywords: 'switch sheet notebook',
+      current: w.id === store.activeWorksheetId,
+      run: () => store.switchWorksheet(w.id),
     })),
     ...store.cells.map((e, i) => ({
       id: `goto-${e.id}`,

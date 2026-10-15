@@ -6,14 +6,32 @@ import {
   type PairTupleMode,
 } from '../compile/ir';
 import {
+  flushPendingCells,
   installFlushOnHide,
-  loadCells,
   loadPrefs,
+  loadWorkbook,
+  loadWorksheetCells,
+  newWorksheetId,
+  nextWorksheetName,
   persistCells,
+  removeStoredWorksheet,
+  renameStoredWorksheet,
+  setActiveWorksheet,
+  uniqueWorksheetName,
+  upsertWorksheet,
+  type StoredCell,
+  type WorksheetMeta,
 } from './persistence';
+
+// 'math' cells edit latex in a math-field; 'python' cells edit raw
+// python source in a plain code field. For a python cell `latex` is
+// the source text and `json` is the PythonSource statement node —
+// codegen emits it verbatim either way.
+export type CellKind = 'math' | 'python';
 
 export interface Cell {
   id: number;
+  kind: CellKind;
   latex: string;
   // Parsed MathJSON for the compile pipeline; undefined while unparseable
   // or empty. Kept in sync by setLatex/createCell.
@@ -22,23 +40,55 @@ export interface Cell {
 
 export type Edge = 'start' | 'end';
 
+// The cell source's pipeline form: latex parses to MathJSON; python
+// source wraps whole as the verbatim PythonSource statement.
+function sourceJson(kind: CellKind, src: string): MathJson | undefined {
+  if (kind === 'python')
+    return src.trim() === '' ? undefined : ['PythonSource', src];
+  return parseCellLatex(src);
+}
+
 let nextId = 1;
-const createCell = (latex = ''): Cell => ({
+const createCell = (latex = '', kind: CellKind = 'math'): Cell => ({
   id: nextId++,
+  kind,
   latex,
-  json: parseCellLatex(latex),
+  json: sourceJson(kind, latex),
 });
 
 const SEED_LATEX = '2^n = \\sum_{i=0}^n\\binom{n}{i}';
 
-// Hydrate from localStorage; fall back to the seeded example cell.
-// Restored ids push nextId forward so later cells never collide.
-function initCells(): Cell[] {
-  const saved = loadCells();
-  if (!saved) return [createCell(SEED_LATEX)];
-  nextId = saved.maxId + 1;
-  // Persisted cells carry no json — recompute it on hydrate.
-  return saved.cells.map((c) => ({ ...c, json: parseCellLatex(c.latex) }));
+// Restored ids push nextId forward so later cells never collide — across
+// every sheet, not just the active one (imports remap their ids too).
+// Persisted cells carry no json — recompute it on hydrate. An empty
+// stored sheet opens as one blank cell.
+function hydrateCells(stored: StoredCell[]): Cell[] {
+  nextId = Math.max(nextId, Math.max(0, ...stored.map((c) => c.id)) + 1);
+  const cells: Cell[] = stored.map((c) => {
+    const kind = c.kind ?? 'math';
+    return { id: c.id, kind, latex: c.latex, json: sourceJson(kind, c.latex) };
+  });
+  return cells.length > 0 ? cells : [createCell()];
+}
+
+// Hydrate the workbook; a first run gets one ephemeral "Worksheet 1"
+// holding the seeded example cell, persisted only on the first edit.
+function initWorkbook(): {
+  sheets: WorksheetMeta[];
+  activeId: string;
+  cells: Cell[];
+} {
+  const wb = loadWorkbook();
+  if (!wb) {
+    const meta = { id: newWorksheetId(), name: 'Worksheet 1' };
+    return { sheets: [meta], activeId: meta.id, cells: [createCell(SEED_LATEX)] };
+  }
+  const active = wb.sheets.find((s) => s.id === wb.active) ?? wb.sheets[0];
+  return {
+    sheets: wb.sheets.map(({ id, name }) => ({ id, name })),
+    activeId: active.id,
+    cells: hydrateCells(active.cells),
+  };
 }
 
 export const THEME_STORAGE_KEY = 'mathcompile-theme';
@@ -58,7 +108,12 @@ function initDarkMode(): boolean {
 // no-ops when no field is registered for the id — so this is fully
 // unit-testable in node.
 export class AppStore {
-  cells = $state<Cell[]>(initCells());
+  private readonly boot = initWorkbook();
+  // Every worksheet in the workbook (active sheet's cells live in
+  // `cells`; the rest sit in storage until switched to).
+  worksheets = $state<WorksheetMeta[]>(this.boot.sheets);
+  activeWorksheetId = $state<string>(this.boot.activeId);
+  cells = $state<Cell[]>(this.boot.cells);
   focusedId = $state<number>(this.cells[0].id);
   focusEdge = $state<Edge | undefined>(undefined);
   target = $state<TargetId>(loadPrefs().target ?? 'latex');
@@ -91,10 +146,95 @@ export class AppStore {
     installFlushOnHide();
   }
 
-  // Debounced snapshot of the worksheet; persistence.ts coalesces the
-  // writes so the keystroke path never touches setItem directly.
+  // Debounced snapshot of the active worksheet; persistence.ts
+  // coalesces the writes so the keystroke path never touches setItem
+  // directly.
   private persist() {
-    persistCells(this.cells);
+    const meta = this.worksheets.find((w) => w.id === this.activeWorksheetId);
+    if (meta) persistCells(meta, this.cells);
+  }
+
+  get activeWorksheet(): WorksheetMeta | undefined {
+    return this.worksheets.find((w) => w.id === this.activeWorksheetId);
+  }
+
+  switchWorksheet(id: string) {
+    if (id === this.activeWorksheetId) return;
+    if (!this.worksheets.some((w) => w.id === id)) return;
+    flushPendingCells();
+    this.cells = hydrateCells(loadWorksheetCells(id) ?? []);
+    this.activeWorksheetId = id;
+    setActiveWorksheet(id);
+    this.focusCell(this.cells[0].id);
+  }
+
+  createWorksheet(name?: string): string {
+    flushPendingCells();
+    const meta: WorksheetMeta = {
+      id: newWorksheetId(),
+      name: name?.trim() || nextWorksheetName(this.worksheets),
+    };
+    upsertWorksheet({ ...meta, cells: [] });
+    this.worksheets = [...this.worksheets, meta];
+    this.switchWorksheet(meta.id);
+    return meta.id;
+  }
+
+  renameWorksheet(id: string, name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    // Flush so a pending write can't land after the rename and upsert the
+    // sheet back under its old name.
+    flushPendingCells();
+    renameStoredWorksheet(id, trimmed);
+    this.worksheets = this.worksheets.map((w) =>
+      w.id === id ? { ...w, name: trimmed } : w,
+    );
+  }
+
+  deleteWorksheet(id: string) {
+    if (this.worksheets.length <= 1) return;
+    // Flush before removing so the deleted sheet's pending write can't
+    // resurrect it.
+    flushPendingCells();
+    removeStoredWorksheet(id);
+    const remaining = this.worksheets.filter((w) => w.id !== id);
+    this.worksheets = remaining;
+    if (id === this.activeWorksheetId) this.switchWorksheet(remaining[0].id);
+  }
+
+  // A saved file opens as a new worksheet; its cell ids are remapped so
+  // they can't collide with ids already in the workbook.
+  importWorksheet(name: string, cells: StoredCell[]) {
+    flushPendingCells();
+    const remapped = cells.map((c) => ({
+      id: nextId++,
+      latex: c.latex,
+      ...(c.kind === 'python' ? { kind: 'python' as const } : {}),
+    }));
+    const meta: WorksheetMeta = {
+      id: newWorksheetId(),
+      name: uniqueWorksheetName(name.trim() || 'Imported', this.worksheets),
+    };
+    upsertWorksheet({ ...meta, cells: remapped });
+    this.worksheets = [...this.worksheets, meta];
+    this.switchWorksheet(meta.id);
+  }
+
+  // Cells + name as a downloadable snapshot — the active sheet reads its
+  // live cells so a just-typed edit is included.
+  worksheetSnapshot(id = this.activeWorksheetId) {
+    const meta = this.worksheets.find((w) => w.id === id);
+    if (!meta) return null;
+    const cells =
+      id === this.activeWorksheetId
+        ? this.cells.map((c) => ({
+            id: c.id,
+            latex: c.latex,
+            ...(c.kind === 'python' ? { kind: 'python' as const } : {}),
+          }))
+        : (loadWorksheetCells(id) ?? []);
+    return { name: meta.name, cells };
   }
 
   focusCell(id: number, edge?: Edge) {
@@ -129,13 +269,24 @@ export class AppStore {
     // object would remount the field and lose the caret every keystroke.
     if (c) {
       c.latex = latex;
-      c.json = parseCellLatex(latex);
+      c.json = sourceJson(c.kind, latex);
       this.persist();
     }
   }
 
-  addCell(afterId?: number, latex = ''): number {
-    const cell = createCell(latex);
+  // Flip a cell between math and python editing. The source text is
+  // kept — a `def` reads as garbage latex and vice versa, but nothing
+  // is silently destroyed; the field remounts on the kind change.
+  setCellKind(id: number, kind: CellKind) {
+    const c = this.cells.find((e) => e.id === id);
+    if (!c || c.kind === kind) return;
+    c.kind = kind;
+    c.json = sourceJson(kind, c.latex);
+    this.persist();
+  }
+
+  addCell(afterId?: number, latex = '', kind: CellKind = 'math'): number {
+    const cell = createCell(latex, kind);
     const at =
       afterId == null
         ? this.cells.length
@@ -146,15 +297,25 @@ export class AppStore {
     return cell.id;
   }
 
+  // Python source cells define functions a math cell can call as
+  // `\mathrm{name}(x)` (or via a `# @latex` annotation) — same insert
+  // position as addCell.
+  addPythonCell(afterId?: number): number {
+    return this.addCell(afterId, '', 'python');
+  }
+
   removeCell(id: number) {
     if (this.cells.length > 1) this.cells = this.cells.filter((e) => e.id !== id);
-    else if (this.cells[0]?.id === id) this.cells[0].latex = '';
+    else if (this.cells[0]?.id === id) {
+      this.cells[0].latex = '';
+      this.cells[0].json = undefined;
+    }
     this.persist();
   }
 
   duplicateCell(id: number) {
     const cur = this.cells.find((e) => e.id === id);
-    if (cur) this.addCell(cur.id, cur.latex);
+    if (cur) this.addCell(cur.id, cur.latex, cur.kind);
   }
 
   deleteFocused() {

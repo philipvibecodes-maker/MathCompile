@@ -540,12 +540,14 @@ suite('latex', function () {
     assertParsesLatex('x\\smash', 'x\\smash ');
   });
 
-  test('\\operatorname* consumes the star', function () {
-    assertParsesLatex('\\operatorname{tr}(A)', 'tr(A)');
+  test('\\operatorname keeps its braces (and the star)', function () {
+    assertParsesLatex('\\operatorname{tr}(A)', '\\operatorname{tr}(A)');
+    assertParsesLatex('\\operatorname{foo}(x)', '\\operatorname{foo}(x)');
     assertParsesLatex(
       '\\operatorname*{argmin}_{x}',
-      '\\arg \\min _{x}'
+      '\\operatorname*{argmin}_{x}'
     );
+    assertParsesLatex('\\operatorname{ans}', '\\operatorname{ans}');
   });
 
   test('\\text', function () {

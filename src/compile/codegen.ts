@@ -23,6 +23,7 @@ import {
   type NormalizeOptions,
 } from './ir';
 import { CALC_RUNTIME_PY } from './calc-runtime';
+import { collectPyFns, type PyFnEntry } from './pydefs';
 // The name tables below are derived views over the notation registry —
 // each name lives once in src/compile/notation.ts.
 import {
@@ -82,6 +83,7 @@ const RESERVED_IDENTS = new Set([
   'mc_doit',
   'mc_simplify',
   'mc_order',
+  'mc_answers',
   'clean_and_simplify',
 ]);
 
@@ -127,7 +129,7 @@ function pyIdent(name: string): string {
 // Statement-position heads that only lower to Python.
 const STATEMENT_HEADS = new Set([
   'Assign', 'Def', 'Declare', 'Block', 'WhereBlock', 'Which', 'Piecewise',
-  'PythonSource', 'Plot',
+  'PythonSource', 'Plot', 'Solve', 'DSolve', 'PDESolve',
 ]);
 const CMP_NESTABLE_HEADS = new Set([
   'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
@@ -137,7 +139,7 @@ const STATEMENT_CALL_HEADS = new Set(['solve', 'Solve', 'piecewise', 'Piecewise'
 // Set-valued operator heads — setish only when every operand is too
 // (Subsets/Supersets are predicates, not sets, so they don't appear here).
 const SETISH_OP_HEADS = new Set([
-  'Union', 'Intersection', 'SetMinus', 'Complement',
+  'Union', 'Intersection', 'SetMinus', 'Complement', 'CircleTimes',
 ]);
 
 // Heads that emit a Boolean — the only predicates ConditionSet accepts.
@@ -202,6 +204,10 @@ class Scope {
      * arithmetic) raises TypeError, so later references emit the
      * applied form `f(x)`. */
     fnArgs: Map<string, MathJson[]>;
+    /** Declared parameter list of a lambda-bound name
+     * (`f = x \mapsto x^2`) — its signature, not an observed call:
+     * derivative sites apply `f` at this arity. */
+    lambdaParams: Map<string, MathJson[]>;
     /** Python-local bound names (Def params) while inside a def body.
      * Call-stack-lifetime: see withBound/withBoundOnly. */
     bound: Set<string>;
@@ -219,7 +225,26 @@ class Scope {
      * collides. Each indefinite integral takes and reserves the next
      * free capital. */
     constNames: Set<string>;
+    /** `functions` entries that point at a user python def (python
+     * cell / \python block), not a minted `sp.Function` — decl emission
+     * skips them and a math-side claim (Assign/Def of the same name)
+     * removes the mark so its own decl emits. */
+    pyBacked: Set<string>;
   };
+  /** The worksheet's python-function registry (python cells +
+   *  `\python{}` blocks — see pydefs.ts). `fns` maps a CE call name to
+   *  the def's ident; `usedSrcs` records which source snippets this
+   *  scope's emission touched so a standalone cell script can inline
+   *  the defs it calls; `warned` dedups the call-above-def note. */
+  readonly py: {
+    fns: Map<string, PyFnEntry>;
+    usedSrcs: Set<number>;
+    warned: Set<string>;
+  };
+  /** 0-based worksheet index of the cell currently emitting — the
+   *  registry's `cell` compares against it for the call-above-def
+   *  note. -1 when the scope isn't positioned (unused). */
+  cellIdx: number;
   /** Value-kind typing — what a bound name's value IS. Same
    * worksheet-vs-cell lifetime as `decls`. */
   readonly kinds: {
@@ -278,6 +303,7 @@ class Scope {
     cellIssues: Issue[][],
     cell: number,
     plotTarget: 'calc' | 'python' = 'calc',
+    pyFns: Map<string, PyFnEntry> = new Map(),
   ) {
     this.qualified = qualified;
     this.plotTarget = plotTarget;
@@ -287,11 +313,15 @@ class Scope {
       functions: new Map(),
       matrices: new Map(),
       fnArgs: new Map(),
+      lambdaParams: new Map(),
       bound: new Set(),
       lambdaBound: new Set(),
       emitting: new Set(),
       constNames: new Set(),
+      pyBacked: new Set(),
     };
+    this.py = { fns: pyFns, usedSrcs: new Set(), warned: new Set() };
+    this.cellIdx = -1;
     this.kinds = {
       matrixNames,
       setNames: new Set(),
@@ -343,12 +373,29 @@ class Scope {
     this.decls.declaredFns.add(name);
   }
 
+  /** `name` is bound to a concrete VALUE — an Assign target already
+   * emitted (`x = 5`), not merely declared by a `sp.Symbol`/`sp.Function`/
+   * `sp.MatrixSymbol` def line. Symbol-bound names stay free variables:
+   * `x = Symbol("x")` doesn't pin a value, so `\D`/`\nabla` can still
+   * differentiate w.r.t. it — `decls.defined` alone can't tell the two
+   * apart, since it also covers every emitted decl line. */
+  isValueBound(name: string): boolean {
+    return (
+      this.decls.declared.has(name) &&
+      this.decls.defined.has(name) &&
+      !this.decls.declaredFns.has(name)
+    );
+  }
+
   /** Claim `name` as a function — the Def/Declare/colon-def binding
    * transition: bound, minted a `functions` ident, and (with params)
    * the arg list a later bare `f` emits applied. */
   claimFunction(name: string, params: MathJson[] = []): void {
     this.decls.defined.add(name);
     this.emit.functions.set(name, pyIdent(name));
+    // A math-side def of a py-backed name wins — its own
+    // `sp.Function`/def decl must emit (pyBacked names emit none).
+    this.emit.pyBacked.delete(name);
     if (params.length > 0) this.emit.fnArgs.set(name, params);
   }
 
@@ -361,10 +408,53 @@ class Scope {
 
   /** Mark `name` a dependent variable (derivative-notation decls:
    * `\dot{x}`, `y'`, `f^{(n)}`, `D(f,x)`) — `fnArgs` and `depVars`
-   * move together: the name reads as the applied `x(t)` ever after. */
+   * move together: the name reads as the applied `x(t)` ever after.
+   * Args merge into the recorded list (first-seen order) — a PDE
+   * unknown differentiated by `t` at one site and `x` at another is
+   * `u(t,x)` everywhere, never `u(t)` then `u(x)`. */
   noteDepVar(name: string, args: MathJson[]): void {
-    this.emit.fnArgs.set(name, args);
+    const prev = this.emit.fnArgs.get(name) ?? [];
+    const merged = [...prev];
+    for (const a of args)
+      if (!merged.some((p) => JSON.stringify(p) === JSON.stringify(a)))
+        merged.push(a);
+    this.emit.fnArgs.set(name, merged);
     this.kinds.depVars.add(name);
+  }
+
+  /** Claim `name` as the unknown function of a `\text{dsolve}`/
+   * `\text{pdesolve}` statement — mints the `sp.Function` ident and
+   * records the arg list like noteDepVar, without marking the name a
+   * defined value (a defined non-declaredFn name isn't callable and
+   * can't be differentiated — an ODE unknown is both). */
+  claimDepVar(name: string, args: MathJson[]): void {
+    if (!this.emit.functions.has(name)) {
+      // A python-def'd name differentiated as `D(f,x)` applies the real
+      // callable — record it py-backed so no `sp.Function` decl emits.
+      const ent = this.py.fns.get(name);
+      this.emit.functions.set(name, ent?.ident ?? pyIdent(name));
+      if (ent !== undefined) this.notePyUse(name, ent);
+    }
+    this.noteDepVar(name, args);
+  }
+
+  /** Record a use of a python-cell function: mark its source snippet
+   *  for injection into this cell's standalone script (python target;
+   *  skipped for a same-cell `\python{}` block, which emits its own
+   *  source), and flag when the def sits below the call — sequential
+   *  targets (the calculator's shared namespace, the merged program)
+   *  won't have it bound yet. The note dedups per (cell, name). */
+  notePyUse(name: string, ent: PyFnEntry): void {
+    if (ent.cell !== this.cellIdx) this.py.usedSrcs.add(ent.src);
+    this.emit.pyBacked.add(name);
+    if (ent.cell <= this.cellIdx) return;
+    const key = `${this.cellIdx}:${name}`;
+    if (this.py.warned.has(key)) return;
+    this.py.warned.add(key);
+    this.flag(
+      'note',
+      `"${ent.ident}" is defined in python cell ${ent.cell + 1} — it must sit above this cell for the call to evaluate`,
+    );
   }
 
   /** Bind `name` to an assigned value — the whole transition in one
@@ -389,6 +479,7 @@ class Scope {
       else names.delete(name);
     }
     this.emit.fnArgs.delete(name);
+    this.emit.lambdaParams.delete(name);
     this.kinds.depVars.delete(name);
   }
 
@@ -502,6 +593,27 @@ function matrixValuedNode(
     case 'Divide':
     case 'Power':
       return operands.some((a) => matrixValuedNode(a, isMatrixLeaf));
+    case 'Gradient':
+      // `\nabla` always emits a 1×3 Matrix.
+      return true;
+    case 'TotalD':
+      // `\D` on a matrix body differentiates elementwise / Jacobians —
+      // matrix-valued; on a scalar body it's a scalar unless several
+      // free vars force the Jacobian row (caught at emission by the
+      // `.jacobian(` text check in emitStatement).
+      return matrixValuedNode(node[1], isMatrixLeaf);
+    case 'CircleTimes':
+    case 'CirclePlus':
+    case 'HadamardProduct':
+      // Kronecker product, direct sum and elementwise product of
+      // matrices are matrices.
+      return operands.some((a) => matrixValuedNode(a, isMatrixLeaf));
+    case 'CircledAst':
+      // `u \times v` emits a vector when an operand is one — a matrix
+      // node or a bracket list (which wraps in sp.Matrix).
+      return operands.some(
+        (a) => matrixValuedNode(a, isMatrixLeaf) || isHead(a, 'List'),
+      );
     default:
       return false;
   }
@@ -602,6 +714,9 @@ class Emitter {
    * exist there but not on sympy MatrixExpr. */
   private concreteMatrix(node: MathJson | undefined): boolean {
     if (isHead(node, 'Matrix') || this.identityDim(node)) return true;
+    // A matrix-bound name evaluates to a concrete Matrix — method
+    // calls (.inv(), .T, .rref()…) apply to `A + B` compositions too.
+    if (isStr(node)) return this.scope.kinds.matrixNames.has(node);
     if (!isArr(node)) return false;
     const operands = node.slice(1) as MathJson[];
     switch (headOf(node)) {
@@ -616,9 +731,89 @@ class Emitter {
       case 'Divide':
       case 'Power':
         return operands.some((a) => this.concreteMatrix(a));
+      case 'CircleTimes':
+      case 'CirclePlus':
+      case 'HadamardProduct':
+        return operands.some((a) => this.concreteMatrix(a));
+      case 'CircledAst':
+        // A cross always evaluates to a concrete Matrix once an operand
+        // is vector-like (MatrixExpr lowers through .as_explicit()).
+        return operands.some(
+          (a) =>
+            this.concreteMatrix(a) ||
+            this.matrixValued(a, true) ||
+            isHead(a, 'List') ||
+            (isStr(a) && this.scope.kinds.listNames.has(a)),
+        );
       default:
         return false;
     }
+  }
+
+  /** Matrix-ness of an operand for the product ops: `t` is the raw
+   * emission (class calls like KroneckerProduct/HadamardProduct take
+   * it), `abstract` marks MatrixExpr — method-call surfaces
+   * (.dot()/.multiply_elementwise()/sp.diag) need
+   * `(${t}).as_explicit()` first. null when n isn't matrix-like. */
+  private matOperand(
+    n: MathJson,
+  ): { t: string; abstract: boolean } | null {
+    if (
+      isHead(n, 'List') ||
+      isHead(n, 'Tuple') ||
+      (isStr(n) && this.scope.kinds.listNames.has(n))
+    )
+      return { t: `${this.sp}Matrix(${this.emit(n)})`, abstract: false };
+    if (isStr(n) && this.scope.kinds.matrixNames.has(n))
+      return { t: this.emit(n), abstract: false };
+    if (this.identityDim(n))
+      return { t: this.emit(n), abstract: false };
+    if (this.concreteMatrix(n))
+      return { t: this.emit(n, PREC_ATOM), abstract: false };
+    if (this.matrixValued(n, true))
+      return { t: this.emit(n, PREC_ATOM), abstract: true };
+    return null;
+  }
+
+  /** matOperand text for method-call surfaces — .dot() etc. are
+   * MatrixBase-only so MatrixExpr lowers through .as_explicit(). */
+  private vectorOperand(n: MathJson): string | null {
+    const p = this.matOperand(n);
+    return p === null ? null : p.abstract ? `(${p.t}).as_explicit()` : p.t;
+  }
+
+  /** Component count of a vector literal — List length, or a Matrix
+   * node's rows×cols. null for names and opaque expressions. */
+  private vectorLen(n: MathJson): number | null {
+    if (isHead(n, 'List')) return n.length - 1;
+    if (isHead(n, 'Matrix')) {
+      const rows = n.slice(1) as MathJson[];
+      if (rows.length === 0 || !rows.every((r) => isHead(r, 'List')))
+        return null;
+      return rows.length * ((rows[0] as MathJson[]).length - 1);
+    }
+    return null;
+  }
+
+  /** The element nodes of a vector literal — a bracket `[x,y,z]` List,
+   * a paren Tuple, or a Matrix's entries flattened row-major (a 3×1
+   * column and a 1×3 row both read as a 3-vector; a real m×n matrix
+   * flattens too and the caller's arity check rejects it). null for
+   * names and opaque expressions — those index as `f[i]`. */
+  private vectorEntries(n: MathJson | undefined): MathJson[] | null {
+    if (isHead(n, 'List') || isHead(n, 'Tuple'))
+      return n.slice(1) as MathJson[];
+    if (isHead(n, 'Matrix')) {
+      const rows =
+        n.length === 2 && isHead(n[1], 'List')
+          ? (n[1] as MathJson[]).slice(1)
+          : (n.slice(1) as MathJson[]);
+      if (!rows.every((r) => isHead(r, 'List'))) return rows;
+      return (rows as MathJson[]).flatMap(
+        (r) => (r as MathJson[]).slice(1),
+      );
+    }
+    return null;
   }
 
   /** A matrix body's `m, n` dims (as MatrixSymbol args) — literal
@@ -686,7 +881,16 @@ class Emitter {
     if (this.scope.emit.functions.has(name)) {
       const ident = this.scope.emit.functions.get(name)!;
       const argNodes = this.scope.emit.fnArgs.get(name);
-      if (argNodes === undefined || this.scope.emit.emitting.has(name))
+      if (
+        argNodes === undefined ||
+        this.scope.emit.emitting.has(name) ||
+        // A python-def'd name IS a callable — the bare operand emits the
+        // function object, not `f(<args recorded elsewhere>)` (that
+        // applied form exists for UndefinedFunction stubs, which can't
+        // sympify bare; depVars still need it — `f` means `f(x)` there).
+        (this.scope.emit.pyBacked.has(name) &&
+          !this.scope.kinds.depVars.has(name))
+      )
         return ident;
       // Bare function name in arithmetic position (`f + 1`) — emit the
       // applied form `f(x)` recorded at the decl/call site: the pointwise
@@ -704,13 +908,35 @@ class Emitter {
     // MatrixSymbol ident instead of minting `v_2`.
     if (this.scope.emit.matrices.has(name))
       return this.scope.emit.matrices.get(name)!;
+    // A bare `\mathrm{relu}` operand is the python function itself when
+    // a python cell defs it — resolved before the name mints a Symbol.
+    const pySym = this.resolvePy(name);
+    if (pySym !== undefined) return pySym;
     const idDim = this.identityDim(name);
     if (idDim) return `${this.sp}eye(${idDim})`;
     return this.alloc(this.scope.emit.symbols, name);
   }
 
+  /** Resolve `name` through the worksheet's python-function registry
+   * (a `def`/`lambda` in a python cell or `\python{}` block). On hit
+   * the `functions` entry mints to the def's own ident — pyBacked, so
+   * no `sp.Function` decl emits — and the source/ordering bookkeeping
+   * runs once. Undefined when the name isn't registered or math-side
+   * machinery already claimed it (a worksheet def wins). */
+  private resolvePy(name: string): string | undefined {
+    const fns = this.scope.emit.functions;
+    if (fns.has(name) && !this.scope.emit.pyBacked.has(name))
+      return undefined;
+    const ent = this.scope.py.fns.get(name);
+    if (ent === undefined) return undefined;
+    if (!fns.has(name)) fns.set(name, ent.ident);
+    this.scope.notePyUse(name, ent);
+    return fns.get(name)!;
+  }
+
   // A name used as a function (f in f'(x)) needs sp.Function, not
-  // sp.symbols — symbols aren't callable.
+  // sp.symbols — symbols aren't callable. A python-cell `def` resolves
+  // to the real callable instead.
   private fn(name: string): string {
     if (this.scope.decls.defined.has(name)) {
       // `x = 5` then `\dot{x}` — the name is already a bound value;
@@ -720,6 +946,8 @@ class Emitter {
         this.scope.flag('error', `${name} is bound to a value — not callable`);
       return pyIdent(name);
     }
+    const py = this.resolvePy(name);
+    if (py !== undefined) return py;
     return this.alloc(this.scope.emit.functions, name);
   }
 
@@ -740,6 +968,11 @@ class Emitter {
   // earlier `A = …` assignment) reuse their own ident instead.
   private mat(name: string): string {
     if (this.scope.decls.defined.has(name)) return pyIdent(name);
+    const py = this.resolvePy(name);
+    if (py !== undefined) {
+      this.scope.flag('error', `${name} is a python function — not a matrix`);
+      return py;
+    }
     const dim = this.identityDim(name);
     if (dim) return `${this.sp}eye(${dim})`;
     return this.alloc(this.scope.emit.matrices, name);
@@ -766,7 +999,7 @@ class Emitter {
   /** Lower `x cmp b`/`b cmp x` into a real domain emit for
    * `expr for x <cond>` — returns [domain code, var name] or
    * undefined when neither side is a bare variable. */
-  private relationalDomain(
+  relationalDomain(
     cond: MathJson | undefined,
   ): [string, string] | undefined {
     if (!isArr(cond) || cond.length !== 3) return undefined;
@@ -859,7 +1092,10 @@ class Emitter {
     if (
       isHead(set, 'Power') &&
       this.isSetish(set[1]) &&
-      isHead(set[2], 'Multiply') &&
+      (isHead(set[2], 'Multiply') ||
+        isHead(set[2], 'CircleMinus') ||
+        isHead(set[2], 'CircleTimes') ||
+        isHead(set[2], 'CircledAst')) &&
       (set[2] as MathJson[]).length === 3 &&
       (set[2] as MathJson[]).slice(1).every((e) => this.isPosInt(e))
     ) {
@@ -1058,6 +1294,9 @@ class Emitter {
       isStr(a) &&
       this.scope.emit.functions.has(a) &&
       !this.scope.kinds.depVars.has(a) &&
+      // A python def is already a callable value — pass the function
+      // object (`g(f)`), not the eta expansion `Lambda(x, f(x))`.
+      !this.scope.emit.pyBacked.has(a) &&
       !this.scope.emit.emitting.has(a)
     ) {
       const argNodes = this.scope.emit.fnArgs.get(a);
@@ -1294,11 +1533,307 @@ class Emitter {
           }
           parts.push(a);
         }
+        // `\cdot` and juxtaposition are ordinary multiplication — but a
+        // bracket-list operand is a vector/matrix value (`u · [1,2,3]`
+        // is scalar·vector, `A · B` matmul): python lists can't `*`, so
+        // list literals and list-bound names emit wrapped in sp.Matrix.
+        const mulArg = (a: MathJson): string =>
+          isHead(a, 'List') ||
+          isHead(a, 'Tuple') ||
+          (isStr(a) && this.scope.kinds.listNames.has(a))
+            ? `${this.sp}Matrix(${this.emit(a)})`
+            : this.emit(a, PREC_MUL);
+        return [parts.map(mulArg).join(' * '), PREC_MUL];
+      }
+      case 'CircleMinus': {
+        // `u \bullet v` / `u \dotproduct v` — the dot product. latex.ts
+        // rewrites \bullet/\dotproduct to \ominus so CE keeps them
+        // distinct from juxtaposition (a literal \ominus lands on the
+        // same head; `\nabla \cdot` arrives pre-rewritten to \bullet
+        // by the nabla-div rule). Operand-typed like Norm: every
+        // operand setish emits the Cartesian `*`; a vector operand
+        // makes it .dot() — MatrixBase-only, so lists wrap in
+        // sp.Matrix and MatrixExpr lowers through .as_explicit().
+        // Nothing vector-like: \bullet stays multiplication.
+        // `\nabla \bullet F` is the divergence — the Error operand the
+        // nabla-gradient rule leaves becomes the Nabla head.
+        if (isHead(args[0], 'Nabla')) {
+          const F = args[1];
+          const comps = this.vectorEntries(F);
+          const len = comps?.length ?? this.vectorLen(F);
+          const concrete =
+            comps !== null ||
+            len !== null ||
+            (isStr(F) &&
+              (this.scope.kinds.listNames.has(F) ||
+                this.scope.kinds.matrixNames.has(F))) ||
+            this.concreteMatrix(F);
+          if (!concrete) {
+            // Emit F so its symbols mint before the flag drops the
+            // statement (the mint lines survive like other flagged cells).
+            this.emit(F);
+            this.scope.flag(
+              'error',
+              'divergence needs a concrete vector field — \\nabla \\cdot F',
+            );
+            return ['None', PREC_ATOM];
+          }
+          // len null (bound names) assumes the usual R^3 field.
+          const n = len ?? 3;
+          if (n < 2 || n > 3) {
+            this.scope.flag(
+              'error',
+              'divergence needs a 2- or 3-vector field — \\nabla \\cdot F',
+            );
+            return ['None', PREC_ATOM];
+          }
+          const c = ['x', 'y', 'z'];
+          // Literal vectors emit each component directly — indexing a
+          // re-emitted `sp.Matrix([[…]])` per component repeated the
+          // whole literal in every term.
+          const f = comps === null ? `(${this.emit(F)})` : null;
+          const term = (i: number) =>
+            `${this.sp}diff(${
+              comps === null ? `${f}[${i}]` : this.emit(comps[i])
+            }, ${this.sp}Symbol('${c[i]}'))`;
+          return [
+            Array.from({ length: n }, (_, i) => term(i)).join(' + '),
+            PREC_ADD,
+          ];
+        }
+        if (args.some((a) => isHead(a, 'Nabla')))
+          this.scope.flag(
+            'error',
+            'divergence reads \\nabla \\cdot F — \\nabla must be the left operand',
+          );
+        if (args.every((a) => this.isSetish(a)))
+          return [
+            args.map((a) => this.emit(a, PREC_MUL)).join(' * '),
+            PREC_MUL,
+          ];
+        const dtexts = args.map((a) => this.vectorOperand(a));
+        if (dtexts.every((t) => t === null))
+          return [
+            args.map((a) => this.emit(a, PREC_MUL)).join(' * '),
+            PREC_MUL,
+          ];
+        if (dtexts.every((t) => t !== null))
+          return [
+            (dtexts as string[])
+              .slice(1)
+              .reduce((acc, p) => `${acc}.dot(${p})`, dtexts[0] as string),
+            PREC_ATOM,
+          ];
+        // A scalar mixed into a dot is ordinary multiplication —
+        // `u \cdot [1,2,3]` reads as scalar-times-vector, so vector
+        // operands still wrap in sp.Matrix for the `*` broadcast.
         return [
-          parts.map((a) => this.emit(a, PREC_MUL)).join(' * '),
+          dtexts
+            .map((t, i) => t ?? this.emit(args[i], PREC_MUL))
+            .join(' * '),
           PREC_MUL,
         ];
       }
+      case 'HadamardProduct': {
+        // `A \odot B` — the elementwise (Hadamard/Schur) product. CE
+        // already wraps incompatible scalars in Error; surviving
+        // operands get the same operand typing: all-setish -> `*`,
+        // concrete -> .multiply_elementwise(), MatrixExpr ->
+        // sp.HadamardProduct, scalars -> multiplication.
+        if (args.every((a) => this.isSetish(a)))
+          return [
+            args.map((a) => this.emit(a, PREC_MUL)).join(' * '),
+            PREC_MUL,
+          ];
+        const hp = args.map((a) => this.matOperand(a));
+        if (hp.every((p) => p === null))
+          return [
+            args.map((a) => this.emit(a, PREC_MUL)).join(' * '),
+            PREC_MUL,
+          ];
+        if (hp.some((p) => p === null)) {
+          const a = args[hp.findIndex((p) => p === null)] as MathJson;
+          this.scope.flag(
+            'error',
+            `elementwise product needs matrices — ${isStr(a) ? a : 'an operand'} is a scalar here`,
+          );
+          return ['None', PREC_ATOM];
+        }
+        const hparts = hp as { t: string; abstract: boolean }[];
+        if (hparts.some((p) => p.abstract))
+          return [
+            `${this.sp}HadamardProduct(${hparts.map((p) => p.t).join(', ')})`,
+            PREC_ATOM,
+          ];
+        return [
+          hparts
+            .slice(1)
+            .reduce(
+              (acc, p) => `${acc}.multiply_elementwise(${p.t})`,
+              hparts[0].t,
+            ),
+          PREC_ATOM,
+        ];
+      }
+      case 'CircleTimes': {
+        // `A \otimes B` — the Kronecker product. All-setish emits the
+        // Cartesian `*`; scalars multiply; a scalar mixed into a
+        // matrix kron wraps as Matrix([[s]]); MatrixExpr operands go
+        // to the unevaluated sp.KroneckerProduct class, concrete ones
+        // to variadic sp.kronecker_product.
+        if (args.every((a) => this.isSetish(a)))
+          return [
+            args.map((a) => this.emit(a, PREC_MUL)).join(' * '),
+            PREC_MUL,
+          ];
+        const kp = args.map((a) => this.matOperand(a));
+        if (kp.every((p) => p === null))
+          return [
+            args.map((a) => this.emit(a, PREC_MUL)).join(' * '),
+            PREC_MUL,
+          ];
+        const kparts = kp.map((p, i) =>
+          p !== null
+            ? p
+            : { t: `${this.sp}Matrix([[${this.emit(args[i])}]])`, abstract: false },
+        );
+        if (kparts.some((p) => p.abstract))
+          return [
+            `${this.sp}KroneckerProduct(${kparts.map((p) => p.t).join(', ')})`,
+            PREC_ATOM,
+          ];
+        return [
+          `${this.sp}kronecker_product(${kparts.map((p) => p.t).join(', ')})`,
+          PREC_ATOM,
+        ];
+      }
+      case 'CirclePlus': {
+        // `A \oplus B` — the direct sum: block-diagonal sp.diag on
+        // matrices (scalars count as 1x1 blocks), SymmetricDifference
+        // on sets. Anything else flags — \oplus has no scalar reading.
+        if (args.every((a) => this.isSetish(a)))
+          return [
+            (args as MathJson[]).slice(1).reduce<string>(
+              (acc, a) =>
+                `${this.sp}SymmetricDifference(${acc}, ${this.emit(a)})`,
+              this.emit(args[0]),
+            ),
+            PREC_ATOM,
+          ];
+        const pp = args.map((a) => this.matOperand(a));
+        if (pp.every((p) => p === null)) {
+          this.scope.flag(
+            'error',
+            'direct sum needs matrices or sets — \\oplus has no scalar reading',
+          );
+          return ['None', PREC_ATOM];
+        }
+        // diag takes scalars as 1x1 blocks and needs concrete operands
+        // (MatrixExpr has no .tolist) — as_explicit() bridges both.
+        const pparts = pp.map((p, i) =>
+          p !== null
+            ? p.abstract
+              ? `(${p.t}).as_explicit()`
+              : p.t
+            : this.emit(args[i], PREC_MUL),
+        );
+        return [`${this.sp}diag(${pparts.join(', ')})`, PREC_ATOM];
+      }
+      case 'CircledAst': {
+        // `u \times v` — the cross product. latex.ts rewrites \times
+        // to \circledast so CE keeps it distinct from \cdot and
+        // juxtaposition (literal \otimes is the Kronecker product).
+        // Operand-typed like Norm: every operand setish emits the
+        // Cartesian `*` sets get from Multiply; a vector operand makes
+        // it a cross — .cross is a MatrixBase method, so bracket lists
+        // and list-bound names wrap in sp.Matrix and MatrixExpr lowers
+        // through .as_explicit() (MatrixSymbol has no .cross). Nothing
+        // vector-like: \times stays multiplication (`2 \times 3`).
+        // `\nabla \times F` is the curl — the Error operand the
+        // nabla-gradient rule leaves becomes the Nabla head.
+        if (isHead(args[0], 'Nabla')) {
+          const F = args[1];
+          const comps = this.vectorEntries(F);
+          const concrete =
+            (comps !== null && comps.length === 3) ||
+            (isStr(F) && this.scope.kinds.listNames.has(F)) ||
+            (isStr(F) && this.scope.kinds.matrixNames.has(F)) ||
+            this.concreteMatrix(F);
+          if (!concrete) {
+            this.scope.flag(
+              'error',
+              'curl needs a concrete 3-vector field — \nabla \times F',
+            );
+            return ['None', PREC_ATOM];
+          }
+          const c = ['x', 'y', 'z'];
+          // Literal vectors emit each component directly — indexing a
+          // re-emitted `sp.Matrix([[…]])` per component repeated the
+          // whole literal in every term.
+          const f = comps === null ? `(${this.emit(F)})` : null;
+          const comp = (i: number) =>
+            comps === null ? `${f}[${i}]` : this.emit(comps[i]);
+          // [∂F₃/∂y−∂F₂/∂z, ∂F₁/∂z−∂F₃/∂x, ∂F₂/∂x−∂F₁/∂y]
+          const row = (i: number, j: number, k: number, l: number) =>
+            `${this.sp}diff(${comp(i)}, ${c[j]}) - ${this.sp}diff(${comp(k)}, ${c[l]})`;
+          return [
+            `${this.sp}Matrix([${row(2, 1, 1, 2)}, ${row(0, 2, 2, 0)}, ${row(1, 0, 0, 1)}])`,
+            PREC_ATOM,
+          ];
+        }
+        if (args.some((a) => isHead(a, 'Nabla')))
+          this.scope.flag(
+            'error',
+            'curl reads \nabla \times F — \nabla must be the left operand',
+          );
+        if (args.every((a) => this.isSetish(a)))
+          return [
+            args.map((a) => this.emit(a, PREC_MUL)).join(' * '),
+            PREC_MUL,
+          ];
+        const crossArg = (n: MathJson): string | null => {
+          if (
+            isHead(n, 'List') ||
+            isHead(n, 'Tuple') ||
+            (isStr(n) && this.scope.kinds.listNames.has(n))
+          )
+            return `${this.sp}Matrix(${this.emit(n)})`;
+          // Bound to a Matrix literal — already concrete.
+          if (isStr(n) && this.scope.kinds.matrixNames.has(n))
+            return this.emit(n);
+          if (this.concreteMatrix(n)) return this.emit(n, PREC_ATOM);
+          if (this.matrixValued(n, true))
+            return `(${this.emit(n)}).as_explicit()`;
+          return null;
+        };
+        const texts = args.map(crossArg);
+        if (texts.every((t) => t === null))
+          return [
+            args.map((a) => this.emit(a, PREC_MUL)).join(' * '),
+            PREC_MUL,
+          ];
+        const parts = texts.map((t, i) => {
+          if (t !== null) return t;
+          const a = args[i] as MathJson;
+          this.scope.flag(
+            'error',
+            `cross product needs vectors — ${isStr(a) ? a : 'an operand'} is a scalar here`,
+          );
+          return this.emit(a);
+        });
+        return [
+          parts
+            .slice(1)
+            .reduce((acc, p) => `${acc}.cross(${p})`, parts[0] as string),
+          PREC_ATOM,
+        ];
+      }
+      case 'Nabla':
+        // Stray \nabla — only survives inside CircleMinus/CircledAst
+        // via the nabla-vector-op rule; anywhere else is the
+        // unsupported-command it was.
+        this.scope.flag('error', '\\nabla needs a \\cdot F or \\times F operand');
+        return ['None', PREC_ATOM];
       case 'Divide':
         // int-valued expressions divide to a Python float — keep them
         // exact as Rational (`10^6/3` -> Rational(10**6, 3)).
@@ -1323,6 +1858,19 @@ class Emitter {
             `${this.sp}Complement(${this.sp}S.UniversalSet, ${this.emit(args[0])})`,
             PREC_ATOM,
           ];
+        // `e^{A}` — the matrix exponential. Concrete matrices carry
+        // .exp() directly; MatrixExpr lowers through .as_explicit()
+        // (sympy ships no unevaluated MatrixExp class).
+        if (args[0] === 'ExponentialE') {
+          const me = this.matOperand(args[1]);
+          if (me !== null)
+            return [
+              me.abstract
+                ? `(${me.t}).as_explicit().exp()`
+                : `(${me.t}).exp()`,
+              PREC_ATOM,
+            ];
+        }
         // `3^{-1}` — Python `**` on int operands yields a float before
         // sympy sees it (`Rational(3**-1, 2)` -> a binary fraction);
         // `sp.Pow` keeps the exact reciprocal.
@@ -1565,7 +2113,10 @@ class Emitter {
           // Python and readable.
           const exp = set[2];
           const dims =
-            isHead(exp, 'Multiply') &&
+            (isHead(exp, 'Multiply') ||
+              isHead(exp, 'CircleMinus') ||
+              isHead(exp, 'CircleTimes') ||
+              isHead(exp, 'CircledAst')) &&
             (exp as MathJson[]).slice(1).every((e) => this.isPosInt(e))
               ? (exp as MathJson[]).slice(1)
               : null;
@@ -1746,19 +2297,24 @@ class Emitter {
               args[0] !== args[1] &&
               !this.scope.decls.defined.has(args[0])
             ) {
-              f = `${this.fn(args[0])}(${this.emit(args[1])})`;
-              this.scope.noteDepVar(args[0], [args[1]]);
+              // A dependent variable's full arg list applies at every
+              // site — `D(u,t) = D(u,x,x)` emits diff(u(t,x), t), not
+              // u(t) here / u(x) there. cellBody seeds the union before
+              // emission; args[1] is always part of it.
+              const call = [
+                ...(this.scope.emit.fnArgs.get(args[0]) ?? []),
+                args[1],
+              ].filter((v, i, a) => a.indexOf(v) === i);
+              f = `${this.fn(args[0])}(${call.map((a) => this.emit(a)).join(', ')})`;
+              this.scope.noteDepVar(args[0], call);
             } else {
               f = this.emit(args[0]);
               // `\dot{x}` after `x = 5` — sp.diff(5, t) evaluates to 0,
               // so the emitted equation silently says `0 = rhs` instead
               // of a derivative; flag rather than emit a plausible
-              // falsehood.
-              if (
-                isStr(args[0]) &&
-                this.scope.decls.defined.has(args[0]) &&
-                !this.scope.decls.declaredFns.has(args[0])
-              )
+              // falsehood. A symbol-bound name is still a variable —
+              // diff(f, x) = 0 is the honest partial.
+              if (isStr(args[0]) && this.scope.isValueBound(args[0]))
                 this.scope.flag(
                   'error',
                   `${args[0]} is bound to a value — cannot differentiate`,
@@ -1777,7 +2333,8 @@ class Emitter {
       case 'TotalD': {
         // `\D f` — the TOTAL derivative: the best linear approximation
         // of f at a point, expressed as the Jacobian —
-        // `sp.derive_by_array`. It takes no variable: `\D_x f` is a
+        // `sp.Matrix([body]).jacobian(vars)`. It takes no variable:
+        // `\D_x f` is a
         // partial and folds to the ordinary D path, and the
         // `\frac{\D}{\D}` spelling is not the notation — flagged, with
         // the plausible univariate derivative emitted as a fallback.
@@ -1795,8 +2352,12 @@ class Emitter {
               body !== v &&
               !this.scope.decls.defined.has(body)
             ) {
-              f = `${this.fn(body)}(${this.emit(v)})`;
-              this.scope.noteDepVar(body, [v]);
+              const call = [
+                ...(this.scope.emit.fnArgs.get(body) ?? []),
+                v,
+              ].filter((a, i, arr) => arr.indexOf(a) === i);
+              f = `${this.fn(body)}(${call.map((a) => this.emit(a)).join(', ')})`;
+              this.scope.noteDepVar(body, call);
             } else {
               f = this.emit(body);
             }
@@ -1815,15 +2376,19 @@ class Emitter {
         // scalar emits the Jacobian `sp.Matrix([body]).jacobian(vars)`.
         let vars: string[];
         let bodyIsFn = false;
+        let recordedArgs: MathJson[] | undefined;
         if (isStr(body)) {
           // `\D f` on a bare name — a field, not a symbol. Its recorded
           // args define the variables; an undeclared f becomes f(x) —
           // unless the name IS the variable (`\D x` → `diff(x, x)`),
           // which must not mark x as a function of anything.
-          if (
-            this.scope.decls.defined.has(body) &&
-            !this.scope.decls.declaredFns.has(body)
-          ) {
+          recordedArgs =
+            this.scope.emit.fnArgs.get(body) ??
+            this.scope.emit.lambdaParams.get(body);
+          if (recordedArgs !== undefined) {
+            vars = recordedArgs.filter((a): a is string => isStr(a));
+            bodyIsFn = true;
+          } else if (this.scope.isValueBound(body)) {
             this.scope.flag(
               'error',
               `${body} is bound to a value — not a field`,
@@ -1832,17 +2397,14 @@ class Emitter {
               `${this.sp}diff(${this.emit(body)}, x)`,
               PREC_ATOM,
             ];
-          }
-          const recorded = this.scope.emit.fnArgs.get(body);
-          if (recorded !== undefined) {
-            vars = recorded.filter((a): a is string => isStr(a));
-            bodyIsFn = true;
           } else if (this.scope.emit.matrices.has(body)) {
             // `\D A` — differentiate the matrix entries: `diff` handles
             // matrices elementwise.
             vars = ['x'];
-          } else if (body === 'x') {
-            vars = ['x'];
+          } else if (body === 'x' || this.scope.emit.symbols.has(body)) {
+            // A coordinate or a symbol-bound name is its own variable —
+            // `\D x`/`diff(u, u)` = 1, not a field claim.
+            vars = [body];
           } else {
             this.fn(body);
             this.scope.noteDepVar(body, ['x']);
@@ -1852,7 +2414,7 @@ class Emitter {
         } else {
           vars = freeNames(body).filter(
             (n) =>
-              !this.scope.decls.defined.has(n) &&
+              !this.scope.isValueBound(n) &&
               !this.scope.emit.matrices.has(n) &&
               !this.scope.emit.functions.has(n) &&
               !this.scope.decls.declaredFns.has(n) &&
@@ -1880,7 +2442,18 @@ class Emitter {
             );
           }
         }
-        const emitted = this.emit(body);
+        // A callable bound by `f = x \mapsto …` lives in `lambdaParams`,
+        // not `functions` — sym() would emit the bare Lambda object, so
+        // apply it at its declared signature here.
+        const emitted =
+          isStr(body) &&
+          bodyIsFn &&
+          recordedArgs !== undefined &&
+          !this.scope.emit.functions.has(body)
+            ? `${this.fn(body)}(${recordedArgs
+                .map((a) => this.emit(a))
+                .join(', ')})`
+            : this.emit(body);
         if (vars.length === 1) {
           const x = this.emit(vars[0]);
           return [
@@ -1907,59 +2480,83 @@ class Emitter {
         return [out, PREC_ATOM];
       }
       case 'Gradient': {
-        // `\nabla f` — the gradient: a row of partials over the body's
-        // free variables; `sp.derive_by_array` emits the textbook vector.
+        // `\nabla f` — the gradient over the canonical coordinates
+        // (x, y, z), emitted as a 1×3 Matrix (the Jacobian of the scalar
+        // body) — an sp.Array doesn't carry matrix ops. `\nabla x` is
+        // the coordinate field itself -> (1, 0, 0); a coordinate bound
+        // to a value can't be a diff variable, so its column is a
+        // literal 0.
         const body = args[0];
-        let vars: string[];
+        const COORDS = ['x', 'y', 'z'];
+        const grad = (b: string): [string, number] => {
+          if (COORDS.every((c) => !this.scope.isValueBound(c)))
+            return [
+              `${this.sp}Matrix([${b}]).jacobian([${COORDS.map((c) =>
+                this.sym(c),
+              ).join(', ')}])`,
+              PREC_ATOM,
+            ];
+          return [
+            `${this.sp}Matrix([[${COORDS.map((c) =>
+              this.scope.isValueBound(c)
+                ? '0'
+                : `${this.sp}diff(${b}, ${this.sym(c)})`,
+            ).join(', ')}]])`,
+            PREC_ATOM,
+          ];
+        };
         if (isStr(body)) {
-          // ∇f on a bare name — like `\frac{df}{dx}`: a field, not a
-          // symbol. Its recorded args define the variables; an
-          // undeclared f becomes f(x) of one variable.
+          // ∇f on a bare name: a def'd/called name is the field
+          // f(<args>) — applied at its recorded signature — a
+          // coordinate or symbol-bound name is the symbol itself
+          // (∇x → (1,0,0)), a fresh name becomes a field of all three
+          // coords, and a name bound to a scalar value differentiates
+          // as that value (∇x after `x = 5` is the zero row).
+          // Matrix/set/list bindings aren't scalar fields.
+          const recorded =
+            this.scope.emit.fnArgs.get(body) ??
+            this.scope.emit.lambdaParams.get(body);
+          if (recorded !== undefined) {
+            const applied = this.scope.emit.functions.has(body)
+              ? this.emit(body)
+              : `${this.fn(body)}(${recorded
+                  .map((a) => this.emit(a))
+                  .join(', ')})`;
+            return grad(applied);
+          }
           if (
-            this.scope.decls.defined.has(body) &&
-            !this.scope.decls.declaredFns.has(body)
+            this.scope.emit.matrices.has(body) ||
+            this.scope.kinds.matrixNames.has(body) ||
+            this.scope.kinds.setNames.has(body) ||
+            this.scope.kinds.listNames.has(body)
           ) {
             this.scope.flag(
               'error',
               `${body} is bound to a value — not a scalar field`,
             );
-            return [
-              `${this.sp}derive_by_array(${this.emit(body)}, [])`,
-              PREC_ATOM,
-            ];
+            return [`${this.sp}Matrix([[0, 0, 0]])`, PREC_ATOM];
           }
-          const recorded = this.scope.emit.fnArgs.get(body);
-          if (recorded !== undefined) {
-            vars = recorded.filter((a): a is string => isStr(a));
-          } else {
-            const v = body === 'x' ? 't' : 'x';
+          if (
+            !COORDS.includes(body) &&
+            !this.scope.emit.symbols.has(body) &&
+            !this.scope.isValueBound(body)
+          ) {
             this.fn(body);
-            this.scope.noteDepVar(body, [v]);
-            vars = [v];
+            this.scope.noteDepVar(body, COORDS);
+            const applied = this.scope.emit.functions.has(body)
+              ? this.emit(body)
+              : `${this.fn(body)}(${COORDS.map((c) => this.sym(c)).join(', ')})`;
+            return grad(applied);
           }
-        } else {
-          vars = freeNames(body).filter(
-            (n) =>
-              !this.scope.decls.defined.has(n) &&
-              !this.scope.emit.matrices.has(n) &&
-              !this.scope.emit.functions.has(n) &&
-              !this.scope.decls.declaredFns.has(n) &&
-              !this.scope.kinds.depVars.has(n),
-          );
+          return grad(this.emit(body));
         }
-        if (vars.length === 0) {
-          this.scope.flag('error', 'gradient needs a free variable');
-          return [
-            `${this.sp}derive_by_array(${this.emit(body)}, [])`,
-            PREC_ATOM,
-          ];
-        }
-        return [
-          `${this.sp}derive_by_array(${this.emit(body)}, [${vars
-            .map((v) => this.sym(v))
-            .join(', ')}])`,
-          PREC_ATOM,
-        ];
+        for (const n of freeNames(body))
+          if (this.scope.isValueBound(n))
+            this.scope.flag(
+              'error',
+              `${n} is bound to a value — cannot differentiate`,
+            );
+        return grad(this.emit(body));
       }
       case 'Apply': {
         const callee = args[0];
@@ -2918,10 +3515,6 @@ class Emitter {
             ] as [string, number];
           });
         }
-        const rendered = args
-          .slice(1)
-          .map((a) => this.callArg(a))
-          .join(', ');
         // `\mathrm{trace|rank|inverse|transpose|norm|eigenvals|
         // eigenvects|tr}(A)`: sympy exposes these as Matrix methods,
         // so a literal or worksheet-declared matrix argument emits the
@@ -2932,12 +3525,68 @@ class Emitter {
         // raises TypeError — flag + honest stub.
         const mm = MATRIX_METHODS[name];
         if (mm !== undefined && args.length === 2) {
-          if (isHead(args[1], 'Matrix') || this.matrixRef(args[1]))
+          if (isHead(args[1], 'Matrix') || this.matrixRef(args[1])) {
+            // A matrixDims name (p ∈ ℝ^{m×n}) mints a MatrixSymbol —
+            // MatrixExpr has only det/inv/T, so the rest route
+            // through .as_explicit() (trace uses the abstract class
+            // like the matrixValued tier below).
+            if (isStr(args[1]) && !this.concreteMatrix(args[1])) {
+              if (name === 'trace' || name === 'Trace' || name === 'tr')
+                return [
+                  `${this.sp}Trace(${this.emit(args[1])})`,
+                  PREC_ATOM,
+                ];
+              if (
+                name === 'inverse' ||
+                name === 'transpose' ||
+                name === 'det' ||
+                name === 'Determinant'
+              )
+                return [`(${this.emit(args[1])}).${mm}`, PREC_ATOM];
+              return [
+                `(${this.emit(args[1])}).as_explicit().${mm}`,
+                PREC_ATOM,
+              ];
+            }
             return [`(${this.emit(args[1])}).${mm}`, PREC_ATOM];
+          }
+          // A bare name — `\mathrm{eigenvects}(A)`, `\ker A` — reads as
+          // a matrix (like \det A): mint a MatrixSymbol rather than a
+          // meaningless `<word>(A)` Function stub. A name already bound
+          // to a scalar stays an honest flag.
+          if (isStr(args[1])) {
+            const scalar =
+              this.scope.emit.symbols.has(args[1]) ||
+              this.scope.emit.functions.has(args[1]) ||
+              (this.scope.decls.defined.has(args[1]) &&
+                !this.scope.kinds.matrixNames.has(args[1]) &&
+                !this.scope.kinds.matrixDims.has(args[1]));
+            if (!scalar) {
+              const t = this.mat(args[1]);
+              if (name === 'trace' || name === 'Trace' || name === 'tr')
+                return [`${this.sp}Trace(${t})`, PREC_ATOM];
+              if (
+                name === 'inverse' ||
+                name === 'transpose' ||
+                name === 'det' ||
+                name === 'Determinant'
+              )
+                return [`(${t}).${mm}`, PREC_ATOM];
+              // .as_explicit() lowers a minted MatrixSymbol — concrete
+              // matrices (I_n = sp.eye(n), a literal-bound name) have
+              // no such method (MutableDenseMatrix).
+              return [
+                `(${t})${this.concreteMatrix(args[1]) ? '' : '.as_explicit()'}.${mm}`,
+                PREC_ATOM,
+              ];
+            }
+          }
           if (this.matrixValued(args[1])) {
-            // A matrix-valued expression (`\mathrm{tr}(A + B)`): only
-            // trace/inverse/transpose exist on sympy MatrixExpr — the
-            // rest need every matrix leaf to be a literal.
+            // A matrix-valued expression (`\mathrm{tr}(A + B)`):
+            // trace maps to the abstract sp.Trace; inverse/transpose
+            // are MatrixExpr methods; everything else lowers through
+            // .as_explicit() so concrete-only methods work on
+            // MatrixExpr too (`(u).as_explicit().rref()`).
             if (name === 'trace' || name === 'Trace' || name === 'tr')
               return [
                 `${this.sp}Trace(${this.emit(args[1])})`,
@@ -2949,14 +3598,13 @@ class Emitter {
               this.concreteMatrix(args[1])
             )
               return [`(${this.emit(args[1])}).${mm}`, PREC_ATOM];
-            this.scope.flag(
-              'note',
-              `${name} needs a concrete matrix — the argument is a symbolic matrix expression`,
-            );
-            return [`${this.fn(name)}(${this.emit(args[1])})`, PREC_ATOM];
+            return [
+              `(${this.emit(args[1])}).as_explicit().${mm}`,
+              PREC_ATOM,
+            ];
           }
           this.scope.flag(
-            'note',
+            'error',
             `${name === 'Trace' || name === 'tr' ? 'trace' : name} needs a matrix — the argument isn't one`,
           );
           return [`${this.fn(name)}(${this.emit(args[1])})`, PREC_ATOM];
@@ -2968,6 +3616,12 @@ class Emitter {
             `${this.sp}Eq(${this.sp}Mod(${this.emit(args[1])}, ${this.emit(args[3])}), ${this.emit(args[2])})`,
             PREC_ATOM,
           ];
+        // Emitted late — callArg mints a Symbol for a bare name arg,
+        // which would poison the matrix word-op check above.
+        const rendered = args
+          .slice(1)
+          .map((a) => this.callArg(a))
+          .join(', ');
         if (CALL_RENAMES[name])
           return [`${this.sp}${CALL_RENAMES[name]}(${rendered})`, PREC_ATOM];
         if (this.scope.decls.declared.has(name) || !SP_BUILTIN_CALL.has(name)) {
@@ -3038,6 +3692,12 @@ function unwrapLambda(node: MathJson): { body: MathJson; params: string[] } {
 
 interface StatementOut {
   lines: string[];
+  /** Code lines for the calculator target when they differ from
+   * `lines` — solver statements show the bare `sp.solve` call in the
+   * python target but eval `clean_and_simplify(call, var)` in the
+   * worker so the row displays `x = a1, a2, …`. Emitted verbatim (no
+   * calcEval wrap) since the pipeline call is part of the line. */
+  calcLines?: string[];
   /** Expression to eval for the statement's displayed value — set only
    * for non-expression statements (Assign/Def), whose `lines` exec first
    * and this evals for the row (e.g. `a = 5` shows `a = 5`). Undefined
@@ -3050,6 +3710,9 @@ interface StatementOut {
   /** The statement produces a plot, not a value — the calc path must not
    * wrap its line in clean_and_simplify (the row carries sampled data). */
   plot?: boolean;
+  /** Execs for side effects only (a defs-only PythonSource) — the
+   * calculator runs it but produces no result row. */
+  silent?: boolean;
 }
 
 interface CellBody {
@@ -3152,6 +3815,11 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   // Reserve the cell's own names (and worksheet Assign/Def targets) so
   // constants of integration start at the first free capital.
   scope.reserveConstNames(ir);
+  // A dependent variable's full arg list is the union over every
+  // derivative site in the cell — `D(u,t) = D(u,x,x)` and a later bare
+  // `u` all emit `u(t,x)`, never u(t) at one site and u(x) at another.
+  // Def'd names keep their declared parameter list instead.
+  seedDepVarArgs(ir, scope);
   // `\text{where}`-style blocks arrive condition-first: `x² where x>0`
   // parses as WhereBlock(Gt, x²) — a single written statement CE split
   // internally (parseCellLatex tags them). Emit the body row before its
@@ -3199,8 +3867,13 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   const newSyms = [...scope.emit.symbols].filter(([raw]) => !preDefined.has(raw));
   // Function-bound names (Def/`f:`) sit in `functions` for call-fold
   // detection but declare themselves — no `sp.Function` def for them.
+  // pyBacked names point at a python-cell def — the real callable, not
+  // a minted stub — so they emit no decl either.
   const newFns = [...scope.emit.functions].filter(
-    ([raw]) => !preDefined.has(raw) && !scope.decls.declaredFns.has(raw),
+    ([raw]) =>
+      !preDefined.has(raw) &&
+      !scope.decls.declaredFns.has(raw) &&
+      !scope.emit.pyBacked.has(raw),
   );
   const newMats = [...scope.emit.matrices].filter(
     ([raw]) => !preDefined.has(raw),
@@ -3269,6 +3942,91 @@ function cellStatements(ir: MathJson | undefined, scope: Scope): string[] {
   return [...defs, ...stmts];
 }
 
+// First pass over a cell's IR: union the variable slots each name is
+// differentiated/applied by into `fnArgs`, so every site emits the same
+// applied call. Without the union `D(u,t) = D(u,x,x)` records u as a
+// function of t at the first site and emits `diff(u(t), x, x)` — a
+// silently-zero second derivative — at the second.
+function seedDepVarArgs(ir: MathJson, scope: Scope): void {
+  const slots = new Map<string, MathJson[]>();
+  const add = (name: string, vars: MathJson[]) => {
+    if (vars.length === 0) return;
+    const prev = slots.get(name) ?? [];
+    for (const v of vars)
+      if (!prev.some((p) => JSON.stringify(p) === JSON.stringify(v)))
+        prev.push(v);
+    slots.set(name, prev);
+  };
+  const walk = (n: MathJson): void => {
+    if (!isArr(n)) return;
+    const h = headOf(n);
+    // A name is never a dependent of its own differentiation
+    // variable — `D(x,x)` is `diff(x, x)` = 1, not a function claim.
+    const varsOf = (name: MathJson, xs: MathJson[]) =>
+      xs.filter((v): v is string => isStr(v) && v !== name);
+    if (h === 'D' && isStr(n[1])) add(n[1], varsOf(n[1], n.slice(2)));
+    else if (
+      h === 'Apply' &&
+      isArr(n[1]) &&
+      headOf(n[1]) === 'Derivative' &&
+      isStr(n[1][1])
+    )
+      add(n[1][1], varsOf(n[1][1], n.slice(2)));
+    // A DepVar spec inside a Solve-family node declares the same list.
+    else if (h === 'DepVar' && isStr(n[1]))
+      add(n[1], varsOf(n[1], n.slice(2)));
+    // `\D f` / `\nabla u` on a bare name claims it a field — of x for the
+    // total derivative, of all three coords for the gradient — matching
+    // the noteDepVar their codegen makes. A name already bound (symbol,
+    // value, matrix) or a coordinate stays itself: `\D x`/`∇x` don't
+    // turn x into x(…).
+    else if (
+      h === 'TotalD' &&
+      isStr(n[1]) &&
+      n[1] !== 'x' &&
+      !scope.decls.defined.has(n[1])
+    )
+      add(n[1], ['x']);
+    else if (
+      h === 'Gradient' &&
+      isStr(n[1]) &&
+      !['x', 'y', 'z'].includes(n[1]) &&
+      !scope.decls.defined.has(n[1])
+    )
+      add(n[1], ['x', 'y', 'z']);
+    for (const c of n.slice(1)) walk(c);
+  };
+  walk(ir);
+  for (const [name, vars] of slots) {
+    // A def'd name's parameters are its arg list — `f(x) = …` then
+    // `D(f,t)` does not turn f into a function of t.
+    if (scope.decls.declaredFns.has(name)) continue;
+    scope.claimDepVar(name, vars);
+  }
+}
+
+// Matrix word-ops whose results are structured display data, mapped to
+// the clean_and_simplify layout that renders them: basis-vector lists
+// (nullspace/columnspace) as span{...} — an empty basis reads as
+// \varnothing, not `\left[\right]` — and eigenvects' (value, mult,
+// vectors) triples as labeled blocks. Call-name spellings fold to the
+// same words (\ker → Kernel).
+const CALC_LAYOUT_WORDS: Record<string, string> = {
+  nullspace: 'span',
+  Kernel: 'span',
+  ker: 'span',
+  columnspace: 'span',
+  eigenvects: 'eigenvects',
+};
+
+function calcDisplayLayout(node: MathJson): string | undefined {
+  if (!isArr(node)) return undefined;
+  const h = headOf(node);
+  if (h !== 'call' && h !== 'MatrixMethod') return undefined;
+  const w = isStr(node[1]) ? node[1] : undefined;
+  return w === undefined ? undefined : CALC_LAYOUT_WORDS[w];
+}
+
 // Emit a single expression statement, dropping it when emission flagged
 // an error — a broken statement produces `sp.Error(...)`/`None` fragments
 // that just repeat what the issues list already says.
@@ -3281,6 +4039,15 @@ function emitExprStatement(node: MathJson, emitter: Emitter): StatementOut {
   // stays the row's display expression.
   const wrap = emitter.assumingWrap(node);
   if (wrap) return { lines: [wrap, `    ${line}`], display: line };
+  // Structured results (a basis, eigen-triples) eval through the
+  // runtime's layout markers on the calculator path — the python
+  // target keeps the plain SymPy call.
+  const layout = calcDisplayLayout(node);
+  if (layout !== undefined)
+    return {
+      lines: [line],
+      calcLines: [`clean_and_simplify(${line}, layout='${layout}')`],
+    };
   return { lines: [line] };
 }
 
@@ -3296,6 +4063,61 @@ const PY_STMT_LINE_RE =
 // `=` that isn't part of ==, !=, <=, >=, :=, +=, **=, … — assignment
 // lines exec but aren't eval'able expressions.
 const PY_ASSIGN_RE = /(?<![=<>!:+\-*/%&|^~@])=(?![=>])/;
+
+// `def`/`async def` blocks (decorators included), `name = lambda` binds,
+// and `# @latex` annotation comments are definitions — worksheet inputs,
+// not results — so they never echo as a result row. The rest of the
+// source still echoes per the REPL convention; an empty remainder means
+// the cell only binds functions and evaluates silently.
+const PY_DEF_LINE_RE = /^(?:async[ \t]+)?def[ \t]/;
+const PY_LAMBDA_ASSIGN_RE =
+  /^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*[ \t]*(?::[^=\n]+)?=[ \t]*lambda\b/;
+const PY_LATEX_NOTE_RE = /^#[ \t]*@?latex\b/;
+
+function pythonSourceSansDefs(code: string): string {
+  const kept: string[] = [];
+  // `dropping` marks lines inside a def region (decorators, signature,
+  // suite, and the blank/comment run that follows it). `cont` is an open
+  // bracket/backslash continuation — those lines belong to whichever
+  // statement opened them.
+  let dropping = false;
+  let cont = false;
+  let depth = 0;
+  for (const raw of code.split('\n')) {
+    const line = raw.trim();
+    if (cont) {
+      for (const c of raw) {
+        if (c === '(' || c === '[' || c === '{') depth++;
+        else if (c === ')' || c === ']' || c === '}') depth--;
+      }
+      cont = depth > 0 || line.endsWith('\\');
+      if (!dropping) kept.push(raw);
+      continue;
+    }
+    if (line === '' || line.startsWith('#')) {
+      if (!dropping && !PY_LATEX_NOTE_RE.test(line)) kept.push(raw);
+      continue;
+    }
+    if (/^\s/.test(raw)) {
+      // Indented lines are suite members of the open region.
+      if (!dropping) kept.push(raw);
+      continue;
+    }
+    // A fresh top-level statement ends any open def suite.
+    dropping =
+      line.startsWith('@') ||
+      PY_DEF_LINE_RE.test(line) ||
+      PY_LAMBDA_ASSIGN_RE.test(line);
+    if (!dropping) kept.push(raw);
+    depth = 0;
+    for (const c of raw) {
+      if (c === '(' || c === '[' || c === '{') depth++;
+      else if (c === ')' || c === ']' || c === '}') depth--;
+    }
+    cont = depth > 0 || line.endsWith('\\');
+  }
+  return kept.join('\n');
+}
 
 function trailingPythonExpr(code: string): string | undefined {
   const lines = code.split('\n');
@@ -3465,8 +4287,12 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       emitter.scope.declareFn(node[1]);
     // Matrix-valued by shape, not by emitted text — `I_2` emits
     // `sp.eye(2)`, `B = A^T` emits `Transpose`, and Eq(Symbol, <matrix>)
-    // collapses to literal False without evaluate=False.
-    const matrixRhs = emitter.matrixValued(node[2], true);
+    // collapses to literal False without evaluate=False. `\nabla` always
+    // emits a Matrix; a multivariate `\D` takes the Jacobian branch —
+    // the emitted text is the ground truth for which one it took.
+    const matrixRhs =
+      emitter.matrixValued(node[2], true) ||
+      (isHead(node[2], 'TotalD') && rhs.includes('.jacobian('));
     const setRhs = emitter.isSetish(node[2]);
     const finiteRhs = emitter.isFiniteSet(node[2]);
     const listRhs =
@@ -3481,10 +4307,26 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
         finite: finiteRhs,
         list: listRhs,
       });
+    // The lambda's params are the callable's declared signature — after
+    // bindAssigned so the record isn't cleared, and kept out of `fnArgs`
+    // (which carries observed call-site args that merge across sites).
+    // A later `\D f`/`\nabla f` applies f at its own arity.
+    if (isStr(node[1]) && isHead(node[2], 'Function'))
+      emitter.scope.emit.lambdaParams.set(node[1], node[2].slice(2));
     if (emitter.scope.errorCount > before) return { lines: [] };
+    // A python-list RHS binds a raw list (`u = [1, 2, 3]`), which
+    // Eq can't sympify — display it as the column vector the ops
+    // treat it as, unevaluated like other matrix/set RHSes.
+    const displayRhs =
+      listRhs && !matrixRhs ? `${sp}Matrix(${rhs})` : rhs;
     return {
       lines: [`${pyIdent(name)} = ${rhs}`],
-      display: assignDisplay(sp, name, rhs, matrixRhs || setRhs),
+      display: assignDisplay(
+        sp,
+        name,
+        displayRhs,
+        matrixRhs || setRhs || listRhs,
+      ),
       defines: true,
     };
   }
@@ -3593,15 +4435,173 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       return { lines: [`_mc_plot(${body})`], plot: true };
     return emitPlotPython(node[1], body, emitter);
   }
+  // `\text{solve}` / `\text{dsolve}` / `\text{pdesolve}` statements.
+  // IR: ['Solve', eqs, vars, domain?] — eqs a node or List, vars a List
+  // of bare names, domain the `\text{for}` condition (Element or a
+  // relational bound). ['DSolve'|'PDESolve', eqs, depVars, ics] — depVars
+  // a List of ['DepVar', name, var…], ics a List of
+  // ['IC', name, order|'Nothing', pt, rhs].
+  if (h === 'Solve') {
+    const eqNodes = isHead(node[1], 'List') ? node[1].slice(1) : [node[1]];
+    const varNames = isHead(node[2], 'List')
+      ? node[2].slice(1).filter(isStr)
+      : [];
+    const before = emitter.scope.errorCount;
+    const eqTexts = eqNodes.map((e) => emitter.emit(e));
+    if (emitter.scope.errorCount !== before) return { lines: [] };
+    const eqText =
+      eqTexts.length === 1 ? eqTexts[0] : `[${eqTexts.join(', ')}]`;
+    // The names the answer row displays on the left of `x = a1, a2, …` —
+    // explicit solve vars, or the `\text{for}` domain variable.
+    let dispVars = varNames;
+    let call: string;
+    const domain = node[3];
+    let rd: [string, string] | undefined;
+    if (domain !== undefined) {
+      // `eq \text{ for } x \in S` / `x > a` — solveset over the domain.
+      if (isHead(domain, 'Element') && isStr(domain[1])) {
+        call = `${sp}solveset(${eqText}, ${emitter.emit(domain[1])}, domain=${emitter.emit(domain[2])})`;
+        if (dispVars.length === 0) dispVars = [domain[1]];
+      } else if ((rd = emitter.relationalDomain(domain)) !== undefined) {
+        call = `${sp}solveset(${eqText}, ${emitter.emit(rd[1])}, domain=${rd[0]})`;
+        if (dispVars.length === 0) dispVars = [rd[1]];
+      } else if (isStr(domain)) {
+        // `eq \text{ for } x` — a bare variable is just the solve-var.
+        call = `${sp}solve(${eqText}, ${emitter.emit(domain)})`;
+        if (dispVars.length === 0) dispVars = [domain];
+      } else {
+        emitter.scope.flag(
+          'note',
+          'the \\text{for} condition could not be read as a domain — solving without one',
+        );
+        call = '';
+      }
+    } else call = '';
+    if (call === '') {
+      const vs = varNames.map((v) => emitter.emit(v));
+      const varText =
+        vs.length === 0
+          ? ''
+          : `, ${vs.length === 1 ? vs[0] : `[${vs.join(', ')}]`}`;
+      call = `${sp}solve(${eqText}${varText})`;
+    }
+    if (dispVars.length === 0) {
+      // `\text{solve} x^2 = 1` with no var — let SymPy infer it like
+      // before, but still name the answer `x = …` when the equation
+      // has exactly one free symbol.
+      const free = [
+        ...new Set(eqNodes.flatMap((e) => freeNames(e))),
+      ].filter(
+        (n) =>
+          !emitter.scope.decls.declaredFns.has(n) &&
+          !emitter.scope.emit.functions.has(n) &&
+          !emitter.scope.emit.matrices.has(n),
+      );
+      if (free.length === 1) dispVars = free;
+    }
+    const varExpr =
+      dispVars.length === 0
+        ? 'None'
+        : dispVars.length === 1
+          ? emitter.emit(dispVars[0])
+          : `${sp}Tuple(${dispVars.map((v) => emitter.emit(v)).join(', ')})`;
+    return {
+      lines: [call],
+      // Calculator rows show the answer as `x = a1, a2, …` — the calc
+      // line carries the solve var as clean_and_simplify's second arg.
+      calcLines: [`clean_and_simplify(${call}, ${varExpr})`],
+    };
+  }
+  if (h === 'DSolve' || h === 'PDESolve') {
+    const fn = h === 'DSolve' ? 'dsolve' : 'pdsolve';
+    const depSpecs = isHead(node[2], 'List') ? node[2].slice(1) : [];
+    // Claim the unknowns first: every D site and bare name in the eqs
+    // then applies the declared arg list (u(t,x), not u(t) and u(x)).
+    const targets: string[] = [];
+    const specIvars = new Map<string, string[]>();
+    for (const d of depSpecs) {
+      if (!isArr(d) || headOf(d) !== 'DepVar' || !isStr(d[1])) continue;
+      const vars = d.slice(2).filter(isStr);
+      specIvars.set(d[1], vars);
+      emitter.scope.claimDepVar(d[1], vars);
+      // The declared signature is authoritative for arg order — a
+      // `u(x,t)` spec emits u(x,t) at every site even when the
+      // derivative sites first saw `D(u,t)` (the seeded union's order).
+      if (vars.length > 0) emitter.scope.emit.fnArgs.set(d[1], vars);
+      // dsolve/pdsolve want the applied unknown `y(x)` — an unapplied
+      // `y` raises TypeError, so a var-less spec contributes no target
+      // (sympy then infers the unknown from the equation).
+      if (vars.length > 0)
+        targets.push(
+          `${emitter.scope.emit.functions.get(d[1])!}(${vars
+            .map((v) => emitter.emit(v))
+            .join(', ')})`,
+        );
+    }
+    const eqNodes = isHead(node[1], 'List') ? node[1].slice(1) : [node[1]];
+    const before = emitter.scope.errorCount;
+    const eqTexts = eqNodes.map((e) => emitter.emit(e));
+    if (emitter.scope.errorCount !== before) return { lines: [] };
+    if (h === 'PDESolve' && eqTexts.length > 1) {
+      emitter.scope.flag(
+        'error',
+        'pdsolve solves a single equation — a system is not supported',
+      );
+      return { lines: [] };
+    }
+    const eqText =
+      eqTexts.length === 1 ? eqTexts[0] : `[${eqTexts.join(', ')}]`;
+    const targetText =
+      targets.length === 0
+        ? ''
+        : `, ${targets.length === 1 ? targets[0] : `[${targets.join(', ')}]`}`;
+    const icNodes = isHead(node[3], 'List') ? node[3].slice(1) : [];
+    const icTexts: string[] = [];
+    for (const ic of icNodes) {
+      if (!isArr(ic) || headOf(ic) !== 'IC' || !isStr(ic[1])) continue;
+      const ident =
+        emitter.scope.emit.functions.get(ic[1]) ?? pyIdent(ic[1]);
+      const pt = emitter.emit(ic[3]);
+      const rhs = emitter.emit(ic[4]);
+      const order = ic[2];
+      if (order === 'Nothing' || order === undefined) {
+        icTexts.push(`${ident}(${pt}): ${rhs}`);
+      } else {
+        // `f^{(k)}(pt)=rhs` — the derivative is in the unknown's first
+        // variable, evaluated at the point.
+        const v0 = specIvars.get(ic[1])?.[0] ?? 'x';
+        icTexts.push(
+          `${sp}diff(${ident}(${v0}), ${v0}, ${emitter.emit(order)}).subs(${v0}, ${pt}): ${rhs}`,
+        );
+      }
+    }
+    if (h === 'PDESolve' && icTexts.length > 0) {
+      emitter.scope.flag(
+        'note',
+        'pdsolve takes no boundary/initial conditions — the equation is solved without them',
+      );
+      icTexts.length = 0;
+    }
+    const icsText =
+      icTexts.length === 0 ? '' : `, ics={${icTexts.join(', ')}}`;
+    return { lines: [`${sp}${fn}(${eqText}${targetText}${icsText})`] };
+  }
   // `\python{ ... }` — verbatim user source. It execs in the python
   // target's program or the calculator's shared namespace. When the
   // last line is an expression, the row displays its value (REPL
-  // lane — `\python{f(9)}` shows 10); statement-ending bodies echo the
-  // source that ran.
+  // lane — `\python{f(9)}` shows 10). Function defs are inputs, not
+  // results: a defs-only source execs silently, and a mixed source
+  // echoes only its non-def statements.
   if (h === 'PythonSource') {
     const code = isStr(node[1]) ? node[1] : '';
     if (code.trim() === '') return { lines: [] };
-    return { lines: [code], display: trailingPythonExpr(code) ?? JSON.stringify(code) };
+    const trailing = trailingPythonExpr(code);
+    if (trailing !== undefined)
+      return { lines: [code], display: trailing };
+    const rest = pythonSourceSansDefs(code).trim();
+    return rest === ''
+      ? { lines: [code], silent: true }
+      : { lines: [code], display: JSON.stringify(rest) };
   }
   if (h === 'Block' || h === 'WhereBlock')
     return {
@@ -3625,6 +4625,10 @@ export interface CompileOptions extends NormalizeOptions {
   /** Emit `from sympy import *` and unqualified sympy names (default).
    * `false` emits `import sympy as sp` with `sp.` qualifiers. */
   importAll?: boolean;
+  /** Calc-only: the full worksheet cells when `cells` is a prefix —
+   * python defs below the edit point still resolve (with the
+   * call-above-def note) instead of minting `sp.Function` stubs. */
+  worksheetCells?: CellInput[];
 }
 
 // Compile the whole worksheet. `python` produces a runnable SymPy program;
@@ -3638,7 +4642,14 @@ export function compileWorksheet(
   const importLine = qualified
     ? 'import sympy as sp'
     : 'from sympy import *';
-  const perCell = cells.map((c) => normalizeIR(c.json, undefined, opts));
+  // Python-cell defs (`def`/`lambda`, plus `\python{}` blocks in math
+  // cells) register their call names so a math cell's `\mathrm{name}(x)`
+  // — or a `# @latex`-annotated form — calls the real function.
+  const pyRegistry = collectPyFns(cells);
+  const pyNames = new Set(pyRegistry.fns.keys());
+  const perCell = cells.map((c) =>
+    normalizeIR(c.json, undefined, { ...opts, pyFns: pyNames }),
+  );
   const issues: Issue[] = perCell.flatMap((r, i) =>
     r.issues.map((iss) => ({
       ...iss,
@@ -3696,8 +4707,17 @@ export function compileWorksheet(
   // is a fresh Symbol in cell 2's program, so `\det(A)` there must flag
   // rather than emit `A.det()` on a Symbol (TypeError at exec).
   const genIssues: Issue[][] = cells.map(() => []);
+  // Registry notes (unreachable builtin names, unresolved annotations)
+  // belong to the python cell that raised them.
+  for (const n of pyRegistry.notes) {
+    genIssues[n.cell].push({ severity: n.severity, message: n.message });
+    issues.push({
+      severity: n.severity,
+      message: `cell ${n.cell + 1}: ${n.message}`,
+    });
+  }
   const cellBodies = perCell.map((r, i) => {
-    if (r.ir === undefined) return [];
+    if (r.ir === undefined) return { lines: [] as string[], pySrc: [] as string[] };
     const matrixNames = new Set<string>();
     collectMatrices(r.ir, matrixNames);
     // `declaredFns` is worksheet-wide, but cells are independent
@@ -3706,28 +4726,37 @@ export function compileWorksheet(
     // Assign-rebind in THIS cell drops a pending Function decl.
     const cellDeclaredFns = new Set<string>();
     collectDeclared(r.ir, new Set(), cellDeclaredFns);
-    return cellStatements(
-      r.ir,
-      new Scope(
-        qualified,
-        declared,
-        cellDeclaredFns,
-        matrixNames,
-        issues,
-        genIssues,
-        i + 1,
-        'python',
-      ),
+    const scope = new Scope(
+      qualified,
+      declared,
+      cellDeclaredFns,
+      matrixNames,
+      issues,
+      genIssues,
+      i + 1,
+      'python',
+      pyRegistry.fns,
     );
+    scope.cellIdx = i;
+    const lines = cellStatements(r.ir, scope);
+    // The standalone cell script inlines every python def it calls —
+    // `relu(x)` emits the real call, so the script needs the source.
+    const pySrc = [...scope.py.usedSrcs]
+      .map((s) => pyRegistry.sources[s])
+      .sort((a, b) => a.cell - b.cell)
+      .map((s) => s.code);
+    return { lines, pySrc };
   });
-  const cellLines = cellBodies.map((body) =>
-    body.length === 0 ? [] : [importLine, ...body],
+  const cellLines = cellBodies.map(({ lines, pySrc }) =>
+    lines.length === 0 ? [] : [importLine, ...pySrc, ...lines],
   );
 
   // The one-script copy is the concatenation of the per-cell outputs
-  // with the import emitted once at the top.
+  // with the import emitted once at the top. Python cells' source emits
+  // in place — the program stays sequential, so a call must sit below
+  // its def (the registry notes flag it otherwise).
   const lines: string[] = [importLine];
-  cellBodies.forEach((stmts, i) => {
+  cellBodies.forEach(({ lines: stmts }, i) => {
     if (stmts.length === 0) return;
     lines.push('', `# cell ${i + 1}`, ...stmts);
   });
@@ -3831,6 +4860,10 @@ export interface CalcStatement {
    * program never inlines its `e = <display>` capture line, even in
    * the plumbing view (the display just echoes the definition). */
   defines?: boolean;
+  /** Execs for side effects only (a defs-only python source) — the
+   * worker binds the names and returns a marker row the client drops,
+   * so no result row shows. */
+  silent?: boolean;
   /** Set when the statement itself failed to emit — reported as an
    * error row in place so the cell keeps written order. */
   error?: string;
@@ -3934,11 +4967,14 @@ function compileCellInScope(
         // the marker dict anyway).
         out.plot
           ? out.lines.join('\n')
-          : out.display === undefined && out.lines.length === 1
-            ? calcEval(out.lines[0])
-            : out.lines.join('\n'),
+          : out.calcLines !== undefined
+            ? out.calcLines.join('\n')
+            : out.display === undefined && !out.silent && out.lines.length === 1
+              ? calcEval(out.lines[0])
+              : out.lines.join('\n'),
       display: out.display === undefined ? undefined : calcEval(out.display),
       defines: out.defines,
+      silent: out.silent,
       error,
       // Line anchors only matter where an error points back at input.
       ...(error !== undefined ? { line } : {}),
@@ -4001,6 +5037,10 @@ export function compileCellsForCalc(
   opts: CompileOptions = {},
 ): CalcWorksheetProgram {
   const qualified = opts.importAll === false;
+  // Python-cell defs register worksheet-wide so a call above its def
+  // resolves (with the ordering note) instead of minting a stub.
+  const pyRegistry = collectPyFns(opts.worksheetCells ?? cells);
+  const pyNames = new Set(pyRegistry.fns.keys());
   const scope = new Scope(
     qualified,
     new Set<string>(),
@@ -4009,6 +5049,8 @@ export function compileCellsForCalc(
     [],
     [],
     0,
+    'calc',
+    pyRegistry.fns,
   );
   return {
     // The CALC_RUNTIME_PY block defines the mc_* helpers the statements
@@ -4017,14 +5059,20 @@ export function compileCellsForCalc(
     // is written `sp.`-qualified; the import-* mode strips the prefix
     // so the shown program stays self-contained under a star import.
     prelude: [calcImportLine(qualified), calcRuntimePy(qualified)],
-    cells: cells.map((cell) => {
+    cells: cells.map((cell, i) => {
+      scope.cellIdx = i;
       // The shared declaredFns set both seeds this cell's normalize
       // (a `g(4)` below a `\def g` is a call, not juxtaposition) and
       // collects the names this cell declares for the cells below it.
-      const { ir, issues } = normalizeIR(
-        cell.json,
-        scope.decls.declaredFns,
-        opts,
+      const { ir, issues } = normalizeIR(cell.json, scope.decls.declaredFns, {
+        ...opts,
+        pyFns: pyNames,
+      });
+      // Registry notes on this cell (its own python defs) surface here.
+      issues.push(
+        ...pyRegistry.notes
+          .filter((n) => n.cell === i)
+          .map(({ severity, message }) => ({ severity, message }) as Issue),
       );
       if (ir === undefined)
         return { defs: [], statements: [], issues, statementLines: [] };
@@ -4041,7 +5089,11 @@ export function compileCellForCalc(
   opts: CompileOptions = {},
 ): CalcProgram {
   const qualified = opts.importAll === false;
-  const { ir, issues } = normalizeIR(cell.json, undefined, opts);
+  const pyRegistry = collectPyFns([cell]);
+  const { ir, issues } = normalizeIR(cell.json, undefined, {
+    ...opts,
+    pyFns: new Set(pyRegistry.fns.keys()),
+  });
   if (ir === undefined)
     return { prelude: [], statements: [], issues, statementLines: [] };
   const scope = new Scope(
@@ -4052,7 +5104,10 @@ export function compileCellForCalc(
     [],
     [],
     0,
+    'calc',
+    pyRegistry.fns,
   );
+  scope.cellIdx = 0;
   const c = compileCellInScope(ir, issues, scope);
   return {
     prelude: [calcImportLine(qualified), calcRuntimePy(qualified), ...c.defs],
