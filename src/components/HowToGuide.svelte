@@ -1,7 +1,7 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
   import { appStore } from '../state/store.svelte';
-  import { fuzzyHits, fuzzyScore } from '../fuzzy';
+  import { fuzzyHits, fuzzyTextScore } from '../fuzzy';
   import { HELP_TOPICS, TOPIC_BY_ID, type HelpTopic } from '../help/topics';
 
   // The input binds `query` instantly; `activeQuery` trails it by a
@@ -54,19 +54,24 @@
   });
 
   // Search looks at the whole catalog — hidden topics stay findable so
-  // they can be restored from a result row. The displayed text (goal and
-  // keystrokes) is part of the haystack so marks land on visible text.
+  // they can be restored from a result row. Per-field tiered scoring:
+  // visible text (goal ×3, keystrokes ×2) outranks keywords (×1, and
+  // keywords can't match on a loose subsequence alone — an invisible
+  // scattered hit would surface a row with nothing to highlight).
+  const scoreTopic = (q: string, t: HelpTopic): number => {
+    const field = (s: string | undefined, loose = true) =>
+      s === undefined ? -Infinity : (fuzzyTextScore(q, s, loose) ?? -Infinity);
+    return Math.max(
+      field(t.goal) * 3,
+      Math.max(field(t.how), field(t.smart), field(t.plain)) * 2,
+      field(t.keywords, false),
+    );
+  };
+
   const searchTopics = (q: string) => {
     if (!q) return [] as HelpTopic[];
-    const scored: { t: HelpTopic; s: number }[] = [];
-    for (const t of HELP_TOPICS) {
-      const s = fuzzyScore(
-        q,
-        `${t.goal} ${t.keywords ?? ''} ${t.how ?? ''} ${t.smart ?? ''} ${t.plain ?? ''}`,
-      );
-      if (s != null) scored.push({ t, s });
-    }
-    return scored.sort((a, b) => b.s - a.s).map((r) => r.t);
+    return HELP_TOPICS.filter((t) => scoreTopic(q, t) > -Infinity)
+      .sort((a, b) => scoreTopic(q, b) - scoreTopic(q, a));
   };
 
   // The rendered list trails the input by the debounce; Enter pins

@@ -104,6 +104,17 @@ test('palette Search help command opens and focuses the search', async ({
   await expect(search(page)).toBeFocused();
 });
 
+test('word-level matches rank above scattered subsequence noise', async ({
+  page,
+}) => {
+  // 'root' as a scattered subsequence matches many rows — the topic
+  // containing it verbatim must lead, and its mark covers all four chars.
+  await search(page).fill('root');
+  const first = guide(page).locator('.howto-item').first();
+  await expect(first.locator('dt')).toContainText('Square root');
+  await expect(first.locator('dt mark')).toHaveText('root');
+});
+
 test('matched text is highlighted in result rows', async ({ page }) => {
   // 'real' matches the 'Named sets' row via keywords, and the visible
   // keystroke text gets its 'real' run marked inside \reals.

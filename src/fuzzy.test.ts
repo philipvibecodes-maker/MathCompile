@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fuzzyHits, fuzzyScore } from './fuzzy';
+import { fuzzyHits, fuzzyScore, fuzzyTextScore } from './fuzzy';
 
 describe('fuzzyScore', () => {
   it('matches an empty query', () => {
@@ -140,5 +140,40 @@ describe('fuzzyHits', () => {
   it('returns empty hits for an empty query', () => {
     expect(fuzzyHits('', 'anything')).toEqual([]);
     expect(fuzzyHits('   ', 'x')).toEqual([]);
+  });
+});
+
+describe('fuzzyTextScore', () => {
+  it('ranks a contiguous word-start substring above scattered letters', () => {
+    const title = fuzzyTextScore('root', 'Square root')!;
+    const scattered = fuzzyTextScore(
+      'root',
+      '\\pmatrix ⏎ — Enter adds a row or Shift+Space a column',
+    )!;
+    expect(title).toBeGreaterThan(scattered);
+  });
+
+  it('prefers earlier and word-start substring hits', () => {
+    const start = fuzzyTextScore('real', '\\reals \\integers')!;
+    const late = fuzzyTextScore('real', 'somewhere later: real')!;
+    expect(start).toBeGreaterThan(late);
+    const midword = fuzzyTextScore('real', 'surreal numbers')!;
+    expect(late).toBeGreaterThan(midword);
+  });
+
+  it('ranks word-start subsequence above loose subsequence', () => {
+    const wordStarts = fuzzyTextScore('fz', 'freeze zone')!;
+    const loose = fuzzyTextScore('fz', 'fuzzy')!;
+    expect(wordStarts).toBeGreaterThan(loose);
+  });
+
+  it('returns null when the query is not a subsequence', () => {
+    expect(fuzzyTextScore('xyz', 'abc')).toBeNull();
+  });
+
+  it('loose:false rejects scattered-only matches', () => {
+    // 'fz' hits 'fuzzy' only mid-word; 'os' starts both words.
+    expect(fuzzyTextScore('fz', 'fuzzy', false)).toBeNull();
+    expect(fuzzyTextScore('os', 'open sets', false)).not.toBeNull();
   });
 });
