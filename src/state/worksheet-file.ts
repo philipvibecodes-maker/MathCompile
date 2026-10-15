@@ -111,18 +111,26 @@ export async function readWorksheetFile(
 
 // Opens the OS file picker with a throwaway input — the command palette
 // has no persistent input element to reuse. Resolves null on cancel or
-// an unparseable file.
+// an unparseable file. The input is briefly attached to the DOM: a
+// detached input's synthetic click() can silently drop the chooser
+// request (seen as a flaky filechooser timeout in parallel e2e runs).
 export function pickWorksheetFile(): Promise<PickedWorksheet | null> {
   return new Promise((resolve) => {
     if (typeof document === 'undefined') return resolve(null);
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json,application/json';
+    input.style.display = 'none';
+    const done = (w: PickedWorksheet | null) => {
+      input.remove();
+      resolve(w);
+    };
     input.addEventListener('change', async () => {
       const file = input.files?.[0];
-      resolve(file ? await readWorksheetFile(file) : null);
+      done(file ? await readWorksheetFile(file) : null);
     });
-    input.addEventListener('cancel', () => resolve(null));
+    input.addEventListener('cancel', () => done(null));
+    document.body.appendChild(input);
     input.click();
   });
 }

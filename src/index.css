@@ -1893,8 +1893,12 @@ body {
 
 .howto-list {
   display: grid;
-  grid-template-columns: max-content 1fr;
+  grid-template-columns: max-content 1fr max-content;
   gap: 4px 16px;
+  /* fit-content keeps the row actions near the text instead of pinned
+     to the far edge of a full-width list. */
+  width: fit-content;
+  max-width: 100%;
   margin: 8px 0 0;
   padding: 10px 12px;
   background: var(--panel-bg);
@@ -1902,16 +1906,52 @@ body {
   border-radius: 6px;
 }
 
-.howto-pdf {
-  display: inline-block;
-  margin-top: 6px;
-  padding: 0 12px 8px;
-  font-size: 13px;
-  color: var(--muted);
+/* The footer zone keeps a constant line height whether it holds the
+   search hint, the restore link, or nothing — swapping content can't
+   shift the list above it. */
+.howto-foot {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
 }
 
-.howto-pdf:hover {
+.howto-hint {
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.howto-restore {
+  padding: 0;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.howto-restore:hover {
   color: var(--accent-text);
+  text-decoration: underline;
+}
+
+/* Entry point into the centered help-search overlay — the section's
+   own list only holds pinned topics. */
+.howto-find {
+  margin-left: auto;
+  padding: 0;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--faint);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.howto-find:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
 }
 
 .howto-item {
@@ -1932,6 +1972,207 @@ body {
 .howto-item code {
   font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
   font-size: 14px;
+}
+
+/* Matched query runs in a result row — accent text, not the default
+   yellow marker. */
+.howto-item mark,
+.help-item mark {
+  background: none;
+  color: var(--accent-text);
+  font-weight: 700;
+}
+
+.howto-item.hidden-topic dt,
+.howto-item.hidden-topic > dd,
+.help-item.hidden-topic .help-goal,
+.help-item.hidden-topic .help-how {
+  opacity: 0.55;
+}
+
+.howto-hidden-tag {
+  margin-left: 8px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.howto-empty dt {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.howto-acts {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.howto-acts button {
+  padding: 0 6px;
+  font-size: 11px;
+  font-family: inherit;
+  line-height: 1.6;
+  color: var(--faint);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.howto-acts button:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.howto-pin.on {
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+.howto-hide {
+  font-size: 14px;
+}
+
+.howto-hide:hover {
+  color: var(--danger);
+}
+
+/* ── Help search overlay ────────────────────────────── */
+/* Permanently mounted like the palette: opening is a visibility flip +
+   focus(), not a mount. Sits in the center of the screen (with a slight
+   upward bias so long result lists stay above the fold). */
+.help-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding-bottom: 10vh;
+  background: var(--backdrop);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.help-backdrop.open {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.help-panel {
+  width: min(640px, 92vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px var(--shadow);
+  overflow: hidden;
+  contain: layout style paint;
+}
+
+.help-input {
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--panel-bg);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  outline: none;
+}
+
+.help-list {
+  padding: 6px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.help-item {
+  display: grid;
+  grid-template-columns: max-content 1fr max-content;
+  gap: 4px 14px;
+  align-items: baseline;
+  padding: 6px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.help-item.selected {
+  background: var(--selected-bg);
+}
+
+.help-goal {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.help-how {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.help-empty {
+  padding: 18px 10px;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.help-foot {
+  padding: 7px 12px;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+}
+
+/* Header help controls — a plain guide link plus a ? button that opens
+   the how-to search. Sits left of the Commands button. */
+.guide-link {
+  margin-left: 16px;
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.guide-link:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.help-search-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-left: 8px;
+  padding: 0;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.help-search-btn:hover {
+  color: var(--text);
+  border-color: var(--faint);
 }
 
 /* ── Dark mode: vendored MathQuill overrides ────────── */

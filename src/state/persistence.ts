@@ -24,6 +24,10 @@ export interface Prefs {
   smartMode?: boolean;
   target?: TargetId;
   guideOpen?: boolean;
+  // "How do I…" customization: topic ids pinned into the list and ids
+  // hidden from it (see src/help/topics.ts).
+  pinnedHelp?: string[];
+  hiddenHelp?: string[];
   showPlumbing?: boolean;
   importAll?: boolean;
   pairTuple?: PairTupleMode;
@@ -46,6 +50,12 @@ export function loadPrefs(): Prefs {
         ? (p.target as TargetId)
         : undefined,
       guideOpen: typeof p.guideOpen === 'boolean' ? p.guideOpen : undefined,
+      pinnedHelp: Array.isArray(p.pinnedHelp)
+        ? p.pinnedHelp.filter((id): id is string => typeof id === 'string')
+        : undefined,
+      hiddenHelp: Array.isArray(p.hiddenHelp)
+        ? p.hiddenHelp.filter((id): id is string => typeof id === 'string')
+        : undefined,
       showPlumbing:
         typeof p.showPlumbing === 'boolean' ? p.showPlumbing : undefined,
       importAll:

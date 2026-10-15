@@ -18,10 +18,19 @@ in your browser and saves your worksheet automatically.
   and Python, beneath it for the calculator.
 - **The header** holds the worksheet menu (switch, rename, delete,
   save/open files), Smart mode, the Output target picker, the
-  dark-mode toggle, and the Commands button (or press `Ctrl+K` /
-  `⌘K`).
-- **How do I…**, under the cell list, is a quick keystroke cheat sheet.
-  This document is the long version.
+  dark-mode toggle, the **User guide** link (this document as a PDF),
+  the **?** help-search button, and the Commands button (or press
+  `Ctrl+K` / `⌘K`).
+- **How do I…**, under the cell list, is a quick keystroke cheat sheet
+  built from your pinned topics (it ships with a default set).
+  `Ctrl+/` (or the **?** button, the *Search help* command, or the
+  *Search all topics…* link in the section) opens a centered search over
+  the full help catalog; **Enter**/click writes the topic's input into
+  the active cell (topics with no single input, like *Greek letters*,
+  pin instead), **Shift+Enter** or the **pin** button keeps a topic in
+  the list, **unpin** removes one, **×** hides one (still findable in
+  search, dimmed), and *restore default help topics* brings the
+  original set back. This document is the long version.
 
 The command palette (`Ctrl+K`) covers: insert an expression below,
 duplicate the current one, delete it, clear all expressions, toggle

@@ -9,6 +9,7 @@
   import { TARGETS } from './compile/targets';
   import type { TargetId } from './compile/targets';
   import CommandPalette from './components/CommandPalette.svelte';
+  import HelpSearch from './components/HelpSearch.svelte';
   import HowToGuide from './components/HowToGuide.svelte';
   import WorksheetMenu from './components/WorksheetMenu.svelte';
   import { appStore, THEME_STORAGE_KEY } from './state/store.svelte';
@@ -21,6 +22,7 @@
   import { highlightPython } from './calc/python-highlight';
 
   const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent);
+  const userGuidePdf = `${import.meta.env.BASE_URL}user-guide.pdf`;
   let commands = $derived(buildCommands(appStore));
 
   // Animation knobs live on the store (persisted prefs) so the settings
@@ -173,6 +175,7 @@
     }
     return installGlobalKeymap({
       onPaletteToggle: () => appStore.togglePalette(),
+      onHelpSearch: () => appStore.toggleHelpSearch(),
     });
   });
 
@@ -189,6 +192,8 @@
       smartMode: appStore.smartMode,
       target: appStore.target,
       guideOpen: appStore.guideOpen,
+      pinnedHelp: appStore.pinnedHelp,
+      hiddenHelp: appStore.hiddenHelp,
       showPlumbing: appStore.showPlumbing,
       importAll: appStore.importAll,
       pairTuple: appStore.pairTuple,
@@ -263,6 +268,18 @@
         {/if}
       </button>
     </div>
+    <a
+      class="guide-link"
+      href={userGuidePdf}
+      target="_blank"
+      rel="noreferrer">User guide</a
+    >
+    <button
+      class="help-search-btn"
+      title="Search help (Ctrl+/)"
+      aria-label="Search help"
+      onclick={() => appStore.openHelpSearch()}>?</button
+    >
     <button class="palette-button" onclick={() => appStore.openPalette()}>
       Commands
       <kbd>{isMac ? '⌘' : 'Ctrl'} K</kbd>
@@ -712,4 +729,5 @@
     </section>
   </div>
   <CommandPalette {commands} />
+  <HelpSearch />
 </div>
