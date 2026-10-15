@@ -24,8 +24,10 @@ in your browser and saves your worksheet automatically.
 - **How do I…**, under the cell list, is a quick keystroke cheat sheet.
   `Ctrl+/` (or the **?** button, the *Search help* command, or the
   *Search all topics…* link in the section) opens a centered search over
-  the full help catalog; **pin** keeps a topic in the list, **×** hides
-  one, and *n hidden — restore* brings them back.
+  the full help catalog; **Enter**/click writes the topic's input into
+  the active cell (topics with no single input, like *Greek letters*,
+  pin instead), **Shift+Enter** or the **pin** button keeps a topic in
+  the list, **×** hides one, and *n hidden — restore* brings them back.
   This document is the long version.
 
 The command palette (`Ctrl+K`) covers: insert an expression below,

@@ -176,6 +176,18 @@
     if (willPin) appStore.guideOpen = true;
   };
 
+  // Enter/click does the row's primary action: write the topic's input
+  // into the active cell when it has one (family/UI topics have no
+  // single input — they pin instead). Insertion closes the overlay;
+  // pinning stays open so several results can be collected.
+  const activate = (t: HelpTopic) => {
+    if (t.insert && appStore.insertHelpLatex(t.insert)) {
+      close();
+      return;
+    }
+    pin(t);
+  };
+
   const onKeydown = (e: KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -184,13 +196,14 @@
       e.preventDefault();
       index = Math.max(index - 1, 0);
     } else if (e.key === 'Enter') {
-      // Pins against the live query — the rendered list trails it by
-      // the debounce, so a quick type+Enter must not act on stale rows.
+      // Acts on the live query — the rendered list trails it by the
+      // debounce, so a quick type+Enter must not act on stale rows.
       const live = query.trim() ? searchTopics(query.trim()) : listed;
       const t = live[Math.min(index, live.length - 1)];
       if (t) {
         e.preventDefault();
-        pin(t);
+        if (e.shiftKey) pin(t);
+        else activate(t);
       }
     }
     // Escape is handled by the window capture listener.
@@ -260,7 +273,7 @@
           role="option"
           aria-selected={i === sel}
           onmousemove={() => (index = i)}
-          onclick={() => pin(t)}
+          onclick={() => activate(t)}
           in:fade={{ duration: 100 }}
         >
           <span class="help-goal"
@@ -307,6 +320,6 @@
         <div class="help-empty">No matching help topics</div>
       {/each}
     </div>
-    <div class="help-foot">↑↓ navigate · Enter pins · Esc close</div>
+    <div class="help-foot">↑↓ navigate · Enter insert · ⇧Enter pin · Esc close</div>
   </div>
 </div>

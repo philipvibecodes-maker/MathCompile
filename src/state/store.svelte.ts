@@ -377,6 +377,13 @@ export class AppStore {
     else this.openPalette();
   }
 
+  // Help-search insertion: writes a topic's latex into the focused
+  // cell at the caret. False when nothing writable is focused (e.g. a
+  // python cell), so the caller can fall back to pinning.
+  insertHelpLatex(latex: string): boolean {
+    return this.fields.get(this.focusedId)?.insertLatex?.(latex) ?? false;
+  }
+
   toggleHelpPin(id: string) {
     this.pinnedHelp = this.pinnedHelp.includes(id)
       ? this.pinnedHelp.filter((p) => p !== id)

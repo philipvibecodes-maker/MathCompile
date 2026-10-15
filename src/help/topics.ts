@@ -3,6 +3,10 @@
 // section's search and can be pinned into the list or hidden from it.
 // `how` is the keystroke text shown regardless of Smart mode;
 // `smart`/`plain` split the text on it (smart when on, plain when off).
+// `insert` is a latex string written into the active cell (via mq.cmd)
+// when the topic is Entered/clicked in the help search — omitted for
+// family/UI topics where no single input makes sense (Greek letters,
+// arrows, the Command palette); those fall back to pinning.
 export interface HelpTopic {
   id: string;
   goal: string;
@@ -10,12 +14,14 @@ export interface HelpTopic {
   how?: string;
   smart?: string;
   plain?: string;
+  insert?: string;
   featured?: boolean;
 }
 
 export const HELP_TOPICS: HelpTopic[] = [
   {
     id: 'fraction',
+    insert: '\\frac',
     goal: 'Fraction',
     keywords: 'divide numerator denominator over',
     how: 'type 1/2 or \\frac ⏎',
@@ -31,6 +37,7 @@ export const HELP_TOPICS: HelpTopic[] = [
   },
   {
     id: 'sqrt',
+    insert: '\\sqrt',
     goal: 'Square root',
     keywords: 'radical nth root nthroot',
     smart: 'sqrt or \\nthroot for ∛',
@@ -39,6 +46,7 @@ export const HELP_TOPICS: HelpTopic[] = [
   },
   {
     id: 'sumprod',
+    insert: '\\sum',
     goal: 'Sum / product',
     keywords: 'sigma bounds series',
     smart: 'sum or prod — then _ and ^',
@@ -47,6 +55,7 @@ export const HELP_TOPICS: HelpTopic[] = [
   },
   {
     id: 'int-def',
+    insert: '\\int',
     goal: 'Definite integral',
     keywords: 'integrate bounds antiderivative',
     smart: 'int — then _ and ^',
@@ -55,6 +64,7 @@ export const HELP_TOPICS: HelpTopic[] = [
   },
   {
     id: 'int-indef',
+    insert: '\\antid',
     goal: 'Indefinite integral',
     keywords: 'antiderivative double iint antid',
     smart: 'iint or antid',
@@ -63,6 +73,7 @@ export const HELP_TOPICS: HelpTopic[] = [
   },
   {
     id: 'limit',
+    insert: '\\lim',
     goal: 'Limit',
     keywords: 'approaches to onsided lim',
     how: 'lim — then _ for x\\to0',
@@ -70,6 +81,7 @@ export const HELP_TOPICS: HelpTopic[] = [
   },
   {
     id: 'binom',
+    insert: '\\binom',
     goal: 'Binomial coefficient',
     keywords: 'choose ncr combinatorics',
     how: '\\binom ⏎',
@@ -77,6 +89,7 @@ export const HELP_TOPICS: HelpTopic[] = [
   },
   {
     id: 'matrix',
+    insert: '\\pmatrix{a&b\\\\c&d}',
     goal: 'Matrix',
     keywords: 'grid pmatrix bmatrix vmatrix rows columns',
     how: '\\pmatrix ⏎ — Enter adds a row or Shift+Space a column',
@@ -106,6 +119,7 @@ export const HELP_TOPICS: HelpTopic[] = [
   },
   {
     id: 'text',
+    insert: '\\text',
     goal: 'Text',
     keywords: 'words upright label',
     how: '\\text ⏎',
@@ -114,18 +128,21 @@ export const HELP_TOPICS: HelpTopic[] = [
 
   {
     id: 'cases',
+    insert: '\\cases',
     goal: 'Piecewise function',
     keywords: 'cases branches condition',
     how: '\\cases ⏎',
   },
   {
     id: 'aligned',
+    insert: '\\aligned',
     goal: 'Aligned equations',
     keywords: 'align equals stack gathered split eqnarray',
     how: '\\aligned ⏎ — & marks the alignment point',
   },
   {
     id: 'derivative',
+    insert: '\\derivative',
     goal: 'Derivative',
     keywords: 'differentiate d/dx leibniz prime',
     smart: 'derivative — caret lands in the denominator',
@@ -133,6 +150,7 @@ export const HELP_TOPICS: HelpTopic[] = [
   },
   {
     id: 'funcdef',
+    insert: '\\def',
     goal: 'Define a function',
     keywords: 'def declare signature assign',
     smart: 'def — then f(x) = …',
@@ -140,6 +158,7 @@ export const HELP_TOPICS: HelpTopic[] = [
   },
   {
     id: 'solve',
+    insert: '\\solve',
     goal: 'Solve equations',
     keywords: 'roots equation find x solveset system',
     smart: 'solve — then the equation(s)',
@@ -147,6 +166,7 @@ export const HELP_TOPICS: HelpTopic[] = [
   },
   {
     id: 'dsolve',
+    insert: '\\dsolve',
     goal: 'Solve an ODE',
     keywords: 'differential equation ode initial conditions',
     smart: 'dsolve — then the equation',
@@ -154,6 +174,7 @@ export const HELP_TOPICS: HelpTopic[] = [
   },
   {
     id: 'pdesolve',
+    insert: '\\pdesolve',
     goal: 'Solve a PDE',
     keywords: 'partial differential equation pde',
     smart: 'pdesolve — then the equation',
@@ -161,12 +182,14 @@ export const HELP_TOPICS: HelpTopic[] = [
   },
   {
     id: 'matops',
+    insert: '\\det',
     goal: 'Matrix operations',
     keywords: 'det trace rank inverse transpose rref eigenvals charpoly nullspace',
     how: 'det then the matrix, or \\mathrm{rref} / \\mathrm{eigenvals} / …',
   },
   {
     id: 'norm',
+    insert: '\\lVert',
     goal: 'Norm / absolute value',
     keywords: 'magnitude abs lvert lVert modulus',
     how: '\\|x\\| or \\lVert — pairs auto-close',
@@ -209,18 +232,21 @@ export const HELP_TOPICS: HelpTopic[] = [
   },
   {
     id: 'floor',
+    insert: '\\lfloor',
     goal: 'Floor / ceiling / factorial',
     keywords: 'round double factorial',
     how: '\\lfloor ⏎ \\lceil ⏎ — n! and n!! work too',
   },
   {
     id: 'partial',
+    insert: '\\partial',
     goal: 'Partial derivative',
     keywords: 'multivariable del partialx',
     how: '\\partial — or \\partial_ x then u for the short form',
   },
   {
     id: 'nabla',
+    insert: '\\nabla',
     goal: 'Gradient / divergence / curl',
     keywords: 'del nabla grad div curl laplacian Delta',
     how: '\\nabla — \\nabla\\cdot and \\nabla\\times for div and curl',

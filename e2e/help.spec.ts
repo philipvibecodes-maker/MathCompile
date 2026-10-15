@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
+import { clearFirstCell } from './helpers';
 
 // The "How do I…" section lists pinned + featured topics; the wider
 // catalog is searched through a centered overlay (Ctrl+/, the header ?
@@ -55,12 +56,33 @@ test('search finds topics beyond the default list and pins them', async ({
   );
 });
 
-test('Enter pins the top search result; the dialog stays open', async ({
+test('Enter inserts the topic input into the active cell', async ({
+  page,
+}) => {
+  await clearFirstCell(page);
+  await openSearch(page);
+  await search(page).fill('square root');
+  await page.keyboard.press('Enter');
+  await expect(panel(page)).not.toBeVisible();
+
+  const field = page.locator('math-field').first();
+  const latex = () =>
+    field.evaluate(
+      (el) => (el as unknown as { mq: { latex(): string } }).mq.latex(),
+    );
+  expect(await latex()).toBe('\\sqrt{ }');
+  // The caret lands inside the radicand, where typing the command would
+  // leave it.
+  await page.keyboard.type('2');
+  expect(await latex()).toBe('\\sqrt{2}');
+});
+
+test('Shift+Enter pins the selected result; the dialog stays open', async ({
   page,
 }) => {
   await openSearch(page);
   await search(page).fill('matrix operations');
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('Shift+Enter');
   await expect(
     hit(page, 'Matrix operations').locator('.howto-pin'),
   ).toHaveText('unpin');
