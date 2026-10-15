@@ -4,6 +4,12 @@ import { clearFirstCell } from './helpers';
 // The calculator target evaluates each cell through SymPy on Pyodide
 // (loaded from the CDN on first use). First engine boot pulls the wasm
 // runtime + sympy wheels, so specs get a long timeout.
+//
+// Serial: every test boots its own Pyodide worker on a fresh page, and
+// parallel boots starve each other of CPU — concurrent runs pushed the
+// pending->ready wait past its 90s timeout. One boot at a time keeps
+// the real result landing well inside it.
+test.describe.configure({ mode: 'serial' });
 
 const cell = (page: import('@playwright/test').Page, i: number) =>
   page.locator('math-field').nth(i);

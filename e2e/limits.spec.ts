@@ -484,9 +484,14 @@ test('\\iint with a lone sup bound renders it at bound height', async ({
     const sup = el
       .querySelector('.mq-int ~ .mq-supsub .mq-sup')!
       .getBoundingClientRect();
-    return { signTop: sign.top, supTop: sup.top };
+    // The leaf sign's own box is just the baseline band — the 330% glyph
+    // ink overflows it, so the bound must track `big`, not the box.
+    const glyph = el.querySelector('.mq-int big')!.getBoundingClientRect();
+    return { signTop: sign.top, supTop: sup.top, glyphTop: glyph.top };
   });
   expect(lone.supTop).toBeLessThan(lone.signTop);
+  // Bound top == glyph ink top (same place `\int`'s template puts it).
+  expect(Math.abs(lone.supTop - lone.glyphTop)).toBeLessThan(6);
 
   // Same position the bound takes when a lower bound is present too.
   await mf.evaluate((el) => {
