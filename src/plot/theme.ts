@@ -121,9 +121,27 @@ function themedTrace(
   }
 }
 
+// Plain-object deep clone for the worker payload — `structuredClone`
+// throws on the store's proxies and JSON round-trips would turn the
+// traces' NaN gaps into nulls.
+const cloneFigure = (v: unknown): unknown =>
+  Array.isArray(v)
+    ? v.map(cloneFigure)
+    : isObj(v)
+      ? Object.fromEntries(
+          Object.entries(v).map(([k, x]) => [k, cloneFigure(x)]),
+        )
+      : v;
+
 export function themedFigure(plot: PlotData, dark: boolean) {
   const t = dark ? DARK : LIGHT;
-  const src = plot.figure.layout;
+  // Deep-clone the worker payload before plotly touches it. The figure
+  // lives in the reactive row store, and plotly writes back into the
+  // objects it's handed (menu `active`, trace bookkeeping) — a deep
+  // mutation of a tracked prop re-fires the render effect and reverts
+  // every menu click instantly.
+  const figure = cloneFigure(plot.figure) as PlotData['figure'];
+  const src = figure.layout;
   const layout: Record<string, unknown> = {
     // Transparent backgrounds let the cell's own background show
     // through, so the figure matches the theme wherever it sits.
@@ -154,7 +172,7 @@ export function themedFigure(plot: PlotData, dark: boolean) {
   // single-scene figure serializes no 'scene' at all, so create the
   // entry whenever a gl3d trace type is present, else the panes keep
   // plotly's opaque default.
-  const has3d = plot.figure.data.some(
+  const has3d = figure.data.some(
     (tr) =>
       isObj(tr) &&
       typeof tr.type === 'string' &&
@@ -187,7 +205,7 @@ export function themedFigure(plot: PlotData, dark: boolean) {
     }
     layout[key] = scene;
   }
-  const data = plot.figure.data.map((tr) => themedTrace(tr, t));
+  const data = figure.data.map((tr) => themedTrace(tr, t));
   return { data, layout };
 }
 

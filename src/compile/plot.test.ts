@@ -155,11 +155,13 @@ describe('plot theming', () => {
 
   it('passes the worker figure data through unchanged', () => {
     const { data } = themedFigure(base, true);
-    // Unnamed traces pass through by reference — the theme only
-    // clones the named scene traces it restyles.
+    // Traces are deep-copied — equal content but never the same
+    // objects: plotly writes back into what it's handed (menu
+    // `active`, trace bookkeeping), and the payload lives in the
+    // reactive row store, where a mutation re-fires the render.
     expect(data).toEqual(base.figure.data);
     for (let i = 0; i < data.length; i++) {
-      expect(data[i]).toBe(base.figure.data[i]);
+      expect(data[i]).not.toBe(base.figure.data[i]);
     }
   });
 
@@ -167,7 +169,8 @@ describe('plot theming', () => {
     const { layout } = themedFigure(base, true);
     expect(layout.paper_bgcolor).toBe('rgba(0,0,0,0)');
     expect((layout.font as { color: string }).color).toBe('#e6e8ee');
-    expect(layout.updatemenus).toBe(base.figure.layout.updatemenus);
+    expect(layout.updatemenus).toEqual(base.figure.layout.updatemenus);
+    expect(layout.updatemenus).not.toBe(base.figure.layout.updatemenus);
   });
 
   it('light mode applies light font and keeps figure layout keys', () => {

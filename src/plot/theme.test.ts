@@ -145,7 +145,8 @@ describe('themedFigure named scene traces', () => {
   it('leaves unnamed data traces untouched', () => {
     const src = plot3d();
     const { data } = themedFigure(src, true);
-    expect(data[7]).toBe(src.figure.data[7]);
+    expect(data[7]).toEqual(src.figure.data[7]);
+    expect(data[7]).not.toBe(src.figure.data[7]);
   });
 });
 
