@@ -1891,24 +1891,6 @@ body {
   color: var(--text);
 }
 
-.howto-search {
-  display: block;
-  width: min(320px, 100%);
-  margin: 8px 0 0;
-  padding: 5px 8px;
-  font-size: 13px;
-  font-family: inherit;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-}
-
-.howto-search:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
 .howto-list {
   display: grid;
   grid-template-columns: max-content 1fr max-content;
@@ -1954,6 +1936,24 @@ body {
   text-decoration: underline;
 }
 
+/* Entry point into the centered help-search overlay — the section's
+   own list only holds pinned/featured topics. */
+.howto-find {
+  margin-left: auto;
+  padding: 0;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--faint);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.howto-find:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+
 .howto-item {
   display: contents;
 }
@@ -1976,14 +1976,17 @@ body {
 
 /* Matched query runs in a result row — accent text, not the default
    yellow marker. */
-.howto-item mark {
+.howto-item mark,
+.help-item mark {
   background: none;
   color: var(--accent-text);
   font-weight: 700;
 }
 
 .howto-item.hidden-topic dt,
-.howto-item.hidden-topic > dd {
+.howto-item.hidden-topic > dd,
+.help-item.hidden-topic .help-goal,
+.help-item.hidden-topic .help-how {
   opacity: 0.55;
 }
 
@@ -2036,6 +2039,104 @@ body {
 
 .howto-hide:hover {
   color: var(--danger);
+}
+
+/* ── Help search overlay ────────────────────────────── */
+/* Permanently mounted like the palette: opening is a visibility flip +
+   focus(), not a mount. Sits in the center of the screen (with a slight
+   upward bias so long result lists stay above the fold). */
+.help-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding-bottom: 10vh;
+  background: var(--backdrop);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.help-backdrop.open {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.help-panel {
+  width: min(640px, 92vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px var(--shadow);
+  overflow: hidden;
+  contain: layout style paint;
+}
+
+.help-input {
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--panel-bg);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  outline: none;
+}
+
+.help-list {
+  padding: 6px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.help-item {
+  display: grid;
+  grid-template-columns: max-content 1fr max-content;
+  gap: 4px 14px;
+  align-items: baseline;
+  padding: 6px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.help-item.selected {
+  background: var(--selected-bg);
+}
+
+.help-goal {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.help-how {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.help-empty {
+  padding: 18px 10px;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.help-foot {
+  padding: 7px 12px;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--bg);
+  border-top: 1px solid var(--border);
 }
 
 /* Header help controls — a plain guide link plus a ? button that opens

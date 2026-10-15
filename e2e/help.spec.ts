@@ -1,15 +1,30 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 
-// The "How do I…" section: a searchable help catalog where results pin
-// into the list and rows hide — all persisted in mathcompile-prefs.
-// Entry points pinned here: the in-section input, the header ? button,
-// Ctrl+/, and the palette's Search help command.
+// The "How do I…" section lists pinned + featured topics; the wider
+// catalog is searched through a centered overlay (Ctrl+/, the header ?
+// button, or the palette's Search help command). Results pin into the
+// section and rows hide — all persisted in mathcompile-prefs.
 
 const guide = (page: Page): Locator => page.locator('details.howto');
-const search = (page: Page): Locator => page.locator('.howto-search');
+const panel = (page: Page): Locator => page.locator('.help-panel');
+const search = (page: Page): Locator => page.locator('.help-input');
 const row = (page: Page, goal: string): Locator =>
   guide(page).locator('.howto-item', { hasText: goal });
+const hit = (page: Page, goal: string): Locator =>
+  panel(page).locator('.help-item', { hasText: goal });
+
+// Ctrl+/ opens the overlay and focuses its input.
+const openSearch = async (page: Page) => {
+  await page.keyboard.press('Control+/');
+  await expect(search(page)).toBeFocused();
+};
+// Esc clears a typed query first, then closes the overlay.
+const closeSearch = async (page: Page) => {
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(panel(page)).not.toBeVisible();
+};
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -19,16 +34,19 @@ test.beforeEach(async ({ page }) => {
 test('search finds topics beyond the default list and pins them', async ({
   page,
 }) => {
-  await expect(search(page)).toBeVisible();
   // 'Solve equations' is not a featured row — only reachable via search.
   await expect(row(page, 'Solve equations')).toHaveCount(0);
+  await openSearch(page);
   await search(page).fill('solve equations');
-  await expect(row(page, 'Solve equations')).toHaveCount(1);
+  await expect(hit(page, 'Solve equations')).toHaveCount(1);
 
-  await row(page, 'Solve equations').locator('.howto-pin').click();
-  await search(page).fill('');
+  await hit(page, 'Solve equations').locator('.howto-pin').click();
+  await expect(
+    hit(page, 'Solve equations').locator('.howto-pin'),
+  ).toHaveText('unpin');
+  await closeSearch(page);
 
-  // Pinned rows lead the default list and stay until unpinned.
+  // Pinned rows lead the section's list and stay until unpinned.
   await expect(guide(page).locator('.howto-item dt').first()).toContainText(
     'Solve equations',
   );
@@ -37,11 +55,28 @@ test('search finds topics beyond the default list and pins them', async ({
   );
 });
 
-test('Enter pins the top search result', async ({ page }) => {
+test('Enter pins the top search result; the dialog stays open', async ({
+  page,
+}) => {
+  await openSearch(page);
   await search(page).fill('matrix operations');
   await page.keyboard.press('Enter');
-  await search(page).fill('');
+  await expect(
+    hit(page, 'Matrix operations').locator('.howto-pin'),
+  ).toHaveText('unpin');
+  await closeSearch(page);
   await expect(row(page, 'Matrix operations')).toHaveCount(1);
+});
+
+test('clicking a result row pins it', async ({ page }) => {
+  await openSearch(page);
+  await search(page).fill('greek');
+  await hit(page, 'Greek letters').click();
+  await expect(hit(page, 'Greek letters').locator('.howto-pin')).toHaveText(
+    'unpin',
+  );
+  await closeSearch(page);
+  await expect(row(page, 'Greek letters')).toHaveCount(1);
 });
 
 test('hiding a row removes it; the restore link brings it back', async ({
@@ -61,18 +96,19 @@ test('hidden topics still surface in search and restore from the row', async ({
   page,
 }) => {
   await page.getByRole('button', { name: 'Hide Greek letters' }).click();
+  await openSearch(page);
   await search(page).fill('greek');
-  const hit = row(page, 'Greek letters');
-  await expect(hit).toHaveCount(1);
-  await expect(hit.locator('.howto-hidden-tag')).toHaveText('hidden');
+  const g = hit(page, 'Greek letters');
+  await expect(g).toHaveCount(1);
+  await expect(g.locator('.howto-hidden-tag')).toHaveText('hidden');
 
   await page.getByRole('button', { name: 'Show Greek letters again' }).click();
-  await expect(hit.locator('.howto-hidden-tag')).toHaveCount(0);
-  await search(page).fill('');
+  await expect(g.locator('.howto-hidden-tag')).toHaveCount(0);
+  await closeSearch(page);
   await expect(row(page, 'Greek letters')).toHaveCount(1);
 });
 
-test('header guide link is visible; ? button focuses the search', async ({
+test('header guide link is visible; ? button opens the search overlay', async ({
   page,
 }) => {
   const link = page.locator('.guide-link');
@@ -80,28 +116,40 @@ test('header guide link is visible; ? button focuses the search', async ({
   await expect(link).toHaveAttribute('href', /user-guide\.pdf$/);
   await expect(link).toHaveAttribute('target', '_blank');
 
-  await guide(page).locator('summary').click();
-  await expect(guide(page)).not.toHaveAttribute('open', '');
   await page.locator('.help-search-btn').click();
-  await expect(guide(page)).toHaveAttribute('open', '');
+  await expect(panel(page)).toBeVisible();
   await expect(search(page)).toBeFocused();
 });
 
-test('Ctrl+/ opens and focuses the search', async ({ page }) => {
-  await guide(page).locator('summary').click();
+test('Ctrl+/ toggles the search overlay', async ({ page }) => {
   await page.keyboard.press('Control+/');
-  await expect(guide(page)).toHaveAttribute('open', '');
+  await expect(panel(page)).toBeVisible();
   await expect(search(page)).toBeFocused();
+  await page.keyboard.press('Control+/');
+  await expect(panel(page)).not.toBeVisible();
 });
 
-test('palette Search help command opens and focuses the search', async ({
+test('palette Search help command opens the search overlay', async ({
   page,
 }) => {
   await page.keyboard.press('Control+K');
   await page.locator('.palette-input').fill('search help');
   await page.keyboard.press('Enter');
   await expect(page.locator('.palette')).not.toBeVisible();
+  await expect(panel(page)).toBeVisible();
   await expect(search(page)).toBeFocused();
+});
+
+test('Esc closes the overlay and refocuses the active cell', async ({
+  page,
+}) => {
+  await openSearch(page);
+  await page.keyboard.press('Escape');
+  await expect(panel(page)).not.toBeVisible();
+  const inside = await page.evaluate(() =>
+    document.activeElement?.closest('math-field') ? true : false,
+  );
+  expect(inside).toBe(true);
 });
 
 test('word-level matches rank above scattered subsequence noise', async ({
@@ -109,26 +157,29 @@ test('word-level matches rank above scattered subsequence noise', async ({
 }) => {
   // 'root' as a scattered subsequence matches many rows — the topic
   // containing it verbatim must lead, and its mark covers all four chars.
+  await openSearch(page);
   await search(page).fill('root');
-  const first = guide(page).locator('.howto-item').first();
-  await expect(first.locator('dt')).toContainText('Square root');
-  await expect(first.locator('dt mark')).toHaveText('root');
+  const first = panel(page).locator('.help-item').first();
+  await expect(first.locator('.help-goal')).toContainText('Square root');
+  await expect(first.locator('.help-goal mark')).toHaveText('root');
 });
 
 test('matched text is highlighted in result rows', async ({ page }) => {
   // 'real' matches the 'Named sets' row via keywords, and the visible
   // keystroke text gets its 'real' run marked inside \reals.
+  await openSearch(page);
   await search(page).fill('real');
-  const hit = row(page, 'Named sets');
-  await expect(hit).toHaveCount(1);
-  await expect(hit.locator('dd mark').first()).toHaveText('real');
+  const h = hit(page, 'Named sets');
+  await expect(h).toHaveCount(1);
+  await expect(h.locator('.help-how mark').first()).toHaveText('real');
 });
 
-test('typing does not resize the list box', async ({ page }) => {
-  const list = page.locator('.howto-list');
+test('typing does not resize the result list', async ({ page }) => {
+  await openSearch(page);
+  const list = page.locator('.help-list');
   const before = (await list.boundingBox())!.height;
   await search(page).fill('solve');
-  await expect(row(page, 'Solve equations')).toHaveCount(1);
+  await expect(hit(page, 'Solve equations')).toHaveCount(1);
   // Frozen min-height: fewer rows must not shrink the box mid-search.
   const during = (await list.boundingBox())!.height;
   expect(during).toBeGreaterThanOrEqual(before - 1);
@@ -138,9 +189,10 @@ test('typing does not resize the list box', async ({ page }) => {
 });
 
 test('pins and hidden topics persist across reload', async ({ page }) => {
+  await openSearch(page);
   await search(page).fill('solve equations');
-  await row(page, 'Solve equations').locator('.howto-pin').click();
-  await search(page).fill('');
+  await hit(page, 'Solve equations').locator('.howto-pin').click();
+  await closeSearch(page);
   await page.getByRole('button', { name: 'Hide Fraction' }).click();
   await page.waitForFunction(
     () =>

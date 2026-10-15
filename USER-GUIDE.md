@@ -22,9 +22,10 @@ in your browser and saves your worksheet automatically.
   the **?** help-search button, and the Commands button (or press
   `Ctrl+K` / `⌘K`).
 - **How do I…**, under the cell list, is a quick keystroke cheat sheet.
-  Its search box finds any help topic (also reachable via `Ctrl+/`, the
-  **?** button, or the *Search help* command); **pin** keeps a topic in
-  the list, **×** hides one, and *n hidden — restore* brings them back.
+  `Ctrl+/` (or the **?** button, the *Search help* command, or the
+  *Search all topics…* link in the section) opens a centered search over
+  the full help catalog; **pin** keeps a topic in the list, **×** hides
+  one, and *n hidden — restore* brings them back.
   This document is the long version.
 
 The command palette (`Ctrl+K`) covers: insert an expression below,

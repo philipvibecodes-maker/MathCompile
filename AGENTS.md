@@ -74,6 +74,9 @@ src/
                         its handle in the store on mount
     CalcOutput.svelte   per-cell calculator output (interim -> real rows)
     CommandPalette.svelte  always mounted, .open class toggles visibility
+    HelpSearch.svelte    centered help-search overlay (Ctrl+/); results
+                        pin into the HowToGuide list — same mount+focus
+                        contract as the palette
 ```
 
 - All MathQuill contact lives in `src/editor/` — components only see the

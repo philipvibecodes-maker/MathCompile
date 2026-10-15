@@ -132,9 +132,10 @@ export class AppStore {
   hiddenHelp = $state<string[]>(
     (loadPrefs().hiddenHelp ?? []).filter((id) => TOPIC_BY_ID.has(id)),
   );
-  // Bumped by openHelpSearch(); HowToGuide focuses its search input on
-  // each bump (deferred, palette-guarded) — the component owns the DOM.
-  helpSearchFocus = $state(0);
+  // The centered help-search overlay (components/HelpSearch.svelte):
+  // opened by the header ? button, Ctrl+/, or the palette's Search help
+  // command. Always mounted — opening is a visibility flip + focus().
+  helpSearchOpen = $state(false);
   // Python output mode: `from sympy import *` (default, bare names) vs
   // `import sympy as sp` (sp.-qualified).
   importAll = $state(loadPrefs().importAll ?? true);
@@ -361,6 +362,7 @@ export class AppStore {
 
   openPalette() {
     this.paletteOpen = true;
+    this.helpSearchOpen = false;
   }
 
   // Every close path refocuses the active cell — commands that moved focus
@@ -394,14 +396,23 @@ export class AppStore {
     this.hiddenHelp = [];
   }
 
-  // Every "search help" entry point funnels here: open the section and
-  // ask it to focus its search input. paletteOpen is cleared directly
-  // (not via closePalette) — the cell refocus would race the deferred
-  // search-input focus.
+  // Every "search help" entry point funnels here. paletteOpen is
+  // cleared directly (not via closePalette) — its cell refocus would
+  // race the deferred search-input focus.
   openHelpSearch() {
-    this.guideOpen = true;
+    this.helpSearchOpen = true;
     this.paletteOpen = false;
-    this.helpSearchFocus += 1;
+  }
+
+  // Every close path refocuses the active cell, like closePalette().
+  closeHelpSearch() {
+    this.helpSearchOpen = false;
+    this.focusCell(this.focusedId);
+  }
+
+  toggleHelpSearch() {
+    if (this.helpSearchOpen) this.closeHelpSearch();
+    else this.openHelpSearch();
   }
 }
 

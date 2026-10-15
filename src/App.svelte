@@ -9,6 +9,7 @@
   import { TARGETS } from './compile/targets';
   import type { TargetId } from './compile/targets';
   import CommandPalette from './components/CommandPalette.svelte';
+  import HelpSearch from './components/HelpSearch.svelte';
   import HowToGuide from './components/HowToGuide.svelte';
   import WorksheetMenu from './components/WorksheetMenu.svelte';
   import { appStore, THEME_STORAGE_KEY } from './state/store.svelte';
@@ -174,7 +175,7 @@
     }
     return installGlobalKeymap({
       onPaletteToggle: () => appStore.togglePalette(),
-      onHelpSearch: () => appStore.openHelpSearch(),
+      onHelpSearch: () => appStore.toggleHelpSearch(),
     });
   });
 
@@ -728,4 +729,5 @@
     </section>
   </div>
   <CommandPalette {commands} />
+  <HelpSearch />
 </div>

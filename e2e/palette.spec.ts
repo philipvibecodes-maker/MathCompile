@@ -268,8 +268,12 @@ test('Escape in the rename prompt backs out to the command list', async ({
 
 test('exposes dialog/listbox semantics for assistive tech', async ({ page }) => {
   await page.keyboard.press('Control+k');
-  await expect(page.locator('[role="dialog"]')).toBeVisible();
-  await expect(page.locator('[role="combobox"]')).toBeVisible();
-  await expect(page.locator('[role="listbox"]')).toBeVisible();
-  await expect(page.locator('[role="option"]').first()).toBeVisible();
+  // Scoped to .palette — the always-mounted help-search overlay is a
+  // second dialog/listbox in the DOM while closed.
+  await expect(page.locator('.palette[role="dialog"]')).toBeVisible();
+  await expect(page.locator('.palette-input[role="combobox"]')).toBeVisible();
+  await expect(page.locator('.palette-list[role="listbox"]')).toBeVisible();
+  await expect(
+    page.locator('.palette-list [role="option"]').first(),
+  ).toBeVisible();
 });
