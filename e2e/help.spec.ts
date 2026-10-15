@@ -81,13 +81,13 @@ test('Shift+Enter pins the selected result; the dialog stays open', async ({
   page,
 }) => {
   await openSearch(page);
-  await search(page).fill('matrix operations');
+  await search(page).fill('eigenvalues');
   await page.keyboard.press('Shift+Enter');
   await expect(
-    hit(page, 'Matrix operations').locator('.howto-pin'),
+    hit(page, 'Eigenvalues').locator('.howto-pin'),
   ).toHaveText('unpin');
   await closeSearch(page);
-  await expect(row(page, 'Matrix operations')).toHaveCount(1);
+  await expect(row(page, 'Eigenvalues')).toHaveCount(1);
 });
 
 test('clicking a result row pins it', async ({ page }) => {
@@ -187,11 +187,11 @@ test('word-level matches rank above scattered subsequence noise', async ({
 });
 
 test('matched text is highlighted in result rows', async ({ page }) => {
-  // 'real' matches the 'Named sets' row via keywords, and the visible
-  // keystroke text gets its 'real' run marked inside \reals.
+  // 'real' marks the goal word 'Real' and the 'real' run inside \reals
+  // in the visible keystroke text.
   await openSearch(page);
   await search(page).fill('real');
-  const h = hit(page, 'Named sets');
+  const h = hit(page, 'Real numbers');
   await expect(h).toHaveCount(1);
   await expect(h.locator('.help-how mark').first()).toHaveText('real');
 });

@@ -66,10 +66,15 @@
   const scoreTopic = (q: string, t: HelpTopic): number => {
     const field = (s: string | undefined, loose = true) =>
       s === undefined ? -Infinity : (fuzzyTextScore(q, s, loose) ?? -Infinity);
-    return Math.max(
-      field(t.goal) * 3,
-      Math.max(field(t.how), field(t.smart), field(t.plain)) * 2,
-      field(t.keywords, false),
+    // Featured topics win close calls — 'root' finds Square root (the
+    // everyday answer) over nth root, which contains the same substring
+    // slightly earlier in its goal.
+    return (
+      Math.max(
+        field(t.goal) * 3,
+        Math.max(field(t.how), field(t.smart), field(t.plain)) * 2,
+        field(t.keywords, false),
+      ) + (t.featured ? 15 : 0)
     );
   };
 
