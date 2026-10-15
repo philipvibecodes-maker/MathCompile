@@ -32,7 +32,9 @@ test.beforeEach(async ({ page }) => {
   await clearFirstCell(page);
 });
 
-test('each worksheet autosaves and the active sheet restores on reload', async ({
+test('each worksheet autosaves and the active sheet restores on reload',
+  { tag: '@smoke' },
+  async ({
   page,
 }) => {
   await cell(page, 0).pressSequentially('x+1', { delay: 40 });
@@ -118,6 +120,11 @@ test('the command palette opens a worksheet file', async ({ page }) => {
   });
   await page.keyboard.press('Control+k');
   await page.locator('.palette-input').pressSequentially('open worksheet');
+  // Enter runs whatever the fuzzy list has selected — wait for the file
+  // command to win the ranking before committing.
+  await expect(page.locator('.cmd-item.selected')).toContainText(
+    'Open worksheet from file',
+  );
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
     page.keyboard.press('Enter'),

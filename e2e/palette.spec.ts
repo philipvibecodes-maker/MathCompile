@@ -29,7 +29,9 @@ test.beforeEach(async ({ page }) => {
   await clearFirstCell(page);
 });
 
-test('Ctrl+K opens the palette and Esc refocuses the cell', async ({
+test('Ctrl+K opens the palette and Esc refocuses the cell',
+  { tag: '@smoke' },
+  async ({
   page,
 }) => {
   await page.keyboard.press('Control+k');

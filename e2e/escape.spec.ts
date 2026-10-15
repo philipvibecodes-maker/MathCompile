@@ -106,7 +106,9 @@ test('when focus has drifted back to a math-field while open', async ({
   await escapeCloses(page);
 });
 
-test('a blur-to-nowhere closes the palette (keyboard-extension Escape)', async ({
+test('a blur-to-nowhere closes the palette (keyboard-extension Escape)',
+  { tag: '@smoke' },
+  async ({
   page,
 }) => {
   await mf(page).click();

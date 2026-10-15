@@ -251,9 +251,11 @@
         vertical-align: -1.5em;
 
         // Lift the lone bound to the definite-bound height (same top as
-        // the .mq-sup-inner bound of the large-operator template).
+        // the .mq-sup-inner bound of the large-operator template) — the
+        // boundless sign's own box is just the baseline band, so measure
+        // against the 330% glyph's ink, not the element box.
         > .mq-sup {
-          vertical-align: 2.55em;
+          vertical-align: 3.25em;
         }
       }
 
@@ -267,7 +269,7 @@
 
       &:not(.mq-sup-only) > .mq-sup {
         position: relative;
-        top: -0.7em;
+        top: -2.1em;
       }
 
       > .mq-sub {

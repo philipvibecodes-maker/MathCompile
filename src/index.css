@@ -98,6 +98,20 @@ body {
   display: block;
 }
 
+/* Dev/e2e-only git branch chip — only rendered when vite bakes a
+   non-empty __APP_BRANCH__ (never in production builds). */
+.branch-badge {
+  margin-left: 12px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
+  color: var(--accent-text);
+  background: var(--selected-bg);
+  border: 1px solid var(--dashed-border);
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
 .main {
   flex: 1;
   display: flex;

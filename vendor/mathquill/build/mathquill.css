@@ -315,7 +315,7 @@
 }
 .mq-math-mode .mq-int + .mq-supsub.mq-sup-only > .mq-sup,
 .mq-math-mode .mq-int + .mq-cursor + .mq-supsub.mq-sup-only > .mq-sup {
-  vertical-align: 2.55em;
+  vertical-align: 3.25em;
 }
 .mq-math-mode .mq-int + .mq-supsub > .mq-sup,
 .mq-math-mode .mq-int + .mq-cursor + .mq-supsub > .mq-sup {
@@ -324,7 +324,7 @@
 .mq-math-mode .mq-int + .mq-supsub:not(.mq-sup-only) > .mq-sup,
 .mq-math-mode .mq-int + .mq-cursor + .mq-supsub:not(.mq-sup-only) > .mq-sup {
   position: relative;
-  top: -0.7em;
+  top: -2.1em;
 }
 .mq-math-mode .mq-int + .mq-supsub > .mq-sub,
 .mq-math-mode .mq-int + .mq-cursor + .mq-supsub > .mq-sub {

@@ -38,7 +38,9 @@ test.beforeEach(async ({ page }) => {
   await clearFirstCell(page);
 });
 
-test('+ Python cell appends a source cell with the py tag', async ({
+test('+ Python cell appends a source cell with the py tag',
+  { tag: '@smoke' },
+  async ({
   page,
 }) => {
   await addPythonCell(page);

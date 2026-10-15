@@ -32,7 +32,9 @@ test.beforeEach(async ({ page }) => {
   await clearFirstCell(page);
 });
 
-test('\\begin{matrix} renders as a table inside the cell', async ({ page }) => {
+test('\\begin{matrix} renders as a table inside the cell',
+  { tag: '@smoke' },
+  async ({ page }) => {
   const mf = cell(page);
   await setValue(mf, '\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}');
   await expect(mf.locator('.mq-editable-field .mq-matrix tr')).toHaveCount(2);
@@ -63,7 +65,9 @@ test('typed \\array{spec} applies the column spec', async ({ page }) => {
   expect(await cellValue(mf)).toBe('\\begin{array}{cc}&\\\\&\\end{array}');
 });
 
-test('Enter inside a matrix cell adds a row, not a displaylines wrap', async ({
+test('Enter inside a matrix cell adds a row, not a displaylines wrap',
+  { tag: '@smoke' },
+  async ({
   page,
 }) => {
   const mf = cell(page);

@@ -23,7 +23,9 @@ test.beforeEach(async ({ page }) => {
   await clearFirstCell(page);
 });
 
-test('a typed \\pmatrix opens the menu; Enter inserts the default 2x2', async ({
+test('a typed \\pmatrix opens the menu; Enter inserts the default 2x2',
+  { tag: '@smoke' },
+  async ({
   page,
 }) => {
   const mf = cell(page);

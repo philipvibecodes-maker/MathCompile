@@ -44,7 +44,7 @@ test.beforeEach(async ({ page }) => {
   await page.waitForFunction(() => !!window.spike);
 });
 
-test('autoCommands convert int/sum/sqrt inline', async ({ page }) => {
+test('autoCommands convert int/sum/sqrt inline', { tag: '@smoke' }, async ({ page }) => {
   const latex = await spike(page, () => {
     const { mq } = window.spike;
     const out: Record<string, string> = {};
@@ -248,7 +248,9 @@ test('Shift-Spacebar in a matrix cell adds a column', async ({ page }) => {
   expect(r.latex).toBe('\\begin{matrix}a&b&\\\\c&d&\\end{matrix}');
 });
 
-test('\\derivative expands to a real fraction with caret in the denominator', async ({
+test('\\derivative expands to a real fraction with caret in the denominator',
+  { tag: '@smoke' },
+  async ({
   page,
 }) => {
   const r = await spike(page, () => {
@@ -284,7 +286,9 @@ test('with dIsDerivative off, \\derivative expands to D()', async ({ page }) => 
 
 // --- Phase 2: <math-field> adapter element ---
 
-test('<math-field> adapter: value round-trip, input and move-out events', async ({
+test('<math-field> adapter: value round-trip, input and move-out events',
+  { tag: '@smoke' },
+  async ({
   page,
 }) => {
   const r = await spike(page, () => {
