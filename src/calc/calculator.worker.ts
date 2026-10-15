@@ -193,8 +193,10 @@ _MC_PLOT_MARGIN = dict(l=40, r=10, t=30, b=40)
 
 def _mc_plot_menu(fig, labels, vis_lists):
     # One updatemenu driving trace visibility — the several views of the
-    # same signature (heatmap vs streamlines vs quiver, ...).
-    fig.update_layout(updatemenus=[dict(
+    # same signature (heatmap vs streamlines vs quiver, ...). Appends:
+    # the scene's aspect dropdown is already a menu on the same row.
+    menus = list(fig.layout.updatemenus or ())
+    menus.append(dict(
         buttons=[
             dict(label=lab, method='update', args=[{'visible': vis}])
             for lab, vis in zip(labels, vis_lists)
@@ -202,7 +204,8 @@ def _mc_plot_menu(fig, labels, vis_lists):
         direction='down',
         x=0,
         y=1.12,
-    )])
+    ))
+    fig.update_layout(updatemenus=menus)
 
 
 # The streamlines/gridlines helpers are exec'd from source strings:
@@ -321,7 +324,7 @@ def _mc_extent(a):
 def _mc_desmos_bounds(*extents):
     # ((x0,x1),(y0,y1),(z0,z1)) from per-axis (lo,hi) extents — a
     # degenerate axis opens to half of the widest span so
-    # aspectmode='cube' keeps a sane box.
+    # aspectmode='data' keeps a sane box.
     span = max(hi - lo for lo, hi in extents)
     if span <= 0:
         span = 2.0
@@ -435,7 +438,9 @@ def _mc_desmos_axes(fig, bounds):
             u=uvw[0], v=uvw[1], w=uvw[2],
             colorscale=[[0.0, '#9d9d9d'], [1.0, '#9d9d9d']],
             showscale=False, sizemode='absolute', sizeref=sizeref,
-            anchor='tip', hoverinfo='skip', name='axis')
+            # Tail-anchored: the head starts where the stem and grid
+            # end instead of overlapping the axis's last stretch.
+            anchor='tail', hoverinfo='skip', name='axis')
         lp = [[0.0], [0.0], [0.0]]
         lp[i] = [hi + 0.09 * (hi - lo)]
         fig.add_scatter3d(
@@ -518,19 +523,50 @@ def _mc_desmos_decor(fig, bounds):
     _mc_desmos_axes(fig, bounds)
 
 
+def _mc_aspect_menu(fig, bounds):
+    # Aspect dropdown at the right end of the menu row — all four scene
+    # aspectmodes: 'cube' (equal box), 'data' (true 1:1:1 units, the
+    # scene's default), 'manual' (data proportions clamped at 4:1 so
+    # extreme ranges stay readable), 'auto' (plotly's fit). A relayout
+    # touches only the mode/ratio — uirevision keeps the camera.
+    spans = [b[1] - b[0] for b in bounds]
+    small = min((s for s in spans if s > 0), default=1.0)
+    clamped = {ax: min(s, 4 * small) for ax, s in zip('xyz', spans)}
+    buttons = [
+        dict(label='cube', method='relayout',
+             args=[{'scene.aspectmode': 'cube'}]),
+        dict(label='data', method='relayout',
+             args=[{'scene.aspectmode': 'data'}]),
+        dict(label='manual', method='relayout',
+             args=[{'scene.aspectmode': 'manual',
+                    'scene.aspectratio': clamped}]),
+        dict(label='auto', method='relayout',
+             args=[{'scene.aspectmode': 'auto'}]),
+    ]
+    menus = list(fig.layout.updatemenus or ())
+    menus.append(dict(
+        buttons=buttons, direction='down',
+        active=1,  # 'data' — the built scene's aspectmode
+        x=1, xanchor='right', y=1.12,
+    ))
+    fig.update_layout(updatemenus=menus)
+
+
 def _mc_desmos_scene(fig, bounds):
     # Hide all stock scene chrome — everything visible is custom — and
     # take the Desmos camera. The ranges get pad() headroom so the axis
-    # letters past each arrow tip aren't clipped.
+    # letters past each arrow tip aren't clipped. aspectmode 'data' is
+    # true 1:1:1 units; the aspect menu offers the alternatives.
     fig.update_layout(scene=dict(
         xaxis=dict(visible=False, range=list(_mc_pad(*bounds[0]))),
         yaxis=dict(visible=False, range=list(_mc_pad(*bounds[1]))),
         zaxis=dict(visible=False, range=list(_mc_pad(*bounds[2]))),
-        aspectmode='cube',
+        aspectmode='data',
         camera=dict(
             eye=dict(x=0.35, y=-1.6, z=0.78),
             up=dict(x=0, y=0, z=1)),
     ))
+    _mc_aspect_menu(fig, bounds)
 
 
 _MC_SCENE_NAMES = ('wallgrid', 'box', 'axis', 'ticks', 'xysheet')

@@ -133,6 +133,10 @@ export function themedFigure(plot: PlotData, dark: boolean) {
     // Pan on drag — plotly's 2-D default is zoom-box, which surprises.
     // (gl3d scenes ignore this; their dragmode is per-scene 'orbit'.)
     dragmode: 'pan',
+    // Keep user-driven view state (camera orbit, zoom) across the mode
+    // menu's `update` clicks and row re-renders — without a constant
+    // revision, every restyle resets the camera to the worker's eye.
+    uirevision: 'mc-plot',
     ...src,
   };
   // Overlay axis colors on the 2D axes (created if absent — plotly
