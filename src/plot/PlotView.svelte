@@ -74,6 +74,29 @@
     plotGlPixelRatio: 4,
   };
 
+  // Debug aid — live camera-zoom readout for 3-D scenes (tear out when
+  // done tuning the camera work). Zoom is eye-distance relative to the
+  // worker's initial camera: 1.00× = the shipped framing.
+  let zoomText = $state('');
+  let baseEye = 0;
+  function updateZoom(gd: HTMLDivElement) {
+    const lay = (gd as unknown as { layout?: Record<string, unknown> })
+      .layout;
+    let text = '';
+    for (const key of Object.keys(lay ?? {})) {
+      if (!/^scene\d*$/.test(key)) continue;
+      const eye = (
+        lay![key] as { camera?: { eye?: { x: number; y: number; z: number } } }
+      )?.camera?.eye;
+      if (eye) {
+        const d = Math.hypot(eye.x, eye.y, eye.z);
+        text = `zoom ${(baseEye ? baseEye / d : 1).toFixed(2)}×`;
+        break;
+      }
+    }
+    zoomText = text;
+  }
+
   // The translucent z=0 sheet occludes gl3d picking — the pick
   // framebuffer resolves the front-most fragment regardless of
   // hoverinfo — so hovering the surface below the plane gave no
@@ -182,13 +205,31 @@
         failed = e instanceof Error ? e.message : String(e);
       },
     );
+    // Baseline eye distance for the zoom readout — reset whenever the
+    // payload re-renders.
+    const lay = layout as Record<string, unknown>;
+    baseEye = 0;
+    for (const key of Object.keys(lay)) {
+      if (!/^scene\d*$/.test(key)) continue;
+      const eye = (
+        lay[key] as { camera?: { eye?: { x: number; y: number; z: number } } }
+      )?.camera?.eye;
+      if (eye) baseEye = Math.hypot(eye.x, eye.y, eye.z);
+    }
+    updateZoom(target);
     if (wiredEl !== target) {
       (
         target as unknown as { on: (ev: string, cb: () => void) => void }
       ).on('plotly_afterplot', () => {
         unpickSheet(target);
         syncMenuVisibility(target);
+        updateZoom(target);
       });
+      // gl3d wheel/drag camera moves are camera relayouts — afterplot
+      // doesn't always fire for them, so refresh the readout here too.
+      (
+        target as unknown as { on: (ev: string, cb: () => void) => void }
+      ).on('plotly_relayout', () => updateZoom(target));
       wiredEl = target;
     }
   });
@@ -213,6 +254,9 @@
       aria-label="Resize plot width"
       onpointerdown={onSideGripDown}
     ></div>
+    {#if zoomText}
+      <div class="plot-zoom">{zoomText}</div>
+    {/if}
   {/if}
 </div>
 
@@ -273,6 +317,17 @@
   .plot-grip-side:hover::before,
   .plot-grip-side:active::before {
     background: var(--muted, #94a3b8);
+  }
+  .plot-zoom {
+    /* Debug aid — live camera-zoom readout (remove with updateZoom). */
+    position: absolute;
+    left: 8px;
+    bottom: 14px;
+    font-family: monospace;
+    font-size: 12px;
+    color: var(--muted, #94a3b8);
+    pointer-events: none;
+    user-select: none;
   }
   .plot-fail {
     color: var(--accent-text, #b91c1c);
