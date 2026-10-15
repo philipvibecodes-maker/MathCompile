@@ -169,7 +169,17 @@ describe('plot theming', () => {
     const { layout } = themedFigure(base, true);
     expect(layout.paper_bgcolor).toBe('rgba(0,0,0,0)');
     expect((layout.font as { color: string }).color).toBe('#e6e8ee');
-    expect(layout.updatemenus).toEqual(base.figure.layout.updatemenus);
+    // Menus get pinned to a light panel with dark text — plotly's
+    // active-item fill is a hardcoded light color, so the themed font
+    // would render light-on-light there.
+    expect(layout.updatemenus).toEqual([
+      {
+        buttons: [],
+        bgcolor: '#ffffff',
+        bordercolor: '#d4d4d4',
+        font: { color: '#333333' },
+      },
+    ]);
     expect(layout.updatemenus).not.toBe(base.figure.layout.updatemenus);
   });
 

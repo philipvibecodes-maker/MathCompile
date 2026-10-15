@@ -524,12 +524,13 @@ def _mc_desmos_decor(fig, bounds):
 
 
 def _mc_aspect_menu(fig, bounds):
-    # Aspect dropdown at the right end of the menu row — all four scene
-    # aspectmodes: 'cube' (equal box), 'data' (true 1:1:1 units),
-    # 'manual' (data proportions clamped at 4:1 so extreme ranges stay
-    # readable), 'auto' (plotly's self-limiting fit — the default).
-    # A relayout touches only the mode/ratio — uirevision keeps the
-    # camera.
+    # Aspect dropdown, just right of the mode menu at the left end of
+    # the menu row — the right end is where the plotly modebar floats.
+    # All four scene aspectmodes: 'cube' (equal box), 'data' (true
+    # 1:1:1 units), 'manual' (data proportions clamped at 4:1 so
+    # extreme ranges stay readable), 'auto' (plotly's self-limiting
+    # fit — the default). A relayout touches only the mode/ratio —
+    # uirevision keeps the camera.
     spans = [b[1] - b[0] for b in bounds]
     small = min((s for s in spans if s > 0), default=1.0)
     clamped = {ax: min(s, 4 * small) for ax, s in zip('xyz', spans)}
@@ -548,7 +549,7 @@ def _mc_aspect_menu(fig, bounds):
     menus.append(dict(
         buttons=buttons, direction='down',
         active=3,  # 'auto' — the built scene's aspectmode
-        x=1, xanchor='right', y=1.12,
+        x=0.16, xanchor='left', y=1.12,
     ))
     fig.update_layout(updatemenus=menus)
 
