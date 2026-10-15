@@ -111,6 +111,21 @@
       : '';
   }
 
+  // Plotly marks the active updatemenu choice only via the
+  // updatemenu-active-index attribute on the menu group and a
+  // hardcoded light fill on the row — dark-mode CSS can't tell the
+  // rows apart, so stamp a class on the matching item instead.
+  function markActiveMenuItem(gd: HTMLDivElement) {
+    for (const menu of gd.querySelectorAll<HTMLElement>(
+      '[updatemenu-active-index]',
+    )) {
+      const idx = +(menu.getAttribute('updatemenu-active-index') ?? '-1');
+      menu
+        .querySelectorAll('.updatemenu-dropdown-button')
+        .forEach((b, i) => b.classList.toggle('mc-active', i === idx));
+    }
+  }
+
   // Zoom-to-cursor for gl3d scenes. Plotly's own wheel handler dollies
   // the eye toward a `center` pinned in place, so after deep zoom the
   // orbit pivot sits far from whatever is in view and pan (whose step
@@ -354,12 +369,16 @@
         unpickSheet(target);
         syncMenuVisibility(target);
         updateZoom(target);
+        markActiveMenuItem(target);
       });
       // gl3d wheel/drag camera moves are camera relayouts — afterplot
       // doesn't always fire for them, so refresh the readout here too.
       (
         target as unknown as { on: (ev: string, cb: () => void) => void }
-      ).on('plotly_relayout', () => updateZoom(target));
+      ).on('plotly_relayout', () => {
+        updateZoom(target);
+        markActiveMenuItem(target);
+      });
       // Zoom-to-cursor: capture beats plotly's own wheel handler on
       // the gl canvas.
       target.addEventListener('wheel', onSceneWheel, {
@@ -468,5 +487,27 @@
   .plot-fail {
     color: var(--accent-text, #b91c1c);
     font-size: 13px;
+  }
+  /* Dark mode: plotly's updatemenu rows take a hardcoded light fill on
+     the active/hovered item and inline fills elsewhere — flatten them
+     to the dark palette, with a slightly lifted shade for hover and
+     the .mc-active row. */
+  :global([data-theme='dark']) .plot-view :global(.updatemenu-item-rect) {
+    fill: var(--panel-bg) !important;
+    stroke: var(--border);
+  }
+  :global([data-theme='dark']) .plot-view :global(.updatemenu-item-text),
+  :global([data-theme='dark'])
+    .plot-view
+    :global(.updatemenu-header-arrow) {
+    fill: var(--text) !important;
+  }
+  :global([data-theme='dark'])
+    .plot-view
+    :global(.updatemenu-dropdown-button:hover .updatemenu-item-rect),
+  :global([data-theme='dark'])
+    .plot-view
+    :global(.updatemenu-dropdown-button.mc-active .updatemenu-item-rect) {
+    fill: var(--selected-bg) !important;
   }
 </style>

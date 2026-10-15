@@ -202,10 +202,14 @@ def _mc_plot_menu(fig, labels, vis_lists):
             for lab, vis in zip(labels, vis_lists)
         ],
         direction='down',
-        x=0,
+        x=0.075, xanchor='left',
         y=1.12,
     ))
     fig.update_layout(updatemenus=menus)
+    fig.add_annotation(
+        xref='paper', yref='paper', x=0.068, y=1.125,
+        xanchor='right', yanchor='top', showarrow=False,
+        text='mode', font=dict(size=11))
 
 
 # The streamlines/gridlines helpers are exec'd from source strings:
@@ -459,7 +463,10 @@ def _mc_desmos_axes(fig, bounds):
         fig.add_scatter3d(
             x=tp[0], y=tp[1], z=tp[2], mode='text',
             text=labels, textfont=dict(color='#8c8c8c', size=12),
-            textposition='top center',
+            # x/y sit flat in the plane where 'top center' reads right;
+            # the z stem is near-vertical on screen, so its labels need
+            # a sideways anchor or they straddle the line.
+            textposition='middle left' if i == 2 else 'top center',
             hoverinfo='skip', name='ticks')
 
 
@@ -549,9 +556,13 @@ def _mc_aspect_menu(fig, bounds):
     menus.append(dict(
         buttons=buttons, direction='down',
         active=3,  # 'auto' — the built scene's aspectmode
-        x=0.16, xanchor='left', y=1.12,
+        x=0.29, xanchor='left', y=1.12,
     ))
     fig.update_layout(updatemenus=menus)
+    fig.add_annotation(
+        xref='paper', yref='paper', x=0.283, y=1.125,
+        xanchor='right', yanchor='top', showarrow=False,
+        text='aspect', font=dict(size=11))
 
 
 def _mc_desmos_scene(fig, bounds):
@@ -892,8 +903,12 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
                 f'             args=[{{"visible": {vis}}}]),'
             )
         L.append('    ],')
-        L.append("    direction='down', x=0, y=1.12,")
+        L.append("    direction='down', x=0.075, xanchor='left', y=1.12,")
         L.append(')])')
+        L.append('fig.add_annotation(')
+        L.append("    xref='paper', yref='paper', x=0.068, y=1.125,")
+        L.append("    xanchor='right', yanchor='top', showarrow=False,")
+        L.append("    text='mode', font=dict(size=11))")
 
     if d == 1:
         L += [

@@ -205,15 +205,16 @@ export function themedFigure(plot: PlotData, dark: boolean) {
     }
     layout[key] = scene;
   }
-  // Plotly draws the active/hovered updatemenu row with a hardcoded
-  // light fill (#F4FAFF) and keeps menu.font.color for its text — so
-  // the themed (light) font would render light-on-light. Pin menus to
-  // a light panel with dark text, readable in either page theme.
+  // Menu panels follow the theme (--panel-bg/--border values from
+  // index.css). Plotly draws the active/hovered row with a hardcoded
+  // light fill (#F4FAFF) — in dark mode PlotView's CSS re-flattens
+  // rows to the dark palette, with a distinct shade on the active
+  // item via the .mc-active marker it stamps.
   for (const menu of layoutMenus(layout)) {
-    menu.bgcolor ??= '#ffffff';
-    menu.bordercolor ??= '#d4d4d4';
+    menu.bgcolor ??= dark ? '#23262d' : '#ffffff';
+    menu.bordercolor ??= dark ? '#3b4048' : '#d4d4d4';
     if (!isObj(menu.font)) menu.font = {};
-    (menu.font as Record<string, unknown>).color ??= '#333333';
+    (menu.font as Record<string, unknown>).color ??= t.font;
   }
   const data = figure.data.map((tr) => themedTrace(tr, t));
   return { data, layout };
