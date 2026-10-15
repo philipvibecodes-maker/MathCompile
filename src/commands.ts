@@ -119,6 +119,20 @@ export const buildCommands = (store: AppStore): Command[] => {
       current: store.darkMode,
       run: () => (store.darkMode = !store.darkMode),
     },
+    {
+      id: 'search-help',
+      title: 'Search help…',
+      keywords: 'how question guide documentation hint keystroke',
+      hint: 'Ctrl+/',
+      run: () => store.openHelpSearch(),
+    },
+    {
+      id: 'open-guide',
+      title: 'Open user guide (PDF)',
+      keywords: 'help documentation manual pdf guide',
+      run: () =>
+        window.open(`${import.meta.env.BASE_URL}user-guide.pdf`, '_blank'),
+    },
     ...TARGETS.filter((t) => t.enabled).map((t) => ({
       id: `target-${t.id}`,
       title: `Target: ${t.label}`,

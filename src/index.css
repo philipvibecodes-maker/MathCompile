@@ -1891,10 +1891,32 @@ body {
   color: var(--text);
 }
 
+.howto-search {
+  display: block;
+  width: min(320px, 100%);
+  margin: 8px 0 0;
+  padding: 5px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.howto-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .howto-list {
   display: grid;
-  grid-template-columns: max-content 1fr;
+  grid-template-columns: max-content 1fr max-content;
   gap: 4px 16px;
+  /* fit-content keeps the row actions near the text instead of pinned
+     to the far edge of a full-width list. */
+  width: fit-content;
+  max-width: 100%;
   margin: 8px 0 0;
   padding: 10px 12px;
   background: var(--panel-bg);
@@ -1902,16 +1924,28 @@ body {
   border-radius: 6px;
 }
 
-.howto-pdf {
+.howto-hint {
+  margin-top: 6px;
+  padding: 0 12px 8px;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.howto-restore {
   display: inline-block;
   margin-top: 6px;
   padding: 0 12px 8px;
   font-size: 13px;
+  font-family: inherit;
   color: var(--muted);
+  background: none;
+  border: none;
+  cursor: pointer;
 }
 
-.howto-pdf:hover {
+.howto-restore:hover {
   color: var(--accent-text);
+  text-decoration: underline;
 }
 
 .howto-item {
@@ -1932,6 +1966,98 @@ body {
 .howto-item code {
   font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
   font-size: 14px;
+}
+
+.howto-item.hidden-topic dt,
+.howto-item.hidden-topic > dd {
+  opacity: 0.55;
+}
+
+.howto-hidden-tag {
+  margin-left: 8px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.howto-empty dt {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.howto-acts {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.howto-acts button {
+  padding: 0 6px;
+  font-size: 11px;
+  font-family: inherit;
+  line-height: 1.6;
+  color: var(--faint);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.howto-acts button:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.howto-pin.on {
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+.howto-hide {
+  font-size: 14px;
+}
+
+.howto-hide:hover {
+  color: var(--danger);
+}
+
+/* Header help controls — a plain guide link plus a ? button that opens
+   the how-to search. Sits left of the Commands button. */
+.guide-link {
+  margin-left: 16px;
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.guide-link:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.help-search-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-left: 8px;
+  padding: 0;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.help-search-btn:hover {
+  color: var(--text);
+  border-color: var(--faint);
 }
 
 /* ── Dark mode: vendored MathQuill overrides ────────── */

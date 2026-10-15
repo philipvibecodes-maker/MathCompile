@@ -41,7 +41,9 @@ src/
   App.svelte          worksheet UI: stacked cells (latex/python keep a
                       two-column layout under .two-col), header
   commands.ts         Command type + command list factory
-  fuzzy.ts            palette search scoring
+  fuzzy.ts            palette search scoring (also the help search)
+  help/topics.ts      "How do I…" catalog — featured rows plus the
+                      wider searchable/pinnable/hidable topic set
   state/
     store.svelte.ts   $state app store + field registry + focusCell() —
                       the single focus owner
@@ -66,7 +68,7 @@ src/
                       events (input, move-out, new-cell, delete-out)
     attach-field.ts   attachField() -> FieldHandle + FieldCallbacks —
                       the app-facing editing contract
-    keymap.ts         capture-phase global keys (Ctrl+K)
+    keymap.ts         capture-phase global keys (Ctrl+K, Ctrl+/)
   components/
     MathField.svelte    <math-field> bind:this -> attachField; registers
                         its handle in the store on mount
@@ -269,6 +271,9 @@ and empty blocks serialize as `{ }`.
   back to the short sha; the value is read once at server start, so a
   branch switch needs a dev-server restart to refresh it. Declared in
   `src/vite-env.d.ts`.
+- Worktrees: `PW_PORT=<n> npx playwright test` runs the suite against a
+  dev server the runner starts on that port (`vite --port <n>`), so a
+  worktree's e2e doesn't clobber or reuse the main checkout's :5573.
 - `caretInfo` in `e2e/limits.spec.ts` reads `.mq-cursor` ancestors:
   `\int` uses `.mq-sub`/`.mq-sup`; `\sum` (over/under) uses
   `.mq-from`/`.mq-to`; `.mq-large-operator`/`.mq-int` is the atom; on
@@ -302,7 +307,8 @@ and empty blocks serialize as `{ }`.
 - `src/state/persistence.ts` owns all `localStorage` access: `mathcompile-theme`
   (read pre-paint by `index.html`), `mathcompile-worksheets` (the workbook:
   `{version, active, sheets:[{id, name, cells}]}`, one record per worksheet),
-  `mathcompile-prefs` (smartMode + target + guideOpen). `mathcompile-cells`
+  `mathcompile-prefs` (smartMode + target + guideOpen + pinnedHelp +
+  hiddenHelp). `mathcompile-cells`
   was the single-worksheet format — `loadWorkbook()` migrates it on first
   read, then removes the key. Everything is node-guarded so
   the store stays importable in vitest.

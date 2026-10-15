@@ -1,5 +1,6 @@
 import type { FieldHandle } from '../editor/attach-field';
 import type { TargetId } from '../compile/targets';
+import { TOPIC_BY_ID } from '../help/topics';
 import {
   parseCellLatex,
   type MathJson,
@@ -121,6 +122,19 @@ export class AppStore {
   // Calculator code blocks show the `e = ...` capture lines when on.
   showPlumbing = $state(loadPrefs().showPlumbing ?? false);
   guideOpen = $state(loadPrefs().guideOpen ?? true);
+  // "How do I…" customization: pinned topics float to the top of the
+  // list (non-featured ones only appear while pinned), hidden ones drop
+  // out of the default list entirely. Ids not in the catalog are
+  // dropped on load.
+  pinnedHelp = $state<string[]>(
+    (loadPrefs().pinnedHelp ?? []).filter((id) => TOPIC_BY_ID.has(id)),
+  );
+  hiddenHelp = $state<string[]>(
+    (loadPrefs().hiddenHelp ?? []).filter((id) => TOPIC_BY_ID.has(id)),
+  );
+  // Bumped by openHelpSearch(); HowToGuide focuses its search input on
+  // each bump (deferred, palette-guarded) — the component owns the DOM.
+  helpSearchFocus = $state(0);
   // Python output mode: `from sympy import *` (default, bare names) vs
   // `import sympy as sp` (sp.-qualified).
   importAll = $state(loadPrefs().importAll ?? true);
@@ -359,6 +373,35 @@ export class AppStore {
   togglePalette() {
     if (this.paletteOpen) this.closePalette();
     else this.openPalette();
+  }
+
+  toggleHelpPin(id: string) {
+    this.pinnedHelp = this.pinnedHelp.includes(id)
+      ? this.pinnedHelp.filter((p) => p !== id)
+      : [...this.pinnedHelp, id];
+  }
+
+  hideHelpTopic(id: string) {
+    if (!this.hiddenHelp.includes(id))
+      this.hiddenHelp = [...this.hiddenHelp, id];
+  }
+
+  unhideHelpTopic(id: string) {
+    this.hiddenHelp = this.hiddenHelp.filter((h) => h !== id);
+  }
+
+  restoreHiddenHelp() {
+    this.hiddenHelp = [];
+  }
+
+  // Every "search help" entry point funnels here: open the section and
+  // ask it to focus its search input. paletteOpen is cleared directly
+  // (not via closePalette) — the cell refocus would race the deferred
+  // search-input focus.
+  openHelpSearch() {
+    this.guideOpen = true;
+    this.paletteOpen = false;
+    this.helpSearchFocus += 1;
   }
 }
 

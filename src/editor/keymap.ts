@@ -5,6 +5,7 @@
  */
 export interface GlobalKeymapOptions {
   onPaletteToggle(): void;
+  onHelpSearch(): void;
 }
 
 export function installGlobalKeymap(opts: GlobalKeymapOptions) {
@@ -12,6 +13,9 @@ export function installGlobalKeymap(opts: GlobalKeymapOptions) {
     if ((e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'KeyK') {
       e.preventDefault();
       opts.onPaletteToggle();
+    } else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'Slash') {
+      e.preventDefault();
+      opts.onHelpSearch();
     }
   };
   window.addEventListener('keydown', onKeydown, true);

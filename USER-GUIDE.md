@@ -18,9 +18,13 @@ in your browser and saves your worksheet automatically.
   and Python, beneath it for the calculator.
 - **The header** holds the worksheet menu (switch, rename, delete,
   save/open files), Smart mode, the Output target picker, the
-  dark-mode toggle, and the Commands button (or press `Ctrl+K` /
-  `⌘K`).
+  dark-mode toggle, the **User guide** link (this document as a PDF),
+  the **?** help-search button, and the Commands button (or press
+  `Ctrl+K` / `⌘K`).
 - **How do I…**, under the cell list, is a quick keystroke cheat sheet.
+  Its search box finds any help topic (also reachable via `Ctrl+/`, the
+  **?** button, or the *Search help* command); **pin** keeps a topic in
+  the list, **×** hides one, and *n hidden — restore* brings them back.
   This document is the long version.
 
 The command palette (`Ctrl+K`) covers: insert an expression below,
