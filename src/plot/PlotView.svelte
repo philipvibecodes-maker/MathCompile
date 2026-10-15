@@ -75,26 +75,158 @@
   };
 
   // Debug aid — live camera-zoom readout for 3-D scenes (tear out when
-  // done tuning the camera work). Zoom is eye-distance relative to the
-  // worker's initial camera: 1.00× = the shipped framing.
+  // done tuning the camera work). Zoom is eye↔center distance relative
+  // to the worker's initial camera: 1.00× = the shipped framing.
+  interface V3 {
+    x: number;
+    y: number;
+    z: number;
+  }
+  interface SceneCam {
+    eye?: V3;
+    center?: V3;
+    up?: V3;
+  }
   let zoomText = $state('');
   let baseEye = 0;
-  function updateZoom(gd: HTMLDivElement) {
+  function sceneCam(gd: HTMLDivElement): SceneCam | null {
     const lay = (gd as unknown as { layout?: Record<string, unknown> })
       .layout;
-    let text = '';
     for (const key of Object.keys(lay ?? {})) {
       if (!/^scene\d*$/.test(key)) continue;
-      const eye = (
-        lay![key] as { camera?: { eye?: { x: number; y: number; z: number } } }
-      )?.camera?.eye;
-      if (eye) {
-        const d = Math.hypot(eye.x, eye.y, eye.z);
-        text = `zoom ${(baseEye ? baseEye / d : 1).toFixed(2)}×`;
-        break;
+      const cam = (lay![key] as { camera?: SceneCam })?.camera;
+      if (cam?.eye) return cam;
+    }
+    return null;
+  }
+  function eyeDist(cam: SceneCam): number {
+    const e = cam.eye!;
+    const c = cam.center ?? { x: 0, y: 0, z: 0 };
+    return Math.hypot(e.x - c.x, e.y - c.y, e.z - c.z);
+  }
+  function updateZoom(gd: HTMLDivElement) {
+    const cam = sceneCam(gd);
+    zoomText = cam
+      ? `zoom ${(baseEye ? baseEye / eyeDist(cam) : 1).toFixed(2)}×`
+      : '';
+  }
+
+  // Zoom-to-cursor for gl3d scenes. Plotly's own wheel handler dollies
+  // the eye toward a `center` pinned in place, so after deep zoom the
+  // orbit pivot sits far from whatever is in view and pan (whose step
+  // scales with eye↔center distance) crawls. Intercepting the wheel in
+  // the capture phase lets us dolly toward the cursor instead: the eye
+  // moves a fixed fraction toward the cursor's projection onto the
+  // pivot plane (the plane through `center` facing the camera), and
+  // `center` slides the same fraction — successive notches park the
+  // pivot on the feature under the pointer, which keeps orbit and pan
+  // meaningful at any zoom. fovy = PI/4 is gl3d's fixed projection.
+  const ZOOM_STEP = 0.9; // per 120 deltaY units, same feel as plotly
+  const TAN_HALF_FOVY = Math.tan(Math.PI / 8);
+  function onSceneWheel(e: WheelEvent) {
+    if (!Plotly || !el) return;
+    const cam = sceneCam(el);
+    if (!cam) return; // 2-D plot — let plotly's own zoom have it
+    // Heatmap-style modes keep `layout.scene` but render cartesian —
+    // don't hijack the wheel unless a gl3d trace is actually visible.
+    const data = (
+      el as unknown as { data?: { type?: string; visible?: unknown }[] }
+    ).data;
+    const glVisible = data?.some(
+      (t) =>
+        t.type &&
+        GL3D_TYPES.has(t.type) &&
+        t.visible !== false &&
+        t.visible !== 'legendonly',
+    );
+    if (!glVisible || (!e.deltaY && !e.deltaX)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!e.deltaY) return; // horizontal wheel — swallowed, no zoom
+    const eye = cam.eye!;
+    const center = cam.center ?? { x: 0, y: 0, z: 0 };
+    const up = cam.up ?? { x: 0, y: 0, z: 1 };
+    const dist = eyeDist(cam);
+    if (dist < 1e-6) return;
+    // Camera basis: forward eye→center, right = forward×up.
+    const fwd = {
+      x: (center.x - eye.x) / dist,
+      y: (center.y - eye.y) / dist,
+      z: (center.z - eye.z) / dist,
+    };
+    const cross = (a: V3, b: V3): V3 => ({
+      x: a.y * b.z - a.z * b.y,
+      y: a.z * b.x - a.x * b.z,
+      z: a.x * b.y - a.y * b.x,
+    });
+    const rightRaw = cross(fwd, up);
+    const rl = Math.hypot(rightRaw.x, rightRaw.y, rightRaw.z) || 1;
+    const right = { x: rightRaw.x / rl, y: rightRaw.y / rl, z: rightRaw.z / rl };
+    const upCam = cross(right, fwd);
+    const rect = (
+      el.querySelector('.gl-container canvas') ?? el
+    ).getBoundingClientRect();
+    const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    const ny = 1 - ((e.clientY - rect.top) / rect.height) * 2;
+    const halfW = dist * TAN_HALF_FOVY * (rect.width / rect.height);
+    const halfH = dist * TAN_HALF_FOVY;
+    const t = {
+      x: center.x + right.x * nx * halfW + upCam.x * ny * halfH,
+      y: center.y + right.y * nx * halfW + upCam.y * ny * halfH,
+      z: center.z + right.z * nx * halfW + upCam.z * ny * halfH,
+    };
+    // Rays that miss the scene box anchor the pivot-plane point in
+    // empty space — zooming there strands the camera in the void. Clamp
+    // the aim point into the box so the pivot lands on the scene edge.
+    const bounds = (
+      el as unknown as {
+        _fullLayout?: {
+          scene?: { _scene?: { glplot?: { bounds?: number[][] } } };
+        };
+      }
+    )._fullLayout?.scene?._scene?.glplot?.bounds;
+    if (bounds) {
+      const dir = { x: t.x - eye.x, y: t.y - eye.y, z: t.z - eye.z };
+      let t0 = -Infinity;
+      let t1 = Infinity;
+      for (const [i, ax] of (['x', 'y', 'z'] as const).entries()) {
+        const d = dir[ax];
+        if (Math.abs(d) < 1e-12) continue;
+        const lo = (bounds[0][i] - eye[ax]) / d;
+        const hi = (bounds[1][i] - eye[ax]) / d;
+        t0 = Math.max(t0, Math.min(lo, hi));
+        t1 = Math.min(t1, Math.max(lo, hi));
+      }
+      if (!(t1 >= t0 && t1 > 0)) {
+        t.x = Math.min(Math.max(t.x, bounds[0][0]), bounds[1][0]);
+        t.y = Math.min(Math.max(t.y, bounds[0][1]), bounds[1][1]);
+        t.z = Math.min(Math.max(t.z, bounds[0][2]), bounds[1][2]);
       }
     }
-    zoomText = text;
+    const s = Math.pow(ZOOM_STEP, -e.deltaY / 120);
+    const k = 1 - s;
+    const relayout = (
+      Plotly as unknown as {
+        relayout: (
+          el: HTMLElement,
+          key: string,
+          val: unknown,
+        ) => Promise<unknown>;
+      }
+    ).relayout;
+    void relayout(el, 'scene.camera', {
+      eye: {
+        x: eye.x + (t.x - eye.x) * k,
+        y: eye.y + (t.y - eye.y) * k,
+        z: eye.z + (t.z - eye.z) * k,
+      },
+      center: {
+        x: center.x + (t.x - center.x) * k,
+        y: center.y + (t.y - center.y) * k,
+        z: center.z + (t.z - center.z) * k,
+      },
+      up,
+    });
   }
 
   // The translucent z=0 sheet occludes gl3d picking — the pick
@@ -205,16 +337,14 @@
         failed = e instanceof Error ? e.message : String(e);
       },
     );
-    // Baseline eye distance for the zoom readout — reset whenever the
-    // payload re-renders.
+    // Baseline eye↔center distance for the zoom readout — reset
+    // whenever the payload re-renders.
     const lay = layout as Record<string, unknown>;
     baseEye = 0;
     for (const key of Object.keys(lay)) {
       if (!/^scene\d*$/.test(key)) continue;
-      const eye = (
-        lay[key] as { camera?: { eye?: { x: number; y: number; z: number } } }
-      )?.camera?.eye;
-      if (eye) baseEye = Math.hypot(eye.x, eye.y, eye.z);
+      const cam = (lay[key] as { camera?: SceneCam })?.camera;
+      if (cam?.eye) baseEye = eyeDist(cam);
     }
     updateZoom(target);
     if (wiredEl !== target) {
@@ -230,6 +360,12 @@
       (
         target as unknown as { on: (ev: string, cb: () => void) => void }
       ).on('plotly_relayout', () => updateZoom(target));
+      // Zoom-to-cursor: capture beats plotly's own wheel handler on
+      // the gl canvas.
+      target.addEventListener('wheel', onSceneWheel, {
+        capture: true,
+        passive: false,
+      });
       wiredEl = target;
     }
   });
