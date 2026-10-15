@@ -117,7 +117,17 @@ Inline `// MATHCOMPILE:` edits, by file:
   strings — needed for the smartMode toggle); a letter run inside
   `\operatorname{…}`/`\mathrm{…}` is kept whole instead of re-scanned
   for built-in names, and `sign` serializes as `\operatorname{sign}`
-  for SymPy; `\operatorname*` consumes the star (limits form);
+  for SymPy; `\operatorname{…}` is a real one-block editable group —
+  upstream's `createLeftOf` no-op made a typed `\operatorname{` delete
+  the command input, and parse now keeps the group (with the
+  `\operatorname*` limits-form star) instead of flattening to bare
+  letters; the interior letter run renders upright and stays whole —
+  no autoCommands substitution and no auto-op re-split
+  (`\operatorname{argmin}` doesn't become `\arg \min`); the group wears
+  `mq-operatorname` and gets LaTeX `\mathop` spacing via CSS in
+  `math.less` (thin space each side, dropped at block edges, next to
+  binary/summation operators and real brackets, carried by a following
+  SupSub — the same rules flat letter-runs get via mq-first/mq-last);
   `\<char>` escape commands (`\,` `\:` `\;` `\!` `\{` `\}` `\|`) and
   other escaped specials (`\_` …) register on backslash-prefixed keys.
 - `src/commands/math/commands.ts` — `\textcolor[model]{color}{…}` takes
@@ -125,7 +135,9 @@ Inline `// MATHCOMPILE:` edits, by file:
   `\right` and friends are parser-only (`createLeftOf` no-op) so typed
   insertion can't produce them; `h.entityText` renders `\sum`-style
   entity glyphs (upstream `h.text` printed the entity literally);
-  `\limits`/`\nolimits` between an operator and its bounds is kept on
+  `\binom`'s container wears `mq-binomial` so `\operatorname` spacing
+  can tell it from a real Bracket (the flat form's `instanceof Bracket`
+  check); `\limits`/`\nolimits` between an operator and its bounds is kept on
   the node and round-trips (`\sum\limits_{i}`); the typed `a\over b`
   numerator scan stops at a boundless integral like at `\sum`, and at
   `\lim` — `lim` is a real command now, not an operator name; a pasted
@@ -229,7 +241,11 @@ Inline `// MATHCOMPILE:` edits, by file:
   `BinaryOperator` holding a `bigVersion()` factory) backs `\cup`/`\cap`
   plus the `\union`/`\intersect`/`\intersection` aliases and the `∪`/`∩`
   chars; `BigSetOperation` (a `SummationNotation` — bounds stack
-  over/under like `\sum`) backs `\bigcup`/`\bigcap`.
+  over/under like `\sum`) backs `\bigcup`/`\bigcap`. Boundless integral
+  signs (`\iint`, `\antid`, …) wear `mq-boundless-int` alongside
+  `mq-int` so `\operatorname` spacing can tell them from `\int` — the
+  flat letter-run rule only drops the space before a real
+  `SummationNotation`.
 - `src/commands/math/commands.ts` — `SupSub.contactWeld` hands a SupSub
   typed/written/parsed right of a `SetOperation` or `BigSetOperation`
   to `SupSub::absorbIntoSetOperation`, which upgrades `\cup`/`\cap` in

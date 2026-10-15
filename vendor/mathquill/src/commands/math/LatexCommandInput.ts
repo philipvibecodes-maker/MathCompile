@@ -52,8 +52,15 @@ CharCmds['\\'] = class LatexCommandInput extends MathCommand {
           // \! \, \| \_ \# resolve to their atoms, \{ / \} take the
           // usual bracket paths (auto-pair / close), anything else just
           // writes the char.
+          var inputWrapper = input.domFrag();
           input.setDOM(input.domFrag().children().lastElement());
           input.remove();
+          // MATHCOMPILE: setDOM repoints the node at the wrapper's
+          // inner input span, so remove() detaches only that — the
+          // empty wrapper would linger as a dead DOM sibling and break
+          // sibling selectors (.mq-operatorname spacing, bracket+supsub
+          // rules). Drop it here instead of sweeping it up later.
+          inputWrapper.remove();
           if (input[R]) cursor.insLeftOf(input[R] as MQNode);
           else cursor.insAtRightEnd(input.parent);
           var esc =
@@ -141,8 +148,15 @@ CharCmds['\\'] = class LatexCommandInput extends MathCommand {
     this.checkCursorContextClose(ctx);
   }
   renderCommand(cursor: Cursor) {
+    // MATHCOMPILE: setDOM repoints the node at the wrapper's inner
+    // input span, so remove() detaches only that — the empty wrapper
+    // would linger as a dead DOM sibling and break sibling selectors
+    // (.mq-operatorname spacing, bracket+supsub rules). Drop it here
+    // instead of sweeping it up later.
+    var wrapper = this.domFrag();
     this.setDOM(this.domFrag().children().lastElement());
     this.remove();
+    wrapper.remove();
     if (this[R]) {
       cursor.insLeftOf(this[R] as MQNode);
     } else {

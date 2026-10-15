@@ -1971,7 +1971,10 @@ var rightBinomialSymbol = SVG_SYMBOLS[')'];
 class Binomial extends DelimsNode {
   ctrlSeq = '\\binom';
   domView = new DOMView(2, (blocks) =>
-    h('span', { class: 'mq-non-leaf mq-bracket-container' }, [
+    // MATHCOMPILE: mq-binomial distinguishes \binom from real Brackets
+    // for \operatorname spacing in math.less (flat letter-runs drop
+    // their trailing space only before `instanceof Bracket`)
+    h('span', { class: 'mq-non-leaf mq-bracket-container mq-binomial' }, [
       h(
         'span',
         {

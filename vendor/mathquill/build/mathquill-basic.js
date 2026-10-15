@@ -6702,6 +6702,15 @@ var __assign = (this && this.__assign) || function () {
         };
         Letter.prototype.createLeftOf = function (cursor) {
             _super.prototype.createLeftOf.call(this, cursor);
+            // MATHCOMPILE: a letter inside an \operatorname{...} block is part of
+            // the operator's name \u2014 render it upright and skip the autoCommands /
+            // autoParenthesize passes so \operatorname{pi} stays 'pi' (not \pi)
+            // and no substitution can split the name.
+            var gramp = this.parent && this.parent.parent;
+            if (gramp && gramp.ctrlSeq === '\\operatorname') {
+                this.italicize(false);
+                return;
+            }
             this.checkAutoCmds(cursor);
             this.autoParenthesize(cursor);
         };
@@ -6732,6 +6741,21 @@ var __assign = (this && this.__assign) || function () {
             this.autoUnItalicize(opts);
         };
         Letter.prototype.autoUnItalicize = function (opts) {
+            // MATHCOMPILE: inside an \operatorname{...} block the letter run IS
+            // the name \u2014 mark the whole run upright and don't scan it for
+            // built-in ops (\operatorname{argmin} mustn't re-split into
+            // \arg \min the way \mathrm{argmin} does).
+            var gramp = this.parent && this.parent.parent;
+            if (gramp && gramp.ctrlSeq === '\\operatorname') {
+                var runStart = this;
+                while (runStart instanceof Letter && runStart[L] instanceof Letter) {
+                    runStart = runStart[L];
+                }
+                for (var opLetter = runStart; opLetter instanceof Letter; opLetter = opLetter[R]) {
+                    opLetter.italicize(false);
+                }
+                return;
+            }
             var autoOps = opts.autoOperatorNames;
             if (autoOps._maxLength === 0)
                 return;
@@ -6999,22 +7023,37 @@ var __assign = (this && this.__assign) || function () {
         if (Options.prototype.autoOperatorNames.hasOwnProperty(fn)) {
             LatexCmds[fn] = OperatorName;
         }
+    // MATHCOMPILE: \operatorname{...} is a real one-block group, not the
+    // upstream parse-time flatten \u2014 upstream's createLeftOf was a noop, so
+    // a typed `\operatorname{` deleted the command input and the following
+    // `{` wrote a \{ \} pair. The block gets the \mathrm-style
+    // `mq-roman mq-font` wrapper, so the typed `{` is the arg's own braces
+    // (MathBlock.write swallows it at the left end of the empty block) and
+    // interior letters render upright. Letter.autoUnItalicize keeps the
+    // interior run whole \u2014 \operatorname{argmin} stays 'argmin' instead of
+    // splitting into \arg \min the way \mathrm{argmin} does.
     LatexCmds.operatorname = /** @class */ (function (_super) {
         __extends(class_2, _super);
         function class_2() {
-            return _super !== null && _super.apply(this, arguments) || this;
+            var _this = _super.call(this, '\\operatorname', new DOMView(1, function (blocks) {
+                return h.block('span', { class: 'mq-roman mq-font mq-operatorname' }, blocks[0]);
+            })) || this;
+            _this.starred = false;
+            return _this;
         }
-        class_2.prototype.createLeftOf = function () { };
         class_2.prototype.numBlocks = function () {
             return 1;
         };
         class_2.prototype.parser = function () {
-            // MATHCOMPILE: \operatorname* is the limits-form operator \u2014 consume the star so
-            // it doesn't surface as a stray literal '*' (previously
-            // \operatorname*{argmin} -> *\arg\min)
+            var self = this;
+            // \operatorname* is the limits-form operator \u2014 keep the star in the
+            // serialization (\operatorname*{argmin} round-trips intact).
             return Parser.optWhitespace
                 .then(Parser.string('*').or(Parser.succeed('')))
-                .then(latexMathParser.block)
+                .then(function (star) {
+                self.starred = !!star;
+                return latexMathParser.block;
+            })
                 .map(function (b) {
                 // Check for the special case of \operatorname{ans}, which has
                 // a special html representation
@@ -7033,9 +7072,35 @@ var __assign = (this && this.__assign) || function () {
                 if (isAllLetters && str === 'ans') {
                     return AnsBuilder();
                 }
-                // In cases other than `ans`, just return the children directly
-                return children;
-            });
+                self.blocks = [b];
+                b.adopt(self, 0, 0);
+                return self;
+            })
+                .or(
+            // MATHCOMPILE: same verbatim-leaf fallback as
+            // MathCommand.parser \u2014 a bare `\operatorname` (no braces)
+            // degrades to a visible leaf instead of failing the cell.
+            Parser.regex(/^(?=\S)/).then(function () {
+                return Parser.succeed(new VanillaSymbol(self.ctrlSeq + ' ', h.text(self.ctrlSeq || ''), self.ctrlSeq));
+            }));
+        };
+        class_2.prototype.latexRecursive = function (ctx) {
+            this.checkCursorContextOpen(ctx);
+            ctx.uncleanedLatex += this.ctrlSeq + (this.starred ? '*' : '') + '{';
+            var block = this.getEnd(L);
+            var beforeLength = ctx.uncleanedLatex.length;
+            block.latexRecursive(ctx);
+            if (ctx.uncleanedLatex.length === beforeLength) {
+                // nothing was written so we write a space
+                ctx.uncleanedLatex += ' ';
+            }
+            ctx.uncleanedLatex += '}';
+            this.checkCursorContextClose(ctx);
+        };
+        class_2.prototype.mathspeak = function (opts) {
+            return this.foldChildren('', function (speech, block) {
+                return speech + ' ' + block.mathspeak(opts);
+            }).trim();
         };
         return class_2;
     }(MathCommand));
@@ -9478,7 +9543,10 @@ var __assign = (this && this.__assign) || function () {
             var _this = _super !== null && _super.apply(this, arguments) || this;
             _this.ctrlSeq = '\\binom';
             _this.domView = new DOMView(2, function (blocks) {
-                return h('span', { class: 'mq-non-leaf mq-bracket-container' }, [
+                // MATHCOMPILE: mq-binomial distinguishes \binom from real Brackets
+                // for \operatorname spacing in math.less (flat letter-runs drop
+                // their trailing space only before `instanceof Bracket`)
+                return h('span', { class: 'mq-non-leaf mq-bracket-container mq-binomial' }, [
                     h('span', {
                         style: 'width:' + leftBinomialSymbol.width,
                         class: 'mq-paren mq-bracket-l mq-scaled'
@@ -10048,7 +10116,10 @@ var __assign = (this && this.__assign) || function () {
     }(MQSymbol));
     var boundlessIntegral = function (ctrlSeq, glyph, speak) {
         return function () {
-            return new BoundlessIntegral(ctrlSeq, h('span', { class: 'mq-int' }, [
+            return new BoundlessIntegral(ctrlSeq, 
+            // MATHCOMPILE: mq-boundless-int distinguishes these from \int
+            // (a SummationNotation) for \operatorname spacing in math.less
+            h('span', { class: 'mq-int mq-boundless-int' }, [
                 h('big', {}, [h.entityText(glyph)])
             ]), undefined, speak);
         };
@@ -10833,6 +10904,80 @@ var __assign = (this && this.__assign) || function () {
         return new DefAlias('\\text{def}', h('span', { class: 'mq-text-mode' }, [h.text('def')]), 'def', 'def');
     };
     //======================================================================
+    //  \solve / \dsolve / \pdesolve \u2014 insertion aliases for the
+    //  \text{\u2026} solver statement markers
+    //======================================================================
+    // Each expands to its real \text{\u2026} marker plus a trailing space \u2014 the
+    // statement prefix the compiler reads for equation solving (\text{solve}
+    // -> sp.solve/sp.solveset), ODEs (\text{dsolve} -> sp.dsolve), and PDEs
+    // (\text{pdesolve} -> sp.pdsolve) \u2014 the same insertion-time expansion
+    // \def uses. Pasted latex serializes as \text{\u2026} on the next save.
+    var SolveAlias = /** @class */ (function (_super) {
+        __extends(SolveAlias, _super);
+        function SolveAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        SolveAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{solve}\\ ');
+        };
+        return SolveAlias;
+    }(MQSymbol));
+    LatexCmds.solve = function () {
+        return new SolveAlias('\\text{solve}', h('span', { class: 'mq-text-mode' }, [h.text('solve')]), 'solve', 'solve equations');
+    };
+    var DSolveAlias = /** @class */ (function (_super) {
+        __extends(DSolveAlias, _super);
+        function DSolveAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        DSolveAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{dsolve}\\ ');
+        };
+        return DSolveAlias;
+    }(MQSymbol));
+    LatexCmds.dsolve = function () {
+        return new DSolveAlias('\\text{dsolve}', h('span', { class: 'mq-text-mode' }, [h.text('dsolve')]), 'dsolve', 'solve an ODE');
+    };
+    var OdeAlias = /** @class */ (function (_super) {
+        __extends(OdeAlias, _super);
+        function OdeAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        OdeAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{ode}\\ ');
+        };
+        return OdeAlias;
+    }(MQSymbol));
+    LatexCmds.ode = function () {
+        return new OdeAlias('\\text{ode}', h('span', { class: 'mq-text-mode' }, [h.text('ode')]), 'ode', 'solve an ODE');
+    };
+    var PDSolveAlias = /** @class */ (function (_super) {
+        __extends(PDSolveAlias, _super);
+        function PDSolveAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        PDSolveAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{pdesolve}\\ ');
+        };
+        return PDSolveAlias;
+    }(MQSymbol));
+    LatexCmds.pdesolve = function () {
+        return new PDSolveAlias('\\text{pdesolve}', h('span', { class: 'mq-text-mode' }, [h.text('pdesolve')]), 'pdesolve', 'solve a PDE');
+    };
+    var PdeAlias = /** @class */ (function (_super) {
+        __extends(PdeAlias, _super);
+        function PdeAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        PdeAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{pde}\\ ');
+        };
+        return PdeAlias;
+    }(MQSymbol));
+    LatexCmds.pde = function () {
+        return new PdeAlias('\\text{pde}', h('span', { class: 'mq-text-mode' }, [h.text('pde')]), 'pde', 'solve a PDE');
+    };
+    //======================================================================
     //  \tr \u2014 insertion alias for \mathrm{tr}
     //======================================================================
     // Typing `\tr` expands to \mathrm{tr} \u2014 the word-op form the compiler
@@ -10894,6 +11039,63 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.gradient = function () {
         return new GradientAlias('\\nabla ', h('span', {}, [h.entityText('&nabla;')]), '\u2207', 'gradient');
     };
+    //======================================================================
+    //  \dotproduct \u2014 insertion alias for \bullet
+    //======================================================================
+    // Typing `\dotproduct` expands to the \bullet sign the compiler reads
+    // as the dot product (`u \bullet v` -> u\u00b7v); a pasted `\dotproduct`
+    // renders the same \u2022 glyph and serializes as \bullet \u2014 the same
+    // insertion-time expansion \gradient uses.
+    var DotProductAlias = /** @class */ (function (_super) {
+        __extends(DotProductAlias, _super);
+        function DotProductAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        DotProductAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\bullet ');
+        };
+        return DotProductAlias;
+    }(MQSymbol));
+    LatexCmds.dotproduct = function () {
+        return new DotProductAlias('\\bullet ', h('span', { class: 'mq-binary-operator' }, [
+            h.entityText('&bull;')
+        ]), '\u2022', 'dot product');
+    };
+    //======================================================================
+    //  Matrix word-op aliases \u2014 \rank, \eigenvals, \eigenvects, \inverse,
+    //  \transpose, \norm, \rref, \charpoly, \nullspace, \columnspace,
+    //  \diagonalize, \adjugate
+    //======================================================================
+    // Each expands to its `\mathrm{<word>}` form \u2014 the word-op spelling the
+    // compiler reads for the matrix method (`\mathrm{rank} A` /
+    // `\mathrm{rank}(A)` -> `(A).rank()`), the same insertion-time
+    // expansion \tr uses. None is a real LaTeX command, so stored latex
+    // canonicalizes to \mathrm{\u2026} on the next save. No trailing space (see
+    // \tr): it would put a space node between the name and the parens.
+    function mathrmWordAlias(name, speak) {
+        return /** @class */ (function (_super) {
+            __extends(class_24, _super);
+            function class_24() {
+                return _super.call(this, '\\mathrm{' + name + '}', h('span', { class: 'mq-roman' }, [h.text(name)]), name, speak) || this;
+            }
+            class_24.prototype.createLeftOf = function (cursor) {
+                cursor.parent.writeLatex(cursor, '\\mathrm{' + name + '}');
+            };
+            return class_24;
+        }(MQSymbol));
+    }
+    LatexCmds.rank = mathrmWordAlias('rank', 'rank');
+    LatexCmds.eigenvals = mathrmWordAlias('eigenvals', 'eigenvalues');
+    LatexCmds.eigenvects = mathrmWordAlias('eigenvects', 'eigenvectors');
+    LatexCmds.inverse = mathrmWordAlias('inverse', 'inverse');
+    LatexCmds.transpose = mathrmWordAlias('transpose', 'transpose');
+    LatexCmds.norm = mathrmWordAlias('norm', 'norm');
+    LatexCmds.rref = mathrmWordAlias('rref', 'reduced row echelon form');
+    LatexCmds.charpoly = mathrmWordAlias('charpoly', 'characteristic polynomial');
+    LatexCmds.nullspace = mathrmWordAlias('nullspace', 'null space');
+    LatexCmds.columnspace = mathrmWordAlias('columnspace', 'column space');
+    LatexCmds.diagonalize = mathrmWordAlias('diagonalize', 'diagonalize');
+    LatexCmds.adjugate = mathrmWordAlias('adjugate', 'adjugate');
     // For backwards compatibility, set up the global MathQuill object as an instance of API interface v1
     if (window.jQuery) {
         MQ1 = getInterface(1);

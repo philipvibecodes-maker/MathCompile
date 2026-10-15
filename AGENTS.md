@@ -202,6 +202,22 @@ and empty blocks serialize as `{ }`.
   (see SYMBOLS.md "Solver statements").
 - `\tr` is an insertion alias for `\mathrm{tr}` — the matrix-trace
   word-op codegen lowers to `(A).trace()` / `sp.Trace(A)`.
+- `\operatorname{…}` is a real one-block group (a `mq-roman mq-font`
+  wrapper, like `\mathrm`) — typed `\operatorname{f}` types into the
+  arg block and round-trips. Interior letters stay one upright word:
+  autoCommands/autoParenthesize are skipped and `autoUnItalicize` marks
+  the run without splitting it into built-ins (`\operatorname{argmin}`
+  stays `argmin`, unlike `\mathrm{argmin}` → `\mathrm{\arg\min}`).
+  The group wears `mq-operatorname`; `math.less` gives it LaTeX
+  `\mathop` spacing (thin space each side, dropped at block edges and
+  before/after binary ops, summation signs — `.mq-large-operator` and
+  `.mq-int`, not `.mq-boundless-int` — and before real brackets; a
+  following `.mq-supsub` carries the right-hand space, like
+  `mq-after-operator-name`). `.mq-binomial` marks `\binom` so it isn't
+  mistaken for a real bracket. A caret sitting at a block edge next to
+  the group keeps the space (the caret is the "next atom" — the next
+  char lands in the gap instead of the gap popping in), while a truly
+  last-child node drops it, so rendered output gets no trailing space.
 - Matrices: `\begin{matrix|pmatrix|…}` environments + bare
   `\pmatrix{a&b\\c&d}`. Typed `\name` shortcuts (`\cases`, `\aligned`,
   `\gathered`, …) open the same grid `\begin{name}` resolves to;

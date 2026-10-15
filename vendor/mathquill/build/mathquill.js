@@ -9073,6 +9073,15 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         };
         Letter.prototype.createLeftOf = function (cursor) {
             _super.prototype.createLeftOf.call(this, cursor);
+            // MATHCOMPILE: a letter inside an \operatorname{...} block is part of
+            // the operator's name \u2014 render it upright and skip the autoCommands /
+            // autoParenthesize passes so \operatorname{pi} stays 'pi' (not \pi)
+            // and no substitution can split the name.
+            var gramp = this.parent && this.parent.parent;
+            if (gramp && gramp.ctrlSeq === '\\operatorname') {
+                this.italicize(false);
+                return;
+            }
             this.checkAutoCmds(cursor);
             this.autoParenthesize(cursor);
         };
@@ -9103,6 +9112,21 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             this.autoUnItalicize(opts);
         };
         Letter.prototype.autoUnItalicize = function (opts) {
+            // MATHCOMPILE: inside an \operatorname{...} block the letter run IS
+            // the name \u2014 mark the whole run upright and don't scan it for
+            // built-in ops (\operatorname{argmin} mustn't re-split into
+            // \arg \min the way \mathrm{argmin} does).
+            var gramp = this.parent && this.parent.parent;
+            if (gramp && gramp.ctrlSeq === '\\operatorname') {
+                var runStart = this;
+                while (runStart instanceof Letter && runStart[L] instanceof Letter) {
+                    runStart = runStart[L];
+                }
+                for (var opLetter = runStart; opLetter instanceof Letter; opLetter = opLetter[R]) {
+                    opLetter.italicize(false);
+                }
+                return;
+            }
             var autoOps = opts.autoOperatorNames;
             if (autoOps._maxLength === 0)
                 return;
@@ -9370,22 +9394,37 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         if (Options.prototype.autoOperatorNames.hasOwnProperty(fn)) {
             LatexCmds[fn] = OperatorName;
         }
+    // MATHCOMPILE: \operatorname{...} is a real one-block group, not the
+    // upstream parse-time flatten \u2014 upstream's createLeftOf was a noop, so
+    // a typed `\operatorname{` deleted the command input and the following
+    // `{` wrote a \{ \} pair. The block gets the \mathrm-style
+    // `mq-roman mq-font` wrapper, so the typed `{` is the arg's own braces
+    // (MathBlock.write swallows it at the left end of the empty block) and
+    // interior letters render upright. Letter.autoUnItalicize keeps the
+    // interior run whole \u2014 \operatorname{argmin} stays 'argmin' instead of
+    // splitting into \arg \min the way \mathrm{argmin} does.
     LatexCmds.operatorname = /** @class */ (function (_super) {
         __extends(class_12, _super);
         function class_12() {
-            return _super !== null && _super.apply(this, arguments) || this;
+            var _this_1 = _super.call(this, '\\operatorname', new DOMView(1, function (blocks) {
+                return h.block('span', { class: 'mq-roman mq-font mq-operatorname' }, blocks[0]);
+            })) || this;
+            _this_1.starred = false;
+            return _this_1;
         }
-        class_12.prototype.createLeftOf = function () { };
         class_12.prototype.numBlocks = function () {
             return 1;
         };
         class_12.prototype.parser = function () {
-            // MATHCOMPILE: \operatorname* is the limits-form operator \u2014 consume the star so
-            // it doesn't surface as a stray literal '*' (previously
-            // \operatorname*{argmin} -> *\arg\min)
+            var self = this;
+            // \operatorname* is the limits-form operator \u2014 keep the star in the
+            // serialization (\operatorname*{argmin} round-trips intact).
             return Parser.optWhitespace
                 .then(Parser.string('*').or(Parser.succeed('')))
-                .then(latexMathParser.block)
+                .then(function (star) {
+                self.starred = !!star;
+                return latexMathParser.block;
+            })
                 .map(function (b) {
                 // Check for the special case of \operatorname{ans}, which has
                 // a special html representation
@@ -9404,9 +9443,35 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 if (isAllLetters && str === 'ans') {
                     return AnsBuilder();
                 }
-                // In cases other than `ans`, just return the children directly
-                return children;
-            });
+                self.blocks = [b];
+                b.adopt(self, 0, 0);
+                return self;
+            })
+                .or(
+            // MATHCOMPILE: same verbatim-leaf fallback as
+            // MathCommand.parser \u2014 a bare `\operatorname` (no braces)
+            // degrades to a visible leaf instead of failing the cell.
+            Parser.regex(/^(?=\S)/).then(function () {
+                return Parser.succeed(new VanillaSymbol(self.ctrlSeq + ' ', h.text(self.ctrlSeq || ''), self.ctrlSeq));
+            }));
+        };
+        class_12.prototype.latexRecursive = function (ctx) {
+            this.checkCursorContextOpen(ctx);
+            ctx.uncleanedLatex += this.ctrlSeq + (this.starred ? '*' : '') + '{';
+            var block = this.getEnd(L);
+            var beforeLength = ctx.uncleanedLatex.length;
+            block.latexRecursive(ctx);
+            if (ctx.uncleanedLatex.length === beforeLength) {
+                // nothing was written so we write a space
+                ctx.uncleanedLatex += ' ';
+            }
+            ctx.uncleanedLatex += '}';
+            this.checkCursorContextClose(ctx);
+        };
+        class_12.prototype.mathspeak = function (opts) {
+            return this.foldChildren('', function (speech, block) {
+                return speech + ' ' + block.mathspeak(opts);
+            }).trim();
         };
         return class_12;
     }(MathCommand));
@@ -11849,7 +11914,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
             _this_1.ctrlSeq = '\\binom';
             _this_1.domView = new DOMView(2, function (blocks) {
-                return h('span', { class: 'mq-non-leaf mq-bracket-container' }, [
+                // MATHCOMPILE: mq-binomial distinguishes \binom from real Brackets
+                // for \operatorname spacing in math.less (flat letter-runs drop
+                // their trailing space only before `instanceof Bracket`)
+                return h('span', { class: 'mq-non-leaf mq-bracket-container mq-binomial' }, [
                     h('span', {
                         style: 'width:' + leftBinomialSymbol.width,
                         class: 'mq-paren mq-bracket-l mq-scaled'
@@ -12101,8 +12169,15 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                         // \! \, \| \_ \# resolve to their atoms, \{ / \} take the
                         // usual bracket paths (auto-pair / close), anything else just
                         // writes the char.
+                        var inputWrapper = input.domFrag();
                         input.setDOM(input.domFrag().children().lastElement());
                         input.remove();
+                        // MATHCOMPILE: setDOM repoints the node at the wrapper's
+                        // inner input span, so remove() detaches only that \u2014 the
+                        // empty wrapper would linger as a dead DOM sibling and break
+                        // sibling selectors (.mq-operatorname spacing, bracket+supsub
+                        // rules). Drop it here instead of sweeping it up later.
+                        inputWrapper.remove();
                         if (input[R])
                             cursor.insLeftOf(input[R]);
                         else
@@ -12183,8 +12258,15 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             this.checkCursorContextClose(ctx);
         };
         LatexCommandInput.prototype.renderCommand = function (cursor) {
+            // MATHCOMPILE: setDOM repoints the node at the wrapper's inner
+            // input span, so remove() detaches only that \u2014 the empty wrapper
+            // would linger as a dead DOM sibling and break sibling selectors
+            // (.mq-operatorname spacing, bracket+supsub rules). Drop it here
+            // instead of sweeping it up later.
+            var wrapper = this.domFrag();
             this.setDOM(this.domFrag().children().lastElement());
             this.remove();
+            wrapper.remove();
             if (this[R]) {
                 cursor.insLeftOf(this[R]);
             }
@@ -12594,7 +12676,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     }(MQSymbol));
     var boundlessIntegral = function (ctrlSeq, glyph, speak) {
         return function () {
-            return new BoundlessIntegral(ctrlSeq, h('span', { class: 'mq-int' }, [
+            return new BoundlessIntegral(ctrlSeq, 
+            // MATHCOMPILE: mq-boundless-int distinguishes these from \int
+            // (a SummationNotation) for \operatorname spacing in math.less
+            h('span', { class: 'mq-int mq-boundless-int' }, [
                 h('big', {}, [h.entityText(glyph)])
             ]), undefined, speak);
         };
@@ -14741,9 +14826,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 else if (!left)
                     cursor.insAtLeftEnd(parent);
             };
-            // The resolved command input leaves its wrapper behind holding the
-            // blurred selection DOM; remove it once the caret is re-anchored or
-            // it renders as a grayed ghost and swallows DOM writes.
+            // Legacy safety net: a resolved command input used to leave its
+            // wrapper behind holding the blurred selection DOM \u2014 a grayed ghost
+            // that swallowed DOM writes. renderCommand removes the wrapper
+            // itself now; this just sweeps any residue left by older paths.
             var removeResidue = function () {
                 var _c;
                 var rootEl = parent.domFrag().oneElement();
