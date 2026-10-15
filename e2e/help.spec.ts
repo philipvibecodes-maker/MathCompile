@@ -104,6 +104,28 @@ test('palette Search help command opens and focuses the search', async ({
   await expect(search(page)).toBeFocused();
 });
 
+test('matched text is highlighted in result rows', async ({ page }) => {
+  // 'real' matches the 'Named sets' row via keywords, and the visible
+  // keystroke text gets its 'real' run marked inside \reals.
+  await search(page).fill('real');
+  const hit = row(page, 'Named sets');
+  await expect(hit).toHaveCount(1);
+  await expect(hit.locator('dd mark').first()).toHaveText('real');
+});
+
+test('typing does not resize the list box', async ({ page }) => {
+  const list = page.locator('.howto-list');
+  const before = (await list.boundingBox())!.height;
+  await search(page).fill('solve');
+  await expect(row(page, 'Solve equations')).toHaveCount(1);
+  // Frozen min-height: fewer rows must not shrink the box mid-search.
+  const during = (await list.boundingBox())!.height;
+  expect(during).toBeGreaterThanOrEqual(before - 1);
+  await search(page).fill('');
+  const after = (await list.boundingBox())!.height;
+  expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
+});
+
 test('pins and hidden topics persist across reload', async ({ page }) => {
   await search(page).fill('solve equations');
   await row(page, 'Solve equations').locator('.howto-pin').click();

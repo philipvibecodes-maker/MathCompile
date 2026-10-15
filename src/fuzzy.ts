@@ -20,3 +20,25 @@ export function fuzzyScore(query: string, text: string): number | null {
   }
   return score - t.length / 100;
 }
+
+// Matched character indices for highlighting hits in rendered text. A
+// contiguous substring match wins as one run ('real' marks 'real' in
+// '\reals', not 'r'+'eal'); otherwise the same greedy left-to-right scan
+// as fuzzyScore marks each matched char. Empty query matches everything
+// (empty hits); null when the query is not a subsequence.
+export function fuzzyHits(query: string, text: string): number[] | null {
+  const q = query.trim().toLowerCase();
+  const t = text.toLowerCase();
+  if (!q) return [];
+  const at = t.indexOf(q);
+  if (at >= 0) return Array.from({ length: q.length }, (_, i) => at + i);
+  const hits: number[] = [];
+  let ti = 0;
+  for (const qc of q) {
+    const found = t.indexOf(qc, ti);
+    if (found < 0) return null;
+    hits.push(found);
+    ti = found + 1;
+  }
+  return hits;
+}

@@ -1924,17 +1924,23 @@ body {
   border-radius: 6px;
 }
 
+/* The footer zone keeps a constant line height whether it holds the
+   search hint, the restore link, or nothing — swapping content can't
+   shift the list above it. */
+.howto-foot {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+}
+
 .howto-hint {
-  margin-top: 6px;
-  padding: 0 12px 8px;
   font-size: 12px;
   color: var(--faint);
 }
 
 .howto-restore {
-  display: inline-block;
-  margin-top: 6px;
-  padding: 0 12px 8px;
+  padding: 0;
   font-size: 13px;
   font-family: inherit;
   color: var(--muted);
@@ -1966,6 +1972,14 @@ body {
 .howto-item code {
   font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
   font-size: 14px;
+}
+
+/* Matched query runs in a result row — accent text, not the default
+   yellow marker. */
+.howto-item mark {
+  background: none;
+  color: var(--accent-text);
+  font-weight: 700;
 }
 
 .howto-item.hidden-topic dt,

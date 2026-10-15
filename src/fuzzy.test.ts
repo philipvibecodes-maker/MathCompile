@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fuzzyScore } from './fuzzy';
+import { fuzzyHits, fuzzyScore } from './fuzzy';
 
 describe('fuzzyScore', () => {
   it('matches an empty query', () => {
@@ -111,5 +111,34 @@ describe('fuzzyScore', () => {
       expect(s).not.toBeNull();
       expect(Number.isFinite(s!)).toBe(true);
     }
+  });
+});
+
+describe('fuzzyHits', () => {
+  it('returns a contiguous run when the query appears verbatim', () => {
+    expect(fuzzyHits('real', '\\reals')).toEqual([1, 2, 3, 4]);
+    expect(fuzzyHits('solve equations', 'Solve equations')).toEqual(
+      Array.from({ length: 15 }, (_, i) => i),
+    );
+  });
+
+  it('falls back to greedy subsequence indices', () => {
+    expect(fuzzyHits('ab', 'axb')).toEqual([0, 2]);
+    expect(fuzzyHits('nw', 'new worksheet')).toEqual([0, 2]);
+  });
+
+  it('matches case-insensitively and skips whitespace edges', () => {
+    expect(fuzzyHits('Real', '\\reals')).toEqual([1, 2, 3, 4]);
+    expect(fuzzyHits('  del ', 'delete')).toEqual([0, 1, 2]);
+  });
+
+  it('returns null when the query is not a subsequence', () => {
+    expect(fuzzyHits('xyz', 'abc')).toBeNull();
+    expect(fuzzyHits('ba', 'ab')).toBeNull();
+  });
+
+  it('returns empty hits for an empty query', () => {
+    expect(fuzzyHits('', 'anything')).toEqual([]);
+    expect(fuzzyHits('   ', 'x')).toEqual([]);
   });
 });
