@@ -193,7 +193,7 @@ _MC_PLOT_MARGIN = dict(l=40, r=10, t=30, b=40)
 
 def _mc_plot_menu(fig, labels, vis_lists):
     # One updatemenu driving trace visibility — the several views of the
-    # same signature (heatmap vs streamlines vs quiver, ...). Appends:
+    # same signature (surface vs heatmap). Appends:
     # the scene's aspect dropdown is already a menu on the same row.
     menus = list(fig.layout.updatemenus or ())
     menus.append(dict(
@@ -212,85 +212,9 @@ def _mc_plot_menu(fig, labels, vis_lists):
         text='mode', font=dict(size=11))
 
 
-# The streamlines/gridlines helpers are exec'd from source strings:
-# _mc_plot_code hands the generating-code block the same text it shows
-# as "the code that ran", so the shown source can't drift from the
-# executed one.
-_MC_PLOT_STREAMLINES_SRC = '''def _mc_plot_streamlines(us, vs, fx, fy):
-    # RK4 streamlines of the sampled field, seeded every few grid nodes.
-    # fx/fy are 2-D numpy arrays over (vs, us); out-of-range and
-    # non-finite lookups read as zero so a streamline dies at the edge.
-    import numpy as _mc_np
-    nu, nv = len(us), len(vs)
-    du = (us[-1] - us[0]) / (nu - 1 or 1)
-    dv = (vs[-1] - vs[0]) / (nv - 1 or 1)
-
-    def field(x, y):
-        iu = (x - us[0]) / du
-        iv = (y - vs[0]) / dv
-        j0 = int(_mc_np.floor(iu))
-        i0 = int(_mc_np.floor(iv))
-        if j0 < 0 or i0 < 0 or j0 + 1 >= nu or i0 + 1 >= nv:
-            return 0.0, 0.0
-        a, b = iu - j0, iv - i0
-
-        def at(g):
-            return (
-                g[i0][j0] * (1 - a) * (1 - b)
-                + g[i0][j0 + 1] * a * (1 - b)
-                + g[i0 + 1][j0] * (1 - a) * b
-                + g[i0 + 1][j0 + 1] * a * b
-            )
-
-        return at(fx), at(fy)
-
-    step = min(du, dv) * 0.5
-    xs, ys = [], []
-    for i in range(0, nv, 3):
-        for j in range(0, nu, 3):
-            x, y = us[j], vs[i]
-            xs.append(x)
-            ys.append(y)
-            for _ in range(120):
-                k1x, k1y = field(x, y)
-                k2x, k2y = field(x + k1x * step * 0.5, y + k1y * step * 0.5)
-                k3x, k3y = field(x + k2x * step * 0.5, y + k2y * step * 0.5)
-                k4x, k4y = field(x + k3x * step, y + k3y * step)
-                x += (step / 6) * (k1x + 2 * k2x + 2 * k3x + k4x)
-                y += (step / 6) * (k1y + 2 * k2y + 2 * k3y + k4y)
-                if not (_mc_np.isfinite(x) and _mc_np.isfinite(y)):
-                    break
-                if k1x * k1x + k1y * k1y < 1e-8:
-                    break
-                xs.append(x)
-                ys.append(y)
-            xs.append(None)
-            ys.append(None)
-    return xs, ys'''
-
-exec(_MC_PLOT_STREAMLINES_SRC)
-
-_MC_PLOT_GRIDLINES_SRC = '''def _mc_plot_gridlines(us, vs, fx, fy, fz=None):
-    # Coordinate-line curves through f: fixed-v rows and fixed-u
-    # columns, concatenated with None breaks — how f warps the grid.
-    xs, ys, zs = [], [], []
-    for i in range(0, len(vs), 2):
-        xs += list(fx[i]) + [None]
-        ys += list(fy[i]) + [None]
-        if fz is not None:
-            zs += list(fz[i]) + [None]
-    for j in range(0, len(us), 2):
-        xs += list(fx[:, j]) + [None]
-        ys += list(fy[:, j]) + [None]
-        if fz is not None:
-            zs += list(fz[:, j]) + [None]
-    return xs, ys, zs'''
-
-exec(_MC_PLOT_GRIDLINES_SRC)
-
 # The Desmos-3D scene helpers are exec'd from a source string so the
-# generating-code block can show the same text that ran (the helpers
-# get appended to the shown program like the streamline/grid ones).
+# generating-code block can show the same text that ran (the helper
+# source gets appended to the shown program).
 _MC_DESMOS_SRC = '''def _mc_pad(lo, hi):
     # Headroom so the axis letters past each arrow tip aren't clipped.
     s = hi - lo
@@ -598,27 +522,7 @@ def _mc_mode_vis(fig, data_names, scene=True):
     ]
 
 
-def _mc_iso_offset(us, vs, X, Y, Z):
-    # Lift positions a touch along the parametric surface's normal —
-    # coplanar Scatter3d iso-lines z-fight the surface into dashes; on
-    # a closed surface the offset copy always faces the camera so the
-    # gap isn't visible.
-    import numpy as _mc_np
-    Xu = _mc_np.gradient(X, us, axis=1)
-    Xv = _mc_np.gradient(X, vs, axis=0)
-    Yu = _mc_np.gradient(Y, us, axis=1)
-    Yv = _mc_np.gradient(Y, vs, axis=0)
-    Zu = _mc_np.gradient(Z, us, axis=1)
-    Zv = _mc_np.gradient(Z, vs, axis=0)
-    nx = Yu * Zv - Zu * Yv
-    ny = Zu * Xv - Xu * Zv
-    nz = Xu * Yv - Yu * Xv
-    n = _mc_np.sqrt(nx * nx + ny * ny + nz * nz)
-    n = _mc_np.where(_mc_np.isfinite(n) & (n > 0), n, 1.0)
-    spans = [e[1] - e[0] for e in
-             (_mc_extent(X), _mc_extent(Y), _mc_extent(Z))]
-    eps = 0.004 * max(spans)
-    return X + nx / n * eps, Y + ny / n * eps, Z + nz / n * eps'''
+'''
 
 exec(_MC_DESMOS_SRC)
 
@@ -677,130 +581,24 @@ def _mc_plot_figure(d, c, vars_, comps):
     vals = _mc_np.asarray(fnum(U, V), dtype=float)
     if vals.ndim == 2:
         vals = vals.reshape(1, vals.shape[0], vals.shape[1])
-    mag = _mc_np.sqrt(sum(v * v for v in vals))
     fig = go.Figure()
-    # The Desmos scene bounds for the 3-D kinds — None for the 2-D
-    # quiver family.
-    bounds = None
-    if c == 1:
-        bounds = _mc_desmos_bounds(
-            (float(us[0]), float(us[-1])),
-            (float(vs[0]), float(vs[-1])),
-            _mc_extent(vals[0]))
-        _mc_desmos_decor(fig, bounds)
-        _mc_desmos_surf(fig, us, vs, vals[0])
-        fig.add_heatmap(
-            x=us, y=vs, z=vals[0], colorscale='Viridis', showscale=False,
-            visible=False, name='heatmap',
-        )
-        _mc_desmos_sheet(fig, bounds)
-        _mc_desmos_scene(fig, bounds)
-        _mc_plot_menu(
-            fig, ['surface', 'heatmap'],
-            [_mc_mode_vis(fig, ('surf',)),
-             _mc_mode_vis(fig, ('heatmap',), scene=False)])
-    elif c == 2:
-        fx, fy = vals[0], vals[1]
-        # Quiver: the native cartesian quiver trace — shafts and heads
-        # in one trace, so every pointer interaction stays in the
-        # cartesian layer (a gl3d cone overlay made the view
-        # un-draggable). 'raw' lengths draw each arrow at its true
-        # magnitude, matching the old tail→tip lines.
-        stride = 5
-        qx, qy, vx, vy = [], [], [], []
-        for i in range(0, len(vs), stride):
-            for j in range(0, len(us), stride):
-                fxx = fx[i][j]
-                fyy = fy[i][j]
-                if not (_mc_np.isfinite(fxx) and _mc_np.isfinite(fyy)):
-                    continue
-                qx.append(us[j])
-                qy.append(vs[i])
-                vx.append(fxx)
-                vy.append(fyy)
-        fig.add_quiver(
-            x=qx, y=qy, u=vx, v=vy, anchor='tail', lengthmode='raw',
-            marker=dict(
-                color=[float(m) for m in _mc_np.hypot(vx, vy)],
-                colorscale='Viridis', showscale=False,
-            ),
-            name='field',
-        )
-        fig.add_heatmap(
-            x=us, y=vs, z=mag, colorscale='Viridis', showscale=False,
-            visible=False, name='magnitude',
-        )
-        str_x, str_y = _mc_plot_streamlines(us, vs, fx, fy)
-        fig.add_scatter(
-            x=str_x, y=str_y, mode='lines', line=dict(color=acc, width=1),
-            hoverinfo='skip', visible=False, name='streamlines',
-        )
-        gx, gy, _ = _mc_plot_gridlines(us, vs, fx, fy)
-        fig.add_scatter(
-            x=gx, y=gy, mode='lines',
-            line=dict(color='rgba(59,130,246,0.55)', width=1),
-            hoverinfo='skip', visible=False, name='image of grid',
-        )
-        _mc_plot_menu(
-            fig,
-            ['quiver', 'magnitude heatmap', 'streamlines', 'image of grid'],
-            [
-                [True, False, False, False],
-                [False, True, False, False],
-                [False, False, True, False],
-                [False, False, False, True],
-            ],
-        )
-        fig.update_xaxes(zeroline=True)
-        fig.update_yaxes(zeroline=True, scaleanchor='x', scaleratio=1)
-    else:
-        fx, fy, fz = vals[0], vals[1], vals[2]
-        bounds = _mc_desmos_bounds(
-            _mc_extent(fx), _mc_extent(fy), _mc_extent(fz))
-        _mc_desmos_decor(fig, bounds)
-        fig.add_surface(
-            x=fx, y=fy, z=fz,
-            colorscale=[[0.0, '#c74440'], [1.0, '#c74440']],
-            showscale=False,
-            lighting=dict(ambient=0.25, diffuse=0.75, specular=0.325,
-                          roughness=0.45, fresnel=0.0),
-            lightposition=dict(x=-1400, y=-800, z=3200),
-            hovertemplate='x: %{x:.2f}<br>y: %{y:.2f}<br>'
-                          'z: %{z:.2f}<extra></extra>',
-            name='surf')
-        fig.add_surface(
-            x=fx, y=fy, z=fz, surfacecolor=U, colorscale='Plasma',
-            showscale=False, visible=False, name='surfb')
-        # Parametric surfaces can't use contours.x/y — its iso-lines
-        # are the coordinate grid, offset a touch along the normal so
-        # they don't z-fight the surface.
-        xo, yo, zo = _mc_iso_offset(us, vs, fx, fy, fz)
-        gx, gy, gz = _mc_plot_gridlines(us, vs, xo, yo, zo)
-        fig.add_scatter3d(
-            x=gx, y=gy, z=gz, mode='lines',
-            line=dict(color='#7e1f1a', width=1),
-            hoverinfo='skip', name='iso')
-        fig.add_scatter3d(
-            x=fx.ravel(), y=fy.ravel(), z=fz.ravel(), mode='markers',
-            marker=dict(size=2, color=acc), visible=False, name='cloud')
-        _mc_desmos_sheet(fig, bounds)
-        _mc_desmos_scene(fig, bounds)
-        _mc_plot_menu(
-            fig,
-            ['surface', 'colored by u', 'grid curves', 'point cloud'],
-            [
-                _mc_mode_vis(fig, ('surf', 'iso')),
-                _mc_mode_vis(fig, ('surfb', 'iso')),
-                _mc_mode_vis(fig, ('iso',)),
-                _mc_mode_vis(fig, ('cloud',)),
-            ],
-        )
-    # Only the R2→R2 field views get a legend — their mode menu swaps
-    # between four visualizations of the same field, so naming the
-    # visible trace explains what's on screen. Hidden traces
-    # (visible=False) are excluded from the legend automatically.
-    fig.update_layout(
-        margin=_MC_PLOT_MARGIN, showlegend=(c == 2))
+    bounds = _mc_desmos_bounds(
+        (float(us[0]), float(us[-1])),
+        (float(vs[0]), float(vs[-1])),
+        _mc_extent(vals[0]))
+    _mc_desmos_decor(fig, bounds)
+    _mc_desmos_surf(fig, us, vs, vals[0])
+    fig.add_heatmap(
+        x=us, y=vs, z=vals[0], colorscale='Viridis', showscale=False,
+        visible=False, name='heatmap',
+    )
+    _mc_desmos_sheet(fig, bounds)
+    _mc_desmos_scene(fig, bounds)
+    _mc_plot_menu(
+        fig, ['surface', 'heatmap'],
+        [_mc_mode_vis(fig, ('surf',)),
+         _mc_mode_vis(fig, ('heatmap',), scene=False)])
+    fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
     return fig, bounds
 
 
@@ -879,10 +677,6 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
         )
         L.append('')
     helpers = []
-    if d == 2 and c == 2:
-        helpers = [_MC_PLOT_STREAMLINES_SRC, _MC_PLOT_GRIDLINES_SRC]
-    elif d == 2 and c == 3:
-        helpers = [_MC_PLOT_GRIDLINES_SRC]
     if bounds is not None:
         helpers.append(_MC_DESMOS_SRC)
     for src in helpers:
@@ -961,143 +755,28 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
             'if vals.ndim == 2:',
             '    vals = vals.reshape('
             '1, vals.shape[0], vals.shape[1])',
-            'mag = _mc_np.sqrt(sum(v * v for v in vals))',
             'fig = go.Figure()',
+            'bounds = _mc_desmos_bounds(',
+            '    (float(us[0]), float(us[-1])),',
+            '    (float(vs[0]), float(vs[-1])),',
+            '    _mc_extent(vals[0]))',
+            '_mc_desmos_decor(fig, bounds)',
+            '_mc_desmos_surf(fig, us, vs, vals[0])',
+            'fig.add_heatmap(',
+            '    x=us, y=vs, z=vals[0],'
+            " colorscale='Viridis',",
+            '    showscale=False, visible=False,',
+            "    name='heatmap',",
+            ')',
+            '_mc_desmos_sheet(fig, bounds)',
+            '_mc_desmos_scene(fig, bounds)',
         ]
-        if c == 1:
-            L += [
-                'bounds = _mc_desmos_bounds(',
-                '    (float(us[0]), float(us[-1])),',
-                '    (float(vs[0]), float(vs[-1])),',
-                '    _mc_extent(vals[0]))',
-                '_mc_desmos_decor(fig, bounds)',
-                '_mc_desmos_surf(fig, us, vs, vals[0])',
-                'fig.add_heatmap(',
-                '    x=us, y=vs, z=vals[0],'
-                " colorscale='Viridis',",
-                '    showscale=False, visible=False,',
-                "    name='heatmap',",
-                ')',
-                '_mc_desmos_sheet(fig, bounds)',
-                '_mc_desmos_scene(fig, bounds)',
-            ]
-            menu(
-                ['surface', 'heatmap'],
-                ["_mc_mode_vis(fig, ('surf',))",
-                 "_mc_mode_vis(fig, ('heatmap',), scene=False)"],
-            )
-        elif c == 2:
-            L += [
-                'fx, fy = vals[0], vals[1]',
-                'stride = 5',
-                'qx, qy, vx, vy = [], [], [], []',
-                'for i in range(0, len(vs), stride):',
-                '    for j in range(0, len(us), stride):',
-                '        fxx = fx[i][j]',
-                '        fyy = fy[i][j]',
-                '        if not (_mc_np.isfinite(fxx)'
-                ' and _mc_np.isfinite(fyy)):',
-                '            continue',
-                '        qx.append(us[j])',
-                '        qy.append(vs[i])',
-                '        vx.append(fxx)',
-                '        vy.append(fyy)',
-                'fig.add_quiver(',
-                "    x=qx, y=qy, u=vx, v=vy, anchor='tail',",
-                "    lengthmode='raw',",
-                '    marker=dict(',
-                "        color=[float(m) for m in _mc_np.hypot(vx, vy)],",
-                "        colorscale='Viridis', showscale=False,",
-                '    ),',
-                "    name='field',",
-                ')',
-                'fig.add_heatmap(',
-                '    x=us, y=vs, z=mag,'
-                " colorscale='Viridis',",
-                "    showscale=False, visible=False,",
-                "    name='magnitude',",
-                ')',
-                'str_x, str_y = _mc_plot_streamlines(us, vs, fx, fy)',
-                'fig.add_scatter(',
-                '    x=str_x, y=str_y,'
-                " mode='lines',",
-                f"    line=dict(color='{acc}', width=1),",
-                "    hoverinfo='skip', visible=False,",
-                "    name='streamlines',",
-                ')',
-                'gx, gy, _ = _mc_plot_gridlines(us, vs, fx, fy)',
-                'fig.add_scatter(',
-                "    x=gx, y=gy, mode='lines',",
-                "    line=dict(color='rgba(59,130,246,0.55)',"
-                ' width=1),',
-                "    hoverinfo='skip', visible=False,",
-                "    name='image of grid',",
-                ')',
-            ]
-            menu(
-                [
-                    'quiver',
-                    'magnitude heatmap',
-                    'streamlines',
-                    'image of grid',
-                ],
-                [
-                    [True, False, False, False],
-                    [False, True, False, False],
-                    [False, False, True, False],
-                    [False, False, False, True],
-                ],
-            )
-            L += [
-                'fig.update_xaxes(zeroline=True)',
-                "fig.update_yaxes(zeroline=True, scaleanchor='x',"
-                ' scaleratio=1)',
-            ]
-        else:
-            L += [
-                'fx, fy, fz = vals[0], vals[1], vals[2]',
-                'bounds = _mc_desmos_bounds(',
-                '    _mc_extent(fx), _mc_extent(fy), _mc_extent(fz))',
-                '_mc_desmos_decor(fig, bounds)',
-                'fig.add_surface(',
-                '    x=fx, y=fy, z=fz,',
-                "    colorscale=[[0.0, '#c74440'], [1.0, '#c74440']],",
-                '    showscale=False,',
-                '    lighting=dict(ambient=0.25, diffuse=0.75,',
-                '        specular=0.325, roughness=0.45, fresnel=0.0),',
-                '    lightposition=dict(x=-1400, y=-800, z=3200),',
-                "    hovertemplate='x: %{x:.2f}<br>y: %{y:.2f}<br>'",
-                "        'z: %{z:.2f}<extra></extra>',",
-                "    name='surf')",
-                'fig.add_surface(',
-                '    x=fx, y=fy, z=fz, surfacecolor=U,',
-                "    colorscale='Plasma', showscale=False,",
-                "    visible=False, name='surfb',",
-                ')',
-                'xo, yo, zo = _mc_iso_offset(us, vs, fx, fy, fz)',
-                'gx, gy, gz = _mc_plot_gridlines(us, vs, xo, yo, zo)',
-                'fig.add_scatter3d(',
-                "    x=gx, y=gy, z=gz, mode='lines',",
-                "    line=dict(color='#7e1f1a', width=1),",
-                "    hoverinfo='skip', name='iso')",
-                'fig.add_scatter3d(',
-                '    x=fx.ravel(), y=fy.ravel(), z=fz.ravel(),',
-                "    mode='markers',",
-                f'    marker=dict(size=2, color={acc!r}),'
-                "    visible=False, name='cloud')",
-                '_mc_desmos_sheet(fig, bounds)',
-                '_mc_desmos_scene(fig, bounds)',
-            ]
-            menu(
-                ['surface', 'colored by u', 'grid curves',
-                 'point cloud'],
-                ["_mc_mode_vis(fig, ('surf', 'iso'))",
-                 "_mc_mode_vis(fig, ('surfb', 'iso'))",
-                 "_mc_mode_vis(fig, ('iso',))",
-                 "_mc_mode_vis(fig, ('cloud',))"],
-            )
-        L.append(
-            f'fig.update_layout(margin={margin}, showlegend={c == 2})')
+        menu(
+            ['surface', 'heatmap'],
+            ["_mc_mode_vis(fig, ('surf',))",
+             "_mc_mode_vis(fig, ('heatmap',), scene=False)"],
+        )
+        L.append(f'fig.update_layout(margin={margin}, showlegend=False)')
     L += [
         '# the figure dict the frontend hands to plotly.js',
         'fig.to_json()',
@@ -1116,6 +795,11 @@ def _mc_plot_payload(v):
     if c not in (1, 2, 3):
         raise ValueError(
             f'cannot plot {c} output components (needs 1, 2, or 3)'
+        )
+    if d == 2 and c != 1:
+        raise ValueError(
+            f'cannot plot a 2-variable function producing {c} '
+            'components — only ℝ²→ℝ surfaces are supported for now'
         )
     fig, bounds = _mc_plot_figure(d, c, vars_, comps)
     return {

@@ -4,7 +4,7 @@
 // are applied (see theme.ts).
 export interface PlotData {
   /** '<domain-dim>x<component-count>', e.g. '1x1' for y=f(x). */
-  kind: '1x1' | '1x2' | '1x3' | '2x1' | '2x2' | '2x3';
+  kind: '1x1' | '1x2' | '1x3' | '2x1';
   /** Variable names in grid order (e.g. ['x'], ['u', 'v']). */
   vars: string[];
   /** LaTeX of the plotted expression. */
