@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { clearFirstCell } from './helpers';
+import { clearFirstCell, sharedPage, resetApp } from './helpers';
 
 // The "How do I…" section lists the pinned topics — the catalog's
 // default set until the user customizes it; the wider catalog is
@@ -28,14 +28,16 @@ const closeSearch = async (page: Page) => {
   await expect(panel(page)).not.toBeVisible();
 };
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.waitForSelector('math-field');
+let page: Page;
+test.beforeAll(async ({ browser }, testInfo) => {
+  page = await sharedPage(browser, testInfo);
 });
 
-test('search finds topics beyond the default list and pins them', async ({
-  page,
-}) => {
+test.beforeEach(async () => {
+  await resetApp(page);
+});
+
+test('search finds topics beyond the default list and pins them', async () => {
   // 'Solve equations' is not a default row — only reachable via search.
   await expect(row(page, 'Solve equations')).toHaveCount(0);
   await openSearch(page);
@@ -57,9 +59,7 @@ test('search finds topics beyond the default list and pins them', async ({
   );
 });
 
-test('Enter inserts the topic input into the active cell', async ({
-  page,
-}) => {
+test('Enter inserts the topic input into the active cell', async () => {
   await clearFirstCell(page);
   await openSearch(page);
   await search(page).fill('square root');
@@ -78,9 +78,7 @@ test('Enter inserts the topic input into the active cell', async ({
   expect(await latex()).toBe('\\sqrt{2}');
 });
 
-test('Shift+Enter pins the selected result; the dialog stays open', async ({
-  page,
-}) => {
+test('Shift+Enter pins the selected result; the dialog stays open', async () => {
   await openSearch(page);
   await search(page).fill('eigenvalues');
   await page.keyboard.press('Shift+Enter');
@@ -91,7 +89,7 @@ test('Shift+Enter pins the selected result; the dialog stays open', async ({
   await expect(row(page, 'Eigenvalues')).toHaveCount(1);
 });
 
-test('clicking a result row pins it', async ({ page }) => {
+test('clicking a result row pins it', async () => {
   // 'Absolute value' has no insert input, so clicking the row falls
   // back to pinning it.
   await openSearch(page);
@@ -104,9 +102,7 @@ test('clicking a result row pins it', async ({ page }) => {
   await expect(row(page, 'Absolute value')).toHaveCount(1);
 });
 
-test('hiding a row removes it; restore default help topics brings it back', async ({
-  page,
-}) => {
+test('hiding a row removes it; restore default help topics brings it back', async () => {
   await expect(row(page, 'Fraction')).toHaveCount(1);
   await page.getByRole('button', { name: 'Hide Fraction' }).click();
   await expect(row(page, 'Fraction')).toHaveCount(0);
@@ -119,9 +115,7 @@ test('hiding a row removes it; restore default help topics brings it back', asyn
   await expect(page.locator('.howto-restore')).toHaveCount(0);
 });
 
-test('default topics unpin like any topic; restore re-pins them', async ({
-  page,
-}) => {
+test('default topics unpin like any topic; restore re-pins them', async () => {
   // There is no special featured class — a default row is just a pin
   // the section starts with, and unpin removes it like any other.
   await expect(page.locator('.howto-restore')).toHaveCount(0);
@@ -137,9 +131,7 @@ test('default topics unpin like any topic; restore re-pins them', async ({
   await expect(page.locator('.howto-restore')).toHaveCount(0);
 });
 
-test('hidden topics still surface in search and restore from the row', async ({
-  page,
-}) => {
+test('hidden topics still surface in search and restore from the row', async () => {
   await page.getByRole('button', { name: 'Hide Greek letters' }).click();
   await openSearch(page);
   await search(page).fill('greek');
@@ -153,9 +145,7 @@ test('hidden topics still surface in search and restore from the row', async ({
   await expect(row(page, 'Greek letters')).toHaveCount(1);
 });
 
-test('header guide link is visible; ? button opens the search overlay', async ({
-  page,
-}) => {
+test('header guide link is visible; ? button opens the search overlay', async () => {
   const link = page.locator('.guide-link');
   await expect(link).toBeVisible();
   await expect(link).toHaveAttribute('href', /user-guide\.pdf$/);
@@ -166,7 +156,7 @@ test('header guide link is visible; ? button opens the search overlay', async ({
   await expect(search(page)).toBeFocused();
 });
 
-test('Ctrl+/ toggles the search overlay', async ({ page }) => {
+test('Ctrl+/ toggles the search overlay', async () => {
   await page.keyboard.press('Control+/');
   await expect(panel(page)).toBeVisible();
   await expect(search(page)).toBeFocused();
@@ -174,9 +164,7 @@ test('Ctrl+/ toggles the search overlay', async ({ page }) => {
   await expect(panel(page)).not.toBeVisible();
 });
 
-test('palette Search help command opens the search overlay', async ({
-  page,
-}) => {
+test('palette Search help command opens the search overlay', async () => {
   await page.keyboard.press('Control+K');
   await page.locator('.palette-input').fill('search help');
   await page.keyboard.press('Enter');
@@ -185,9 +173,7 @@ test('palette Search help command opens the search overlay', async ({
   await expect(search(page)).toBeFocused();
 });
 
-test('Esc closes the overlay and refocuses the active cell', async ({
-  page,
-}) => {
+test('Esc closes the overlay and refocuses the active cell', async () => {
   await openSearch(page);
   await page.keyboard.press('Escape');
   await expect(panel(page)).not.toBeVisible();
@@ -197,9 +183,7 @@ test('Esc closes the overlay and refocuses the active cell', async ({
   expect(inside).toBe(true);
 });
 
-test('word-level matches rank above scattered subsequence noise', async ({
-  page,
-}) => {
+test('word-level matches rank above scattered subsequence noise', async () => {
   // 'root' as a scattered subsequence matches many rows — the topic
   // containing it verbatim must lead, and its mark covers all four chars.
   await openSearch(page);
@@ -209,7 +193,7 @@ test('word-level matches rank above scattered subsequence noise', async ({
   await expect(first.locator('.help-goal mark')).toHaveText('root');
 });
 
-test('matched text is highlighted in result rows', async ({ page }) => {
+test('matched text is highlighted in result rows', async () => {
   // 'real' marks the goal word 'Real' and the 'real' run inside \reals
   // in the visible keystroke text.
   await openSearch(page);
@@ -219,7 +203,7 @@ test('matched text is highlighted in result rows', async ({ page }) => {
   await expect(h.locator('.help-how mark').first()).toHaveText('real');
 });
 
-test('typing does not resize the result list', async ({ page }) => {
+test('typing does not resize the result list', async () => {
   await openSearch(page);
   const list = page.locator('.help-list');
   const before = (await list.boundingBox())!.height;
@@ -233,7 +217,7 @@ test('typing does not resize the result list', async ({ page }) => {
   expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
 });
 
-test('pins and hidden topics persist across reload', async ({ page }) => {
+test('pins and hidden topics persist across reload', async () => {
   await openSearch(page);
   await search(page).fill('solve equations');
   await hit(page, 'Solve equations').locator('.howto-pin').click();

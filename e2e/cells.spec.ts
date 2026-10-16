@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { clearFirstCell, SEEDED_LATEX } from './helpers';
+import {
+  clearFirstCell,
+  reloadToSeed,
+  resetApp,
+  SEEDED_LATEX,
+  sharedPage,
+} from './helpers';
 
 // Cell-level behavior: the expression list is the app's core document model.
 // These tests pin DOM-visible behavior only — no framework internals — so
@@ -36,33 +42,28 @@ const focusCell = async (page: Page, i: number) => {
   await waitFocusedIndex(page, i);
 };
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.waitForSelector('math-field');
+let page: Page;
+test.beforeAll(async ({ browser }, testInfo) => {
+  page = await sharedPage(browser, testInfo);
+});
+
+test.beforeEach(async () => {
+  await resetApp(page);
   await clearFirstCell(page);
 });
 
 test('starts with a single focused cell seeded with the default expression',
   { tag: '@smoke' },
-  async ({
-  page,
-}) => {
-  // beforeEach cleared the field. Wait for that debounced write to land
-  // (which drains the pending buffer), then clear storage so the reload
-  // observes the empty-storage boot state — the seeded cell — rather
-  // than the persisted edit.
-  await page.waitForFunction(() =>
-    localStorage.getItem('mathcompile-worksheets')?.includes('""'),
-  );
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
-  await page.waitForSelector('math-field');
+  async () => {
+  // Clear storage with the pending write already drained, then reload —
+  // the empty-storage boot path seeds the example cell.
+  await reloadToSeed(page);
   await expect(page.locator('math-field')).toHaveCount(1);
   await waitFocusedIndex(page, 0);
   expect(await cellValue(cell(page, 0))).toBe(SEEDED_LATEX);
 });
 
-test('add-expression button appends a focused empty cell', async ({ page }) => {
+test('add-expression button appends a focused empty cell', async () => {
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('x', { delay: 40 });
   await page.locator('.add-expr').click();
@@ -72,7 +73,7 @@ test('add-expression button appends a focused empty cell', async ({ page }) => {
   expect(await cellValue(cell(page, 0))).toBe('x');
 });
 
-test('cells are numbered 1..n', async ({ page }) => {
+test('cells are numbered 1..n', async () => {
   await page.locator('.add-expr').click();
   await page.locator('.add-expr').click();
   await expect(page.locator('.expr-index')).toHaveText(['1', '2', '3']);
@@ -80,9 +81,7 @@ test('cells are numbered 1..n', async ({ page }) => {
 
 test('Shift+Enter inserts a cell directly below the current one',
   { tag: '@smoke' },
-  async ({
-  page,
-}) => {
+  async () => {
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('a', { delay: 40 });
   await page.locator('.add-expr').click();
@@ -97,7 +96,7 @@ test('Shift+Enter inserts a cell directly below the current one',
   expect(await cellValue(cell(page, 2))).toBe('b');
 });
 
-test('editing a cell does not affect its siblings', async ({ page }) => {
+test('editing a cell does not affect its siblings', async () => {
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('a', { delay: 40 });
   await page.locator('.add-expr').click();
@@ -106,7 +105,7 @@ test('editing a cell does not affect its siblings', async ({ page }) => {
   expect(await cellValue(cell(page, 1))).toBe('b');
 });
 
-test('delete button removes only that cell', async ({ page }) => {
+test('delete button removes only that cell', async () => {
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('a', { delay: 40 });
   await page.locator('.add-expr').click();
@@ -116,9 +115,7 @@ test('delete button removes only that cell', async ({ page }) => {
   expect(await cellValue(cell(page, 0))).toBe('b');
 });
 
-test('deleting the last remaining cell clears it instead of removing it', async ({
-  page,
-}) => {
+test('deleting the last remaining cell clears it instead of removing it', async () => {
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('x+y', { delay: 40 });
   await page.locator('.expr-delete').click();
@@ -128,9 +125,7 @@ test('deleting the last remaining cell clears it instead of removing it', async 
 
 test('Backspace in an empty cell removes it and focuses a neighbor',
   { tag: '@smoke' },
-  async ({
-  page,
-}) => {
+  async () => {
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('a', { delay: 40 });
   // Append an empty cell — it lands focused.
@@ -143,9 +138,7 @@ test('Backspace in an empty cell removes it and focuses a neighbor',
   await waitFocusedIndex(page, 0);
 });
 
-test('Delete in an empty middle cell removes it and focuses the next cell', async ({
-  page,
-}) => {
+test('Delete in an empty middle cell removes it and focuses the next cell', async () => {
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('a', { delay: 40 });
   await page.locator('.add-expr').click();
@@ -163,96 +156,23 @@ test('Delete in an empty middle cell removes it and focuses the next cell', asyn
   await waitFocusedIndex(page, 1);
 });
 
-test('Backspace in the only cell just clears it', async ({ page }) => {
+test('Backspace in the only cell just clears it', async () => {
   await cell(page, 0).click();
   await page.keyboard.press('Backspace');
   await expect(page.locator('math-field')).toHaveCount(1);
   expect(await cellValue(cell(page, 0))).toBe('');
 });
 
-test('Backspace unwinds blank displaylines lines before removing the cell', async ({
-  page,
-}) => {
-  await cell(page, 0).click();
-  await cell(page, 0).pressSequentially('a', { delay: 40 });
-  await page.locator('.add-expr').click();
-  // A lone Enter wraps two blank lines — not "one blank line" yet, so the
-  // first Backspace is MQ's own unwrap, the second removes the cell.
-  await page.keyboard.press('Enter');
-  expect(await cellValue(cell(page, 1))).toBe('\\displaylines{\\\\ }');
-  await page.keyboard.press('Backspace');
-  await expect(page.locator('math-field')).toHaveCount(2);
-  expect(await cellValue(cell(page, 1))).toBe('');
-  await page.keyboard.press('Backspace');
-  await expect(page.locator('math-field')).toHaveCount(1);
-  expect(await cellValue(cell(page, 0))).toBe('a');
-});
-
-test('Enter splits the cell into multiple lines', { tag: '@smoke' }, async ({ page }) => {
-  await cell(page, 0).click();
-  await cell(page, 0).pressSequentially('x', { delay: 40 });
-  await page.keyboard.press('Enter');
-  await cell(page, 0).pressSequentially('y', { delay: 40 });
-  // No new cell; the field holds a \displaylines environment.
-  await expect(page.locator('math-field')).toHaveCount(1);
-  expect(await cellValue(cell(page, 0))).toBe('\\displaylines{x\\\\ y}');
-});
-
-// Shift+Space adds a column in a real matrix, but \displaylines is a
-// single-column grid — pressing it in a multi-line cell used to insert a
-// bogus side-by-side cell, corrupting row indices (later addColumn calls
-// then crashed on `rows[i]` holes). Now it types an ordinary space.
-test('Shift+Space inside a multi-line cell does not add a column', async ({
-  page,
-}) => {
-  await cell(page, 0).click();
-  await cell(page, 0).pressSequentially('x', { delay: 40 });
-  await page.keyboard.press('Enter');
-  await cell(page, 0).pressSequentially('y', { delay: 40 });
-  expect(await cellValue(cell(page, 0))).toBe('\\displaylines{x\\\\ y}');
-  await page.keyboard.press('Shift+Space');
-  expect(await cellValue(cell(page, 0))).toBe('\\displaylines{x\\\\ y\\ }');
-  // The grid still behaves: Enter splits another row cleanly.
-  await page.keyboard.press('Enter');
-  await cell(page, 0).pressSequentially('z', { delay: 40 });
-  expect(await cellValue(cell(page, 0))).toBe(
-    '\\displaylines{x\\\\ y\\ \\\\ z}',
-  );
-});
-
-test('Enter inside a nested atom splits the row, keeping the atom whole', async ({
-  page,
-}) => {
-  await cell(page, 0).click();
-  // \frac via the latex command input; Enter accepts the command and lands
-  // the caret in the numerator.
-  await cell(page, 0).pressSequentially('\\frac', { delay: 40 });
-  await page.keyboard.press('Enter');
-  expect(await cellValue(cell(page, 0))).toBe('\\frac{ }{ }');
-  await cell(page, 0).pressSequentially('1', { delay: 40 });
-  // Enter while nested inside the fraction: the break lands on the row, the
-  // atom stays whole.
-  await page.keyboard.press('Enter');
-  await cell(page, 0).pressSequentially('z', { delay: 40 });
-  expect(await cellValue(cell(page, 0))).toBe(
-    '\\displaylines{\\frac{1}{ }\\\\ z}',
-  );
-});
-
-test('Enter accepts an open latex command instead of line-breaking', async ({
-  page,
-}) => {
-  await cell(page, 0).click();
-  await cell(page, 0).pressSequentially('\\sqrt', { delay: 40 });
-  await page.keyboard.press('Enter');
-  const v = await cellValue(cell(page, 0));
-  expect(v).toBe('\\sqrt{ }');
-  expect(v).not.toContain('displaylines');
-});
+// The displaylines-editing keys themselves (Enter splitting, nested-atom
+// Enter, Shift+Space, blank-line Backspace unwrap, in-grid arrows,
+// Shift+Arrow select-out) moved to src/editor/mq-cell-editing.test.ts —
+// they exercise vendored MQ through typedText/keystroke, which needs no
+// browser. What stays here is the store/DOM wiring: cell counts, focus
+// ownership across cells, buttons.
 
 test('ArrowDown at the bottom edge hops to the next cell',
   { tag: '@smoke' },
-  async ({ page }) => {
+  async () => {
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('a', { delay: 40 });
   await page.locator('.add-expr').click();
@@ -263,9 +183,7 @@ test('ArrowDown at the bottom edge hops to the next cell',
   await waitFocusedIndex(page, 1);
 });
 
-test('ArrowDown past the last cell creates and focuses a new cell', async ({
-  page,
-}) => {
+test('ArrowDown past the last cell creates and focuses a new cell', async () => {
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('a', { delay: 40 });
   await page.keyboard.press('ArrowDown');
@@ -273,9 +191,7 @@ test('ArrowDown past the last cell creates and focuses a new cell', async ({
   await waitFocusedIndex(page, 1);
 });
 
-test('ArrowUp at the top edge hops to the previous cell; at cell 0 it stays', async ({
-  page,
-}) => {
+test('ArrowUp at the top edge hops to the previous cell; at cell 0 it stays', async () => {
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('a', { delay: 40 });
   await page.locator('.add-expr').click();
@@ -290,45 +206,7 @@ test('ArrowUp at the top edge hops to the previous cell; at cell 0 it stays', as
   await expect(page.locator('math-field')).toHaveCount(2);
 });
 
-test('vertical arrows stay inside a multi-line cell until the last row', async ({
-  page,
-}) => {
-  await cell(page, 0).click();
-  await cell(page, 0).pressSequentially('x', { delay: 40 });
-  await page.keyboard.press('Enter');
-  await cell(page, 0).pressSequentially('y', { delay: 40 });
-  await page.locator('.add-expr').click();
-  // Back to cell 0, caret on its second (last) line.
-  await focusCell(page, 0);
-  await page.keyboard.press('ArrowUp');
-  await page.waitForTimeout(80);
-  // Still inside cell 0 (moved caret to line 1, no cell hop).
-  expect(await focusedIndex(page)).toBe(0);
-  await page.keyboard.press('ArrowDown');
-  await page.waitForTimeout(80);
-  expect(await focusedIndex(page)).toBe(0);
-  // From the last line, ArrowDown hops to cell 1.
-  await page.keyboard.press('ArrowDown');
-  await waitFocusedIndex(page, 1);
-});
-
-test('Shift+Arrow at a cell edge extends the selection without hopping cells', async ({
-  page,
-}) => {
-  await cell(page, 0).click();
-  await cell(page, 0).pressSequentially('a', { delay: 40 });
-  await page.locator('.add-expr').click();
-  await cell(page, 1).pressSequentially('xy', { delay: 40 });
-  await page.keyboard.press('Shift+ArrowUp');
-  await page.keyboard.press('Shift+ArrowDown');
-  await page.waitForTimeout(80);
-  expect(await focusedIndex(page)).toBe(1);
-  await expect(page.locator('math-field')).toHaveCount(2);
-});
-
-test('focusing a cell makes it the target for subsequent commands', async ({
-  page,
-}) => {
+test('focusing a cell makes it the target for subsequent commands', async () => {
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('a', { delay: 40 });
   await page.locator('.add-expr').click();
@@ -341,7 +219,7 @@ test('focusing a cell makes it the target for subsequent commands', async ({
   expect(await cellValue(cell(page, 2))).toBe('b');
 });
 
-test('clicking another cell transfers focus', async ({ page }) => {
+test('clicking another cell transfers focus', async () => {
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('a', { delay: 40 });
   await page.locator('.add-expr').click();

@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url';
 // build/mathquill.test.js (library + tests inlined) and writes results to
 // window.testResultsString when `?json` is in the query.
 test('vendored mathquill unit suite passes', async ({ page }) => {
+  // PW_PREVIEW serves dist/ only — unit.html and vendor/node_modules
+  // aren't part of the bundle, so there's nothing to navigate to.
+  test.skip(!!process.env.PW_PREVIEW, 'mocha page is not in dist/');
   test.setTimeout(120_000);
   // unit.html pulls mocha from vendor/mathquill/node_modules — a fresh
   // checkout doesn't have it (the root npm ci doesn't recurse into

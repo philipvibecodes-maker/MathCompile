@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { clearFirstCell } from './helpers';
+import { clearFirstCell, sharedPage, resetApp } from './helpers';
 
 // Python input cells — a plain source editor (no MathQuill) whose
 // def/lambda bindings register in the worksheet's python-function
@@ -32,32 +32,32 @@ const typePython = async (page: Page, source: string) => {
   expect(await ta.inputValue()).toBe(source);
 };
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.waitForSelector('math-field');
+let page: Page;
+test.beforeAll(async ({ browser }, testInfo) => {
+  page = await sharedPage(browser, testInfo);
+});
+
+test.beforeEach(async () => {
+  await resetApp(page);
   await clearFirstCell(page);
 });
 
 test('+ Python cell appends a source cell with the py tag',
   { tag: '@smoke' },
-  async ({
-  page,
-}) => {
+  async () => {
   await addPythonCell(page);
   await expect(page.locator('math-field')).toHaveCount(1);
   await expect(pyInput(page)).toBeFocused();
   await expect(page.locator('.py-tag')).toHaveText('py');
 });
 
-test('typing keeps raw source — no math editing inside', async ({ page }) => {
+test('typing keeps raw source — no math editing inside', async () => {
   await addPythonCell(page);
   const source = 'def relu(x):\n    return x if x > 0 else 0';
   await typePython(page, source);
 });
 
-test('Shift+Enter in a python cell adds a math cell below', async ({
-  page,
-}) => {
+test('Shift+Enter in a python cell adds a math cell below', async () => {
   await addPythonCell(page);
   await typePython(page, 'x = 1');
   await page.keyboard.press('Shift+Enter');
@@ -71,7 +71,7 @@ test('Shift+Enter in a python cell adds a math cell below', async ({
   );
 });
 
-test('arrow keys move between python and math cells', async ({ page }) => {
+test('arrow keys move between python and math cells', async () => {
   await addPythonCell(page);
   await typePython(page, 'x = 1');
   await page.keyboard.press('ArrowUp');
@@ -84,14 +84,14 @@ test('arrow keys move between python and math cells', async ({ page }) => {
   await expect(pyInput(page)).toBeFocused();
 });
 
-test('Backspace on an empty python cell deletes it', async ({ page }) => {
+test('Backspace on an empty python cell deletes it', async () => {
   await addPythonCell(page);
   await page.keyboard.press('Backspace');
   await expect(pyInput(page)).toHaveCount(0);
   await expect(page.locator('math-field')).toHaveCount(1);
 });
 
-test('a python cell\'s kind and source survive a reload', async ({ page }) => {
+test('a python cell\'s kind and source survive a reload', async () => {
   await addPythonCell(page);
   await typePython(page, 'def relu(x):\n    return x');
   // Debounced write — wait for the stored workbook to carry the kind.
@@ -104,9 +104,7 @@ test('a python cell\'s kind and source survive a reload', async ({ page }) => {
   await expect(pyInput(page)).toHaveValue('def relu(x):\n    return x');
 });
 
-test('python target echoes the source and resolves \\mathrm calls', async ({
-  page,
-}) => {
+test('python target echoes the source and resolves \\mathrm calls', async () => {
   // Cell 0 (math) stays empty; add the python cell, then a math cell
   // below that calls the def.
   await addPythonCell(page);
@@ -126,7 +124,7 @@ test('python target echoes the source and resolves \\mathrm calls', async ({
   await expect(outputs.nth(2)).not.toContainText('Function');
 });
 
-test('# @latex aliases a def to custom notation', async ({ page }) => {
+test('# @latex aliases a def to custom notation', async () => {
   await addPythonCell(page);
   await typePython(
     page,
@@ -143,10 +141,8 @@ test('# @latex aliases a def to custom notation', async ({ page }) => {
   );
 });
 
-test('python cells evaluate in the calculator — defs stay silent, notes surface', async ({
-  page,
-}) => {
-  test.setTimeout(180_000);
+test('python cells evaluate in the calculator — defs stay silent, notes surface', async () => {
+  test.setTimeout(120_000);
   await addPythonCell(page);
   await typePython(page, '# @latex \\pm\ndef goo(x):\n  return x + 2');
   await setTarget(page, 'calculator');
@@ -156,7 +152,7 @@ test('python cells evaluate in the calculator — defs stay silent, notes surfac
   const row = page.locator('.expr-row').nth(1);
   await expect(row.locator('.issue-note')).toContainText(
     'expands to Measurement(0, x)',
-    { timeout: 150_000 },
+    { timeout: 90_000 },
   );
   await expect(row.locator('.calc-issues')).toContainText(
     'different # @latex name',
@@ -164,9 +160,7 @@ test('python cells evaluate in the calculator — defs stay silent, notes surfac
   await expect(row.locator('.calc-result')).toHaveCount(0);
 });
 
-test('a call above its python def flags the ordering note', async ({
-  page,
-}) => {
+test('a call above its python def flags the ordering note', async () => {
   // Cell 0 calls relu before any python cell exists.
   await cell(page, 0).pressSequentially('\\mathrm{relu}', { delay: 20 });
   await page.keyboard.press('ArrowRight');
@@ -183,10 +177,8 @@ test('a call above its python def flags the ordering note', async ({
   await expect(note).toContainText('must sit above this cell');
 });
 
-test('a matrix-literal argument calls the def — not implicit multiply', async ({
-  page,
-}) => {
-  test.setTimeout(180_000);
+test('a matrix-literal argument calls the def — not implicit multiply', async () => {
+  test.setTimeout(120_000);
   await addPythonCell(page);
   await typePython(
     page,
@@ -204,7 +196,7 @@ test('a matrix-literal argument calls the def — not implicit multiply', async 
   await setTarget(page, 'calculator');
   const row = page.locator('.expr-row').nth(2);
   await expect(row.locator('.calc-result')).toHaveCount(2, {
-    timeout: 150_000,
+    timeout: 90_000,
   });
   await row.locator('.calc-code-toggle input').check();
   await expect(row.locator('.calc-code')).toContainText(

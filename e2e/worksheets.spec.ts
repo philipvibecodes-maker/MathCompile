@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import type { Locator } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-import { clearFirstCell } from './helpers';
+import { clearFirstCell, sharedPage, resetApp } from './helpers';
 
 // Worksheets: every sheet autosaves into 'mathcompile-worksheets', the
 // header menu switches/renames/deletes them, and "Save to file" /
@@ -26,17 +27,19 @@ const openMenu = async (page: import('@playwright/test').Page) => {
   await expect(page.locator('.worksheets-menu')).toBeVisible();
 };
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.waitForSelector('math-field');
+let page: Page;
+test.beforeAll(async ({ browser }, testInfo) => {
+  page = await sharedPage(browser, testInfo);
+});
+
+test.beforeEach(async () => {
+  await resetApp(page);
   await clearFirstCell(page);
 });
 
 test('each worksheet autosaves and the active sheet restores on reload',
   { tag: '@smoke' },
-  async ({
-  page,
-}) => {
+  async () => {
   await cell(page, 0).pressSequentially('x+1', { delay: 40 });
 
   await openMenu(page);
@@ -55,7 +58,7 @@ test('each worksheet autosaves and the active sheet restores on reload',
   expect(await cellValue(cell(page, 0))).toBe('x+1');
 });
 
-test('renaming and deleting worksheets in the menu', async ({ page }) => {
+test('renaming and deleting worksheets in the menu', async () => {
   await openMenu(page);
   await page.locator('.ws-action', { hasText: 'New worksheet' }).click();
 
@@ -81,9 +84,7 @@ test('renaming and deleting worksheets in the menu', async ({ page }) => {
   ).toHaveCount(0);
 });
 
-test('save to file downloads a .mathcompile.json that opens back', async ({
-  page,
-}) => {
+test('save to file downloads a .mathcompile.json that opens back', async () => {
   await cell(page, 0).pressSequentially('x+1', { delay: 40 });
   await waitStored(page, 'x+1');
 
@@ -110,7 +111,7 @@ test('save to file downloads a .mathcompile.json that opens back', async ({
   expect(await cellValue(cell(page, 0))).toBe('x+1');
 });
 
-test('the command palette opens a worksheet file', async ({ page }) => {
+test('the command palette opens a worksheet file', async () => {
   const payload = JSON.stringify({
     app: 'mathcompile',
     kind: 'worksheet',
@@ -139,7 +140,7 @@ test('the command palette opens a worksheet file', async ({ page }) => {
   expect(await cellValue(cell(page, 0))).toBe('z+3');
 });
 
-test('the last remaining worksheet cannot be deleted', async ({ page }) => {
+test('the last remaining worksheet cannot be deleted', async () => {
   await openMenu(page);
   await expect(page.locator('.ws-row')).toHaveCount(1);
   await expect(page.locator('.ws-delete')).toHaveCount(0);
