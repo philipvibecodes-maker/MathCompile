@@ -191,15 +191,21 @@ _MC_PLOT_ACC = '#3b82f6'
 _MC_PLOT_MARGIN = dict(l=40, r=10, t=30, b=40)
 
 
-def _mc_plot_menu(fig, labels, vis_lists):
+def _mc_plot_menu(fig, labels, vis_lists, relayouts=None):
     # One updatemenu driving trace visibility — the several views of the
-    # same signature (surface vs heatmap). Appends:
+    # same signature (surface vs heatmap, field vs grid-image). When a
+    # view carries a matching relayout dict it rides along as the
+    # button's second 'update' arg, so switching modes can reframe the
+    # axes (the grid image usually outruns the domain window). Appends:
     # the scene's aspect dropdown is already a menu on the same row.
+    if relayouts is None:
+        relayouts = [None] * len(labels)
     menus = list(fig.layout.updatemenus or ())
     menus.append(dict(
         buttons=[
-            dict(label=lab, method='update', args=[{'visible': vis}])
-            for lab, vis in zip(labels, vis_lists)
+            dict(label=lab, method='update',
+                 args=[{'visible': vis}] + ([rel] if rel else []))
+            for lab, vis, rel in zip(labels, vis_lists, relayouts)
         ],
         direction='down',
         x=0.075, xanchor='left',
@@ -529,6 +535,16 @@ def _mc_mode_vis(fig, data_names, scene=True):
     ]
 
 
+def _mc_range_rel(box):
+    # A mode button's relayout arg: the axis ranges that frame that
+    # view's content. box is (x0, x1, y0, y1) — a view builder's
+    # returned extent, or None when it drew nothing (no relayout then).
+    if box is None:
+        return None
+    return {'xaxis.range': [box[0], box[1]],
+            'yaxis.range': [box[2], box[3]]}
+
+
 '''
 
 # ————————————————————————————————————————————————————————————————————
@@ -556,10 +572,14 @@ _MC_FIELD_SRC = '''_MC_FIELD_NAMES = ('field',)
 def _mc_field_view(fig, fnum, rng=(-3.0, 3.0), n=21, color='#3b82f6'):
     # Quiver view of the vector field: one arrow per grid point —
     # shaft plus head barbs in a single NaN-separated scatter trace.
+    # Returns (x0, x1, y0, y1) framing the drawn arrows, or None when
+    # nothing finite sampled — the figure uses it for the mode's
+    # relayout ranges.
     # TODO(quiver): implement the arrow geometry.
     fig.add_scatter(
         x=[None], y=[None], mode='lines', name='field',
         hoverinfo='skip')
+    return (rng[0], rng[1], rng[0], rng[1])
 '''
 
 _MC_GRIDIMG_SRC = '''_MC_GRIDIMG_NAMES = ('img-src', 'img-x', 'img-y')
@@ -569,12 +589,15 @@ def _mc_gridimg_view(fig, fnum, rng=(-3.0, 3.0), nlines=9, npts=160,
                      imgx='#c74440', imgy='#3b82f6', src='#8c8c8c'):
     # Image-of-grid view: the images of the domain's grid lines under
     # the map over a dimmed copy of the source grid. Traces start
-    # hidden — the mode menu reveals them.
+    # hidden — the mode menu reveals them. Returns (x0, x1, y0, y1)
+    # framing the image curves (with padding), or None when nothing
+    # finite sampled.
     # TODO(gridimg): implement the transformed grid curves.
     for name in _MC_GRIDIMG_NAMES:
         fig.add_scatter(
             x=[None], y=[None], mode='lines', name=name,
             visible=False, hoverinfo='skip')
+    return None
 '''
 
 exec(_MC_VIEWS_SRC)
@@ -638,19 +661,28 @@ def _mc_plot_figure(d, c, vars_, comps):
     if c == 2:
         # ℝ²→ℝ² — the quiver field and the image of the domain grid
         # live in one figure behind the mode menu ('field' default,
-        # 'image' hidden). Each view samples its own grid through fnum;
-        # equal aspect so arrows and mapped lines don't distort.
-        _mc_field_view(
+        # 'image' hidden). Each view samples its own grid through fnum
+        # and reports the box framing it — the default mode's box sets
+        # the initial ranges, the menu buttons' relayout args reframe
+        # on a switch (the image usually outruns the domain window).
+        # Equal aspect so arrows and mapped lines don't distort.
+        fbox = _mc_field_view(
             fig, fnum, _MC_PLOT_R2, _MC_PLOT_NF, _MC_PLOT_FIELD)
-        _mc_gridimg_view(
+        ibox = _mc_gridimg_view(
             fig, fnum, _MC_PLOT_R2, _MC_PLOT_NG, _MC_PLOT_NGPTS,
             _MC_PLOT_IMGX, _MC_PLOT_IMGY, _MC_PLOT_SRC)
-        fig.update_xaxes(zeroline=True)
-        fig.update_yaxes(zeroline=True, scaleanchor='x', scaleratio=1)
+        box = fbox if fbox is not None else (
+            _MC_PLOT_R2[0], _MC_PLOT_R2[1],
+            _MC_PLOT_R2[0], _MC_PLOT_R2[1])
+        fig.update_xaxes(zeroline=True, range=[box[0], box[1]])
+        fig.update_yaxes(
+            zeroline=True, scaleanchor='x', scaleratio=1,
+            range=[box[2], box[3]])
         _mc_plot_menu(
             fig, ['field', 'image'],
             [_mc_mode_vis(fig, _MC_FIELD_NAMES, scene=False),
-             _mc_mode_vis(fig, _MC_GRIDIMG_NAMES, scene=False)])
+             _mc_mode_vis(fig, _MC_GRIDIMG_NAMES, scene=False)],
+            [_mc_range_rel(fbox), _mc_range_rel(ibox)])
         fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
         return fig, None
     vals = _mc_np.asarray(fnum(U, V), dtype=float)
@@ -762,15 +794,21 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
         L += [src.rstrip(), '']
     L.append(f"fnum = sp.lambdify({params}, {body}, 'numpy')")
 
-    def menu(labels, vis_exprs):
+    def menu(labels, vis_exprs, rel_exprs=None):
+        # rel_exprs: parallel list of relayout code strings (or None) —
+        # a button's second 'update' arg, matching _mc_plot_menu's
+        # runtime signature.
+        if rel_exprs is None:
+            rel_exprs = [None] * len(labels)
         L.append('fig.update_layout(updatemenus=[dict(')
         L.append('    buttons=[')
-        for lab, vis in zip(labels, vis_exprs):
+        for lab, vis, rel in zip(labels, vis_exprs, rel_exprs):
+            extra = f', {rel}' if rel is not None else ''
             L.append(
                 f"        dict(label='{lab}', method='update',"
             )
             L.append(
-                f'             args=[{{"visible": {vis}}}]),'
+                f'             args=[{{"visible": {vis}}}{extra}]),'
             )
         L.append('    ],')
         L.append("    direction='down', x=0.075, xanchor='left', y=1.12,")
@@ -827,20 +865,25 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
         if c == 2:
             L += [
                 'fig = go.Figure()',
-                f'_mc_field_view(fig, fnum, {_MC_PLOT_R2},'
+                f'fbox = _mc_field_view(fig, fnum, {_MC_PLOT_R2},'
                 f' {_MC_PLOT_NF}, {_MC_PLOT_FIELD!r})',
-                f'_mc_gridimg_view(fig, fnum, {_MC_PLOT_R2},'
+                f'ibox = _mc_gridimg_view(fig, fnum, {_MC_PLOT_R2},'
                 f' {_MC_PLOT_NG}, {_MC_PLOT_NGPTS},'
                 f' {_MC_PLOT_IMGX!r}, {_MC_PLOT_IMGY!r},'
                 f' {_MC_PLOT_SRC!r})',
-                'fig.update_xaxes(zeroline=True)',
+                'box = fbox if fbox is not None else '
+                f'({_MC_PLOT_R2[0]}, {_MC_PLOT_R2[1]},'
+                f' {_MC_PLOT_R2[0]}, {_MC_PLOT_R2[1]})',
+                'fig.update_xaxes('
+                'zeroline=True, range=[box[0], box[1]])',
                 "fig.update_yaxes(zeroline=True, scaleanchor='x',"
-                ' scaleratio=1)',
+                ' scaleratio=1, range=[box[2], box[3]])',
             ]
             menu(
                 ['field', 'image'],
                 ["_mc_mode_vis(fig, _MC_FIELD_NAMES, scene=False)",
                  "_mc_mode_vis(fig, _MC_GRIDIMG_NAMES, scene=False)"],
+                ['_mc_range_rel(fbox)', '_mc_range_rel(ibox)'],
             )
         else:
             L += [

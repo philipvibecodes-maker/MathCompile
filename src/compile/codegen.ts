@@ -4253,8 +4253,51 @@ function emitPlotPython(
       ],
       plot: true,
     };
-  // d === 2 && c === 2 — SymPy has no vector-field renderer.
-  return unplottable('a ℝ²→ℝ² vector field has no SymPy plotting call');
+  // d === 2 && c === 2 — ℝ²→ℝ². The field view lowers to a real
+  // plotting call; the image-of-grid view has no SymPy equivalent, so
+  // its program rides along as comments under it (the calculator
+  // target renders both interactively behind the figure's mode menu).
+  const field = emitPlotFieldPython(expr, comps, callVars, emitter);
+  const image = emitPlotImagePython(expr, comps, callVars, emitter);
+  return {
+    lines: [
+      ...field.lines,
+      ...image.lines.map((l) => (l === '' ? '#' : `# ${l}`)),
+    ],
+    plot: field.plot === true || image.plot === true,
+  };
+}
+
+// The field (quiver) view of an ℝ²→ℝ² plot, python target.
+// TODO(quiver): emit the vector-field plotting call.
+function emitPlotFieldPython(
+  _expr: MathJson,
+  _comps: MathJson[],
+  _callVars: string[],
+  emitter: Emitter,
+): StatementOut {
+  emitter.scope.flag(
+    'note',
+    'plot: a ℝ²→ℝ² field has no direct lowering yet — emitted as a comment',
+  );
+  return { lines: ['# plot field — not yet lowered'] };
+}
+
+// The image-of-grid view of an ℝ²→ℝ² plot, python target. The caller
+// '# '-prefixes these lines so they ride under the field view's real
+// code as a commented program.
+// TODO(gridimg): emit the matplotlib program.
+function emitPlotImagePython(
+  _expr: MathJson,
+  _comps: MathJson[],
+  _callVars: string[],
+  emitter: Emitter,
+): StatementOut {
+  emitter.scope.flag(
+    'note',
+    'plot: a ℝ²→ℝ² grid image has no direct lowering yet — emitted as a comment',
+  );
+  return { lines: ['image-of-grid — not yet lowered'] };
 }
 
 function emitStatement(node: MathJson, emitter: Emitter): StatementOut {

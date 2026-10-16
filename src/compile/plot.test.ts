@@ -119,7 +119,7 @@ describe('plot statement python codegen', () => {
     ).toBe(true);
   });
 
-  it('R²→R² comments out with a note — SymPy has no vector-field call', () => {
+  it('R²→R² emits the field view plus commented image view', () => {
     const out = compileWorksheet(
       [
         {
@@ -131,11 +131,11 @@ describe('plot statement python codegen', () => {
       'python',
       { importAll: false },
     );
-    expect(out.cellLines[0].some((l) => l.startsWith('# plot('))).toBe(
+    expect(out.cellLines[0].some((l) => l.startsWith('# plot field'))).toBe(
       true,
     );
     expect(
-      out.issues.some((i) => i.message.includes('vector field')),
+      out.cellLines[0].some((l) => l.startsWith('# image-of-grid')),
     ).toBe(true);
   });
 });
