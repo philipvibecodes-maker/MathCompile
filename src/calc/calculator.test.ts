@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { compileCellForCalc, compileCellsForCalc } from '../compile/codegen';
 import { parseCellLatex } from '../compile/ir';
-import { interimEvaluate, shownPrograms } from './calculator.svelte.ts';
+import {
+  interimEvaluate,
+  shownPrograms,
+  type CalcRow,
+} from './calculator.svelte.ts';
 // Assertions below pin the `import sympy as sp` (qualified) emission —
 // the helpers pass importAll:false; import-* mode has its own describe.
 const calc = (latex: string) =>
@@ -1537,6 +1541,102 @@ describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
     // Unrelated names don't reserve letters.
     const rows2 = await interimEvaluate('\\int x dx', ['a = 7']);
     expect((rows2[0] as { latex?: string }).latex ?? '').toContain('C');
+  });
+
+  describe('plot statements (CE-sampled interim figure)', () => {
+    const plotRow = (rows: CalcRow[]) =>
+      rows[0].ok && rows[0].plot !== undefined ? rows[0].plot : undefined;
+
+    it('samples a 1-D expression into a 1x1 scatter figure', async () => {
+      const plot = plotRow(await interimEvaluate('\\text{plot} x^2'));
+      expect(plot?.kind).toBe('1x1');
+      expect(plot?.vars).toEqual(['x']);
+      const tr = plot?.figure.data[0] as {
+        type: string;
+        x: number[];
+        y: number[];
+      };
+      expect(tr.type).toBe('scatter');
+      expect(tr.x).toHaveLength(600);
+      expect(tr.y[0]).toBeCloseTo(100);
+      expect(tr.y[300]).toBeCloseTo(0);
+    });
+
+    it('leaves gaps where the sampled value is not real-finite', async () => {
+      // √x is complex for x < 0 — the left half of the [-10,10] grid
+      // comes back as gaps (plotly/echarts break the trace on them).
+      const plot = plotRow(await interimEvaluate('\\text{plot} \\sqrt{x}'));
+      const tr = plot?.figure.data[0] as { y: number[] };
+      expect(Number.isFinite(tr.y[150])).toBe(false); // x ≈ -5
+      expect(tr.y[599]).toBeCloseTo(Math.sqrt(10));
+    });
+
+    it('reads a column vector as a parametric 1x2 curve', async () => {
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} \\begin{pmatrix} \\cos t \\\\ \\sin t \\end{pmatrix}',
+        ),
+      );
+      expect(plot?.kind).toBe('1x2');
+      expect(plot?.vars).toEqual(['t']);
+      const tr = plot?.figure.data[0] as { x: number[]; y: number[] };
+      // Unit circle — every sample's radius is 1.
+      for (let i = 0; i < tr.x.length; i += 97)
+        expect(Math.hypot(tr.x[i], tr.y[i])).toBeCloseTo(1, 5);
+    });
+
+    it('reads a 3-vector as a 1x3 curve trace', async () => {
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} \\begin{pmatrix} \\cos t \\\\ \\sin t \\\\ t \\end{pmatrix}',
+        ),
+      );
+      expect(plot?.kind).toBe('1x3');
+      const tr = plot?.figure.data[0] as { type: string; z: number[] };
+      expect(tr.type).toBe('scatter3d');
+      expect(tr.z[0]).toBeCloseTo(-10);
+    });
+
+    it('samples a 2-D scalar into a surface plus hidden heatmap', async () => {
+      const plot = plotRow(
+        await interimEvaluate('\\text{plot} x^{2}+y^{2}'),
+      );
+      expect(plot?.kind).toBe('2x1');
+      expect(plot?.vars).toEqual(['x', 'y']);
+      const types = plot?.figure.data.map((t) => t.type);
+      expect(types).toEqual(['surface', 'heatmap']);
+      const z = (plot!.figure.data[0] as { z: number[][] }).z;
+      // Corner of the [-3,3]² grid: (-3,-3) → 18.
+      expect(z[0][0]).toBeCloseTo(18);
+    });
+
+    it('stays empty for unplottable or unknowable signatures', async () => {
+      // Def'd names don't bind in the interim — g(x) can't be sampled.
+      expect(
+        await interimEvaluate('\\text{plot} g(x)', ['\\text{def} g(x)=x^2']),
+      ).toEqual([]);
+      // A name bound by a cell above is unknowable to the interim.
+      expect(await interimEvaluate('\\text{plot} a*x', ['a = 2'])).toEqual([]);
+      // Constants / too many vars / R²→R³: the worker's error row lands.
+      expect(await interimEvaluate('\\text{plot} 5')).toEqual([]);
+      expect(
+        await interimEvaluate('\\text{plot} x+y+z'),
+      ).toEqual([]);
+      expect(
+        await interimEvaluate(
+          '\\text{plot} \\begin{pmatrix} u \\\\ v \\\\ u+v \\end{pmatrix}',
+        ),
+      ).toEqual([]);
+    });
+
+    it('folds same-cell assignments before sampling', async () => {
+      const rows = await interimEvaluate('a = 2\\\\ \\text{plot} a*x');
+      expect(rows).toHaveLength(2);
+      const plot = rows[1].ok ? rows[1].plot : undefined;
+      expect(plot?.kind).toBe('1x1');
+      const tr = plot?.figure.data[0] as { y: number[] };
+      expect(tr.y[599]).toBeCloseTo(20);
+    });
   });
 });
 

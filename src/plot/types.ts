@@ -13,4 +13,8 @@ export interface PlotData {
     data: Record<string, unknown>[];
     layout: Record<string, unknown>;
   };
+  /** Set on Compute-Engine-sampled interim figures — PlotView keeps
+   * the ECharts overlay up for the whole SymPy boot window until a
+   * worker-sampled payload (no flag) replaces the row. */
+  interim?: boolean;
 }

@@ -4161,7 +4161,7 @@ function assignDisplay(
 // literal with a single row or column flattens to its elements (a
 // column vector is how multi-component functions are written), a
 // List/Tuple flattens likewise, anything else is a scalar.
-function plotComponents(expr: MathJson): MathJson[] | undefined {
+export function plotComponents(expr: MathJson): MathJson[] | undefined {
   if (!isArr(expr)) return [expr];
   const h = headOf(expr);
   if (h === 'Matrix' && expr.length === 2 && isHead(expr[1], 'List')) {

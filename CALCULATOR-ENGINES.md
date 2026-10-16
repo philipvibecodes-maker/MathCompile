@@ -166,6 +166,33 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   return no row — never show a guess as a real result. (Real-engine
   errors *are* shown: normalization issues and per-statement exceptions
   land as error rows.)
+- **`\text{plot}` gets a real interim row**: `interimPlotRow` compiles
+  each component with CE's `compile()` (free function — bound same-cell
+  names fold in) and samples on the worker's grids (`PLOT_R1/N1`,
+  `PLOT_R2/N2` mirror `_MC_PLOT_*`), emitting a `PlotData` whose
+  figure is a minimal plotly dict (no Desmos decor) flagged
+  `interim: true`. `PlotView` keeps the `EchartsPlot` overlay mounted
+  while `plot.interim` — ECharts owns the whole boot window — and
+  while plotly.js downloads on real rows; the overlay unmounts when a
+  worker payload lands (same index key, so the component persists and
+  only the prop swaps). Declines (null → no row): prior-cell-bound
+  vars (value unknowable — `priorDeclared` is snapshotted before
+  `reserve()` folds this cell's own names in), unknown/def'd
+  functions (compile returns non-'expression' calling or all-NaN
+  samples), and signatures the worker would reject (d∉{1,2},
+  c∉{1,2,3}, d=2⇒c=1).
+- **`src/plot/echarts.ts` converts the figure dict**, not the
+  expression: scatter→line (NaN→null gaps), scatter3d→line3D,
+  surface→gl `surface` (x/y vectors expanded to `[x,y,z]` triples +
+  `dataShape`), heatmap→category-axis heatmap + viridis `visualMap`.
+  Scene-decor names (`wallgrid`/`box`/`axis`/`ticks`/`xysheet`) and
+  `mode:'text'` traces are skipped; a 2x1 figure prefers the gl
+  surface over its hidden heatmap. Gotchas: echarts **defers canvas
+  creation to the first `setOption`** — `init` alone leaves an empty
+  wrapper; and the chart handle must be `$state` or the render effect
+  fires once before init and never re-runs. echarts-gl's `surface`
+  accepts flat data + `dataShape: [rows, cols]` (it can also infer it
+  from x-reset boundaries).
 - **Serializer fixups**: `.latex` emits `\exponentialE`, `\imaginaryI`,
   `\lparen`/`\rparen` — `cleanLatex` maps them to `e`, `i`, `(`, `)` so
   MathQuill renders the names instead of italicizing the command text.

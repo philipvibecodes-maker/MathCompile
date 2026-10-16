@@ -1,9 +1,10 @@
-import { ComputeEngine } from '@cortex-js/compute-engine';
+import { ComputeEngine, compile } from '@cortex-js/compute-engine';
 import {
   collectDeclared,
   compileCellsForCalc,
   firstFreeCapital,
   freeNames,
+  plotComponents,
   type CalcWorksheetProgram,
   type CompileOptions,
 } from '../compile/codegen';
@@ -626,6 +627,194 @@ const evalStatement = (
     : { ok: true as const, latex };
 };
 
+// Sampling constants mirror the worker's _MC_PLOT_* grid so the interim
+// plot covers the same domain the SymPy figure will.
+const PLOT_R1: [number, number] = [-10, 10];
+const PLOT_N1 = 600;
+const PLOT_R2: [number, number] = [-3, 3];
+const PLOT_N2 = 80;
+const PLOT_ACCENT = '#3b82f6';
+
+const linspace = (lo: number, hi: number, n: number): number[] => {
+  const out = new Array<number>(n);
+  const step = (hi - lo) / (n - 1);
+  for (let i = 0; i < n; i++) out[i] = lo + step * i;
+  return out;
+};
+
+// A compiled run() result: finite numbers keep their value; complex
+// results with im === 0 unwrap to .re; everything else (non-finite,
+// complex, boolean, string, array, thrown) is a gap.
+const sampleNum = (run: (vars: Record<string, number>) => unknown, vars: Record<string, number>): number => {
+  let v: unknown;
+  try {
+    v = run(vars);
+  } catch {
+    return NaN;
+  }
+  if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+  if (v !== null && typeof v === 'object' && 're' in v && 'im' in v) {
+    const c = v as { re: number; im: number };
+    return c.im === 0 && Number.isFinite(c.re) ? c.re : NaN;
+  }
+  return NaN;
+};
+
+// A `\text{plot}` statement's interim row: the expression is compiled
+// to JS by CE's `compile` and sampled on the worker's grid, producing a
+// real PlotData payload — CalcOutput renders it through the same
+// PlotView, and the real row replaces it wholesale when SymPy lands.
+// Returns null (no interim row) for signatures the interim can't see:
+// vars bound by cells above, unplottable heads, unknown functions, or
+// dimension/component counts the worker itself would reject.
+function interimPlotRow(
+  expr: MathJson,
+  ce: ComputeEngine,
+  priorDeclared: Set<string>,
+): CalcRow | null {
+  const h = headOf(expr);
+  // The worker rejects sets/intervals with a "cannot be plotted"
+  // error — the interim stays silent until that row lands.
+  if (h === 'Interval' || h === 'Set') return null;
+  // A lambda carries its own parameters — vars come from the signature
+  // rather than the body's free symbols.
+  const lambda = h === 'Function' && isArr(expr) ? expr : undefined;
+  const compNodes =
+    plotComponents(lambda ? lambda[1] : expr) ?? undefined;
+  if (compNodes === undefined) return null;
+  const params = lambda
+    ? lambda.slice(2).filter((p): p is string => typeof p === 'string')
+    : undefined;
+
+  // Compile each component once — assigned values fold in, so a
+  // same-cell `a = 2 \\ plot a*x` samples the bound a.
+  const runners: ((vars: Record<string, number>) => unknown)[] = [];
+  const free = new Set<string>();
+  for (const comp of compNodes) {
+    let res;
+    try {
+      res = compile(ce.box(comp as never));
+    } catch {
+      return null;
+    }
+    const run = res.run;
+    if (typeof run !== 'function') return null;
+    // 'lambda' calls take positional args — a component compiled that
+    // way is unusual enough to decline rather than guess the order.
+    if (res.calling !== 'expression') return null;
+    for (const s of res.freeSymbols ?? []) free.add(s);
+    runners.push(run as (vars: Record<string, number>) => unknown);
+  }
+  let vars: string[];
+  if (params !== undefined) {
+    vars = [...params].sort();
+    // Body symbols beyond the params are unknowable — can't sample.
+    for (const s of free) if (!params.includes(s)) return null;
+  } else {
+    vars = [...free].sort();
+  }
+  // A name bound by a cell above isn't in scope for the interim (prior
+  // assigns aren't evaluated — only declared), so its value is
+  // unknowable; skip rather than flash a wrong-kind plot.
+  if (vars.some((v) => priorDeclared.has(v))) return null;
+  const d = vars.length;
+  const c = compNodes.length;
+  // Same constraints the worker reports as errors — the interim leaves
+  // the row empty and the real diagnostic lands with SymPy.
+  if (d < 1 || d > 2 || c < 1 || c > 3 || (d === 2 && c !== 1))
+    return null;
+
+  const data: Record<string, unknown>[] = [];
+  const layout: Record<string, unknown> = {
+    margin: { l: 40, r: 10, t: 30, b: 40 },
+    showlegend: false,
+  };
+  const allGaps = (v: number[]): boolean =>
+    v.every((x) => !Number.isFinite(x));
+
+  if (d === 1) {
+    const ts = linspace(PLOT_R1[0], PLOT_R1[1], PLOT_N1);
+    const vals = runners.map((run) =>
+      ts.map((t) => sampleNum(run, { [vars[0]]: t })),
+    );
+    if (vals.some(allGaps)) return null;
+    if (c === 1) {
+      data.push({
+        type: 'scatter',
+        x: ts,
+        y: vals[0],
+        mode: 'lines',
+        line: { color: PLOT_ACCENT, width: 2 },
+      });
+      layout['xaxis'] = { zeroline: true };
+      layout['yaxis'] = { zeroline: true };
+    } else if (c === 2) {
+      data.push({
+        type: 'scatter',
+        x: vals[0],
+        y: vals[1],
+        mode: 'lines',
+        line: { color: PLOT_ACCENT, width: 2 },
+      });
+      layout['xaxis'] = { zeroline: true };
+      layout['yaxis'] = {
+        zeroline: true,
+        scaleanchor: 'x',
+        scaleratio: 1,
+      };
+    } else {
+      data.push({
+        type: 'scatter3d',
+        x: vals[0],
+        y: vals[1],
+        z: vals[2],
+        mode: 'lines',
+        line: { color: PLOT_ACCENT, width: 4 },
+        name: 'curve',
+      });
+    }
+  } else {
+    // d === 2 — ℝ²→ℝ: a surface plus the hidden heatmap trace (the
+    // same shape the worker emits, minus the Desmos scene decor).
+    const us = linspace(PLOT_R2[0], PLOT_R2[1], PLOT_N2);
+    const vs = linspace(PLOT_R2[0], PLOT_R2[1], PLOT_N2);
+    const grid: number[][] = vs.map((v) =>
+      us.map((u) => sampleNum(runners[0], { [vars[0]]: u, [vars[1]]: v })),
+    );
+    if (grid.every(allGaps)) return null;
+    data.push(
+      { type: 'surface', x: us, y: vs, z: grid, name: 'surf' },
+      {
+        type: 'heatmap',
+        x: us,
+        y: vs,
+        z: grid,
+        colorscale: 'Viridis',
+        showscale: false,
+        visible: false,
+        name: 'heatmap',
+      },
+    );
+  }
+
+  let label = '';
+  try {
+    label = cleanLatex(ce.box(expr as never).latex);
+  } catch {
+    label = '';
+  }
+  return {
+    ok: true,
+    plot: {
+      kind: `${d}x${c}` as PlotData['kind'],
+      vars,
+      label,
+      figure: { data, layout },
+      interim: true,
+    },
+  };
+}
+
 // Instant best-effort results while the SymPy engine boots: the same
 // parse + normalize the compiler feeds on (`parseCellLatex` →
 // `normalizeIR` — chained Equal flattens, `name = rhs` becomes Assign,
@@ -669,6 +858,12 @@ export async function interimEvaluate(
       const n = normalizeIR(parseCellLatex(l), undefined, opts);
       if (n.ir !== undefined) collectDeclared(n.ir, used, declaredFns);
     }
+    // Names bound by the cells above — a plot statement sampling one of
+    // them can't know the value, so the interim row stays empty.
+    // (Snapshot before reserve() folds this cell's own names in — a
+    // same-cell `a = 2` IS bound in the engine below and must not
+    // count as prior-declared.)
+    const priorDeclared = new Set(used);
     const reserve = (n: MathJson | undefined): void => {
       if (typeof n === 'string') used.add(n);
       else if (isArr(n)) for (const c of n) reserve(c);
@@ -686,6 +881,11 @@ export async function interimEvaluate(
     return statements
       .map((s): CalcRow | null => {
         try {
+          // `\text{plot}` statements sample through the JS compiler —
+          // evalStatement's SKIP_HEADS would leave them empty until
+          // SymPy lands.
+          if (isArr(s) && headOf(s) === 'Plot' && s.length === 2)
+            return interimPlotRow(s[1], engine, priorDeclared);
           return evalStatement(s, engine, nextConst);
         } catch {
           // A statement CE can't read shouldn't sink the other rows.
