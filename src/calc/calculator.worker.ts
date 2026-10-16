@@ -701,41 +701,30 @@ def _mc_plot_figure(d, c, vars_, comps):
              _mc_mode_vis(fig, ('heatmap',), scene=False)])
     elif c == 2:
         fx, fy = vals[0], vals[1]
-        # Quiver: one scatter of tail→tip segments plus a cone per tip.
+        # Quiver: the native cartesian quiver trace — shafts and heads
+        # in one trace, so every pointer interaction stays in the
+        # cartesian layer (a gl3d cone overlay made the view
+        # un-draggable). 'raw' lengths draw each arrow at its true
+        # magnitude, matching the old tail→tip lines.
         stride = 5
-        sx, sy, cx, cy, vx, vy = [], [], [], [], [], []
+        qx, qy, vx, vy = [], [], [], []
         for i in range(0, len(vs), stride):
             for j in range(0, len(us), stride):
                 fxx = fx[i][j]
                 fyy = fy[i][j]
                 if not (_mc_np.isfinite(fxx) and _mc_np.isfinite(fyy)):
                     continue
-                sx += [us[j], us[j] + fxx, None]
-                sy += [vs[i], vs[i] + fyy, None]
-                cx.append(us[j] + fxx)
-                cy.append(vs[i] + fyy)
+                qx.append(us[j])
+                qy.append(vs[i])
                 vx.append(fxx)
                 vy.append(fyy)
-        fig.add_scatter(
-            x=sx, y=sy, mode='lines', line=dict(color=acc, width=1),
-            hoverinfo='skip', name='field', legendgroup='field',
-        )
-        # Arrowheads as rotated markers, not gl3d cones on a scene2
-        # overlay — a GL subplot on top swallows the pointer events and
-        # its camera can't stay in sync with cartesian pan/zoom, so the
-        # whole view was un-draggable. All-cartesian keeps pan/zoom
-        # native; marker.angle is bearing (clockwise from +y).
-        fig.add_scatter(
-            x=cx, y=cy, mode='markers',
+        fig.add_quiver(
+            x=qx, y=qy, u=vx, v=vy, anchor='tail', lengthmode='raw',
             marker=dict(
-                symbol='triangle-up', size=8,
                 color=[float(m) for m in _mc_np.hypot(vx, vy)],
                 colorscale='Viridis', showscale=False,
-                angle=[float(_mc_np.degrees(_mc_np.arctan2(u, v)))
-                       for u, v in zip(vx, vy)],
             ),
-            hoverinfo='skip',
-            name='field', legendgroup='field', showlegend=False,
+            name='field',
         )
         fig.add_heatmap(
             x=us, y=vs, z=mag, colorscale='Viridis', showscale=False,
@@ -756,10 +745,10 @@ def _mc_plot_figure(d, c, vars_, comps):
             fig,
             ['quiver', 'magnitude heatmap', 'streamlines', 'image of grid'],
             [
-                [True, True, False, False, False],
-                [False, False, True, False, False],
-                [False, False, False, True, False],
-                [False, False, False, False, True],
+                [True, False, False, False],
+                [False, True, False, False],
+                [False, False, True, False],
+                [False, False, False, True],
             ],
         )
         fig.update_xaxes(zeroline=True)
@@ -1000,10 +989,8 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
         elif c == 2:
             L += [
                 'fx, fy = vals[0], vals[1]',
-                '# quiver: one scatter of tail→tip segments plus a',
-                '# rotated marker arrowhead per tip',
                 'stride = 5',
-                'sx, sy, cx, cy, vx, vy = [], [], [], [], [], []',
+                'qx, qy, vx, vy = [], [], [], []',
                 'for i in range(0, len(vs), stride):',
                 '    for j in range(0, len(us), stride):',
                 '        fxx = fx[i][j]',
@@ -1011,30 +998,18 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
                 '        if not (_mc_np.isfinite(fxx)'
                 ' and _mc_np.isfinite(fyy)):',
                 '            continue',
-                '        sx += [us[j], us[j] + fxx, None]',
-                '        sy += [vs[i], vs[i] + fyy, None]',
-                '        cx.append(us[j] + fxx)',
-                '        cy.append(vs[i] + fyy)',
+                '        qx.append(us[j])',
+                '        qy.append(vs[i])',
                 '        vx.append(fxx)',
                 '        vy.append(fyy)',
-                'fig.add_scatter(',
-                "    x=sx, y=sy, mode='lines',",
-                f"    line=dict(color='{acc}', width=1),",
-                "    hoverinfo='skip', name='field',",
-                "    legendgroup='field',",
-                ')',
-                'fig.add_scatter(',
-                "    x=cx, y=cy, mode='markers',",
+                'fig.add_quiver(',
+                "    x=qx, y=qy, u=vx, v=vy, anchor='tail',",
+                "    lengthmode='raw',",
                 '    marker=dict(',
-                "        symbol='triangle-up', size=8,",
                 "        color=[float(m) for m in _mc_np.hypot(vx, vy)],",
                 "        colorscale='Viridis', showscale=False,",
-                '        angle=[float(_mc_np.degrees(',
-                '            _mc_np.arctan2(u, v)))',
-                '            for u, v in zip(vx, vy)],',
                 '    ),',
-                "    hoverinfo='skip', name='field',",
-                "    legendgroup='field', showlegend=False,",
+                "    name='field',",
                 ')',
                 'fig.add_heatmap(',
                 '    x=us, y=vs, z=mag,'
@@ -1067,10 +1042,10 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
                     'image of grid',
                 ],
                 [
-                    [True, True, False, False, False],
-                    [False, False, True, False, False],
-                    [False, False, False, True, False],
-                    [False, False, False, False, True],
+                    [True, False, False, False],
+                    [False, True, False, False],
+                    [False, False, True, False],
+                    [False, False, False, True],
                 ],
             )
             L += [
