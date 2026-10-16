@@ -110,13 +110,13 @@ describe('plot statement python codegen', () => {
     ).toBe(true);
   });
 
-  it('R²→R³ lowers to sp.plot3d_parametric_surface', () => {
+  it('R²→R³ lowers to sp.plot3d_parametric_surface on the unit square', () => {
     const lines = pyLines(
       '\\text{plot} \\begin{pmatrix} u \\cos v \\\\ u \\sin v \\\\ v \\end{pmatrix}',
     );
-    expect(
-      lines.some((l) => l.startsWith('sp.plot3d_parametric_surface(')),
-    ).toBe(true);
+    expect(lines).toContain(
+      'sp.plot3d_parametric_surface(u * sp.cos(v), u * sp.sin(v), v, (u, 0, 1), (v, 0, 1))',
+    );
   });
 
   it('R²→R² comments out with a note — SymPy has no vector-field call', () => {

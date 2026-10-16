@@ -180,10 +180,14 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   `reserve()` folds this cell's own names in), unknown/def'd
   functions (compile returns non-'expression' calling or all-NaN
   samples), and signatures the worker would reject (d∉{1,2},
-  c∉{1,2,3}, d=2⇒c=1).
+  c∉{1,2,3}, d=2⇒c=2). ℝ²→ℝ³ parametrizations sample the unit
+  square [0,1]² — the surface is the image of the domain, so the
+  trace carries per-component 2-D x/y/z grids instead of axis
+  vectors.
 - **`src/plot/echarts.ts` converts the figure dict**, not the
   expression: scatter→line (NaN→null gaps), scatter3d→line3D,
-  surface→gl `surface` (x/y vectors expanded to `[x,y,z]` triples +
+  surface→gl `surface` (x/y vectors — or per-component 2-D grids for
+  a 2x3 parametrization — flattened to `[x,y,z]` triples +
   `dataShape`), heatmap→category-axis heatmap + viridis `visualMap`.
   Scene-decor names (`wallgrid`/`box`/`axis`/`ticks`/`xysheet`) and
   `mode:'text'` traces are skipped; a 2x1 figure prefers the gl

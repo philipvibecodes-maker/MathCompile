@@ -49,3 +49,72 @@ test('plot cell renders an interim echarts figure while SymPy boots', async ({
   await expect(page.locator('.plot-interim')).toHaveCount(0);
   await expect(page.locator('.calc-interim')).toHaveCount(0);
 });
+
+test('R²→R³ plot renders a parametric surface over the unit square', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      'mathcompile-prefs',
+      JSON.stringify({ target: 'calculator' }),
+    );
+    localStorage.setItem(
+      'mathcompile-cells',
+      JSON.stringify([
+        {
+          id: 1,
+          latex:
+            '\\text{plot} \\begin{pmatrix} u \\cos v \\\\ u \\sin v \\\\ v \\end{pmatrix}',
+        },
+      ]),
+    );
+  });
+  await page.goto('/');
+  await page.waitForSelector('math-field');
+
+  // Interim: ECharts draws the CE-sampled surface while SymPy boots.
+  await expect(page.locator('.plot-interim canvas')).toBeVisible({
+    timeout: 60_000,
+  });
+
+  // SymPy lands — the plotly figure owns the row, no error lines.
+  await expect(page.locator('.engine-chip-text')).toContainText(
+    'SymPy ready',
+    { timeout: 120_000 },
+  );
+  await expect(page.locator('.js-plotly-plot')).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(page.locator('.plot-interim')).toHaveCount(0);
+  await expect(page.locator('.issue-error')).toHaveCount(0);
+
+  // The surface trace is parametric: x/y/z are 80×80 component grids
+  // (a heightfield surface would carry 1-D axis vectors — plotly.py
+  // serializes numpy arrays as {dtype, bdata, shape}). The samples are
+  // the image of the unit square — u=1, v=1 gives x = cos(1).
+  const surf = await page.evaluate(() => {
+    const gd = document.querySelector('.js-plotly-plot') as unknown as {
+      data?: {
+        type?: string;
+        name?: string;
+        x?: { dtype?: string; bdata?: string; shape?: number[] };
+      }[];
+    } | null;
+    const t = gd?.data?.find((tr) => tr.name === 'surf');
+    const x = t?.x;
+    let corner: number | undefined;
+    if (x?.bdata && x?.dtype === 'f8') {
+      const bytes = Uint8Array.from(atob(x.bdata), (ch) =>
+        ch.charCodeAt(0),
+      );
+      const flat = new Float64Array(bytes.buffer);
+      corner = flat[flat.length - 1];
+    }
+    return { type: t?.type, shape: x?.shape, corner };
+  });
+  expect(surf.type).toBe('surface');
+  // plotly.js keeps the numpy payload's shape as "rows, cols".
+  expect(String(surf.shape)).toMatch(/^80,\s*80$/);
+  expect(surf.corner).toBeCloseTo(Math.cos(1), 5);
+});

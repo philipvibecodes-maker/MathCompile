@@ -1610,6 +1610,31 @@ describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
       expect(z[0][0]).toBeCloseTo(18);
     });
 
+    it('reads a 2-var 3-vector as a parametric surface on the unit square', async () => {
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} \\begin{pmatrix} u \\\\ v \\\\ u^2+v^2 \\end{pmatrix}',
+        ),
+      );
+      expect(plot?.kind).toBe('2x3');
+      expect(plot?.vars).toEqual(['u', 'v']);
+      const tr = plot?.figure.data[0] as {
+        type: string;
+        x: number[][];
+        y: number[][];
+        z: number[][];
+      };
+      expect(tr.type).toBe('surface');
+      // The grids are the image of [0,1]²: (u,v)=(0,0) → (0,0,0),
+      // (u,v)=(1,1) → (1,1,2).
+      expect(tr.x[0][0]).toBeCloseTo(0);
+      expect(tr.y[0][0]).toBeCloseTo(0);
+      expect(tr.z[0][0]).toBeCloseTo(0);
+      expect(tr.x[79][79]).toBeCloseTo(1);
+      expect(tr.y[79][79]).toBeCloseTo(1);
+      expect(tr.z[79][79]).toBeCloseTo(2);
+    });
+
     it('stays empty for unplottable or unknowable signatures', async () => {
       // Def'd names don't bind in the interim — g(x) can't be sampled.
       expect(
@@ -1617,14 +1642,14 @@ describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
       ).toEqual([]);
       // A name bound by a cell above is unknowable to the interim.
       expect(await interimEvaluate('\\text{plot} a*x', ['a = 2'])).toEqual([]);
-      // Constants / too many vars / R²→R³: the worker's error row lands.
+      // Constants / too many vars / R²→R²: the worker's error row lands.
       expect(await interimEvaluate('\\text{plot} 5')).toEqual([]);
       expect(
         await interimEvaluate('\\text{plot} x+y+z'),
       ).toEqual([]);
       expect(
         await interimEvaluate(
-          '\\text{plot} \\begin{pmatrix} u \\\\ v \\\\ u+v \\end{pmatrix}',
+          '\\text{plot} \\begin{pmatrix} u \\\\ v \\end{pmatrix}',
         ),
       ).toEqual([]);
     });

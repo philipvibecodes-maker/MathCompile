@@ -125,6 +125,9 @@ def _mc_row(val):
 
 _MC_PLOT_R1 = (-10.0, 10.0)
 _MC_PLOT_R2 = (-3.0, 3.0)
+# ℝ²→ℝ³ parametrizations sample the unit square — the surface is the
+# image of [0,1]², not a graph over a symmetric window.
+_MC_PLOT_UNIT = (0.0, 1.0)
 _MC_PLOT_N1 = 600
 _MC_PLOT_N2 = 80
 
@@ -577,13 +580,26 @@ def _mc_plot_figure(d, c, vars_, comps):
         fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
         return fig, None
 
-    us = _mc_np.linspace(_MC_PLOT_R2[0], _MC_PLOT_R2[1], _MC_PLOT_N2)
-    vs = _mc_np.linspace(_MC_PLOT_R2[0], _MC_PLOT_R2[1], _MC_PLOT_N2)
+    r2 = _MC_PLOT_UNIT if c == 3 else _MC_PLOT_R2
+    us = _mc_np.linspace(r2[0], r2[1], _MC_PLOT_N2)
+    vs = _mc_np.linspace(r2[0], r2[1], _MC_PLOT_N2)
     U, V = _mc_np.meshgrid(us, vs)
     vals = _mc_np.asarray(fnum(U, V), dtype=float)
     if vals.ndim == 2:
         vals = vals.reshape(1, vals.shape[0], vals.shape[1])
     fig = go.Figure()
+    if c == 3:
+        # Parametric surface: x/y/z are the component grids — the image
+        # of the unit square, not axis vectors plus a heightfield.
+        bounds = _mc_desmos_bounds(
+            _mc_extent(vals[0]), _mc_extent(vals[1]),
+            _mc_extent(vals[2]))
+        _mc_desmos_decor(fig, bounds)
+        _mc_desmos_surf(fig, vals[0], vals[1], vals[2])
+        _mc_desmos_sheet(fig, bounds)
+        _mc_desmos_scene(fig, bounds)
+        fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
+        return fig, bounds
     bounds = _mc_desmos_bounds(
         (float(us[0]), float(us[-1])),
         (float(vs[0]), float(vs[-1])),
@@ -747,37 +763,49 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
             ]
         L.append(f'fig.update_layout(margin={margin}, showlegend=False)')
     else:
+        r2 = _MC_PLOT_UNIT if c == 3 else _MC_PLOT_R2
         L += [
-            f'us = _mc_np.linspace({_MC_PLOT_R2[0]}, {_MC_PLOT_R2[1]},'
-            f' {_MC_PLOT_N2})',
-            f'vs = _mc_np.linspace({_MC_PLOT_R2[0]}, {_MC_PLOT_R2[1]},'
-            f' {_MC_PLOT_N2})',
+            f'us = _mc_np.linspace({r2[0]}, {r2[1]}, {_MC_PLOT_N2})',
+            f'vs = _mc_np.linspace({r2[0]}, {r2[1]}, {_MC_PLOT_N2})',
             'U, V = _mc_np.meshgrid(us, vs)',
             'vals = _mc_np.asarray(fnum(U, V), dtype=float)',
             'if vals.ndim == 2:',
             '    vals = vals.reshape('
             '1, vals.shape[0], vals.shape[1])',
             'fig = go.Figure()',
-            'bounds = _mc_desmos_bounds(',
-            '    (float(us[0]), float(us[-1])),',
-            '    (float(vs[0]), float(vs[-1])),',
-            '    _mc_extent(vals[0]))',
-            '_mc_desmos_decor(fig, bounds)',
-            '_mc_desmos_surf(fig, us, vs, vals[0])',
-            'fig.add_heatmap(',
-            '    x=us, y=vs, z=vals[0],'
-            " colorscale='Viridis',",
-            '    showscale=False, visible=False,',
-            "    name='heatmap',",
-            ')',
-            '_mc_desmos_sheet(fig, bounds)',
-            '_mc_desmos_scene(fig, bounds)',
         ]
-        menu(
-            ['surface', 'heatmap'],
-            ["_mc_mode_vis(fig, ('surf',))",
-             "_mc_mode_vis(fig, ('heatmap',), scene=False)"],
-        )
+        if c == 3:
+            L += [
+                'bounds = _mc_desmos_bounds(',
+                '    _mc_extent(vals[0]), _mc_extent(vals[1]),',
+                '    _mc_extent(vals[2]))',
+                '_mc_desmos_decor(fig, bounds)',
+                '_mc_desmos_surf(fig, vals[0], vals[1], vals[2])',
+                '_mc_desmos_sheet(fig, bounds)',
+                '_mc_desmos_scene(fig, bounds)',
+            ]
+        else:
+            L += [
+                'bounds = _mc_desmos_bounds(',
+                '    (float(us[0]), float(us[-1])),',
+                '    (float(vs[0]), float(vs[-1])),',
+                '    _mc_extent(vals[0]))',
+                '_mc_desmos_decor(fig, bounds)',
+                '_mc_desmos_surf(fig, us, vs, vals[0])',
+                'fig.add_heatmap(',
+                '    x=us, y=vs, z=vals[0],'
+                " colorscale='Viridis',",
+                '    showscale=False, visible=False,',
+                "    name='heatmap',",
+                ')',
+                '_mc_desmos_sheet(fig, bounds)',
+                '_mc_desmos_scene(fig, bounds)',
+            ]
+            menu(
+                ['surface', 'heatmap'],
+                ["_mc_mode_vis(fig, ('surf',))",
+                 "_mc_mode_vis(fig, ('heatmap',), scene=False)"],
+            )
         L.append(f'fig.update_layout(margin={margin}, showlegend=False)')
     L += [
         '# the figure dict the frontend hands to plotly.js',
@@ -798,10 +826,10 @@ def _mc_plot_payload(v):
         raise ValueError(
             f'cannot plot {c} output components (needs 1, 2, or 3)'
         )
-    if d == 2 and c != 1:
+    if d == 2 and c == 2:
         raise ValueError(
-            f'cannot plot a 2-variable function producing {c} '
-            'components — only ℝ²→ℝ surfaces are supported for now'
+            'cannot plot a 2-variable function producing 2 '
+            'components — ℝ²→ℝ² fields are not supported for now'
         )
     fig, bounds = _mc_plot_figure(d, c, vars_, comps)
     return {

@@ -98,6 +98,7 @@ function bucketTraces(data: PlotData['figure']['data']): {
   curves3d: TraceLike[];
   points3d: TraceLike[];
   surfaces: TraceLike[];
+  paramSurfaces: TraceLike[];
   heatmaps: TraceLike[];
 } {
   const out = {
@@ -105,6 +106,7 @@ function bucketTraces(data: PlotData['figure']['data']): {
     curves3d: [] as TraceLike[],
     points3d: [] as TraceLike[],
     surfaces: [] as TraceLike[],
+    paramSurfaces: [] as TraceLike[],
     heatmaps: [] as TraceLike[],
   };
   for (const raw of data) {
@@ -118,6 +120,9 @@ function bucketTraces(data: PlotData['figure']['data']): {
       (str(tr.mode, '').includes('markers') ? out.points3d : out.curves3d).push(
         tr,
       );
+    else if (tr.type === 'surface' && grid2d(tr.x) && grid2d(tr.y) && grid2d(tr.z))
+      // Parametric surface — x/y/z are all 2-D component grids.
+      out.paramSurfaces.push(tr);
     else if (tr.type === 'surface' && numArr(tr.x) && numArr(tr.y) && grid2d(tr.z))
       out.surfaces.push(tr);
     else if (tr.type === 'heatmap' && numArr(tr.x) && numArr(tr.y) && grid2d(tr.z))
@@ -255,13 +260,45 @@ function optHeatmap(
 
 // A worker surface carries x/y as 1-D axis vectors and z as the 2-D
 // grid — echarts-gl wants flat [x, y, z] items plus a dataShape hint.
+// A parametric surface (2x3) carries all three as 2-D component grids;
+// the same flattening meshes it, since the topology is row-major
+// sample order either way.
 function opt3d(
   surfaces: TraceLike[],
+  paramSurfaces: TraceLike[],
   curves3d: TraceLike[],
   points3d: TraceLike[],
   t: ReturnType<typeof plotPalette>,
 ): Record<string, unknown> {
   const series: Record<string, unknown>[] = [];
+  for (const tr of paramSurfaces) {
+    const X = tr.x as number[][];
+    const Y = tr.y as number[][];
+    const Z = tr.z as number[][];
+    const rows = Math.min(X.length, Y.length, Z.length);
+    const cols = Math.min(
+      X[0]?.length ?? 0,
+      Y[0]?.length ?? 0,
+      Z[0]?.length ?? 0,
+    );
+    const data: [number, number, number][] = [];
+    for (let i = 0; i < rows; i++)
+      for (let j = 0; j < cols; j++)
+        data.push([
+          isFiniteNum(X[i][j]) ? X[i][j] : NaN,
+          isFiniteNum(Y[i][j]) ? Y[i][j] : NaN,
+          isFiniteNum(Z[i][j]) ? Z[i][j] : NaN,
+        ]);
+    series.push({
+      type: 'surface',
+      name: str(tr.name, 'surf'),
+      data,
+      dataShape: [rows, cols],
+      itemStyle: { color: t.surfFront },
+      wireframe: { show: true, lineStyle: { color: t.surfGrid, width: 1 } },
+      shading: 'lambert',
+    });
+  }
   for (const tr of surfaces) {
     const xs = tr.x as number[];
     const ys = tr.y as number[];
@@ -346,13 +383,17 @@ export function echartsOption(
   dark: boolean,
 ): Record<string, unknown> | null {
   const t = plotPalette(dark);
-  const { lines2d, curves3d, points3d, surfaces, heatmaps } = bucketTraces(
-    plot.figure.data,
-  );
+  const { lines2d, curves3d, points3d, surfaces, paramSurfaces, heatmaps } =
+    bucketTraces(plot.figure.data);
   // 3-D first — a 2x1 figure carries a hidden cartesian heatmap behind
   // the surface; the gl view is the closer match to the final figure.
-  if (surfaces.length > 0 || curves3d.length > 0 || points3d.length > 0)
-    return opt3d(surfaces, curves3d, points3d, t);
+  if (
+    surfaces.length > 0 ||
+    paramSurfaces.length > 0 ||
+    curves3d.length > 0 ||
+    points3d.length > 0
+  )
+    return opt3d(surfaces, paramSurfaces, curves3d, points3d, t);
   if (lines2d.length > 0) return opt2d(lines2d, t);
   if (heatmaps.length > 0) return optHeatmap(heatmaps[0], t);
   return null;

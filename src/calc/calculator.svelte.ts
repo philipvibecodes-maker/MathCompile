@@ -632,6 +632,9 @@ const evalStatement = (
 const PLOT_R1: [number, number] = [-10, 10];
 const PLOT_N1 = 600;
 const PLOT_R2: [number, number] = [-3, 3];
+// ℝ²→ℝ³ parametrizations sample the unit square, matching the
+// worker's _MC_PLOT_UNIT.
+const PLOT_UNIT: [number, number] = [0, 1];
 const PLOT_N2 = 80;
 const PLOT_ACCENT = '#3b82f6';
 
@@ -721,7 +724,7 @@ function interimPlotRow(
   const c = compNodes.length;
   // Same constraints the worker reports as errors — the interim leaves
   // the row empty and the real diagnostic lands with SymPy.
-  if (d < 1 || d > 2 || c < 1 || c > 3 || (d === 2 && c !== 1))
+  if (d < 1 || d > 2 || c < 1 || c > 3 || (d === 2 && c === 2))
     return null;
 
   const data: Record<string, unknown>[] = [];
@@ -773,9 +776,28 @@ function interimPlotRow(
         name: 'curve',
       });
     }
+  } else if (c === 3) {
+    // ℝ²→ℝ³ parametrization — the surface is the image of the unit
+    // square, so x/y/z are per-component 2-D grids rather than axis
+    // vectors plus a heightfield.
+    const us = linspace(PLOT_UNIT[0], PLOT_UNIT[1], PLOT_N2);
+    const vs = linspace(PLOT_UNIT[0], PLOT_UNIT[1], PLOT_N2);
+    const grids = runners.map((run) =>
+      vs.map((v) =>
+        us.map((u) => sampleNum(run, { [vars[0]]: u, [vars[1]]: v })),
+      ),
+    );
+    if (grids.some((g) => g.every(allGaps))) return null;
+    data.push({
+      type: 'surface',
+      x: grids[0],
+      y: grids[1],
+      z: grids[2],
+      name: 'surf',
+    });
   } else {
-    // d === 2 — ℝ²→ℝ: a surface plus the hidden heatmap trace (the
-    // same shape the worker emits, minus the Desmos scene decor).
+    // d === 2, c === 1 — ℝ²→ℝ: a surface plus the hidden heatmap trace
+    // (the same shape the worker emits, minus the Desmos scene decor).
     const us = linspace(PLOT_R2[0], PLOT_R2[1], PLOT_N2);
     const vs = linspace(PLOT_R2[0], PLOT_R2[1], PLOT_N2);
     const grid: number[][] = vs.map((v) =>
