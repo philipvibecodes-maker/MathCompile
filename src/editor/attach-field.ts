@@ -33,6 +33,10 @@ export interface FieldHandle {
   focus: (edge?: 'start' | 'end') => void;
   getValue: () => string;
   setValue: (latex: string) => void;
+  // Inserts latex at the caret via mq.cmd — caret lands where typing
+  // the command would leave it (inside \frac's numerator, \sum's
+  // bound). Optional: python cells don't implement it.
+  insertLatex?: (latex: string) => boolean;
   // Smart mode = MQ autoCommands + autoSubscriptNumerals.
   setSmartMode: (v: boolean) => void;
   // Per-line anchors of the rendered \\displaylines, in field-relative
@@ -136,6 +140,13 @@ export function attachField(
       // push the effective value back so the store/output column can't
       // keep displaying latex the field doesn't contain.
       if (el.value !== latex) cb.onChange(el.value);
+    },
+    // cmd() fires MQ's edit handler → the element's 'input' event →
+    // onChange, so no manual sync is needed here.
+    insertLatex: (latex) => {
+      if (!el.mq) return false;
+      el.mq.cmd(latex);
+      return true;
     },
     setSmartMode: (v) =>
       el.config({

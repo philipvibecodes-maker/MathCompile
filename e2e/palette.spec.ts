@@ -94,9 +94,9 @@ test('clicking the backdrop closes the palette', async ({ page }) => {
 
 test('empty query lists every command', async ({ page }) => {
   await page.keyboard.press('Control+k');
-  // 13 fixed commands + 3 enabled targets + 1 worksheet switch + 1 goto
+  // 15 fixed commands + 3 enabled targets + 1 worksheet switch + 1 goto
   // per cell (single cell, single worksheet here).
-  await expect(page.locator('.cmd-item')).toHaveCount(18);
+  await expect(page.locator('.cmd-item')).toHaveCount(20);
 });
 
 test('a query matching nothing shows the empty state', async ({ page }) => {
@@ -268,8 +268,12 @@ test('Escape in the rename prompt backs out to the command list', async ({
 
 test('exposes dialog/listbox semantics for assistive tech', async ({ page }) => {
   await page.keyboard.press('Control+k');
-  await expect(page.locator('[role="dialog"]')).toBeVisible();
-  await expect(page.locator('[role="combobox"]')).toBeVisible();
-  await expect(page.locator('[role="listbox"]')).toBeVisible();
-  await expect(page.locator('[role="option"]').first()).toBeVisible();
+  // Scoped to .palette — the always-mounted help-search overlay is a
+  // second dialog/listbox in the DOM while closed.
+  await expect(page.locator('.palette[role="dialog"]')).toBeVisible();
+  await expect(page.locator('.palette-input[role="combobox"]')).toBeVisible();
+  await expect(page.locator('.palette-list[role="listbox"]')).toBeVisible();
+  await expect(
+    page.locator('.palette-list [role="option"]').first(),
+  ).toBeVisible();
 });

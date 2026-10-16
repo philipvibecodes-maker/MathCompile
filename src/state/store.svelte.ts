@@ -1,5 +1,6 @@
 import type { FieldHandle } from '../editor/attach-field';
 import type { TargetId } from '../compile/targets';
+import { DEFAULT_HELP_IDS, TOPIC_BY_ID } from '../help/topics';
 import {
   parseCellLatex,
   type MathJson,
@@ -121,6 +122,23 @@ export class AppStore {
   // Calculator code blocks show the `e = ...` capture lines when on.
   showPlumbing = $state(loadPrefs().showPlumbing ?? false);
   guideOpen = $state(loadPrefs().guideOpen ?? true);
+  // "How do I…" customization: the section lists pinnedHelp, which
+  // starts as the catalog's default set on a fresh install — an empty
+  // stored array is respected (the user unpinned everything on
+  // purpose). Hidden topics drop out of the list but stay findable in
+  // search. Ids not in the catalog are dropped on load.
+  pinnedHelp = $state<string[]>(
+    (loadPrefs().pinnedHelp ?? DEFAULT_HELP_IDS).filter((id) =>
+      TOPIC_BY_ID.has(id),
+    ),
+  );
+  hiddenHelp = $state<string[]>(
+    (loadPrefs().hiddenHelp ?? []).filter((id) => TOPIC_BY_ID.has(id)),
+  );
+  // The centered help-search overlay (components/HelpSearch.svelte):
+  // opened by the header ? button, Ctrl+/, or the palette's Search help
+  // command. Always mounted — opening is a visibility flip + focus().
+  helpSearchOpen = $state(false);
   // Python output mode: `from sympy import *` (default, bare names) vs
   // `import sympy as sp` (sp.-qualified).
   importAll = $state(loadPrefs().importAll ?? true);
@@ -347,6 +365,7 @@ export class AppStore {
 
   openPalette() {
     this.paletteOpen = true;
+    this.helpSearchOpen = false;
   }
 
   // Every close path refocuses the active cell — commands that moved focus
@@ -359,6 +378,58 @@ export class AppStore {
   togglePalette() {
     if (this.paletteOpen) this.closePalette();
     else this.openPalette();
+  }
+
+  // Help-search insertion: writes a topic's latex into the focused
+  // cell at the caret. False when nothing writable is focused (e.g. a
+  // python cell), so the caller can fall back to pinning.
+  insertHelpLatex(latex: string): boolean {
+    return this.fields.get(this.focusedId)?.insertLatex?.(latex) ?? false;
+  }
+
+  toggleHelpPin(id: string) {
+    this.pinnedHelp = this.pinnedHelp.includes(id)
+      ? this.pinnedHelp.filter((p) => p !== id)
+      : [...this.pinnedHelp, id];
+  }
+
+  hideHelpTopic(id: string) {
+    if (!this.hiddenHelp.includes(id))
+      this.hiddenHelp = [...this.hiddenHelp, id];
+  }
+
+  unhideHelpTopic(id: string) {
+    this.hiddenHelp = this.hiddenHelp.filter((h) => h !== id);
+  }
+
+  // "restore default help topics": unhide everything and put the
+  // default set back at the front of the pin list — topics the user
+  // pinned themselves stay pinned after it.
+  restoreDefaultHelp() {
+    this.hiddenHelp = [];
+    this.pinnedHelp = [
+      ...DEFAULT_HELP_IDS,
+      ...this.pinnedHelp.filter((id) => !DEFAULT_HELP_IDS.includes(id)),
+    ];
+  }
+
+  // Every "search help" entry point funnels here. paletteOpen is
+  // cleared directly (not via closePalette) — its cell refocus would
+  // race the deferred search-input focus.
+  openHelpSearch() {
+    this.helpSearchOpen = true;
+    this.paletteOpen = false;
+  }
+
+  // Every close path refocuses the active cell, like closePalette().
+  closeHelpSearch() {
+    this.helpSearchOpen = false;
+    this.focusCell(this.focusedId);
+  }
+
+  toggleHelpSearch() {
+    if (this.helpSearchOpen) this.closeHelpSearch();
+    else this.openHelpSearch();
   }
 }
 

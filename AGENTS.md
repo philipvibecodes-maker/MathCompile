@@ -20,7 +20,9 @@ through a MathJSON IR to LaTeX or SymPy-flavored Python (`src/compile/`).
   server on :5573 or starts `npm run dev`). Includes `spike.spec.ts`
   (MathQuill API + adapter checks via `e2e/spike.html`) and
   `vendor.spec.ts` (the upstream mocha suite run headlessly through the
-  dev server).
+  dev server — a fresh clone needs `npm ci` inside `vendor/mathquill`
+  first: unit.html loads mocha from its node_modules, and the root
+  install doesn't recurse into vendor/).
 - `npm run test:e2e:smoke` — the `@smoke`-tagged subset (~20 tests) for
   frequent runs: cell lifecycle, displaylines, adapter contract,
   matrices, limits, palette/focus ownership, codegen targets,
@@ -41,7 +43,11 @@ src/
   App.svelte          worksheet UI: stacked cells (latex/python keep a
                       two-column layout under .two-col), header
   commands.ts         Command type + command list factory
-  fuzzy.ts            palette search scoring
+  fuzzy.ts            palette search scoring (also the help search)
+  help/topics.ts      "How do I…" catalog — one input per topic: the
+                      `default` rows seed the pin set on first run, all
+                      topics are searchable/pinnable/hidable, and most
+                      carry an `insert` latex for mq.cmd
   state/
     store.svelte.ts   $state app store + field registry + focusCell() —
                       the single focus owner
@@ -66,12 +72,16 @@ src/
                       events (input, move-out, new-cell, delete-out)
     attach-field.ts   attachField() -> FieldHandle + FieldCallbacks —
                       the app-facing editing contract
-    keymap.ts         capture-phase global keys (Ctrl+K)
+    keymap.ts         capture-phase global keys (Ctrl+K, Ctrl+/)
   components/
     MathField.svelte    <math-field> bind:this -> attachField; registers
                         its handle in the store on mount
     CalcOutput.svelte   per-cell calculator output (interim -> real rows)
     CommandPalette.svelte  always mounted, .open class toggles visibility
+    HelpSearch.svelte    centered help-search overlay (Ctrl+/); Enter
+                        inserts the topic's `insert` latex via mq.cmd
+                        (Shift+Enter pins instead) — same mount+focus
+                        contract as the palette
 ```
 
 - All MathQuill contact lives in `src/editor/` — components only see the
@@ -269,6 +279,9 @@ and empty blocks serialize as `{ }`.
   back to the short sha; the value is read once at server start, so a
   branch switch needs a dev-server restart to refresh it. Declared in
   `src/vite-env.d.ts`.
+- Worktrees: `PW_PORT=<n> npx playwright test` runs the suite against a
+  dev server the runner starts on that port (`vite --port <n>`), so a
+  worktree's e2e doesn't clobber or reuse the main checkout's :5573.
 - `caretInfo` in `e2e/limits.spec.ts` reads `.mq-cursor` ancestors:
   `\int` uses `.mq-sub`/`.mq-sup`; `\sum` (over/under) uses
   `.mq-from`/`.mq-to`; `.mq-large-operator`/`.mq-int` is the atom; on
@@ -302,7 +315,8 @@ and empty blocks serialize as `{ }`.
 - `src/state/persistence.ts` owns all `localStorage` access: `mathcompile-theme`
   (read pre-paint by `index.html`), `mathcompile-worksheets` (the workbook:
   `{version, active, sheets:[{id, name, cells}]}`, one record per worksheet),
-  `mathcompile-prefs` (smartMode + target + guideOpen). `mathcompile-cells`
+  `mathcompile-prefs` (smartMode + target + guideOpen + pinnedHelp +
+  hiddenHelp). `mathcompile-cells`
   was the single-worksheet format — `loadWorkbook()` migrates it on first
   read, then removes the key. Everything is node-guarded so
   the store stays importable in vitest.
