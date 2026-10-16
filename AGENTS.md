@@ -17,17 +17,21 @@ through a MathJSON IR to LaTeX or SymPy-flavored Python (`src/compile/`).
   `vitest.config.ts` loads the svelte plugin so `.svelte.ts` rune files
   compile in tests)
 - `npm run test:e2e` — Playwright tests (`e2e/`, reuses a running dev
-  server on :5573 or starts `npm run dev`). Includes `spike.spec.ts`
-  (MathQuill API + adapter checks via `e2e/spike.html`) and
-  `vendor.spec.ts` (the upstream mocha suite run headlessly through the
-  dev server — a fresh clone needs `npm ci` inside `vendor/mathquill`
-  first: unit.html loads mocha from its node_modules, and the root
-  install doesn't recurse into vendor/).
+  server on :5573 or starts `npm run dev`). `vendor.spec.ts` runs the
+  upstream mocha suite headlessly through the dev server (a fresh clone
+  needs `npm ci` inside `vendor/mathquill` first: unit.html loads mocha
+  from its node_modules, and the root install doesn't recurse into
+  vendor/). MathQuill API + adapter checks are unit tests now —
+  `src/editor/mq-*.test.ts` drive the vendored build headless via
+  happy-dom (`// @vitest-environment happy-dom`, helpers in
+  `src/editor/test-field.ts`); the former `e2e/spike.spec.ts` harness is
+  gone.
 - `npm run test:e2e:smoke` — the `@smoke`-tagged subset (~20 tests) for
   frequent runs: cell lifecycle, displaylines, adapter contract,
   matrices, limits, palette/focus ownership, codegen targets,
   persistence, worksheets, python cells, the branch badge. Deliberately
-  excludes `calculator.spec.ts` (real Pyodide/SymPy boot, ~90s waits)
+  excludes `calculator.spec.ts` (real Pyodide/SymPy — one shared boot
+  serves the whole file, but the CDN pull still costs ~30s up front)
   and `vendor.spec.ts` (whole mocha suite); run the full suite before
   merging or after touching `vendor/`/`src/calc/`.
 - `npm run test:perf` — framework-agnostic perf battery (`perf/`); builds and
@@ -280,11 +284,60 @@ and empty blocks serialize as `{ }`.
   `npx playwright test e2e/<area>.spec.ts` reuses or starts the dev
   server on :5573. `@smoke` is a sanity floor, not coverage of your
   diff: matrices → `matrix` + `matrix-menu`; codegen/output → `output`
-  (+ `npm test`); calc target → `calculator` (Pyodide boot — slow, run
-  anyway); vendored MathQuill → `spike` + `vendor`; focus/palette →
+  (+ `npm test`); calc target → `calculator` (real Pyodide/SymPy — the
+  shared page boots it once per run, ~40s total); vendored MathQuill → `npm test` (`src/editor/mq-*.test.ts`) +
+  `vendor`; focus/palette →
   `palette` + `escape` + `autocomplete`; storage → `persistence` +
   `worksheets`; editing keys → `cells` + `standard-keys` + `limits` +
   `empty-slot`. Run the full `npm run test:e2e` before merging.
+- **Every spec shares one page per file.** `test.beforeAll` boots it via
+  `sharedPage(browser, testInfo)` (which raises the hook's budget to
+  90s — the `goto` re-pays the module waterfall); `test.beforeEach`
+  calls `resetApp(page)` instead of `page.goto('/')`. Tests take
+  `async () =>` and close over `page` — do NOT destructure
+  `({ page })`, which would grab a second fixture page. The reset runs
+  through the dev-only `window.__mc` hook (`src/main.ts`; eliminated
+  from prod builds): it drains the debounced cell write, clears
+  localStorage, restores every store field to first-run defaults
+  (prefs, help pins, overlays, theme, workbook down to one
+  'Worksheet 1'), then `clearAll()` leaves a single blank focused cell.
+  Rules earned the hard way:
+  - Tests needing a real fresh boot `page.reload()` in the body —
+    persistence/reload behavior is unchanged, just warm.
+  - Tests needing the *seeded* first-run cell use `reloadToSeed(page)`:
+    it flushes the pending write BEFORE clearing storage, because
+    `installFlushOnHide`'s pagehide handler would otherwise re-seed the
+    workbook mid-reload and hide the seed path.
+  - **Never `page.addInitScript`** on the shared page — init scripts
+    stay armed for the page's lifetime and leak into every later
+    reload. One-shot state seeds go through `page.evaluate` + `reload`.
+  - resetApp also calls `__mc.resetLastPointerDown()`: tests run
+    back-to-back in ~100ms, so a click from the PREVIOUS test can
+    still be inside `pointerRecentlyDown()`'s 300ms window when the
+    next test's `blur()` runs — the focusout guards would read it as
+    a click-away and skip the Vimium refocus. Module-level time state
+    like this is the other class of shared-page leak; reset it in the
+    hook, don't sleep in tests.
+  - Calculator/python-cell engine tests keep the worker warm across
+    tests on the same page — a `page.reload()` kills it, so the two
+    cold-boot calculator tests and the final reload test sit at the
+    file edges (see the spec's ordering comment).
+- Timeouts are tight on purpose: the global test timeout is 10s (most
+  tests run <2s on the shared page; a stuck page dies fast instead of
+  spinning). Real-engine tests raise their own ceiling with
+  `test.setTimeout` (120s) and long `expect` timeouts only on the
+  cold-boot path — a `timeout: 90_000` inside a test without
+  `setTimeout` is dead code, the 10s cap wins first. `workers: 2`
+  (override with `PW_WORKERS`) keeps Chromium + Pyodide memory off the
+  swap ceiling; the suite ran ~2min there.
+- `PW_PREVIEW=1` runs the suite against the production bundle instead
+  of dev modules (`vite build && vite preview`): page boots drop to
+  static files and the suite ran ~1.2min. The build bakes
+  `VITE_BRANCH_BADGE=1` (badge test) and `VITE_E2E_HOOK=1` (the
+  `window.__mc` reset hook — dev builds get it free via
+  `import.meta.env.DEV`). `vendor.spec.ts` self-skips (the mocha page
+  isn't in `dist/`), and `reuseExistingServer` is forced off so a stale
+  `dist/` can't masquerade as the current code.
 - The header shows a `.branch-badge` chip with the checked-out git
   branch on `vite dev` (so it appears in e2e runs and screenshots).
   `vite.config.ts` bakes `__APP_BRANCH__` via `define` only for
@@ -316,9 +369,10 @@ and empty blocks serialize as `{ }`.
   with the real extension, launch headed Chromium with
   `--load-extension=<vimium checkout>` (see
   `e2e/autocomplete.spec.ts` comment / `pointerRecentlyDown`).
-- Vendor internals are verified by `e2e/spike.spec.ts` (via
-  `/e2e/spike.html`'s `window.spike` handles) and `e2e/vendor.spec.ts`
-  (headless mocha suite, includes `test/unit/environments.test.js`).
+- Vendor internals are verified by the headless MQ unit suite
+  (`src/editor/mq-*.test.ts`, driven via `src/editor/test-field.ts`) and
+  `e2e/vendor.spec.ts` (headless mocha suite, includes
+  `test/unit/environments.test.js`).
 - The `perf/` suite measures in-page: capture-phase `event.timeStamp` at
   input -> DOM-outcome `waitForFunction` -> double rAF (`perf/measure.ts`).
   Selectors live in `perf/contract.ts` — the same DOM contract the e2e suite

@@ -21,6 +21,7 @@
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tsconfig/svelte": "^5.0.8",
     "@types/node": "^24.13.3",
+    "happy-dom": "^21.0.3",
     "marked": "^18.0.14",
     "oxlint": "^1.81.0",
     "svelte": "^5.57.1",

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { clearFirstCell } from './helpers';
+import { clearFirstCell, sharedPage, resetApp } from './helpers';
 
 // The matrix dimensions menu: a typed matrix-family command defers to a
 // rows/columns popover (src/editor/matrix-menu.ts via the vendored
@@ -14,10 +14,14 @@ const cellValue = (mf: Locator): Promise<string> =>
 
 const menu = (mf: Locator): Locator => mf.locator('.mc-mat');
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
+let page: Page;
+test.beforeAll(async ({ browser }, testInfo) => {
+  page = await sharedPage(browser, testInfo);
+});
+
+test.beforeEach(async () => {
+  await resetApp(page);
   const mf = cell(page);
-  await mf.waitFor();
   await mf.click();
   await mf.focus();
   await clearFirstCell(page);
@@ -25,9 +29,7 @@ test.beforeEach(async ({ page }) => {
 
 test('a typed \\pmatrix opens the menu; Enter inserts the default 2x2',
   { tag: '@smoke' },
-  async ({
-  page,
-}) => {
+  async () => {
   const mf = cell(page);
   await page.keyboard.type('\\pmatrix');
   await page.keyboard.press('Enter');
@@ -42,7 +44,7 @@ test('a typed \\pmatrix opens the menu; Enter inserts the default 2x2',
   expect(await cellValue(mf)).toBe('\\begin{pmatrix}a&\\\\&\\end{pmatrix}');
 });
 
-test('entered dimensions size the grid', async ({ page }) => {
+test('entered dimensions size the grid', async () => {
   const mf = cell(page);
   await page.keyboard.type('\\pmatrix');
   await page.keyboard.press('Enter');
@@ -56,7 +58,7 @@ test('entered dimensions size the grid', async ({ page }) => {
   );
 });
 
-test('Tab cycles between the rows and columns inputs', async ({ page }) => {
+test('Tab cycles between the rows and columns inputs', async () => {
   const mf = cell(page);
   await page.keyboard.type('\\pmatrix');
   await page.keyboard.press('Enter');
@@ -73,7 +75,7 @@ test('Tab cycles between the rows and columns inputs', async ({ page }) => {
   await expect(cols).toBeFocused();
 });
 
-test('the menu previews the grid as dimensions change', async ({ page }) => {
+test('the menu previews the grid as dimensions change', async () => {
   const mf = cell(page);
   await page.keyboard.type('\\pmatrix');
   await page.keyboard.press('Enter');
@@ -87,7 +89,7 @@ test('the menu previews the grid as dimensions change', async ({ page }) => {
   await expect(prev.locator('.mq-matrix td')).toHaveCount(12);
 });
 
-test('the preview uses the requested environment', async ({ page }) => {
+test('the preview uses the requested environment', async () => {
   const mf = cell(page);
   await page.keyboard.type('\\bmatrix');
   await page.keyboard.press('Enter');
@@ -98,7 +100,7 @@ test('the preview uses the requested environment', async ({ page }) => {
   ).toBeVisible();
 });
 
-test('ArrowUp/ArrowDown step the focused dimension', async ({ page }) => {
+test('ArrowUp/ArrowDown step the focused dimension', async () => {
   const mf = cell(page);
   await page.keyboard.type('\\pmatrix');
   await page.keyboard.press('Enter');
@@ -111,7 +113,7 @@ test('ArrowUp/ArrowDown step the focused dimension', async ({ page }) => {
   await expect(mf.locator('.mq-editable-field .mq-matrix td')).toHaveCount(3);
 });
 
-test('Escape cancels and returns focus to the field', async ({ page }) => {
+test('Escape cancels and returns focus to the field', async () => {
   const mf = cell(page);
   await page.keyboard.type('\\pmatrix');
   await page.keyboard.press('Enter');
@@ -123,9 +125,7 @@ test('Escape cancels and returns focus to the field', async ({ page }) => {
   expect(await cellValue(mf)).toBe('x');
 });
 
-test('a typed \\begin{bmatrix} goes through the same menu', async ({
-  page,
-}) => {
+test('a typed \\begin{bmatrix} goes through the same menu', async () => {
   const mf = cell(page);
   await page.keyboard.type('\\begin{bmatrix}');
   await expect(menu(mf)).toBeVisible();
@@ -133,9 +133,7 @@ test('a typed \\begin{bmatrix} goes through the same menu', async ({
   expect(await cellValue(mf)).toBe('\\begin{bmatrix}&\\\\&\\end{bmatrix}');
 });
 
-test('a typed \\array{spec} keeps the spec through the menu', async ({
-  page,
-}) => {
+test('a typed \\array{spec} keeps the spec through the menu', async () => {
   const mf = cell(page);
   await page.keyboard.type('\\array{cc}');
   await expect(menu(mf)).toBeVisible();
@@ -143,9 +141,7 @@ test('a typed \\array{spec} keeps the spec through the menu', async ({
   expect(await cellValue(mf)).toBe('\\begin{array}{cc}&\\\\&\\end{array}');
 });
 
-test('a matrix inserted over a selection keeps the selection in the first cell', async ({
-  page,
-}) => {
+test('a matrix inserted over a selection keeps the selection in the first cell', async () => {
   const mf = cell(page);
   await page.keyboard.type('x+1');
   await page.keyboard.press('Control+Home');
@@ -157,7 +153,7 @@ test('a matrix inserted over a selection keeps the selection in the first cell',
   expect(await cellValue(mf)).toBe('\\begin{pmatrix}x+1&\\\\&\\end{pmatrix}');
 });
 
-test('content around the caret survives the insert', async ({ page }) => {
+test('content around the caret survives the insert', async () => {
   const mf = cell(page);
   await page.keyboard.type('a+b');
   await page.keyboard.press('Control+Home');
@@ -170,7 +166,7 @@ test('content around the caret survives the insert', async ({ page }) => {
   );
 });
 
-test('\\cases is not a matrix and skips the menu', async ({ page }) => {
+test('\\cases is not a matrix and skips the menu', async () => {
   const mf = cell(page);
   await page.keyboard.type('\\cases');
   await page.keyboard.press('Enter');
