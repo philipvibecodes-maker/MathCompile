@@ -28,6 +28,7 @@ export function loadECharts(): Promise<EChartsModule> {
       comps.TooltipComponent,
       comps.VisualMapComponent,
       comps.LegendComponent,
+      comps.DataZoomInsideComponent,
       renderers.CanvasRenderer,
       glCharts.Line3DChart as never,
       glCharts.Scatter3DChart as never,
@@ -186,6 +187,12 @@ function opt2d(
     grid: { left: 48, right: 20, top: 16, bottom: 36 },
     xAxis: axis2d(t),
     yAxis: axis2d(t),
+    // Inside roam: wheel zooms, drag pans — matches the plotly view's
+    // pan-on-drag + scrollZoom contract.
+    dataZoom: [
+      { type: 'inside', xAxisIndex: 0, filterMode: 'none' },
+      { type: 'inside', yAxisIndex: 0, filterMode: 'none' },
+    ],
     tooltip: { trigger: 'axis', valueFormatter: undefined },
     legend:
       series.length > 1
@@ -314,6 +321,12 @@ function opt3d(
         distance: 220,
         alpha: 18,
         beta: 40,
+        // Orbit/zoom/pan all on by default — the overlay passes pointer
+        // events through so the interim 3-D view is as draggable as
+        // the plotly scene it previews.
+        rotateSensitivity: 1,
+        zoomSensitivity: 1,
+        panSensitivity: 1,
       },
     },
     legend:

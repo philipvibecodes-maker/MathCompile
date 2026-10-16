@@ -416,7 +416,7 @@
       style:height="{height}px"
     ></div>
     {#if !plotted || plot.interim === true}
-      <div class="plot-interim">
+      <div class="plot-interim" class:plot-live={ecRendered}>
         <EchartsPlot
           {plot}
           {height}
@@ -468,10 +468,13 @@
        ECharts canvas inside draws the same payload meanwhile. */
     position: absolute;
     inset: 0 0 12px 0; /* stop above the bottom grip strip */
-    pointer-events: none; /* grips and hover pass straight through */
-  }
-  .plot-interim :global(canvas) {
+    /* Transparent overlay with nothing to show stays click-through so
+       a fallback plotly beneath keeps its interactions; once ECharts
+       is drawing, it owns the pointer (pan/zoom/orbit/tooltip). */
     pointer-events: none;
+  }
+  .plot-interim.plot-live {
+    pointer-events: auto;
   }
   .plot-grip {
     height: 12px;
