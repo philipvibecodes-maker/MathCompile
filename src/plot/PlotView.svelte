@@ -7,6 +7,7 @@
   import type PlotlyT from 'plotly.js-dist-min';
   import { appStore } from '../state/store.svelte';
   import type { PlotData } from './types';
+  import EchartsPlot from './EchartsPlot.svelte';
   import { applyModeAxes, GL3D_TYPES, themedFigure } from './theme';
 
   let { plot }: { plot: PlotData } = $props();
@@ -15,9 +16,19 @@
   let Plotly = $state<typeof PlotlyT | undefined>();
   let failed = $state('');
 
+  // ECharts interim overlay: the face of the row while the payload is
+  // a CE-sampled interim figure (the whole SymPy boot window) and while
+  // plotly.js downloads (~1MB lazy chunk). `plotted` flips inside the
+  // afterplot listener — not on `Plotly` resolving — so there's no
+  // blank flash between import and first frame, and if plotly never
+  // makes it the ECharts render stays as the fallback.
+  let plotted = $state(false);
+  let ecRendered = $state(false);
+  let ecView = $state<{ resize(): void } | undefined>();
+
   // Plot height and width, adjustable by dragging the bottom and
   // right-edge grips. Width is capped by the row's available space.
-  let height = $state(720);
+  let height = $state(500);
   let width = $state(780);
   const MIN_H = 160;
   const MAX_H = 1200;
@@ -32,6 +43,7 @@
       // Live-resize without waiting for a themed re-render —
       // Plotly.react picks the size up on the next render anyway.
       if (el && Plotly) Plotly.Plots.resize(el);
+      ecView?.resize();
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
@@ -52,6 +64,7 @@
     const move = (ev: PointerEvent) => {
       width = Math.min(maxW, Math.max(MIN_W, startW + ev.clientX - startX));
       if (el && Plotly) Plotly.Plots.resize(el);
+      ecView?.resize();
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
@@ -366,6 +379,7 @@
       (
         target as unknown as { on: (ev: string, cb: () => void) => void }
       ).on('plotly_afterplot', () => {
+        plotted = true;
         unpickSheet(target);
         syncMenuVisibility(target);
         updateZoom(target);
@@ -391,10 +405,26 @@
 </script>
 
 <div class="plot-view" style:width="{width}px">
-  {#if failed}
+  {#if failed && !ecRendered}
     <div class="plot-fail">couldn't render the plot: {failed}</div>
   {:else}
-    <div class="plot-el" bind:this={el} style:height="{height}px"></div>
+    <div
+      class="plot-el"
+      class:plot-covered={ecRendered &&
+        (!plotted || plot.interim === true)}
+      bind:this={el}
+      style:height="{height}px"
+    ></div>
+    {#if !plotted || plot.interim === true}
+      <div class="plot-interim" class:plot-live={ecRendered}>
+        <EchartsPlot
+          {plot}
+          {height}
+          bind:this={ecView}
+          bind:rendered={ecRendered}
+        />
+      </div>
+    {/if}
     <div
       class="plot-grip"
       role="separator"
@@ -426,6 +456,25 @@
   }
   .plot-el {
     width: 100%;
+  }
+  .plot-covered {
+    /* ECharts is drawing this payload — keep plotly mounted (it still
+       needs layout + afterplot) but don't let its canvas show through
+       the overlay's transparent background. */
+    visibility: hidden;
+  }
+  .plot-interim {
+    /* Covers .plot-el exactly until plotly's first afterplot — the
+       ECharts canvas inside draws the same payload meanwhile. */
+    position: absolute;
+    inset: 0 0 12px 0; /* stop above the bottom grip strip */
+    /* Transparent overlay with nothing to show stays click-through so
+       a fallback plotly beneath keeps its interactions; once ECharts
+       is drawing, it owns the pointer (pan/zoom/orbit/tooltip). */
+    pointer-events: none;
+  }
+  .plot-interim.plot-live {
+    pointer-events: auto;
   }
   .plot-grip {
     height: 12px;

@@ -4,7 +4,7 @@
 // colors), never the sampled data.
 import type { PlotData } from './types';
 
-interface ThemeColors {
+export interface ThemeColors {
   font: string;
   grid: string;
   zero: string;
@@ -49,6 +49,11 @@ const DARK: ThemeColors = {
   axis: '#8b93a1',
   tick: '#7d8590',
 };
+
+// The active palette — shared with the ECharts interim renderer
+// (echarts.ts) so both engines draw on the same colors.
+export const plotPalette = (dark: boolean): ThemeColors =>
+  dark ? DARK : LIGHT;
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);

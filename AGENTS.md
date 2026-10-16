@@ -70,6 +70,17 @@ src/
     result-latex.ts      output latex touch-ups (a-trig -> arc-)
 
     python-highlight.ts   tiny tokenizer for the generating-code block
+  plot/               `\text{plot}` rendering
+    types.ts          PlotData — kind/vars/label + plotly figure dict;
+                        `interim` flags CE-sampled figures
+    PlotView.svelte   row renderer: lazy plotly.js + EchartsPlot
+                      overlay (interim figures and plotly download)
+    EchartsPlot.svelte  echarts/echarts-gl canvas for the interim
+                      window; owns init/setOption/dispose
+    echarts.ts        lazy echarts+gl loader + PlotData->option
+                      converter (echartsOption)
+    theme.ts          plotly theme pass + shared light/dark palette
+                      (plotPalette)
   editor/
     mathquill.ts      imports the vendored build + CSS; exports mq3 + types
     math-field.ts     <math-field> custom element: MQ handlers -> DOM
@@ -133,6 +144,10 @@ and empty blocks serialize as `{ }`.
 - `target === 'calculator'` renders `CalcOutput` per cell: Compute
   Engine interim rows (dimmed, no `code`) until the Pyodide/SymPy
   worker is ready, then one result row per top-level statement.
+- `\text{plot}` rows carry `row.plot` (PlotData): the interim samples
+  through CE's `compile()` on the worker's grids and is drawn by
+  ECharts until the worker's plotly-python figure lands — see
+  `src/plot/` and CALCULATOR-ENGINES.md.
 - The worksheet prefix compiles via `compileCellsForCalc` — the shared
   pipeline, not a second parser — so the worker only exec/evals Python.
   Cells share one namespace in order (a `def g` or `a = 5` above is in
