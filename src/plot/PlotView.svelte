@@ -28,7 +28,7 @@
 
   // Plot height and width, adjustable by dragging the bottom and
   // right-edge grips. Width is capped by the row's available space.
-  let height = $state(720);
+  let height = $state(500);
   let width = $state(780);
   const MIN_H = 160;
   const MAX_H = 1200;

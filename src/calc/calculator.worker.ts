@@ -410,13 +410,15 @@ def _mc_desmos_surf(fig, X, Y, Z):
         contours=dict(
             x=dict(show=True, start=float(_mc_np.nanmin(X)),
                    end=float(_mc_np.nanmax(X)),
+                   # Half the decor-grid pitch — twice the gridline
+                   # density reads better at the shorter default height.
                    size=_mc_grid_step(
-                       float(_mc_np.nanmax(X) - _mc_np.nanmin(X))),
+                       float(_mc_np.nanmax(X) - _mc_np.nanmin(X))) / 2,
                    color='#7e1f1a', width=1, highlight=False),
             y=dict(show=True, start=float(_mc_np.nanmin(Y)),
                    end=float(_mc_np.nanmax(Y)),
                    size=_mc_grid_step(
-                       float(_mc_np.nanmax(Y) - _mc_np.nanmin(Y))),
+                       float(_mc_np.nanmax(Y) - _mc_np.nanmin(Y))) / 2,
                    color='#7e1f1a', width=1, highlight=False),
             z=dict(show=False, highlight=False),
         ),
