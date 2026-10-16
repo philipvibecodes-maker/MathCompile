@@ -566,20 +566,89 @@ _MC_PLOT_IMGX = '#c74440'
 _MC_PLOT_IMGY = '#3b82f6'
 _MC_PLOT_SRC = '#8c8c8c'
 
-_MC_FIELD_SRC = '''_MC_FIELD_NAMES = ('field',)
+_MC_FIELD_SRC = '''_MC_FIELD_NAMES = ('field', 'field-tips')
 
 
 def _mc_field_view(fig, fnum, rng=(-3.0, 3.0), n=21, color='#3b82f6'):
-    # Quiver view of the vector field: one arrow per grid point —
-    # shaft plus head barbs in a single NaN-separated scatter trace.
-    # Returns (x0, x1, y0, y1) framing the drawn arrows, or None when
-    # nothing finite sampled — the figure uses it for the mode's
-    # relayout ranges.
-    # TODO(quiver): implement the arrow geometry.
+    # Quiver view of the vector field: one arrow per point of an n x n
+    # uniform grid over rng squared, all arrows packed into a single
+    # NaN-separated scatter 'lines' trace (plus a markers-only tips
+    # trace carrying the hover values). Arrows are centered on their
+    # grid point and scaled proportionally — the longest spans 0.8 of
+    # a grid cell, Desmos-style. Returns (x0, x1, y0, y1) framing the
+    # drawn arrows — the rng box padded by half a cell — or the same
+    # rng box when nothing finite sampled (the empty traces still go
+    # in so the mode menu's visibility lists line up).
+    import numpy as _mc_np
+    us = _mc_np.linspace(rng[0], rng[1], n)
+    U, V = _mc_np.meshgrid(us, us)
+    w = _mc_np.asarray(fnum(U, V), dtype=float)
+    if w.ndim == 1:
+        # A constant field lambdifies to a flat (2,) — reshape so the
+        # broadcast below stretches it over the grid.
+        w = w.reshape(-1, 1, 1)
+    elif w.ndim == 2:
+        w = w.reshape(1, w.shape[0], w.shape[1])
+    elif w.ndim > 3:
+        # Matrix components lambdify with a singleton axis — (2,1,n,n);
+        # the grid axes are always the last two.
+        w = w.reshape(w.shape[0], w.shape[-2], w.shape[-1])
+    w = _mc_np.broadcast_to(w, (2,) + U.shape)
+    FU, FV = w[0].astype(float), w[1].astype(float)
+    pitch = (rng[1] - rng[0]) / (n - 1)
+    m = _mc_np.hypot(FU, FV)
+    finite = _mc_np.isfinite(m)
+    mmax = float(m[finite].max()) if finite.any() else 0.0
+    if mmax <= 0.0 or not _mc_np.isfinite(mmax):
+        # Nothing to draw — still append both named traces so the
+        # mode menu's visibility bookkeeping stays aligned.
+        fig.add_scatter(
+            x=[], y=[], mode='lines', name='field',
+            line=dict(color=color, width=2), hoverinfo='skip')
+        fig.add_scatter(
+            x=[], y=[], mode='markers', name='field-tips',
+            marker=dict(color=color, size=4), hoverinfo='skip')
+        return (rng[0], rng[1], rng[0], rng[1])
+    k = 0.8 * pitch / mmax
+    DU, DV = FU * k, FV * k
+    dl = _mc_np.hypot(DU, DV)
+    ok = _mc_np.isfinite(dl) & (dl > 1e-12)
+    px, py = U[ok], V[ok]
+    dx, dy = DU[ok], DV[ok]
+    # Shaft runs p - d/2 to p + d/2 (the arrow is centered on its grid
+    # point); the head is two barbs off the tip, each length
+    # h = min(0.3|d|, 0.22*pitch) rotated ~27 degrees back from d's
+    # direction.
+    x0 = px - dx / 2.0
+    y0 = py - dy / 2.0
+    x1 = px + dx / 2.0
+    y1 = py + dy / 2.0
+    h = _mc_np.minimum(0.3 * dl[ok], 0.22 * pitch)
+    ang = _mc_np.arctan2(dy, dx)
+    phi = _mc_np.deg2rad(27.0)
+    bxa = x1 - h * _mc_np.cos(ang + phi)
+    bya = y1 - h * _mc_np.sin(ang + phi)
+    bxb = x1 - h * _mc_np.cos(ang - phi)
+    byb = y1 - h * _mc_np.sin(ang - phi)
+    # Each arrow is three segments — shaft, barb, barb — NaN-separated
+    # into one flat polyline per axis.
+    gap = _mc_np.full(px.shape, _mc_np.nan)
+    xs = _mc_np.stack(
+        [x0, x1, gap, x1, bxa, gap, x1, bxb, gap], axis=1).ravel()
+    ys = _mc_np.stack(
+        [y0, y1, gap, y1, bya, gap, y1, byb, gap], axis=1).ravel()
     fig.add_scatter(
-        x=[None], y=[None], mode='lines', name='field',
-        hoverinfo='skip')
-    return (rng[0], rng[1], rng[0], rng[1])
+        x=xs, y=ys, mode='lines', name='field',
+        line=dict(color=color, width=2), hoverinfo='skip')
+    fig.add_scatter(
+        x=x1, y=y1, mode='markers', name='field-tips',
+        marker=dict(color=color, size=4),
+        customdata=_mc_np.stack([FU[ok], FV[ok]], axis=1),
+        hovertemplate='x: %{x:.2f} y: %{y:.2f}<br>'
+                      'F = (%{customdata[0]:.2f},'
+                      ' %{customdata[1]:.2f})<extra></extra>')
+    pad = 0.5 * pitch
+    return (rng[0] - pad, rng[1] + pad, rng[0] - pad, rng[1] + pad)
 '''
 
 _MC_GRIDIMG_SRC = '''_MC_GRIDIMG_NAMES = ('img-src', 'img-x', 'img-y')

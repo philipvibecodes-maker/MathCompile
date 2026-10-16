@@ -131,8 +131,11 @@ describe('plot statement python codegen', () => {
       'python',
       { importAll: false },
     );
-    expect(out.cellLines[0].some((l) => l.startsWith('# plot field'))).toBe(
-      true,
+    expect(out.cellLines[0]).toContain(
+      'from sympy.plotting import plot_vector_field',
+    );
+    expect(out.cellLines[0]).toContain(
+      'plot_vector_field((-y, x), (x, -3, 3), (y, -3, 3))',
     );
     expect(
       out.cellLines[0].some((l) => l.startsWith('# image-of-grid')),

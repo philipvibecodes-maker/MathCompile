@@ -4268,19 +4268,33 @@ function emitPlotPython(
   };
 }
 
-// The field (quiver) view of an ℝ²→ℝ² plot, python target.
-// TODO(quiver): emit the vector-field plotting call.
+// The field (quiver) view of an ℝ²→ℝ² plot, python target:
+// `plot_vector_field` (sympy.plotting, ≥1.9 — shipped by the pinned
+// pyodide). It isn't re-exported at sympy's top level on every version,
+// so the import line rides ahead of the call rather than relying on a
+// `sp.` prefix; in import-* mode the bare name is already the right one.
 function emitPlotFieldPython(
-  _expr: MathJson,
-  _comps: MathJson[],
-  _callVars: string[],
+  expr: MathJson,
+  comps: MathJson[],
+  callVars: string[],
   emitter: Emitter,
 ): StatementOut {
-  emitter.scope.flag(
-    'note',
-    'plot: a ℝ²→ℝ² field has no direct lowering yet — emitted as a comment',
-  );
-  return { lines: ['# plot field — not yet lowered'] };
+  // A bare-string component is the applied def'd name only when the
+  // whole plotted expr is that name (`\text{plot} f` → comps [f]);
+  // inside a vector a bare string is a variable reference, not a call.
+  const emitComp = (n: MathJson | string): string =>
+    isStr(n) && n === expr
+      ? `${n}(${callVars.map(pyIdent).join(', ')})`
+      : emitter.emit(n);
+  const [v0, v1] = callVars.map(pyIdent);
+  const [e0, e1] = comps.map(emitComp);
+  return {
+    lines: [
+      'from sympy.plotting import plot_vector_field',
+      `plot_vector_field((${e0}, ${e1}), (${v0}, -3, 3), (${v1}, -3, 3))`,
+    ],
+    plot: true,
+  };
 }
 
 // The image-of-grid view of an ℝ²→ℝ² plot, python target. The caller
