@@ -216,6 +216,18 @@ export function themedFigure(plot: PlotData, dark: boolean) {
     if (!isObj(menu.font)) menu.font = {};
     (menu.font as Record<string, unknown>).color ??= t.font;
   }
+  // Legend sits over the plot — a mostly-opaque themed panel keeps its
+  // entries readable over traces/heatmaps.
+  if (layout.showlegend || isObj(layout.legend)) {
+    const legend: Record<string, unknown> = {
+      bgcolor: dark ? 'rgba(35,38,45,0.85)' : 'rgba(255,255,255,0.85)',
+      bordercolor: t.grid,
+      ...(isObj(layout.legend) ? layout.legend : {}),
+    };
+    if (!isObj(legend.font)) legend.font = {};
+    (legend.font as Record<string, unknown>).color ??= t.font;
+    layout.legend = legend;
+  }
   const data = figure.data.map((tr) => themedTrace(tr, t));
   return { data, layout };
 }

@@ -718,7 +718,7 @@ def _mc_plot_figure(d, c, vars_, comps):
                 vy.append(fyy)
         fig.add_scatter(
             x=sx, y=sy, mode='lines', line=dict(color=acc, width=1),
-            hoverinfo='skip',
+            hoverinfo='skip', name='field', legendgroup='field',
         )
         # Arrowheads as rotated markers, not gl3d cones on a scene2
         # overlay — a GL subplot on top swallows the pointer events and
@@ -735,21 +735,22 @@ def _mc_plot_figure(d, c, vars_, comps):
                        for u, v in zip(vx, vy)],
             ),
             hoverinfo='skip',
+            name='field', legendgroup='field', showlegend=False,
         )
         fig.add_heatmap(
             x=us, y=vs, z=mag, colorscale='Viridis', showscale=False,
-            visible=False,
+            visible=False, name='magnitude',
         )
         str_x, str_y = _mc_plot_streamlines(us, vs, fx, fy)
         fig.add_scatter(
             x=str_x, y=str_y, mode='lines', line=dict(color=acc, width=1),
-            hoverinfo='skip', visible=False,
+            hoverinfo='skip', visible=False, name='streamlines',
         )
         gx, gy, _ = _mc_plot_gridlines(us, vs, fx, fy)
         fig.add_scatter(
             x=gx, y=gy, mode='lines',
             line=dict(color='rgba(59,130,246,0.55)', width=1),
-            hoverinfo='skip', visible=False,
+            hoverinfo='skip', visible=False, name='image of grid',
         )
         _mc_plot_menu(
             fig,
@@ -805,7 +806,12 @@ def _mc_plot_figure(d, c, vars_, comps):
                 _mc_mode_vis(fig, ('cloud',)),
             ],
         )
-    fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
+    # Only the R2→R2 field views get a legend — their mode menu swaps
+    # between four visualizations of the same field, so naming the
+    # visible trace explains what's on screen. Hidden traces
+    # (visible=False) are excluded from the legend automatically.
+    fig.update_layout(
+        margin=_MC_PLOT_MARGIN, showlegend=(c == 2))
     return fig, bounds
 
 
@@ -1014,7 +1020,8 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
                 'fig.add_scatter(',
                 "    x=sx, y=sy, mode='lines',",
                 f"    line=dict(color='{acc}', width=1),",
-                "    hoverinfo='skip',",
+                "    hoverinfo='skip', name='field',",
+                "    legendgroup='field',",
                 ')',
                 'fig.add_scatter(',
                 "    x=cx, y=cy, mode='markers',",
@@ -1026,12 +1033,14 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
                 '            _mc_np.arctan2(u, v)))',
                 '            for u, v in zip(vx, vy)],',
                 '    ),',
-                "    hoverinfo='skip',",
+                "    hoverinfo='skip', name='field',",
+                "    legendgroup='field', showlegend=False,",
                 ')',
                 'fig.add_heatmap(',
                 '    x=us, y=vs, z=mag,'
                 " colorscale='Viridis',",
-                '    showscale=False, visible=False,',
+                "    showscale=False, visible=False,",
+                "    name='magnitude',",
                 ')',
                 'str_x, str_y = _mc_plot_streamlines(us, vs, fx, fy)',
                 'fig.add_scatter(',
@@ -1039,6 +1048,7 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
                 " mode='lines',",
                 f"    line=dict(color='{acc}', width=1),",
                 "    hoverinfo='skip', visible=False,",
+                "    name='streamlines',",
                 ')',
                 'gx, gy, _ = _mc_plot_gridlines(us, vs, fx, fy)',
                 'fig.add_scatter(',
@@ -1046,6 +1056,7 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
                 "    line=dict(color='rgba(59,130,246,0.55)',"
                 ' width=1),',
                 "    hoverinfo='skip', visible=False,",
+                "    name='image of grid',",
                 ')',
             ]
             menu(
@@ -1110,7 +1121,8 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
                  "_mc_mode_vis(fig, ('iso',))",
                  "_mc_mode_vis(fig, ('cloud',))"],
             )
-        L.append(f'fig.update_layout(margin={margin}, showlegend=False)')
+        L.append(
+            f'fig.update_layout(margin={margin}, showlegend={c == 2})')
     L += [
         '# the figure dict the frontend hands to plotly.js',
         'fig.to_json()',
