@@ -660,6 +660,21 @@ const sampleNum = (run: (vars: Record<string, number>) => unknown, vars: Record<
   return NaN;
 };
 
+// ℝ²→ℝ² interim: CE-sampled traces for the field (quiver) view — the
+// same `scatter`/`lines` trace shape the worker's 'field' trace carries
+// so PlotView/ECharts draw it unchanged. The image-of-grid mode is a
+// worker-figure-only extra; the interim previews the default view.
+// Returns null when the field can't be honestly sampled.
+// TODO(quiver): implement.
+function interimFieldTraces(
+  runners: ((vars: Record<string, number>) => unknown)[],
+  vars: string[],
+): Record<string, unknown>[] | null {
+  void runners;
+  void vars;
+  return null;
+}
+
 // A `\text{plot}` statement's interim row: the expression is compiled
 // to JS by CE's `compile` and sampled on the worker's grid, producing a
 // real PlotData payload — CalcOutput renders it through the same
@@ -721,7 +736,7 @@ function interimPlotRow(
   const c = compNodes.length;
   // Same constraints the worker reports as errors — the interim leaves
   // the row empty and the real diagnostic lands with SymPy.
-  if (d < 1 || d > 2 || c < 1 || c > 3 || (d === 2 && c !== 1))
+  if (d < 1 || d > 2 || c < 1 || c > 3 || (d === 2 && c > 2))
     return null;
 
   const data: Record<string, unknown>[] = [];
@@ -773,9 +788,21 @@ function interimPlotRow(
         name: 'curve',
       });
     }
+  } else if (c === 2) {
+    // d === 2, c === 2 — ℝ²→ℝ²: the interim previews the field view
+    // only; the real figure adds the grid-image mode behind the menu.
+    const tr = interimFieldTraces(runners, vars);
+    if (tr === null) return null;
+    data.push(...tr);
+    layout['xaxis'] = { zeroline: true };
+    layout['yaxis'] = {
+      zeroline: true,
+      scaleanchor: 'x',
+      scaleratio: 1,
+    };
   } else {
-    // d === 2 — ℝ²→ℝ: a surface plus the hidden heatmap trace (the
-    // same shape the worker emits, minus the Desmos scene decor).
+    // d === 2, c === 1 — ℝ²→ℝ: a surface plus the hidden heatmap trace
+    // (the same shape the worker emits, minus the Desmos scene decor).
     const us = linspace(PLOT_R2[0], PLOT_R2[1], PLOT_N2);
     const vs = linspace(PLOT_R2[0], PLOT_R2[1], PLOT_N2);
     const grid: number[][] = vs.map((v) =>

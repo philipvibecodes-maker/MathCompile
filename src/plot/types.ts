@@ -3,8 +3,9 @@
 // (fig.to_json()) — plotly.js renders it as-is once theme overrides
 // are applied (see theme.ts).
 export interface PlotData {
-  /** '<domain-dim>x<component-count>', e.g. '1x1' for y=f(x). */
-  kind: '1x1' | '1x2' | '1x3' | '2x1';
+  /** '<domain-dim>x<component-count>', e.g. '1x1' for y=f(x), '2x2'
+   * for an ℝ²→ℝ² map (quiver field + grid-image views). */
+  kind: '1x1' | '1x2' | '1x3' | '2x1' | '2x2';
   /** Variable names in grid order (e.g. ['x'], ['u', 'v']). */
   vars: string[];
   /** LaTeX of the plotted expression. */

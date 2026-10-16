@@ -115,6 +115,12 @@ function themedTrace(
       return isObj(tr.line)
         ? { ...tr, line: { ...tr.line, color: t.surfGrid } }
         : tr;
+    // 2x2 grid-image view: the dimmed copy of the domain's source
+    // grid follows the theme's guide-line color.
+    case 'img-src':
+      return isObj(tr.line)
+        ? { ...tr, line: { ...tr.line, color: t.wallGrid } }
+        : tr;
     case 'xysheet':
       return {
         ...tr,

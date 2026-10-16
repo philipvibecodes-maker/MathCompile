@@ -510,7 +510,12 @@ def _mc_desmos_scene(fig, bounds):
     _mc_aspect_menu(fig, bounds)
 
 
-_MC_SCENE_NAMES = ('wallgrid', 'box', 'axis', 'ticks', 'xysheet')
+'''
+
+# Mode-menu helpers shared by every multi-view figure. Kept out of
+# _MC_DESMOS_SRC so the shown program for a 2-D multi-mode figure can
+# include just this block instead of the whole scene-helper source.
+_MC_VIEWS_SRC = '''_MC_SCENE_NAMES = ('wallgrid', 'box', 'axis', 'ticks', 'xysheet')
 
 
 def _mc_mode_vis(fig, data_names, scene=True):
@@ -526,7 +531,56 @@ def _mc_mode_vis(fig, data_names, scene=True):
 
 '''
 
+# ————————————————————————————————————————————————————————————————————
+# ℝ²→ℝ² views. A 2-in/2-out signature draws one figure with both views
+# behind the mode menu: the quiver field (arrows at domain grid points)
+# and the image of the domain grid under the map. Each builder appends
+# its own named traces; the *_NAMES tuples are the menu's visibility
+# keys — every trace a view adds must be named there.
+#
+# Helper defaults mirror the module constants so the shown program —
+# which includes these source strings verbatim — runs standalone.
+# _mc_plot_figure still passes the module constants explicitly.
+
+_MC_PLOT_NF = 21          # arrows per axis on the field view
+_MC_PLOT_NG = 9           # grid lines per direction on the image view
+_MC_PLOT_NGPTS = 160      # samples along each image-view grid line
+_MC_PLOT_FIELD = '#3b82f6'
+_MC_PLOT_IMGX = '#c74440'
+_MC_PLOT_IMGY = '#3b82f6'
+_MC_PLOT_SRC = '#8c8c8c'
+
+_MC_FIELD_SRC = '''_MC_FIELD_NAMES = ('field',)
+
+
+def _mc_field_view(fig, fnum, rng=(-3.0, 3.0), n=21, color='#3b82f6'):
+    # Quiver view of the vector field: one arrow per grid point —
+    # shaft plus head barbs in a single NaN-separated scatter trace.
+    # TODO(quiver): implement the arrow geometry.
+    fig.add_scatter(
+        x=[None], y=[None], mode='lines', name='field',
+        hoverinfo='skip')
+'''
+
+_MC_GRIDIMG_SRC = '''_MC_GRIDIMG_NAMES = ('img-src', 'img-x', 'img-y')
+
+
+def _mc_gridimg_view(fig, fnum, rng=(-3.0, 3.0), nlines=9, npts=160,
+                     imgx='#c74440', imgy='#3b82f6', src='#8c8c8c'):
+    # Image-of-grid view: the images of the domain's grid lines under
+    # the map over a dimmed copy of the source grid. Traces start
+    # hidden — the mode menu reveals them.
+    # TODO(gridimg): implement the transformed grid curves.
+    for name in _MC_GRIDIMG_NAMES:
+        fig.add_scatter(
+            x=[None], y=[None], mode='lines', name=name,
+            visible=False, hoverinfo='skip')
+'''
+
+exec(_MC_VIEWS_SRC)
 exec(_MC_DESMOS_SRC)
+exec(_MC_FIELD_SRC)
+exec(_MC_GRIDIMG_SRC)
 
 
 def _mc_plot_figure(d, c, vars_, comps):
@@ -580,10 +634,28 @@ def _mc_plot_figure(d, c, vars_, comps):
     us = _mc_np.linspace(_MC_PLOT_R2[0], _MC_PLOT_R2[1], _MC_PLOT_N2)
     vs = _mc_np.linspace(_MC_PLOT_R2[0], _MC_PLOT_R2[1], _MC_PLOT_N2)
     U, V = _mc_np.meshgrid(us, vs)
+    fig = go.Figure()
+    if c == 2:
+        # ℝ²→ℝ² — the quiver field and the image of the domain grid
+        # live in one figure behind the mode menu ('field' default,
+        # 'image' hidden). Each view samples its own grid through fnum;
+        # equal aspect so arrows and mapped lines don't distort.
+        _mc_field_view(
+            fig, fnum, _MC_PLOT_R2, _MC_PLOT_NF, _MC_PLOT_FIELD)
+        _mc_gridimg_view(
+            fig, fnum, _MC_PLOT_R2, _MC_PLOT_NG, _MC_PLOT_NGPTS,
+            _MC_PLOT_IMGX, _MC_PLOT_IMGY, _MC_PLOT_SRC)
+        fig.update_xaxes(zeroline=True)
+        fig.update_yaxes(zeroline=True, scaleanchor='x', scaleratio=1)
+        _mc_plot_menu(
+            fig, ['field', 'image'],
+            [_mc_mode_vis(fig, _MC_FIELD_NAMES, scene=False),
+             _mc_mode_vis(fig, _MC_GRIDIMG_NAMES, scene=False)])
+        fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
+        return fig, None
     vals = _mc_np.asarray(fnum(U, V), dtype=float)
     if vals.ndim == 2:
         vals = vals.reshape(1, vals.shape[0], vals.shape[1])
-    fig = go.Figure()
     bounds = _mc_desmos_bounds(
         (float(us[0]), float(us[-1])),
         (float(vs[0]), float(vs[-1])),
@@ -681,6 +753,11 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
     helpers = []
     if bounds is not None:
         helpers.append(_MC_DESMOS_SRC)
+        helpers.append(_MC_VIEWS_SRC)
+    if d == 2 and c == 2:
+        helpers.append(_MC_VIEWS_SRC)
+        helpers.append(_MC_FIELD_SRC)
+        helpers.append(_MC_GRIDIMG_SRC)
     for src in helpers:
         L += [src.rstrip(), '']
     L.append(f"fnum = sp.lambdify({params}, {body}, 'numpy')")
@@ -747,37 +824,56 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
             ]
         L.append(f'fig.update_layout(margin={margin}, showlegend=False)')
     else:
-        L += [
-            f'us = _mc_np.linspace({_MC_PLOT_R2[0]}, {_MC_PLOT_R2[1]},'
-            f' {_MC_PLOT_N2})',
-            f'vs = _mc_np.linspace({_MC_PLOT_R2[0]}, {_MC_PLOT_R2[1]},'
-            f' {_MC_PLOT_N2})',
-            'U, V = _mc_np.meshgrid(us, vs)',
-            'vals = _mc_np.asarray(fnum(U, V), dtype=float)',
-            'if vals.ndim == 2:',
-            '    vals = vals.reshape('
-            '1, vals.shape[0], vals.shape[1])',
-            'fig = go.Figure()',
-            'bounds = _mc_desmos_bounds(',
-            '    (float(us[0]), float(us[-1])),',
-            '    (float(vs[0]), float(vs[-1])),',
-            '    _mc_extent(vals[0]))',
-            '_mc_desmos_decor(fig, bounds)',
-            '_mc_desmos_surf(fig, us, vs, vals[0])',
-            'fig.add_heatmap(',
-            '    x=us, y=vs, z=vals[0],'
-            " colorscale='Viridis',",
-            '    showscale=False, visible=False,',
-            "    name='heatmap',",
-            ')',
-            '_mc_desmos_sheet(fig, bounds)',
-            '_mc_desmos_scene(fig, bounds)',
-        ]
-        menu(
-            ['surface', 'heatmap'],
-            ["_mc_mode_vis(fig, ('surf',))",
-             "_mc_mode_vis(fig, ('heatmap',), scene=False)"],
-        )
+        if c == 2:
+            L += [
+                'fig = go.Figure()',
+                f'_mc_field_view(fig, fnum, {_MC_PLOT_R2},'
+                f' {_MC_PLOT_NF}, {_MC_PLOT_FIELD!r})',
+                f'_mc_gridimg_view(fig, fnum, {_MC_PLOT_R2},'
+                f' {_MC_PLOT_NG}, {_MC_PLOT_NGPTS},'
+                f' {_MC_PLOT_IMGX!r}, {_MC_PLOT_IMGY!r},'
+                f' {_MC_PLOT_SRC!r})',
+                'fig.update_xaxes(zeroline=True)',
+                "fig.update_yaxes(zeroline=True, scaleanchor='x',"
+                ' scaleratio=1)',
+            ]
+            menu(
+                ['field', 'image'],
+                ["_mc_mode_vis(fig, _MC_FIELD_NAMES, scene=False)",
+                 "_mc_mode_vis(fig, _MC_GRIDIMG_NAMES, scene=False)"],
+            )
+        else:
+            L += [
+                f'us = _mc_np.linspace({_MC_PLOT_R2[0]},'
+                f' {_MC_PLOT_R2[1]}, {_MC_PLOT_N2})',
+                f'vs = _mc_np.linspace({_MC_PLOT_R2[0]},'
+                f' {_MC_PLOT_R2[1]}, {_MC_PLOT_N2})',
+                'U, V = _mc_np.meshgrid(us, vs)',
+                'vals = _mc_np.asarray(fnum(U, V), dtype=float)',
+                'if vals.ndim == 2:',
+                '    vals = vals.reshape('
+                '1, vals.shape[0], vals.shape[1])',
+                'fig = go.Figure()',
+                'bounds = _mc_desmos_bounds(',
+                '    (float(us[0]), float(us[-1])),',
+                '    (float(vs[0]), float(vs[-1])),',
+                '    _mc_extent(vals[0]))',
+                '_mc_desmos_decor(fig, bounds)',
+                '_mc_desmos_surf(fig, us, vs, vals[0])',
+                'fig.add_heatmap(',
+                '    x=us, y=vs, z=vals[0],'
+                " colorscale='Viridis',",
+                '    showscale=False, visible=False,',
+                "    name='heatmap',",
+                ')',
+                '_mc_desmos_sheet(fig, bounds)',
+                '_mc_desmos_scene(fig, bounds)',
+            ]
+            menu(
+                ['surface', 'heatmap'],
+                ["_mc_mode_vis(fig, ('surf',))",
+                 "_mc_mode_vis(fig, ('heatmap',), scene=False)"],
+            )
         L.append(f'fig.update_layout(margin={margin}, showlegend=False)')
     L += [
         '# the figure dict the frontend hands to plotly.js',
@@ -798,10 +894,11 @@ def _mc_plot_payload(v):
         raise ValueError(
             f'cannot plot {c} output components (needs 1, 2, or 3)'
         )
-    if d == 2 and c != 1:
+    if d == 2 and c not in (1, 2):
         raise ValueError(
             f'cannot plot a 2-variable function producing {c} '
-            'components — only ℝ²→ℝ surfaces are supported for now'
+            'components — only ℝ²→ℝ surfaces and ℝ²→ℝ² maps are '
+            'supported for now'
         )
     fig, bounds = _mc_plot_figure(d, c, vars_, comps)
     return {
