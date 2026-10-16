@@ -48,7 +48,7 @@ test('R2->R2 plot cell renders interim field, then a two-mode plotly figure', as
   });
   await expect(page.locator('.plot-interim')).toHaveCount(0);
 
-  // The landed figure carries a 'field' scatter/lines trace and the
+  // The landed figure carries the native 'field' quiver trace and the
   // mode menu with 'field' + 'image' buttons.
   const figure = await page.evaluate(() => {
     const gd = document.querySelector('.js-plotly-plot') as
@@ -67,8 +67,7 @@ test('R2->R2 plot cell renders interim field, then a two-mode plotly figure', as
     };
   });
   const field = figure.traces.find((t) => t.name === 'field');
-  expect(field?.type).toBe('scatter');
-  expect(field?.mode).toBe('lines');
+  expect(field?.type).toBe('quiver');
   const labels = figure.buttons.map((b) => b.label);
   expect(labels).toContain('field');
   expect(labels).toContain('image');

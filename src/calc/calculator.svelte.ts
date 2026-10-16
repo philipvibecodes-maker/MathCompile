@@ -662,93 +662,57 @@ const sampleNum = (run: (vars: Record<string, number>) => unknown, vars: Record<
 };
 
 // ℝ²→ℝ² interim: CE-sampled traces for the field (quiver) view — the
-// same `scatter`/`lines` trace shape the worker's 'field' trace carries
-// so PlotView/ECharts draw it unchanged. The image-of-grid mode is a
+// same `quiver` trace shape the worker's 'field' trace carries so
+// PlotView/ECharts draw it unchanged (the converter synthesizes arrow
+// segments from x/y/u/v). The image-of-grid mode is a
 // worker-figure-only extra; the interim previews the default view.
-// Returns null when the field can't be honestly sampled (every
-// magnitude non-finite — the all-gaps convention keeps the row empty
+// Returns null when the field can't be honestly sampled (no finite
+// nonzero magnitude — the all-gaps convention keeps the row empty
 // until SymPy lands).
 function interimFieldTraces(
   runners: ((vars: Record<string, number>) => unknown)[],
   vars: string[],
 ): Record<string, unknown>[] | null {
-  // The same geometry the worker's _mc_field_view draws: arrows
-  // centered on an n x n grid, longest scaled to 0.8 of a cell, head
-  // barbs ~27 degrees back off the tip — packed into one
-  // NaN-separated scatter/lines trace.
   const us = linspace(PLOT_R2[0], PLOT_R2[1], PLOT_NF);
-  const pitch = (PLOT_R2[1] - PLOT_R2[0]) / (PLOT_NF - 1);
-  const fu: number[] = [];
-  const fv: number[] = [];
-  const px: number[] = [];
-  const py: number[] = [];
+  const x: number[] = [];
+  const y: number[] = [];
+  const u: number[] = [];
+  const v: number[] = [];
   let mmax = 0;
-  for (const v of us) {
-    for (const u of us) {
+  for (const vy of us) {
+    for (const ux of us) {
       const du = sampleNum(runners[0], {
-        [vars[0]]: u,
-        [vars[1]]: v,
+        [vars[0]]: ux,
+        [vars[1]]: vy,
       });
       const dv = sampleNum(runners[1], {
-        [vars[0]]: u,
-        [vars[1]]: v,
+        [vars[0]]: ux,
+        [vars[1]]: vy,
       });
-      px.push(u);
-      py.push(v);
-      fu.push(du);
-      fv.push(dv);
+      // Non-finite grid points drop out — a missing arrow is the
+      // honest draw for a pole, same as the worker's quiver.
+      if (!Number.isFinite(du) || !Number.isFinite(dv)) continue;
+      x.push(ux);
+      y.push(vy);
+      u.push(du);
+      v.push(dv);
       const m = Math.hypot(du, dv);
-      if (Number.isFinite(m) && m > mmax) mmax = m;
+      if (m > mmax) mmax = m;
     }
   }
   if (!(mmax > 0)) return null;
-  const k = (0.8 * pitch) / mmax;
-  const phi = (27 * Math.PI) / 180;
-  const x: number[] = [];
-  const y: number[] = [];
-  for (let i = 0; i < px.length; i++) {
-    const dx = fu[i] * k;
-    const dy = fv[i] * k;
-    const dl = Math.hypot(dx, dy);
-    if (!Number.isFinite(dl) || dl < 1e-12) continue;
-    const x0 = px[i] - dx / 2;
-    const y0 = py[i] - dy / 2;
-    const x1 = px[i] + dx / 2;
-    const y1 = py[i] + dy / 2;
-    const h = Math.min(0.3 * dl, 0.22 * pitch);
-    const ang = Math.atan2(dy, dx);
-    x.push(
-      x0,
-      x1,
-      NaN,
-      x1,
-      x1 - h * Math.cos(ang + phi),
-      NaN,
-      x1,
-      x1 - h * Math.cos(ang - phi),
-      NaN,
-    );
-    y.push(
-      y0,
-      y1,
-      NaN,
-      y1,
-      y1 - h * Math.sin(ang + phi),
-      NaN,
-      y1,
-      y1 - h * Math.sin(ang - phi),
-      NaN,
-    );
-  }
-  if (x.length === 0) return null;
   return [
     {
-      type: 'scatter',
-      mode: 'lines',
-      name: 'field',
-      line: { color: PLOT_ACCENT, width: 2 },
+      type: 'quiver',
       x,
       y,
+      u,
+      v,
+      name: 'field',
+      anchor: 'center',
+      lengthmode: 'scaled',
+      lengthfactor: 0.8,
+      marker: { color: PLOT_ACCENT },
     },
   ];
 }

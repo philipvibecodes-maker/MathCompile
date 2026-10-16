@@ -184,20 +184,24 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
 - **ℝ²→ℝ² (`kind: '2x2'`) is one figure, two views**: the worker's
   `_mc_field_view`/`_mc_gridimg_view` (sources in `_MC_FIELD_SRC`/
   `_MC_GRIDIMG_SRC`, exec'd and shown verbatim in the generating-code
-  block) build five named traces — `field` + `field-tips` (quiver:
-  NaN-separated shaft+barb polyline, arrows centered on a 21×21 grid
-  scaled so the longest spans 0.8·pitch; the tips trace carries the
-  `F = (du, dv)` hover) and `img-src`/`img-x`/`img-y` (dimmed source
-  grid plus images of the integer x/y grid lines, NaN-broken at
-  poles). A `field`/`image` updatemenu flips `visible` *and* carries
-  a per-mode axis-range relayout — field frames the grid box padded
-  ½·pitch, image frames the finite image extent (~6% pad, 0.5 floor).
-  The python target emits `sympy.plotting.plot_vector_field` for the
-  field view; the image view has no SymPy equivalent, so a
-  numpy+matplotlib equivalent rides along *commented* under it.
-  The interim previews the field view only (image mode is
-  worker-figure-only); `interimFieldTraces` mirrors the arrow
-  geometry in TS on `PLOT_NF = 21`.
+  block) build four named traces — `field` (the native `go.Quiver`
+  trace, plotly ≥7.0: 21×21 grid, `anchor='center'`,
+  `lengthmode='scaled'` × `lengthfactor 0.8`, hover `F = (%{u}, %{v})`,
+  non-finite grid points dropped) and `img-src`/`img-x`/`img-y`
+  (dimmed source grid plus images of the integer x/y grid lines,
+  NaN-broken at poles). A `field`/`image` updatemenu flips `visible`
+  *and* carries a per-mode axis-range relayout — field frames the
+  grid box padded ½·pitch, image frames the finite image extent (~6%
+  pad, 0.5 floor). The python target emits
+  `sympy.plotting.plot_vector_field` for the field view; the image
+  view has no SymPy equivalent, so a numpy+matplotlib equivalent
+  rides along *commented* under it. The interim previews the field
+  view only (image mode is worker-figure-only);
+  `interimFieldTraces` emits the same quiver trace shape on
+  `PLOT_NF = 21` and the echarts converter synthesizes NaN-separated
+  shaft+barb segments from x/y/u/v (ECharts has no quiver series —
+  worker arrays must stay plain lists, not numpy, or the JSON turns
+  into undecodable `bdata` dicts).
 - **`src/plot/echarts.ts` converts the figure dict**, not the
   expression: scatter→line (NaN→null gaps), scatter3d→line3D,
   surface→gl `surface` (x/y vectors expanded to `[x,y,z]` triples +
@@ -205,9 +209,9 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   Scene-decor names (`wallgrid`/`box`/`axis`/`ticks`/`xysheet`) and
   `mode:'text'` traces are skipped; a 2x1 figure prefers the gl
   surface over its hidden heatmap. Updatemenus aren't read — a 2x2
-  figure shows its default (field) mode: the quiver's NaN-separated
-  `field` polyline converts like any scatter line and the hidden
-  `img-*` traces are dropped. Gotchas: echarts **defers canvas
+  figure shows its default (field) mode: the `quiver` trace becomes
+  a synthesized segment line and the hidden `img-*` traces are
+  dropped. Gotchas: echarts **defers canvas
   creation to the first `setOption`** — `init` alone leaves an empty
   wrapper; and the chart handle must be `$state` or the render effect
   fires once before init and never re-runs. echarts-gl's `surface`
