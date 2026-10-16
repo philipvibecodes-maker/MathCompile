@@ -4297,21 +4297,39 @@ function emitPlotFieldPython(
   };
 }
 
-// The image-of-grid view of an ℝ²→ℝ² plot, python target. The caller
-// '# '-prefixes these lines so they ride under the field view's real
-// code as a commented program.
-// TODO(gridimg): emit the matplotlib program.
+// The image-of-grid view of an ℝ²→ℝ² plot, python target. SymPy has
+// no equivalent plotting call, so this emits a standalone
+// numpy+matplotlib program as lines — the caller '# '-prefixes them so
+// they ride under the field view's real code as a commented program
+// documenting the second view the calculator's mode menu offers. Not
+// executed by our pipeline, so `plot` stays unset.
 function emitPlotImagePython(
   _expr: MathJson,
-  _comps: MathJson[],
-  _callVars: string[],
+  comps: MathJson[],
+  callVars: string[],
   emitter: Emitter,
 ): StatementOut {
-  emitter.scope.flag(
-    'note',
-    'plot: a ℝ²→ℝ² grid image has no direct lowering yet — emitted as a comment',
-  );
-  return { lines: ['image-of-grid — not yet lowered'] };
+  const sp = emitter.scope.qualified ? 'sp.' : '';
+  const [v0, v1] = callVars.map(pyIdent);
+  const [e0, e1] = comps.map((n) => emitter.emit(n));
+  return {
+    lines: [
+      'image-of-grid view of the same map',
+      `fnum = ${sp}lambdify((${v0}, ${v1}), (${e0}, ${e1}), 'numpy')`,
+      'import numpy as np',
+      'import matplotlib.pyplot as plt',
+      'ts = np.linspace(-3, 3, 160)',
+      'fig, ax = plt.subplots()',
+      'for k in range(-3, 4):',
+      "    ax.plot(np.full_like(ts, k), ts, color='#8c8c8c', lw=1)",
+      "    ax.plot(ts, np.full_like(ts, k), color='#8c8c8c', lw=1)",
+      'for k in range(-3, 4):',
+      "    ax.plot(*fnum(np.full_like(ts, k), ts), color='#c74440', lw=1.5)",
+      "    ax.plot(*fnum(ts, np.full_like(ts, k)), color='#3b82f6', lw=1.5)",
+      "ax.set_aspect('equal')",
+      'plt.show()',
+    ],
+  };
 }
 
 function emitStatement(node: MathJson, emitter: Emitter): StatementOut {

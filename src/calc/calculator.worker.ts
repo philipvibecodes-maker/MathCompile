@@ -656,17 +656,86 @@ _MC_GRIDIMG_SRC = '''_MC_GRIDIMG_NAMES = ('img-src', 'img-x', 'img-y')
 
 def _mc_gridimg_view(fig, fnum, rng=(-3.0, 3.0), nlines=9, npts=160,
                      imgx='#c74440', imgy='#3b82f6', src='#8c8c8c'):
-    # Image-of-grid view: the images of the domain's grid lines under
-    # the map over a dimmed copy of the source grid. Traces start
+    # Image-of-grid view: the images of the domain's integer grid lines
+    # under the map, drawn over a dimmed copy of the source grid.
+    # 'img-src' is the domain grid itself, 'img-x' the images of the
+    # vertical lines x = k, 'img-y' the horizontals y = k. Traces start
     # hidden — the mode menu reveals them. Returns (x0, x1, y0, y1)
     # framing the image curves (with padding), or None when nothing
     # finite sampled.
-    # TODO(gridimg): implement the transformed grid curves.
-    for name in _MC_GRIDIMG_NAMES:
+    import math as _mc_math
+    import numpy as _mc_np
+
+    lo, hi = rng
+    nan = float('nan')
+    ks = list(range(_mc_math.ceil(lo), _mc_math.floor(hi) + 1))
+    if len(ks) > nlines:
+        ks = ks[::_mc_math.ceil(len(ks) / nlines)]
+    ts = _mc_np.linspace(lo, hi, npts)
+
+    def comps_at(xin, yin):
+        # The two image components along one grid line — lambdify can
+        # return a tuple, a nested list (Matrix), or broadcast a
+        # constant component to a scalar; normalize each to a length-n
+        # array. Non-finite coords become NaN so the polyline gaps at
+        # poles instead of streaking across the plot.
+        out = fnum(xin, yin)
+        parts = []
+        for i in range(2):
+            a = _mc_np.asarray(out[i], dtype=float).reshape(-1)
+            if a.size == 1:
+                a = _mc_np.full(npts, float(a[0]))
+            parts.append(
+                _mc_np.where(_mc_np.isfinite(a), a, nan))
+        return parts[0], parts[1]
+
+    # The source grid: one NaN-separated scatter of straight segments —
+    # vertical (k, lo)->(k, hi) then horizontal (lo, k)->(hi, k) per k.
+    sx, sy = [], []
+    for k in ks:
+        sx += [k, k, nan]
+        sy += [lo, hi, nan]
+        sx += [lo, hi, nan]
+        sy += [k, k, nan]
+    fig.add_scatter(
+        x=sx, y=sy, mode='lines', name='img-src',
+        line=dict(color=src, width=1),
+        visible=False, hoverinfo='skip')
+
+    fx, fy = [], []   # finite image samples, for the framing box
+
+    def image_lines(vertical, name, color):
+        # One direction's image curves: vertical=True sweeps the lines
+        # x = k (fixed first arg), False the horizontals y = k.
+        xs, ys = [], []
+        for k in ks:
+            xin = _mc_np.full_like(ts, k) if vertical else ts
+            yin = ts if vertical else _mc_np.full_like(ts, k)
+            cx, cy = comps_at(xin, yin)
+            fin = _mc_np.isfinite(cx) & _mc_np.isfinite(cy)
+            fx.append(cx[fin])
+            fy.append(cy[fin])
+            xs += list(cx) + [nan]
+            ys += list(cy) + [nan]
         fig.add_scatter(
-            x=[None], y=[None], mode='lines', name=name,
+            x=xs, y=ys, mode='lines', name=name,
+            line=dict(color=color, width=1.5),
             visible=False, hoverinfo='skip')
-    return None
+
+    image_lines(True, 'img-x', imgx)
+    image_lines(False, 'img-y', imgy)
+
+    ax = _mc_np.concatenate(fx)
+    ay = _mc_np.concatenate(fy)
+    if ax.size == 0:
+        return None
+    x0, x1 = float(ax.min()), float(ax.max())
+    y0, y1 = float(ay.min()), float(ay.max())
+    # ~6% padding per side — with a floor so a degenerate image (a
+    # constant map, a point) still frames to a viewable window.
+    px = max(0.06 * (x1 - x0), 0.5)
+    py = max(0.06 * (y1 - y0), 0.5)
+    return (x0 - px, x1 + px, y0 - py, y1 + py)
 '''
 
 exec(_MC_VIEWS_SRC)
