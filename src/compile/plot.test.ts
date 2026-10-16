@@ -141,6 +141,15 @@ describe('plot statement python codegen', () => {
       out.cellLines[0].some((l) => l.startsWith('# image-of-grid')),
     ).toBe(true);
   });
+
+  it('bare-variable vector components emit as symbols, not calls', () => {
+    // A component that is itself a free var (here `t`) is not a def'd
+    // name — the old emitComp produced `t(t, x)`, which raises on a
+    // Symbol. Declared-fn components still apply.
+    expect(
+      pyLines('\\text{plot} \\begin{pmatrix} t \\\\ x \\end{pmatrix}'),
+    ).toContain('plot_vector_field((t, x), (t, -3, 3), (x, -3, 3))');
+  });
 });
 
 describe('plot theming', () => {

@@ -4202,10 +4202,7 @@ function emitPlotPython(
       ? [expr]
       : (plotComponents(expr) ?? []);
   const callVars = applied !== undefined && applied.length > 0 ? applied : vars;
-  const emitComp = (n: MathJson | string): string =>
-    isStr(n)
-      ? `${n}(${callVars.map(pyIdent).join(', ')})`
-      : emitter.emit(n);
+  const emitComp = emitPlotComp(emitter, callVars);
   const R1 = (v: string) => `(${v}, -10, 10)`;
   const R2 = (v: string) => `(${v}, -3, 3)`;
   const d = callVars.length;
@@ -4268,24 +4265,29 @@ function emitPlotPython(
   };
 }
 
+// A bare-string component is an applied call only when it's a declared
+// fn name — `\text{plot} f` applies f's recorded params and a vector of
+// def'd names like pmatrix{f \\ g} applies each; a free-variable
+// component like `x` emits as a symbol, not `x(t)`.
+const emitPlotComp =
+  (emitter: Emitter, callVars: string[]) =>
+  (n: MathJson | string): string =>
+    isStr(n) && emitter.scope.decls.declaredFns.has(n)
+      ? `${n}(${callVars.map(pyIdent).join(', ')})`
+      : emitter.emit(n);
+
 // The field (quiver) view of an ℝ²→ℝ² plot, python target:
 // `plot_vector_field` (sympy.plotting, ≥1.9 — shipped by the pinned
 // pyodide). It isn't re-exported at sympy's top level on every version,
 // so the import line rides ahead of the call rather than relying on a
 // `sp.` prefix; in import-* mode the bare name is already the right one.
 function emitPlotFieldPython(
-  expr: MathJson,
+  _expr: MathJson,
   comps: MathJson[],
   callVars: string[],
   emitter: Emitter,
 ): StatementOut {
-  // A bare-string component is the applied def'd name only when the
-  // whole plotted expr is that name (`\text{plot} f` → comps [f]);
-  // inside a vector a bare string is a variable reference, not a call.
-  const emitComp = (n: MathJson | string): string =>
-    isStr(n) && n === expr
-      ? `${n}(${callVars.map(pyIdent).join(', ')})`
-      : emitter.emit(n);
+  const emitComp = emitPlotComp(emitter, callVars);
   const [v0, v1] = callVars.map(pyIdent);
   const [e0, e1] = comps.map(emitComp);
   return {
@@ -4311,7 +4313,7 @@ function emitPlotImagePython(
 ): StatementOut {
   const sp = emitter.scope.qualified ? 'sp.' : '';
   const [v0, v1] = callVars.map(pyIdent);
-  const [e0, e1] = comps.map((n) => emitter.emit(n));
+  const [e0, e1] = comps.map(emitPlotComp(emitter, callVars));
   return {
     lines: [
       'image-of-grid view of the same map',

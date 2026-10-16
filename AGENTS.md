@@ -147,7 +147,9 @@ and empty blocks serialize as `{ }`.
 - `\text{plot}` rows carry `row.plot` (PlotData): the interim samples
   through CE's `compile()` on the worker's grids and is drawn by
   ECharts until the worker's plotly-python figure lands — see
-  `src/plot/` and CALCULATOR-ENGINES.md.
+  `src/plot/` and CALCULATOR-ENGINES.md. ℝ²→ℝ² (`kind: '2x2'`) is one
+  figure with a `field`/`image` updatemenu — quiver arrows vs the
+  image of the domain's grid lines.
 - The worksheet prefix compiles via `compileCellsForCalc` — the shared
   pipeline, not a second parser — so the worker only exec/evals Python.
   Cells share one namespace in order (a `def g` or `a = 5` above is in
