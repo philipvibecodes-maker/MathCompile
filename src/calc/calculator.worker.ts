@@ -716,24 +716,26 @@ def _mc_plot_figure(d, c, vars_, comps):
                 cy.append(vs[i] + fyy)
                 vx.append(fxx)
                 vy.append(fyy)
-        span = _mc_np.hypot(us[-1] - us[0], vs[-1] - vs[0])
         fig.add_scatter(
             x=sx, y=sy, mode='lines', line=dict(color=acc, width=1),
             hoverinfo='skip',
         )
-        fig.add_cone(
-            x=cx, y=cy, z=[0] * len(cx), u=vx, v=vy, w=[0] * len(vx),
-            colorscale='Viridis', sizemode='absolute',
-            sizeref=float(span) * 0.4, anchor='tail', showscale=False,
-            scene='scene2',
+        # Arrowheads as rotated markers, not gl3d cones on a scene2
+        # overlay — a GL subplot on top swallows the pointer events and
+        # its camera can't stay in sync with cartesian pan/zoom, so the
+        # whole view was un-draggable. All-cartesian keeps pan/zoom
+        # native; marker.angle is bearing (clockwise from +y).
+        fig.add_scatter(
+            x=cx, y=cy, mode='markers',
+            marker=dict(
+                symbol='triangle-up', size=8,
+                color=[float(m) for m in _mc_np.hypot(vx, vy)],
+                colorscale='Viridis', showscale=False,
+                angle=[float(_mc_np.degrees(_mc_np.arctan2(u, v)))
+                       for u, v in zip(vx, vy)],
+            ),
+            hoverinfo='skip',
         )
-        fig.update_layout(scene2=dict(
-            domain=dict(x=[0, 1], y=[0, 1]),
-            camera=dict(eye=dict(x=0, y=0, z=1.6)),
-            xaxis=dict(visible=False),
-            yaxis=dict(visible=False),
-            zaxis=dict(range=[-0.5, 0.5], visible=False),
-        ))
         fig.add_heatmap(
             x=us, y=vs, z=mag, colorscale='Viridis', showscale=False,
             visible=False,
@@ -992,8 +994,8 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
         elif c == 2:
             L += [
                 'fx, fy = vals[0], vals[1]',
-                '# quiver: one scatter of tail→tip segments plus a cone',
-                '# per tip',
+                '# quiver: one scatter of tail→tip segments plus a',
+                '# rotated marker arrowhead per tip',
                 'stride = 5',
                 'sx, sy, cx, cy, vx, vy = [], [], [], [], [], []',
                 'for i in range(0, len(vs), stride):',
@@ -1009,27 +1011,23 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
                 '        cy.append(vs[i] + fyy)',
                 '        vx.append(fxx)',
                 '        vy.append(fyy)',
-                'span = _mc_np.hypot(us[-1] - us[0], vs[-1] - vs[0])',
                 'fig.add_scatter(',
                 "    x=sx, y=sy, mode='lines',",
                 f"    line=dict(color='{acc}', width=1),",
                 "    hoverinfo='skip',",
                 ')',
-                'fig.add_cone(',
-                '    x=cx, y=cy, z=[0] * len(cx), u=vx, v=vy,',
-                '    w=[0] * len(vx),',
-                "    colorscale='Viridis', sizemode='absolute',",
-                '    sizeref=float(span) * 0.4,',
-                "    anchor='tail', showscale=False,",
-                "    scene='scene2',",
+                'fig.add_scatter(',
+                "    x=cx, y=cy, mode='markers',",
+                '    marker=dict(',
+                "        symbol='triangle-up', size=8,",
+                "        color=[float(m) for m in _mc_np.hypot(vx, vy)],",
+                "        colorscale='Viridis', showscale=False,",
+                '        angle=[float(_mc_np.degrees(',
+                '            _mc_np.arctan2(u, v)))',
+                '            for u, v in zip(vx, vy)],',
+                '    ),',
+                "    hoverinfo='skip',",
                 ')',
-                'fig.update_layout(scene2=dict(',
-                '    domain=dict(x=[0, 1], y=[0, 1]),',
-                '    camera=dict(eye=dict(x=0, y=0, z=1.6)),',
-                '    xaxis=dict(visible=False),',
-                '    yaxis=dict(visible=False),',
-                '    zaxis=dict(range=[-0.5, 0.5], visible=False),',
-                '))',
                 'fig.add_heatmap(',
                 '    x=us, y=vs, z=mag,'
                 " colorscale='Viridis',",
