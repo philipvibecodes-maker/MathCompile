@@ -129,7 +129,7 @@ function pyIdent(name: string): string {
 // Statement-position heads that only lower to Python.
 const STATEMENT_HEADS = new Set([
   'Assign', 'Def', 'Declare', 'Block', 'WhereBlock', 'Which', 'Piecewise',
-  'PythonSource', 'Solve', 'DSolve', 'PDESolve',
+  'PythonSource', 'Plot', 'Solve', 'DSolve', 'PDESolve',
 ]);
 const CMP_NESTABLE_HEADS = new Set([
   'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
@@ -289,6 +289,11 @@ class Scope {
    * it is dropped instead of emitting `sp.Error(...)`/`None` fragments. */
   errorCount = 0;
 
+  /** Which target a `\text{plot}` statement lowers for — 'calc' emits
+   * the worker's `_mc_plot` marker call, 'python' emits the matching
+   * `sp.plot*` line the signature admits. */
+  plotTarget: 'calc' | 'python' = 'calc';
+
   constructor(
     qualified: boolean,
     declared: Set<string>,
@@ -297,9 +302,11 @@ class Scope {
     issues: Issue[],
     cellIssues: Issue[][],
     cell: number,
+    plotTarget: 'calc' | 'python' = 'calc',
     pyFns: Map<string, PyFnEntry> = new Map(),
   ) {
     this.qualified = qualified;
+    this.plotTarget = plotTarget;
     this.decls = { declared, declaredFns, defined: new Set() };
     this.emit = {
       symbols: new Map(),
@@ -3700,6 +3707,9 @@ interface StatementOut {
    * echoes the definition itself, so the shown program drops its
    * `e = …` capture line even in the plumbing view. */
   defines?: boolean;
+  /** The statement produces a plot, not a value — the calc path must not
+   * wrap its line in clean_and_simplify (the row carries sampled data). */
+  plot?: boolean;
   /** Execs for side effects only (a defs-only PythonSource) — the
    * calculator runs it but produces no result row. */
   silent?: boolean;
@@ -4147,6 +4157,106 @@ function assignDisplay(
   return `${sp}Eq(${sp}Symbol(${JSON.stringify(name)}), ${rhs}${uneval})`;
 }
 
+// The plottable-component list of a normalized expression: a Matrix
+// literal with a single row or column flattens to its elements (a
+// column vector is how multi-component functions are written), a
+// List/Tuple flattens likewise, anything else is a scalar.
+function plotComponents(expr: MathJson): MathJson[] | undefined {
+  if (!isArr(expr)) return [expr];
+  const h = headOf(expr);
+  if (h === 'Matrix' && expr.length === 2 && isHead(expr[1], 'List')) {
+    const rows = expr[1].slice(1);
+    if (
+      rows.length > 0 &&
+      rows.every((r) => isHead(r, 'List')) &&
+      (rows.length === 1 || rows.every((r) => r.length === 2))
+    )
+      return rows.flatMap((r) => r.slice(1));
+    return undefined;
+  }
+  if (h === 'List' || h === 'Tuple' || h === 'Sequence')
+    return expr.slice(1);
+  return [expr];
+}
+
+// The python-target lowering of a `Plot` statement: the matching
+// `sp.plot*` call when the signature is statically known (free names ×
+// component count), otherwise an informative comment plus a note — the
+// calculator's worker classifies shapes codegen can't see (a def'd
+// name's return shape).
+function emitPlotPython(
+  expr: MathJson,
+  emitted: string,
+  emitter: Emitter,
+): StatementOut {
+  const sp = emitter.scope.qualified ? 'sp.' : '';
+  const vars = [...new Set(freeNames(expr))].sort();
+  const applied =
+    isStr(expr) && emitter.scope.decls.declaredFns.has(expr)
+      ? emitter.scope.emit.fnArgs.get(expr)?.filter(isStr)
+      : undefined;
+  // `\text{plot} f` after a def: f's recorded params make the applied
+  // signature (an unknown-arity Function decl can't be sampled).
+  const comps =
+    applied !== undefined && applied.length > 0
+      ? [expr]
+      : (plotComponents(expr) ?? []);
+  const callVars = applied !== undefined && applied.length > 0 ? applied : vars;
+  const emitComp = (n: MathJson | string): string =>
+    isStr(n)
+      ? `${n}(${callVars.map(pyIdent).join(', ')})`
+      : emitter.emit(n);
+  const R1 = (v: string) => `(${v}, -10, 10)`;
+  const R2 = (v: string) => `(${v}, -3, 3)`;
+  const d = callVars.length;
+  const c = comps.length;
+  const unplottable = (why: string): StatementOut => {
+    emitter.scope.flag(
+      'note',
+      `plot: ${why} — emitted as a comment; the calculator target classifies and renders it`,
+    );
+    return { lines: [`# plot(${emitted}) — ${why}`] };
+  };
+  if (isHead(expr, 'Interval'))
+    return unplottable(
+      'an interval is a set, not a curve — write components as a column vector (e.g. \\begin{pmatrix})',
+    );
+  if (d === 0 || c === 0)
+    return unplottable('nothing varies — the expression is constant');
+  if (d > 2)
+    return unplottable(`a function of ${d} variables can't be plotted`);
+  if (c > 3)
+    return unplottable(`${c} output components is too many to plot`);
+  const [v0, v1] = callVars.map(pyIdent);
+  const [e0, e1, e2] = comps.map(emitComp);
+  if (d === 1 && c === 1)
+    return { lines: [`${sp}plot(${e0}, ${R1(v0)})`], plot: true };
+  if (d === 2 && c === 1)
+    return {
+      lines: [`${sp}plot3d(${e0}, ${R2(v0)}, ${R2(v1)})`],
+      plot: true,
+    };
+  if (d === 1 && c === 2)
+    return {
+      lines: [`${sp}plot_parametric(${e0}, ${e1}, ${R1(v0)})`],
+      plot: true,
+    };
+  if (d === 1 && c === 3)
+    return {
+      lines: [`${sp}plot3d_parametric_line(${e0}, ${e1}, ${e2}, ${R1(v0)})`],
+      plot: true,
+    };
+  if (d === 2 && c === 3)
+    return {
+      lines: [
+        `${sp}plot3d_parametric_surface(${e0}, ${e1}, ${e2}, ${R2(v0)}, ${R2(v1)})`,
+      ],
+      plot: true,
+    };
+  // d === 2 && c === 2 — SymPy has no vector-field renderer.
+  return unplottable('a ℝ²→ℝ² vector field has no SymPy plotting call');
+}
+
 function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
   const sp = emitter.scope.qualified ? 'sp.' : '';
   if (!isArr(node)) return emitExprStatement(node, emitter);
@@ -4312,6 +4422,18 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       display: assignDisplay(sp, name, rhs),
       defines: true,
     };
+  }
+  // `\text{plot} <expr>` — the calculator's worker samples the value's
+  // signature (free symbols × output shape) and the frontend renders it;
+  // the python target emits the `sp.plot*` call the statically known
+  // signature admits.
+  if (h === 'Plot') {
+    const before = emitter.scope.errorCount;
+    const body = emitter.emit(node[1]);
+    if (emitter.scope.errorCount > before) return { lines: [] };
+    if (emitter.scope.plotTarget === 'calc')
+      return { lines: [`_mc_plot(${body})`], plot: true };
+    return emitPlotPython(node[1], body, emitter);
   }
   // `\text{solve}` / `\text{dsolve}` / `\text{pdesolve}` statements.
   // IR: ['Solve', eqs, vars, domain?] — eqs a node or List, vars a List
@@ -4612,6 +4734,7 @@ export function compileWorksheet(
       issues,
       genIssues,
       i + 1,
+      'python',
       pyRegistry.fns,
     );
     scope.cellIdx = i;
@@ -4839,11 +4962,16 @@ function compileCellInScope(
       // the code that produced the row. The mc_* helpers are the
       // worker runtime in calculator.worker.ts.
       code:
-        out.calcLines !== undefined
-          ? out.calcLines.join('\n')
-          : out.display === undefined && !out.silent && out.lines.length === 1
-            ? calcEval(out.lines[0])
-            : out.lines.join('\n'),
+        // Plot statements produce a sampled-data row, not a value —
+        // clean_and_simplify would only add noise (and can't simplify
+        // the marker dict anyway).
+        out.plot
+          ? out.lines.join('\n')
+          : out.calcLines !== undefined
+            ? out.calcLines.join('\n')
+            : out.display === undefined && !out.silent && out.lines.length === 1
+              ? calcEval(out.lines[0])
+              : out.lines.join('\n'),
       display: out.display === undefined ? undefined : calcEval(out.display),
       defines: out.defines,
       silent: out.silent,
@@ -4921,6 +5049,7 @@ export function compileCellsForCalc(
     [],
     [],
     0,
+    'calc',
     pyRegistry.fns,
   );
   return {
@@ -4975,6 +5104,7 @@ export function compileCellForCalc(
     [],
     [],
     0,
+    'calc',
     pyRegistry.fns,
   );
   scope.cellIdx = 0;

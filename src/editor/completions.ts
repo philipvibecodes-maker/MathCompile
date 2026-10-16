@@ -52,6 +52,7 @@ export const COMPLETIONS: CompletionItem[] = [
   { name: 'pmatrix', hint: 'matrix', preview: '\\pmatrix{a&b\\\\c&d}' },
   { name: 'begin', hint: 'environment (pmatrix, cases, …)' },
   { name: 'def', hint: 'function definition', preview: '\\text{def} ' },
+  { name: 'plot', hint: 'plot a function', preview: '\\text{plot} ' },
   { name: 'solve', hint: 'solve equations', preview: '\\text{solve} ' },
   { name: 'dsolve', hint: 'solve an ODE', preview: '\\text{dsolve} ' },
   { name: 'pdesolve', hint: 'solve a PDE', preview: '\\text{pdesolve} ' },

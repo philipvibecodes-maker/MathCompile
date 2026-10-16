@@ -13,7 +13,8 @@
     "test:e2e": "playwright test",
     "test:e2e:smoke": "playwright test --grep @smoke",
     "test:perf": "playwright test -c playwright.perf.config.ts",
-    "docs:pdf": "node scripts/build-reference-pdf.mjs"
+    "docs:pdf": "node scripts/build-reference-pdf.mjs",
+    "pyodide:snapshot": "node scripts/fetch-pyodide-deps.mjs && node -e \"require('./scripts/make-pyodide-snapshot.cjs')\""
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
@@ -29,6 +30,7 @@
     "vitest": "^5.0.1"
   },
   "dependencies": {
-    "@cortex-js/compute-engine": "^0.133.0"
+    "@cortex-js/compute-engine": "^0.133.0",
+    "plotly.js-dist-min": "^4.1.2"
   }
 }

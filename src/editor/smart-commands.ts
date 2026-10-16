@@ -8,4 +8,4 @@
 // rewrite the tail of typed words like "node"/"mode" — they only expand
 // through the `\ode`/`\pde` command input.
 export const SMART_AUTO_COMMANDS =
-  'int iint antid sum sqrt prod lim pi phi infty theta derivative def nabla gradient solve dsolve pdesolve';
+  'int iint antid sum sqrt prod lim pi phi infty theta derivative def nabla gradient solve dsolve pdesolve plot';

@@ -130,6 +130,15 @@ export const HELP_TOPICS: HelpTopic[] = [
     insert: '\\text',
     default: true,
   },
+  {
+    id: 'plot',
+    goal: 'Plot',
+    keywords: 'graph figure curve surface draw chart',
+    smart: 'plot — then the expression; Output → Calculator renders it',
+    plain: '\\plot ⏎ — then the expression; Output → Calculator renders it',
+    insert: '\\plot',
+    default: true,
+  },
 
   // ── More calculus / algebra ───────────────────────────────
   {

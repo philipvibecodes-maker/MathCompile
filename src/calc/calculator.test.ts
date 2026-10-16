@@ -1577,6 +1577,32 @@ describe('shownPrograms (generating-code block assembly)', () => {
     const { displayCode } = shownPrograms(prog);
     expect(displayCode).toContain('e = clean_and_simplify(x * 2)');
   });
+
+  it('splices worker-supplied code into the last cell only', () => {
+    // A plot row's literal program replaces the opaque _mc_plot
+    // statement in both views; rowCode indexes the last cell's
+    // statements (the worker only returns rows for the cell it just
+    // evaluated), so earlier cells keep their emitted text.
+    const prog = calcAll('x + 1', '\\text{plot} x^2');
+    const plotCode = 'fnum = sp.lambdify((x,), [x**2])\nfig.to_json()';
+    const { code, displayCode } = shownPrograms(prog, [plotCode]);
+    expect(code).toContain(plotCode);
+    // The statement call is gone — `def _mc_plot` in the runtime
+    // prelude stays.
+    expect(code).not.toContain('_mc_plot(x**2)');
+    expect(displayCode).toContain(plotCode);
+    expect(displayCode).not.toContain('_mc_plot(x**2)');
+    expect(code).toContain('x + 1');
+  });
+
+  it('leaves earlier cells on emitted text when rows only cover the last', () => {
+    const prog = calcAll('\\text{plot} x^2', 'x + 1');
+    const { code } = shownPrograms(prog, ['x + 1']);
+    // Cell 1's plot statement stays the opaque marker — the worker only
+    // returns rows for the cell it just evaluated.
+    expect(code).toContain('_mc_plot(x**2)');
+    expect(code).toContain('x + 1');
+  });
 });
 
 describe('calculator import-* mode (from sympy import *)', () => {

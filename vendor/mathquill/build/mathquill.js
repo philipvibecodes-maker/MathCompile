@@ -13600,6 +13600,28 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         return new GradientAlias('\\nabla ', h('span', {}, [h.entityText('&nabla;')]), '\u2207', 'gradient');
     };
     //======================================================================
+    //  \plot \u2014 insertion alias for \text{plot}
+    //======================================================================
+    // Typing `\plot` expands to a real \text{plot} TextBlock plus a trailing
+    // space \u2014 the statement marker the compiler reads as a plot request,
+    // with the caret after the space ready for the expression \u2014 the same
+    // insertion-time expansion \def uses. A `\plot` in pasted latex renders
+    // the same "plot" text and serializes as \text{plot}, so stored latex
+    // canonicalizes on the next save.
+    var PlotAlias = /** @class */ (function (_super) {
+        __extends(PlotAlias, _super);
+        function PlotAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        PlotAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{plot}\\ ');
+        };
+        return PlotAlias;
+    }(MQSymbol));
+    LatexCmds.plot = function () {
+        return new PlotAlias('\\text{plot}', h('span', { class: 'mq-text-mode' }, [h.text('plot')]), 'plot', 'plot');
+    };
+    //======================================================================
     //  \dotproduct \u2014 insertion alias for \bullet
     //======================================================================
     // Typing `\dotproduct` expands to the \bullet sign the compiler reads

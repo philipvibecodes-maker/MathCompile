@@ -931,6 +931,13 @@ export const NOTATION: Notation[] = [
       + 'marker',
   },
   {
+    name: 'Plot',
+    heads: ['Plot'],
+    commands: ['plot'],
+    note: '\\plot is an insertion alias for the \\text{plot} statement '
+      + 'marker — the calculator target samples and renders it',
+  },
+  {
     name: 'Solve',
     heads: ['Solve'],
     commands: ['solve'],
