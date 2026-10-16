@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { clearFirstCell } from './helpers';
+import { clearFirstCell, sharedPage, resetApp } from './helpers';
 
 // \python{ ... } — a raw-source block inside the math field: plain-text
 // multi-line editing, visible delimiters, and syntax highlighting.
@@ -37,15 +37,17 @@ const openPythonBlock = async (page: Page) => {
   await expect(pythonBlock(page)).toHaveCount(1);
 };
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.waitForSelector('math-field');
+let page: Page;
+test.beforeAll(async ({ browser }, testInfo) => {
+  page = await sharedPage(browser, testInfo);
+});
+
+test.beforeEach(async () => {
+  await resetApp(page);
   await clearFirstCell(page);
 });
 
-test('typing \\python{ opens a source block with visible delimiters', async ({
-  page,
-}) => {
+test('typing \\python{ opens a source block with visible delimiters', async () => {
   await openPythonBlock(page);
   const block = pythonBlock(page);
   // The delimiters are CSS pseudo content — check the painted values,
@@ -62,9 +64,7 @@ test('typing \\python{ opens a source block with visible delimiters', async ({
   expect(after).toBe('}');
 });
 
-test('the block edits as plain text — no math behavior inside', async ({
-  page,
-}) => {
+test('the block edits as plain text — no math behavior inside', async () => {
   await openPythonBlock(page);
   await cell(page, 0).pressSequentially('x=1', { delay: 20 });
   // `{`, `^`, `$`, `\` type literally — no subscript/command/command-input
@@ -72,9 +72,7 @@ test('the block edits as plain text — no math behavior inside', async ({
   expect(await cellValue(cell(page, 0))).toBe('\\python{x=1a^2$\\\\}');
 });
 
-test('Enter inserts a newline in the source, not a displaylines row', async ({
-  page,
-}) => {
+test('Enter inserts a newline in the source, not a displaylines row', async () => {
   await openPythonBlock(page);
   await cell(page, 0).pressSequentially('a=1', { delay: 20 });
   await page.keyboard.press('Enter');
@@ -89,7 +87,7 @@ test('Enter inserts a newline in the source, not a displaylines row', async ({
   expect(lines).toBe(2);
 });
 
-test('the block gets no hasCursor wash or inset shadow', async ({ page }) => {
+test('the block gets no hasCursor wash or inset shadow', async () => {
   await openPythonBlock(page);
   const block = pythonBlock(page);
   // An empty block is .mq-empty — it still shows no slot box.
@@ -108,7 +106,7 @@ test('the block gets no hasCursor wash or inset shadow', async ({ page }) => {
   expect(shadow).toBe('none');
 });
 
-test('keywords and strings get CSS Highlight ranges', async ({ page }) => {
+test('keywords and strings get CSS Highlight ranges', async () => {
   await openPythonBlock(page);
   await cell(page, 0).pressSequentially('def f(x):return "s"', { delay: 20 });
   await expect
@@ -125,7 +123,7 @@ test('keywords and strings get CSS Highlight ranges', async ({ page }) => {
     .toBeGreaterThan(0);
 });
 
-test('Up on the first source line hops to the cell above', async ({ page }) => {
+test('Up on the first source line hops to the cell above', async () => {
   await openPythonBlock(page);
   await cell(page, 0).pressSequentially('a=1', { delay: 20 });
   // a second cell to hop into
@@ -138,7 +136,7 @@ test('Up on the first source line hops to the cell above', async ({ page }) => {
   await waitFocusedIndex(page, 0); // stays: cell 0 is the top cell
 });
 
-test('the cell value round-trips through reload', async ({ page }) => {
+test('the cell value round-trips through reload', async () => {
   await openPythonBlock(page);
   await cell(page, 0).pressSequentially('x = {"a": 1}', { delay: 20 });
   const latex = await cellValue(cell(page, 0));
