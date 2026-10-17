@@ -1680,6 +1680,27 @@ describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
       expect(tr.z[79][79]).toBeCloseTo(2 * Math.PI);
     });
 
+    it('applies a (u,v) ∈ I₁×I₂ product domain and broadcasts a constant component', async () => {
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} \\left(u,v,1\\right) \\text{ for }' +
+            ' \\left(u,v\\right) \\in \\left[0,1\\right]' +
+            ' \\times \\left[0,2\\pi\\right]',
+        ),
+      );
+      expect(plot?.kind).toBe('2x3');
+      const tr = plot?.figure.data[0] as {
+        x: number[][];
+        y: number[][];
+        z: number[][];
+      };
+      expect(tr.x[0][0]).toBeCloseTo(0);
+      expect(tr.x[79][79]).toBeCloseTo(1);
+      expect(tr.y[0][0]).toBeCloseTo(0);
+      expect(tr.y[79][79]).toBeCloseTo(2 * Math.PI);
+      expect(tr.z[79][79]).toBeCloseTo(1);
+    });
+
     it('an unreadable \\text{for} condition keeps the default window', async () => {
       const plot = plotRow(
         await interimEvaluate(

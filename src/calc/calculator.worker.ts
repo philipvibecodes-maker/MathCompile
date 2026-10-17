@@ -558,6 +558,23 @@ def _mc_mode_vis(fig, data_names, scene=True):
 
 exec(_MC_DESMOS_SRC)
 
+# Shared with the shown generating-code block: lambdify hands back a
+# list of per-component values and a constant component stays a
+# scalar, so broadcast every row onto the grid shape or np.asarray
+# dies on the inhomogeneous list.
+_MC_ROWS_SRC = '''
+def _mc_rows(raw, shape):
+    import numpy as _np
+
+    if isinstance(raw, _np.ndarray) and raw.dtype != object:
+        raw = [raw]
+    return _np.stack(
+        [_np.broadcast_to(_np.asarray(v, dtype=float), shape)
+         for v in raw])
+'''
+
+exec(_MC_ROWS_SRC)
+
 
 def _mc_plot_figure(d, c, vars_, comps, ranges):
     # Sample the components and build the plotly figure for the
@@ -572,9 +589,7 @@ def _mc_plot_figure(d, c, vars_, comps, ranges):
     if d == 1:
         r1 = _mc_rng(ranges, vars_[0].name, _MC_PLOT_R1)
         ts = _mc_np.linspace(r1[0], r1[1], _MC_PLOT_N1)
-        vals = _mc_np.asarray(fnum(ts), dtype=float)
-        if vals.ndim == 1:
-            vals = vals.reshape(1, -1)
+        vals = _mc_rows(fnum(ts), ts.shape)
         if c == 1:
             fig = go.Figure(go.Scatter(
                 x=ts, y=vals[0], mode='lines',
@@ -614,9 +629,7 @@ def _mc_plot_figure(d, c, vars_, comps, ranges):
     us = _mc_np.linspace(ru[0], ru[1], _MC_PLOT_N2)
     vs = _mc_np.linspace(rv[0], rv[1], _MC_PLOT_N2)
     U, V = _mc_np.meshgrid(us, vs)
-    vals = _mc_np.asarray(fnum(U, V), dtype=float)
-    if vals.ndim == 2:
-        vals = vals.reshape(1, vals.shape[0], vals.shape[1])
+    vals = _mc_rows(fnum(U, V), U.shape)
     fig = go.Figure()
     if c == 3:
         # Parametric surface: x/y/z are the component grids — the image
@@ -724,7 +737,7 @@ def _mc_plot_code(d, c, vars_, comps, bounds, ranges):
             f"{', '.join(names)} = sp.symbols('{' '.join(names)}')"
         )
         L.append('')
-    helpers = []
+    helpers = [_MC_ROWS_SRC]
     if bounds is not None:
         helpers.append(_MC_DESMOS_SRC)
     for src in helpers:
@@ -754,9 +767,7 @@ def _mc_plot_code(d, c, vars_, comps, bounds, ranges):
         L += [
             f'ts = _mc_np.linspace({r1[0]}, {r1[1]},'
             f' {_MC_PLOT_N1})',
-            'vals = _mc_np.asarray(fnum(ts), dtype=float)',
-            'if vals.ndim == 1:',
-            '    vals = vals.reshape(1, -1)',
+            'vals = _mc_rows(fnum(ts), ts.shape)',
         ]
         if c == 1:
             L += [
@@ -800,10 +811,7 @@ def _mc_plot_code(d, c, vars_, comps, bounds, ranges):
             f'us = _mc_np.linspace({ru[0]}, {ru[1]}, {_MC_PLOT_N2})',
             f'vs = _mc_np.linspace({rv[0]}, {rv[1]}, {_MC_PLOT_N2})',
             'U, V = _mc_np.meshgrid(us, vs)',
-            'vals = _mc_np.asarray(fnum(U, V), dtype=float)',
-            'if vals.ndim == 2:',
-            '    vals = vals.reshape('
-            '1, vals.shape[0], vals.shape[1])',
+            'vals = _mc_rows(fnum(U, V), U.shape)',
             'fig = go.Figure()',
         ]
         if c == 3:

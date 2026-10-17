@@ -191,6 +191,18 @@ describe('plot statement python codegen', () => {
     );
   });
 
+  it('a (u,v) ∈ I₁×I₂ product domain bounds each variable', () => {
+    expect(
+      pyLines(
+        '\\text{plot} \\begin{pmatrix} u \\\\ v \\\\ 1 \\end{pmatrix}' +
+          ' \\text{ for } \\left(u,v\\right) \\in \\left[0,1\\right]' +
+          ' \\times \\left[0,2\\pi\\right]',
+      ),
+    ).toContain(
+      'sp.plot3d_parametric_surface(u, v, 1, (u, 0, 1), (v, 0, 2 * sp.pi))',
+    );
+  });
+
   it('a bound on a non-variable flags a note', () => {
     const out = compileWorksheet(
       [

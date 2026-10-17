@@ -4228,16 +4228,24 @@ export function plotDomainBounds(cond: MathJson | undefined): PlotBound[] {
         if (iv) push({ v: lhs, ...iv });
         return;
       }
+      // Product domain `(u,v) ∈ I₁×I₂` — the lhs arrives as
+      // Delimiter(Sequence(u,v)) (plain parens) or Interval/Tuple/List;
+      // the rhs is a CircledAst of the factor intervals.
+      let vars: MathJson | undefined = lhs;
+      if (isArr(vars) && headOf(vars) === 'Delimiter')
+        vars = vars[1];
       if (
-        isArr(lhs) &&
-        headOf(lhs) === 'Interval' &&
+        isArr(vars) &&
+        ['Interval', 'Tuple', 'List', 'Sequence'].includes(
+          headOf(vars) ?? '',
+        ) &&
         isArr(rhs) &&
         headOf(rhs) === 'CircledAst'
       ) {
-        const vars = lhs.slice(1).map(stripOpen);
+        const names = vars.slice(1).map(stripOpen);
         const ivs = rhs.slice(1);
-        if (vars.length === ivs.length)
-          vars.forEach((v, i) => {
+        if (names.length === ivs.length)
+          names.forEach((v, i) => {
             const iv = intervalOf(ivs[i]);
             if (iv && isStr(v)) push({ v, ...iv });
           });
