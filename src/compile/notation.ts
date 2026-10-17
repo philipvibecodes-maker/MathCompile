@@ -1037,7 +1037,13 @@ export const NOTATION: Notation[] = [
   { name: 'Mean', callTier: true },
   { name: 'ForAll', callTier: true },
   { name: 'Exists', callTier: true },
-  { name: 'Comprehension', callTier: true },
+  {
+    name: 'Comprehension',
+    callTier: true,
+    commands: ['for'],
+    note: '\\for is an insertion alias for the \\text{for} '
+      + 'comprehension/domain keyword',
+  },
   { name: 'PseudoInverse', callTier: true },
   { name: 'Superminus', callTier: true },
   { name: 'Superplus', callTier: true },

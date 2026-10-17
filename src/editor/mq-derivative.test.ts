@@ -53,4 +53,27 @@ describe('insertion aliases', () => {
     type(mq, 'g(x)');
     expect(el.value).toBe('\\text{def}\\ g\\left(x\\right)');
   });
+
+  it('typed `for` expands to a \\text{for} TextBlock plus a space', () => {
+    const { el, mq } = mountAppField();
+    // Smart mode autoCommands — no backslash needed, like `int`.
+    type(mq, '\\plot');
+    mq.keystroke('Enter');
+    type(mq, 'x^2');
+    // Space inside a sup block stays inside — arrow out to baseline
+    // first, the same as any autoCommand after a superscript.
+    mq.keystroke('Right');
+    type(mq, ' for');
+    expect(el.value).toBe('\\text{plot}\\ x^{2}\\ \\text{for}\\ ');
+    // The caret is after the space — the condition types directly.
+    type(mq, 'x');
+    expect(el.value).toBe('\\text{plot}\\ x^{2}\\ \\text{for}\\ x');
+  });
+
+  it('\\for through the latex command input expands the same way', () => {
+    const { el, mq } = mountAppField();
+    type(mq, '\\for');
+    mq.keystroke('Enter');
+    expect(el.value).toBe('\\text{for}\\ ');
+  });
 });
