@@ -633,6 +633,7 @@ const PLOT_R1: [number, number] = [-10, 10];
 const PLOT_N1 = 600;
 const PLOT_R2: [number, number] = [-3, 3];
 const PLOT_N2 = 80;
+const PLOT_NF = 21;
 const PLOT_ACCENT = '#3b82f6';
 
 const linspace = (lo: number, hi: number, n: number): number[] => {
@@ -659,6 +660,62 @@ const sampleNum = (run: (vars: Record<string, number>) => unknown, vars: Record<
   }
   return NaN;
 };
+
+// ℝ²→ℝ² interim: CE-sampled traces for the field (quiver) view — the
+// same `quiver` trace shape the worker's 'field' trace carries so
+// PlotView/ECharts draw it unchanged (the converter synthesizes arrow
+// segments from x/y/u/v). The image-of-grid mode is a
+// worker-figure-only extra; the interim previews the default view.
+// Returns null when the field can't be honestly sampled (no finite
+// nonzero magnitude — the all-gaps convention keeps the row empty
+// until SymPy lands).
+function interimFieldTraces(
+  runners: ((vars: Record<string, number>) => unknown)[],
+  vars: string[],
+): Record<string, unknown>[] | null {
+  const us = linspace(PLOT_R2[0], PLOT_R2[1], PLOT_NF);
+  const x: number[] = [];
+  const y: number[] = [];
+  const u: number[] = [];
+  const v: number[] = [];
+  let mmax = 0;
+  for (const vy of us) {
+    for (const ux of us) {
+      const du = sampleNum(runners[0], {
+        [vars[0]]: ux,
+        [vars[1]]: vy,
+      });
+      const dv = sampleNum(runners[1], {
+        [vars[0]]: ux,
+        [vars[1]]: vy,
+      });
+      // Non-finite grid points drop out — a missing arrow is the
+      // honest draw for a pole, same as the worker's quiver.
+      if (!Number.isFinite(du) || !Number.isFinite(dv)) continue;
+      x.push(ux);
+      y.push(vy);
+      u.push(du);
+      v.push(dv);
+      const m = Math.hypot(du, dv);
+      if (m > mmax) mmax = m;
+    }
+  }
+  if (!(mmax > 0)) return null;
+  return [
+    {
+      type: 'quiver',
+      x,
+      y,
+      u,
+      v,
+      name: 'field',
+      anchor: 'center',
+      lengthmode: 'scaled',
+      lengthfactor: 0.8,
+      marker: { color: PLOT_ACCENT },
+    },
+  ];
+}
 
 // A `\text{plot}` statement's interim row: the expression is compiled
 // to JS by CE's `compile` and sampled on the worker's grid, producing a
@@ -721,7 +778,7 @@ function interimPlotRow(
   const c = compNodes.length;
   // Same constraints the worker reports as errors — the interim leaves
   // the row empty and the real diagnostic lands with SymPy.
-  if (d < 1 || d > 2 || c < 1 || c > 3 || (d === 2 && c !== 1))
+  if (d < 1 || d > 2 || c < 1 || c > 3 || (d === 2 && c > 2))
     return null;
 
   const data: Record<string, unknown>[] = [];
@@ -773,9 +830,21 @@ function interimPlotRow(
         name: 'curve',
       });
     }
+  } else if (c === 2) {
+    // d === 2, c === 2 — ℝ²→ℝ²: the interim previews the field view
+    // only; the real figure adds the grid-image mode behind the menu.
+    const tr = interimFieldTraces(runners, vars);
+    if (tr === null) return null;
+    data.push(...tr);
+    layout['xaxis'] = { zeroline: true };
+    layout['yaxis'] = {
+      zeroline: true,
+      scaleanchor: 'x',
+      scaleratio: 1,
+    };
   } else {
-    // d === 2 — ℝ²→ℝ: a surface plus the hidden heatmap trace (the
-    // same shape the worker emits, minus the Desmos scene decor).
+    // d === 2, c === 1 — ℝ²→ℝ: a surface plus the hidden heatmap trace
+    // (the same shape the worker emits, minus the Desmos scene decor).
     const us = linspace(PLOT_R2[0], PLOT_R2[1], PLOT_N2);
     const vs = linspace(PLOT_R2[0], PLOT_R2[1], PLOT_N2);
     const grid: number[][] = vs.map((v) =>

@@ -180,14 +180,50 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   `reserve()` folds this cell's own names in), unknown/def'd
   functions (compile returns non-'expression' calling or all-NaN
   samples), and signatures the worker would reject (d∉{1,2},
-  c∉{1,2,3}, d=2⇒c=1).
+  c∉{1,2,3}, d=2⇒c∈{1,2}).
+- **ℝ²→ℝ² (`kind: '2x2'`) is one figure, two views**: the worker's
+  `_mc_field_view`/`_mc_gridimg_view` (sources in `_MC_FIELD_SRC`/
+  `_MC_GRIDIMG_SRC`, exec'd and shown verbatim in the generating-code
+  block) build four named traces — `field` (the native `go.Quiver`
+  trace, plotly ≥7.0: 21×21 grid, `anchor='center'`,
+  `lengthmode='scaled'` × `lengthfactor 0.8`, hover `F = (%{u}, %{v})`,
+  non-finite grid points dropped) and `input grid`/`image of x = k`/
+  `image of y = k` (dimmed source grid plus same-color images of the
+  x/y grid lines — `_MC_PLOT_GSTEP`-spaced, NaN-broken at poles; the
+  y-images are dashed so the one-color legend still tells directions
+  apart). A `field`/`image` updatemenu flips `visible` *and* carries
+  a per-mode relayout — field frames the grid box padded ½·pitch,
+  image frames the finite image extent (~6% pad, 0.5 floor), turns
+  `showlegend` on (entries `input grid` / `image of x = k` /
+  `image of y = k`), and sets the `input grid: …` annotation the
+  field button clears again. The python target emits
+  `sympy.plotting.plot_vector_field` for the field view; the image
+  view has no SymPy equivalent, so a numpy+matplotlib equivalent
+  rides along *commented* under it. The interim previews the field
+  view only (image mode is worker-figure-only);
+  `interimFieldTraces` emits the same quiver trace shape on
+  `PLOT_NF = 21` and the echarts converter synthesizes NaN-separated
+  shaft+barb segments from x/y/u/v (ECharts has no quiver series —
+  worker arrays must stay plain lists, not numpy, or the JSON turns
+  into undecodable `bdata` dicts). Two frontend gotchas: `quiver`
+  must count as cartesian in `applyModeAxes` or the field mode
+  renders with the xy axes/grid hidden; and a payload swap rebuilds
+  the figure at its defaults — PlotView captures each updatemenu's
+  active button into `menuSel` (afterplot/relayout) and
+  `applyActiveMenus` re-applies that button's vis/relayout args to
+  the incoming figure, so an edit doesn't snap the mode back to
+  `field` (the interim payload has no menus at all — the selection
+  can't ride on `_fullLayout` alone).
 - **`src/plot/echarts.ts` converts the figure dict**, not the
   expression: scatter→line (NaN→null gaps), scatter3d→line3D,
   surface→gl `surface` (x/y vectors expanded to `[x,y,z]` triples +
   `dataShape`), heatmap→category-axis heatmap + viridis `visualMap`.
   Scene-decor names (`wallgrid`/`box`/`axis`/`ticks`/`xysheet`) and
   `mode:'text'` traces are skipped; a 2x1 figure prefers the gl
-  surface over its hidden heatmap. Gotchas: echarts **defers canvas
+  surface over its hidden heatmap. Updatemenus aren't read — a 2x2
+  figure shows its default (field) mode: the `quiver` trace becomes
+  a synthesized segment line and the hidden `img-*` traces are
+  dropped. Gotchas: echarts **defers canvas
   creation to the first `setOption`** — `init` alone leaves an empty
   wrapper; and the chart handle must be `$state` or the render effect
   fires once before init and never re-runs. echarts-gl's `surface`

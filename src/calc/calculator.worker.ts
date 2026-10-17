@@ -191,15 +191,21 @@ _MC_PLOT_ACC = '#3b82f6'
 _MC_PLOT_MARGIN = dict(l=40, r=10, t=30, b=40)
 
 
-def _mc_plot_menu(fig, labels, vis_lists):
+def _mc_plot_menu(fig, labels, vis_lists, relayouts=None):
     # One updatemenu driving trace visibility — the several views of the
-    # same signature (surface vs heatmap). Appends:
+    # same signature (surface vs heatmap, field vs grid-image). When a
+    # view carries a matching relayout dict it rides along as the
+    # button's second 'update' arg, so switching modes can reframe the
+    # axes (the grid image usually outruns the domain window). Appends:
     # the scene's aspect dropdown is already a menu on the same row.
+    if relayouts is None:
+        relayouts = [None] * len(labels)
     menus = list(fig.layout.updatemenus or ())
     menus.append(dict(
         buttons=[
-            dict(label=lab, method='update', args=[{'visible': vis}])
-            for lab, vis in zip(labels, vis_lists)
+            dict(label=lab, method='update',
+                 args=[{'visible': vis}] + ([rel] if rel else []))
+            for lab, vis, rel in zip(labels, vis_lists, relayouts)
         ],
         direction='down',
         x=0.075, xanchor='left',
@@ -510,7 +516,12 @@ def _mc_desmos_scene(fig, bounds):
     _mc_aspect_menu(fig, bounds)
 
 
-_MC_SCENE_NAMES = ('wallgrid', 'box', 'axis', 'ticks', 'xysheet')
+'''
+
+# Mode-menu helpers shared by every multi-view figure. Kept out of
+# _MC_DESMOS_SRC so the shown program for a 2-D multi-mode figure can
+# include just this block instead of the whole scene-helper source.
+_MC_VIEWS_SRC = '''_MC_SCENE_NAMES = ('wallgrid', 'box', 'axis', 'ticks', 'xysheet')
 
 
 def _mc_mode_vis(fig, data_names, scene=True):
@@ -524,9 +535,180 @@ def _mc_mode_vis(fig, data_names, scene=True):
     ]
 
 
+def _mc_range_rel(box):
+    # A mode button's relayout arg: the axis ranges that frame that
+    # view's content. box is (x0, x1, y0, y1) — a view builder's
+    # returned extent, or None when it drew nothing (no relayout then).
+    if box is None:
+        return None
+    return {'xaxis.range': [box[0], box[1]],
+            'yaxis.range': [box[2], box[3]]}
+
+
 '''
 
+# ————————————————————————————————————————————————————————————————————
+# ℝ²→ℝ² views. A 2-in/2-out signature draws one figure with both views
+# behind the mode menu: the quiver field (arrows at domain grid points)
+# and the image of the domain grid under the map. Each builder appends
+# its own named traces; the *_NAMES tuples are the menu's visibility
+# keys — every trace a view adds must be named there.
+#
+# Helper defaults mirror the module constants so the shown program —
+# which includes these source strings verbatim — runs standalone.
+# _mc_plot_figure still passes the module constants explicitly.
+
+_MC_PLOT_NF = 21          # arrows per axis on the field view
+_MC_PLOT_GSTEP = 0.5      # spacing between grid lines on the image view
+_MC_PLOT_NGPTS = 160      # samples along each image-view grid line
+_MC_PLOT_FIELD = '#3b82f6'
+_MC_PLOT_IMG = '#3b82f6'
+_MC_PLOT_SRC = '#8c8c8c'
+
+_MC_FIELD_SRC = '''_MC_FIELD_NAMES = ('field',)
+
+
+def _mc_field_view(fig, fnum, rng=(-3.0, 3.0), n=21, color='#3b82f6'):
+    # Quiver view of the vector field: the native go.Quiver trace —
+    # one arrow per point of an n x n uniform grid over rng squared,
+    # anchored at its center on the grid point and scaled by plotly's
+    # 'scaled' lengthmode (the longest arrow is normalized against the
+    # point density, so it behaves like the 0.8-of-a-cell cap without
+    # us measuring magnitudes). Grid points where the field isn't
+    # finite are dropped — a missing arrow is the honest draw for a
+    # pole. The hover reports the vector itself. Returns (x0, x1, y0,
+    # y1) framing the drawn arrows — the rng box padded by half a
+    # cell. Plain lists (not numpy) so the figure JSON keeps readable
+    # arrays ECharts can segment for the bridge window.
+    import numpy as _mc_np
+    us = _mc_np.linspace(rng[0], rng[1], n)
+    U, V = _mc_np.meshgrid(us, us)
+    w = _mc_np.asarray(fnum(U, V), dtype=float)
+    if w.ndim == 1:
+        # A constant field lambdifies to a flat (2,) — reshape so the
+        # broadcast below stretches it over the grid.
+        w = w.reshape(-1, 1, 1)
+    elif w.ndim == 2:
+        w = w.reshape(1, w.shape[0], w.shape[1])
+    elif w.ndim > 3:
+        # Matrix components lambdify with a singleton axis — (2,1,n,n);
+        # the grid axes are always the last two.
+        w = w.reshape(w.shape[0], w.shape[-2], w.shape[-1])
+    w = _mc_np.broadcast_to(w, (2,) + U.shape)
+    FU, FV = w[0].astype(float), w[1].astype(float)
+    pitch = (rng[1] - rng[0]) / (n - 1)
+    ok = _mc_np.isfinite(_mc_np.hypot(FU, FV))
+    fig.add_quiver(
+        x=U[ok].tolist(), y=V[ok].tolist(),
+        u=FU[ok].tolist(), v=FV[ok].tolist(),
+        name='field', anchor='center', lengthfactor=0.8,
+        marker=dict(color=color),
+        hovertemplate='x: %{x:.2f} y: %{y:.2f}<br>'
+                      'F = (%{u:.2f}, %{v:.2f})<extra></extra>')
+    pad = 0.5 * pitch
+    return (rng[0] - pad, rng[1] + pad, rng[0] - pad, rng[1] + pad)
+'''
+
+_MC_GRIDIMG_SRC = '''_MC_GRIDIMG_NAMES = ('input grid', 'image of x = k', 'image of y = k')
+
+
+def _mc_gridimg_view(fig, fnum, rng=(-3.0, 3.0), step=0.5, npts=160,
+                     color='#3b82f6', src='#8c8c8c'):
+    # Image-of-grid view: the images of the domain's coordinate grid
+    # lines under the map, drawn over a dimmed copy of the source grid.
+    # 'input grid' is the domain grid itself, 'image of x = k' the
+    # images of the vertical lines x = k, 'image of y = k' the
+    # horizontals y = k (dashed) — one color for both directions, the
+    # legend tells them apart. Traces start hidden — the mode menu
+    # reveals them. Returns ((x0, x1, y0, y1), desc) — the finite
+    # image extent padded ~6% per side, plus a description of the
+    # input grid for the mode's annotation label; box is None when
+    # nothing finite sampled.
+    import math as _mc_math
+    import numpy as _mc_np
+
+    lo, hi = rng
+    nan = float('nan')
+    # Grid lines every 'step' units — finer than the integer lattice
+    # so small warps still read. A huge window stride-thins rather
+    # than overcrowding.
+    ks = [float(k) for k in _mc_np.arange(lo, hi + step / 2.0, step)]
+    if len(ks) > 26:
+        ks = ks[::_mc_math.ceil(len(ks) / 26)]
+    desc = (f'input grid: x, y = {ks[0]:g}, {ks[1]:g}, …, {ks[-1]:g}'
+            if len(ks) > 1 else f'input grid: x, y = {ks[0]:g}')
+    ts = _mc_np.linspace(lo, hi, npts)
+
+    def comps_at(xin, yin):
+        # The two image components along one grid line — lambdify can
+        # return a tuple, a nested list (Matrix), or broadcast a
+        # constant component to a scalar; normalize each to a length-n
+        # array. Non-finite coords become NaN so the polyline gaps at
+        # poles instead of streaking across the plot.
+        out = fnum(xin, yin)
+        parts = []
+        for i in range(2):
+            a = _mc_np.asarray(out[i], dtype=float).reshape(-1)
+            if a.size == 1:
+                a = _mc_np.full(npts, float(a[0]))
+            parts.append(
+                _mc_np.where(_mc_np.isfinite(a), a, nan))
+        return parts[0], parts[1]
+
+    # The source grid: one NaN-separated scatter of straight segments —
+    # vertical (k, lo)->(k, hi) then horizontal (lo, k)->(hi, k) per k.
+    sx, sy = [], []
+    for k in ks:
+        sx += [k, k, nan]
+        sy += [lo, hi, nan]
+        sx += [lo, hi, nan]
+        sy += [k, k, nan]
+    fig.add_scatter(
+        x=sx, y=sy, mode='lines', name='input grid',
+        line=dict(color=src, width=1),
+        visible=False, showlegend=True, hoverinfo='skip')
+
+    fx, fy = [], []   # finite image samples, for the framing box
+
+    def image_lines(vertical, name, dash):
+        # One direction's image curves: vertical=True sweeps the lines
+        # x = k (fixed first arg), False the horizontals y = k. dash
+        # tells the two directions apart in the one-color legend.
+        xs, ys = [], []
+        for k in ks:
+            xin = _mc_np.full_like(ts, k) if vertical else ts
+            yin = ts if vertical else _mc_np.full_like(ts, k)
+            cx, cy = comps_at(xin, yin)
+            fin = _mc_np.isfinite(cx) & _mc_np.isfinite(cy)
+            fx.append(cx[fin])
+            fy.append(cy[fin])
+            xs += list(cx) + [nan]
+            ys += list(cy) + [nan]
+        fig.add_scatter(
+            x=xs, y=ys, mode='lines', name=name,
+            line=dict(color=color, width=1.5, dash=dash),
+            visible=False, showlegend=True, hoverinfo='skip')
+
+    image_lines(True, 'image of x = k', 'solid')
+    image_lines(False, 'image of y = k', 'dash')
+
+    ax = _mc_np.concatenate(fx)
+    ay = _mc_np.concatenate(fy)
+    if ax.size == 0:
+        return None, desc
+    x0, x1 = float(ax.min()), float(ax.max())
+    y0, y1 = float(ay.min()), float(ay.max())
+    # ~6% padding per side — with a floor so a degenerate image (a
+    # constant map, a point) still frames to a viewable window.
+    px = max(0.06 * (x1 - x0), 0.5)
+    py = max(0.06 * (y1 - y0), 0.5)
+    return (x0 - px, x1 + px, y0 - py, y1 + py), desc
+'''
+
+exec(_MC_VIEWS_SRC)
 exec(_MC_DESMOS_SRC)
+exec(_MC_FIELD_SRC)
+exec(_MC_GRIDIMG_SRC)
 
 
 def _mc_plot_figure(d, c, vars_, comps):
@@ -580,10 +762,49 @@ def _mc_plot_figure(d, c, vars_, comps):
     us = _mc_np.linspace(_MC_PLOT_R2[0], _MC_PLOT_R2[1], _MC_PLOT_N2)
     vs = _mc_np.linspace(_MC_PLOT_R2[0], _MC_PLOT_R2[1], _MC_PLOT_N2)
     U, V = _mc_np.meshgrid(us, vs)
+    fig = go.Figure()
+    if c == 2:
+        # ℝ²→ℝ² — the quiver field and the image of the domain grid
+        # live in one figure behind the mode menu ('field' default,
+        # 'image' hidden). Each view samples its own grid through fnum
+        # and reports the box framing it — the default mode's box sets
+        # the initial ranges, the menu buttons' relayout args reframe
+        # on a switch (the image usually outruns the domain window).
+        # Equal aspect so arrows and mapped lines don't distort.
+        fbox = _mc_field_view(
+            fig, fnum, _MC_PLOT_R2, _MC_PLOT_NF, _MC_PLOT_FIELD)
+        ibox, idesc = _mc_gridimg_view(
+            fig, fnum, _MC_PLOT_R2, _MC_PLOT_GSTEP, _MC_PLOT_NGPTS,
+            _MC_PLOT_IMG, _MC_PLOT_SRC)
+        box = fbox if fbox is not None else (
+            _MC_PLOT_R2[0], _MC_PLOT_R2[1],
+            _MC_PLOT_R2[0], _MC_PLOT_R2[1])
+        fig.update_xaxes(zeroline=True, range=[box[0], box[1]])
+        fig.update_yaxes(
+            zeroline=True, scaleanchor='x', scaleratio=1,
+            range=[box[2], box[3]])
+        # The image mode annotates which input grid was mapped and
+        # turns the legend on; the field button's relayout clears both
+        # on a switch back.
+        frel = _mc_range_rel(fbox) or {}
+        frel['annotations'] = []
+        frel['showlegend'] = False
+        irel = _mc_range_rel(ibox) or {}
+        irel['annotations'] = [dict(
+            text=idesc, xref='paper', yref='paper',
+            x=0.02, y=0.98, xanchor='left', yanchor='top',
+            showarrow=False, font=dict(size=12))]
+        irel['showlegend'] = True
+        _mc_plot_menu(
+            fig, ['field', 'image'],
+            [_mc_mode_vis(fig, _MC_FIELD_NAMES, scene=False),
+             _mc_mode_vis(fig, _MC_GRIDIMG_NAMES, scene=False)],
+            [frel, irel])
+        fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
+        return fig, None
     vals = _mc_np.asarray(fnum(U, V), dtype=float)
     if vals.ndim == 2:
         vals = vals.reshape(1, vals.shape[0], vals.shape[1])
-    fig = go.Figure()
     bounds = _mc_desmos_bounds(
         (float(us[0]), float(us[-1])),
         (float(vs[0]), float(vs[-1])),
@@ -681,19 +902,30 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
     helpers = []
     if bounds is not None:
         helpers.append(_MC_DESMOS_SRC)
+        helpers.append(_MC_VIEWS_SRC)
+    if d == 2 and c == 2:
+        helpers.append(_MC_VIEWS_SRC)
+        helpers.append(_MC_FIELD_SRC)
+        helpers.append(_MC_GRIDIMG_SRC)
     for src in helpers:
         L += [src.rstrip(), '']
     L.append(f"fnum = sp.lambdify({params}, {body}, 'numpy')")
 
-    def menu(labels, vis_exprs):
+    def menu(labels, vis_exprs, rel_exprs=None):
+        # rel_exprs: parallel list of relayout code strings (or None) —
+        # a button's second 'update' arg, matching _mc_plot_menu's
+        # runtime signature.
+        if rel_exprs is None:
+            rel_exprs = [None] * len(labels)
         L.append('fig.update_layout(updatemenus=[dict(')
         L.append('    buttons=[')
-        for lab, vis in zip(labels, vis_exprs):
+        for lab, vis, rel in zip(labels, vis_exprs, rel_exprs):
+            extra = f', {rel}' if rel is not None else ''
             L.append(
                 f"        dict(label='{lab}', method='update',"
             )
             L.append(
-                f'             args=[{{"visible": {vis}}}]),'
+                f'             args=[{{"visible": {vis}}}{extra}]),'
             )
         L.append('    ],')
         L.append("    direction='down', x=0.075, xanchor='left', y=1.12,")
@@ -747,37 +979,69 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
             ]
         L.append(f'fig.update_layout(margin={margin}, showlegend=False)')
     else:
-        L += [
-            f'us = _mc_np.linspace({_MC_PLOT_R2[0]}, {_MC_PLOT_R2[1]},'
-            f' {_MC_PLOT_N2})',
-            f'vs = _mc_np.linspace({_MC_PLOT_R2[0]}, {_MC_PLOT_R2[1]},'
-            f' {_MC_PLOT_N2})',
-            'U, V = _mc_np.meshgrid(us, vs)',
-            'vals = _mc_np.asarray(fnum(U, V), dtype=float)',
-            'if vals.ndim == 2:',
-            '    vals = vals.reshape('
-            '1, vals.shape[0], vals.shape[1])',
-            'fig = go.Figure()',
-            'bounds = _mc_desmos_bounds(',
-            '    (float(us[0]), float(us[-1])),',
-            '    (float(vs[0]), float(vs[-1])),',
-            '    _mc_extent(vals[0]))',
-            '_mc_desmos_decor(fig, bounds)',
-            '_mc_desmos_surf(fig, us, vs, vals[0])',
-            'fig.add_heatmap(',
-            '    x=us, y=vs, z=vals[0],'
-            " colorscale='Viridis',",
-            '    showscale=False, visible=False,',
-            "    name='heatmap',",
-            ')',
-            '_mc_desmos_sheet(fig, bounds)',
-            '_mc_desmos_scene(fig, bounds)',
-        ]
-        menu(
-            ['surface', 'heatmap'],
-            ["_mc_mode_vis(fig, ('surf',))",
-             "_mc_mode_vis(fig, ('heatmap',), scene=False)"],
-        )
+        if c == 2:
+            L += [
+                'fig = go.Figure()',
+                f'fbox = _mc_field_view(fig, fnum, {_MC_PLOT_R2},'
+                f' {_MC_PLOT_NF}, {_MC_PLOT_FIELD!r})',
+                f'ibox, idesc = _mc_gridimg_view(fig, fnum,'
+                f' {_MC_PLOT_R2}, {_MC_PLOT_GSTEP}, {_MC_PLOT_NGPTS},'
+                f' {_MC_PLOT_IMG!r}, {_MC_PLOT_SRC!r})',
+                'box = fbox if fbox is not None else '
+                f'({_MC_PLOT_R2[0]}, {_MC_PLOT_R2[1]},'
+                f' {_MC_PLOT_R2[0]}, {_MC_PLOT_R2[1]})',
+                'fig.update_xaxes('
+                'zeroline=True, range=[box[0], box[1]])',
+                "fig.update_yaxes(zeroline=True, scaleanchor='x',"
+                ' scaleratio=1, range=[box[2], box[3]])',
+                'frel = _mc_range_rel(fbox) or {}',
+                "frel['annotations'] = []",
+                "frel['showlegend'] = False",
+                'irel = _mc_range_rel(ibox) or {}',
+                "irel['annotations'] = [dict(",
+                "    text=idesc, xref='paper', yref='paper',",
+                "    x=0.02, y=0.98, xanchor='left', yanchor='top',",
+                '    showarrow=False, font=dict(size=12))]',
+                "irel['showlegend'] = True",
+            ]
+            menu(
+                ['field', 'image'],
+                ["_mc_mode_vis(fig, _MC_FIELD_NAMES, scene=False)",
+                 "_mc_mode_vis(fig, _MC_GRIDIMG_NAMES, scene=False)"],
+                ['frel', 'irel'],
+            )
+        else:
+            L += [
+                f'us = _mc_np.linspace({_MC_PLOT_R2[0]},'
+                f' {_MC_PLOT_R2[1]}, {_MC_PLOT_N2})',
+                f'vs = _mc_np.linspace({_MC_PLOT_R2[0]},'
+                f' {_MC_PLOT_R2[1]}, {_MC_PLOT_N2})',
+                'U, V = _mc_np.meshgrid(us, vs)',
+                'vals = _mc_np.asarray(fnum(U, V), dtype=float)',
+                'if vals.ndim == 2:',
+                '    vals = vals.reshape('
+                '1, vals.shape[0], vals.shape[1])',
+                'fig = go.Figure()',
+                'bounds = _mc_desmos_bounds(',
+                '    (float(us[0]), float(us[-1])),',
+                '    (float(vs[0]), float(vs[-1])),',
+                '    _mc_extent(vals[0]))',
+                '_mc_desmos_decor(fig, bounds)',
+                '_mc_desmos_surf(fig, us, vs, vals[0])',
+                'fig.add_heatmap(',
+                '    x=us, y=vs, z=vals[0],'
+                " colorscale='Viridis',",
+                '    showscale=False, visible=False,',
+                "    name='heatmap',",
+                ')',
+                '_mc_desmos_sheet(fig, bounds)',
+                '_mc_desmos_scene(fig, bounds)',
+            ]
+            menu(
+                ['surface', 'heatmap'],
+                ["_mc_mode_vis(fig, ('surf',))",
+                 "_mc_mode_vis(fig, ('heatmap',), scene=False)"],
+            )
         L.append(f'fig.update_layout(margin={margin}, showlegend=False)')
     L += [
         '# the figure dict the frontend hands to plotly.js',
@@ -798,10 +1062,11 @@ def _mc_plot_payload(v):
         raise ValueError(
             f'cannot plot {c} output components (needs 1, 2, or 3)'
         )
-    if d == 2 and c != 1:
+    if d == 2 and c not in (1, 2):
         raise ValueError(
             f'cannot plot a 2-variable function producing {c} '
-            'components — only ℝ²→ℝ surfaces are supported for now'
+            'components — only ℝ²→ℝ surfaces and ℝ²→ℝ² maps are '
+            'supported for now'
         )
     fig, bounds = _mc_plot_figure(d, c, vars_, comps)
     return {
