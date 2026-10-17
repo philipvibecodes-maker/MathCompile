@@ -141,21 +141,33 @@ test('R²→R³ plot renders a parametric surface over the unit square', async (
   );
   expect(sceneDrag).toBe('turntable');
 
-  // Orbit the camera, then wheel-zoom: the zoom must keep the dragged
-  // orientation. A wheel handler that reads the figure's initial
-  // camera spec (layout.scene.camera) instead of the live camera
-  // (_fullLayout.scene.camera) snaps back to the shipped view.
+  // Orbit the camera, then wheel-zoom — twice. Each zoom must keep
+  // the dragged orientation: drags only mutate the live
+  // orbit-camera-controller (`_scene.camera`), while the `layout` and
+  // `_fullLayout` camera specs go stale or get detached by relayouts,
+  // so a wheel handler reading either one snaps back to an older view.
+  interface CamLike {
+    eye: number[];
+    center?: number[];
+  }
   const eyeOf = () =>
-    page.evaluate(
-      () =>
-        (
-          document.querySelector('.js-plotly-plot') as unknown as {
-            _fullLayout?: {
-              scene?: { camera?: { eye?: { x: number; y: number; z: number } } };
+    page.evaluate(() => {
+      const cam = (
+        document.querySelector('.js-plotly-plot') as unknown as {
+          _fullLayout?: {
+            scene?: {
+              _scene?: { camera?: { eye?: number[]; center?: number[] } };
             };
+          };
+        }
+      )?._fullLayout?.scene?._scene?.camera;
+      return cam?.eye
+        ? {
+            eye: [...cam.eye],
+            center: cam.center ? [...cam.center] : undefined,
           }
-        )?._fullLayout?.scene?.camera?.eye,
-    );
+        : null;
+    });
   const spec = await page.evaluate(
     () =>
       (
@@ -170,31 +182,62 @@ test('R²→R³ plot renders a parametric surface over the unit square', async (
   const box = await plot.boundingBox();
   const cx = box!.x + box!.width / 2;
   const cy = box!.y + box!.height / 2;
-  await page.mouse.move(cx, cy);
-  await page.mouse.down();
-  await page.mouse.move(cx + 120, cy + 60, { steps: 12 });
-  await page.mouse.up();
-  const dragged = await eyeOf();
-  expect(dragged).toBeTruthy();
-
-  await page.mouse.move(cx, cy);
-  await page.mouse.wheel(0, -240);
-  await page.waitForTimeout(300);
-  const zoomed = await eyeOf();
-  expect(zoomed).toBeTruthy();
-
-  // Direction cosines of eye vectors — zoom-to-cursor also shifts
-  // center, so a small tilt is fine; snapping back to the spec is not.
-  const angle = (
-    a: { x: number; y: number; z: number },
-    b: { x: number; y: number; z: number },
-  ) =>
+  const orbit = async (dx: number, dy: number) => {
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx + dx, cy + dy, { steps: 12 });
+    await page.mouse.up();
+    await page.waitForTimeout(150);
+  };
+  const dirOf = (c: CamLike) => {
+    const d = [
+      c.eye[0] - (c.center?.[0] ?? 0),
+      c.eye[1] - (c.center?.[1] ?? 0),
+      c.eye[2] - (c.center?.[2] ?? 0),
+    ];
+    const m = Math.hypot(d[0], d[1], d[2]) || 1;
+    return d.map((n) => n / m);
+  };
+  const angle = (a: number[], b: number[]) =>
     Math.acos(
-      (a.x * b.x + a.y * b.y + a.z * b.z) /
-        (Math.hypot(a.x, a.y, a.z) * Math.hypot(b.x, b.y, b.z)),
+      Math.min(1, Math.max(-1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2])),
     );
-  expect(angle(zoomed!, dragged!)).toBeLessThan(0.5);
-  expect(angle(dragged!, spec!)).toBeGreaterThan(0.5);
+  const specDir = spec
+    ? dirOf({ eye: [spec.x, spec.y, spec.z], center: [0, 0, 0] })
+    : null;
+
+  for (const [dx, dy] of [
+    [120, 60],
+    [-110, -70],
+  ]) {
+    const before = await eyeOf();
+    await orbit(dx, dy);
+    const dragged = await eyeOf();
+    expect(dragged).toBeTruthy();
+    // The drag actually orbited.
+    expect(angle(dirOf(dragged!), dirOf(before!))).toBeGreaterThan(0.3);
+
+    await page.mouse.move(cx, cy);
+    await page.mouse.wheel(0, -240);
+    await page.waitForTimeout(300);
+    const zoomed = await eyeOf();
+    expect(zoomed).toBeTruthy();
+    // Zoom-to-cursor shifts center too, so a small tilt is fine —
+    // snapping back to an earlier view is not.
+    expect(angle(dirOf(zoomed!), dirOf(dragged!))).toBeLessThan(0.5);
+  }
+
+  // "Reset camera to last save" lands on the shipped spec framing,
+  // not plotly's stock (1.25,1.25,1.25) camera — `viewInitial` is
+  // captured at scene creation, which happens on the unspecced
+  // interim frame.
+  await page
+    .locator('.modebar-btn[data-title="Reset camera to last save"]')
+    .dispatchEvent('click');
+  await page.waitForTimeout(600);
+  const homed = await eyeOf();
+  expect(homed).toBeTruthy();
+  expect(angle(dirOf(homed!), specDir!)).toBeLessThan(0.15);
 });
 
 test('a \\text{for} domain sets the sampled window', async ({ page }) => {
