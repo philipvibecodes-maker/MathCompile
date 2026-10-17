@@ -4208,6 +4208,18 @@ export function plotDomainBounds(cond: MathJson | undefined): PlotBound[] {
   };
   const stripOpen = (e: MathJson): MathJson =>
     isHead(e, 'Open') ? (e as MathJson[])[1] : e;
+  // pair-matrix mode lowers a `(a,b)` paren pair to a 1×2 row Matrix
+  // — `Matrix(List(List(a,b)))` — on both sides of ∈.
+  const rowMatrix = (n: MathJson): MathJson[] | undefined => {
+    if (!isArr(n) || headOf(n) !== 'Matrix') return undefined;
+    const rows = isArr(n[1]) ? n[1].slice(1) : [];
+    if (rows.length !== 1) return undefined;
+    const r = rows[0];
+    return isArr(r) && headOf(r) === 'List' ? r.slice(1) : undefined;
+  };
+  // A Matrix RHS is finite-set membership under pair-matrix semantics
+  // (`x ∈ (0,5)` → Contains(x, {0,5})), not a range — only a real
+  // Interval gives bounds.
   const intervalOf = (
     n: MathJson,
   ): { lo: MathJson; hi: MathJson } | undefined =>
@@ -4229,20 +4241,30 @@ export function plotDomainBounds(cond: MathJson | undefined): PlotBound[] {
         return;
       }
       // Product domain `(u,v) ∈ I₁×I₂` — the lhs arrives as
-      // Delimiter(Sequence(u,v)) (plain parens) or Interval/Tuple/List;
-      // the rhs is a CircledAst of the factor intervals.
+      // Delimiter(Sequence(u,v)) (plain parens), Interval/Tuple/List,
+      // or a 1×n row Matrix in pair-matrix mode; the rhs is a
+      // CircledAst of the factor intervals.
       let vars: MathJson | undefined = lhs;
       if (isArr(vars) && headOf(vars) === 'Delimiter')
         vars = vars[1];
-      if (
+      let names = (rowMatrix(vars) ?? []).map(stripOpen);
+      if (names.length === 0 && isArr(vars) && headOf(vars) === 'Matrix') {
+        // A multi-row tuple matrix — every row is a variable name.
+        const rows = isArr(vars[1]) ? vars[1].slice(1) : [];
+        names = rows.flatMap((r) =>
+          isArr(r) && headOf(r) === 'List'
+            ? r.slice(1).map(stripOpen)
+            : [],
+        );
+      } else if (names.length === 0 &&
         isArr(vars) &&
         ['Interval', 'Tuple', 'List', 'Sequence'].includes(
           headOf(vars) ?? '',
-        ) &&
-        isArr(rhs) &&
-        headOf(rhs) === 'CircledAst'
+        )
       ) {
-        const names = vars.slice(1).map(stripOpen);
+        names = vars.slice(1).map(stripOpen);
+      }
+      if (isArr(rhs) && headOf(rhs) === 'CircledAst') {
         const ivs = rhs.slice(1);
         if (names.length === ivs.length)
           names.forEach((v, i) => {

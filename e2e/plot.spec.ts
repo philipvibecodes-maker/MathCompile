@@ -78,16 +78,6 @@ test('R²→R³ plot renders a parametric surface over the 3-D window', async ({
           latex:
             '\\text{plot} \\begin{pmatrix} u \\cos v \\\\ u \\sin v \\\\ v \\end{pmatrix}',
         },
-        // A constant component (z = 1) crashed the worker's
-        // np.asarray on the inhomogeneous lambdify list, and the
-        // product-domain parse gave no bounds — both regressions.
-        {
-          id: 2,
-          latex:
-            '\\text{plot} \\left(u,v,1\\right) \\text{ for }' +
-            ' \\left(u,v\\right) \\in \\left[0,1\\right]' +
-            ' \\times \\left[0,2\\pi\\right]',
-        },
       ]),
     );
   });
@@ -95,19 +85,18 @@ test('R²→R³ plot renders a parametric surface over the 3-D window', async ({
   await page.waitForSelector('math-field');
 
   // Interim: ECharts draws the CE-sampled surface while SymPy boots.
-  await expect(page.locator('.plot-interim canvas').first()).toBeVisible({
+  await expect(page.locator('.plot-interim canvas')).toBeVisible({
     timeout: 60_000,
   });
 
-  // SymPy lands — the plotly figures own the rows, no error lines.
+  // SymPy lands — the plotly figure owns the row, no error lines.
   await expect(page.locator('.engine-chip-text')).toContainText(
     'SymPy ready',
     { timeout: 120_000 },
   );
-  await expect(page.locator('.js-plotly-plot').first()).toBeVisible({
+  await expect(page.locator('.js-plotly-plot')).toBeVisible({
     timeout: 60_000,
   });
-  await expect(page.locator('.js-plotly-plot')).toHaveCount(2);
   await expect(page.locator('.plot-interim')).toHaveCount(0);
   await expect(page.locator('.issue-error')).toHaveCount(0);
 
@@ -140,41 +129,6 @@ test('R²→R³ plot renders a parametric surface over the 3-D window', async ({
   // plotly.js keeps the numpy payload's shape as "rows, cols".
   expect(String(surf.shape)).toMatch(/^80,\s*80$/);
   expect(surf.corner).toBeCloseTo(3 * Math.cos(3), 5);
-
-  // Second row: `(u,v,1) for (u,v) ∈ [0,1]×[0,2π]` — the constant
-  // component broadcasts instead of crashing, and the product domain
-  // samples u over [0,1] (not the default [-3,3]).
-  const flat = await page.evaluate(() => {
-    const gd = document.querySelectorAll('.js-plotly-plot')[1] as unknown as {
-      data?: {
-        name?: string;
-        x?: { dtype?: string; bdata?: string };
-        z?: { dtype?: string; bdata?: string };
-      }[];
-    } | null;
-    const t = gd?.data?.find((tr) => tr.name === 'surf');
-    const dec = (a?: { dtype?: string; bdata?: string }) =>
-      a?.bdata && a.dtype === 'f8'
-        ? Array.from(
-            new Float64Array(
-              Uint8Array.from(atob(a.bdata), (ch) => ch.charCodeAt(0))
-                .buffer,
-            ),
-          )
-        : null;
-    const x = dec(t?.x);
-    const z = dec(t?.z);
-    return {
-      xFirst: x?.[0],
-      xLast: x?.[x.length - 1],
-      zFirst: z?.[0],
-      zLast: z?.[z.length - 1],
-    };
-  });
-  expect(flat.xFirst).toBeCloseTo(0, 5);
-  expect(flat.xLast).toBeCloseTo(1, 5);
-  expect(flat.zFirst).toBeCloseTo(1, 5);
-  expect(flat.zLast).toBeCloseTo(1, 5);
 
   // 3-D drags rotate the camera turntable-style — the cartesian 'pan'
   // default would otherwise inherit into the scene.
@@ -232,7 +186,10 @@ test('R²→R³ plot renders a parametric surface over the 3-D window', async ({
   const orbit = async (dx: number, dy: number) => {
     await page.mouse.move(cx, cy);
     await page.mouse.down();
-    await page.mouse.move(cx + dx, cy + dy, { steps: 12 });
+    // Few steps — each synthesized move costs a full software-GL
+    // surface re-render (~seconds under load), and one step already
+    // registers the orbit.
+    await page.mouse.move(cx + dx, cy + dy, { steps: 3 });
     await page.mouse.up();
     await page.waitForTimeout(150);
   };
@@ -293,14 +250,29 @@ test('a \\text{for} domain sets the sampled window', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem(
       'mathcompile-prefs',
-      JSON.stringify({ target: 'calculator' }),
+      // pair-matrix mode lowers the (u,v) membership lhs of the
+      // second cell to a row Matrix — the domain reader must handle
+      // that shape too.
+      JSON.stringify({ target: 'calculator', pairTuple: 'matrix' }),
     );
     localStorage.setItem(
       'mathcompile-cells',
       JSON.stringify([
         {
           id: 1,
-          latex: '\\text{plot} x^2 \\text{ for } x \\in (0, 5)',
+          // Square brackets — under pair-matrix mode (0,5) is a 1×2
+          // matrix (finite-set membership), not an interval.
+          latex: '\\text{plot} x^2 \\text{ for } x \\in [0, 5]',
+        },
+        // `(u,v,1) for (u,v) ∈ [0,1]×[0,2π]` — the constant component
+        // crashed the worker's np.asarray on the inhomogeneous
+        // lambdify list, and the product-domain parse gave no bounds.
+        {
+          id: 2,
+          latex:
+            '\\text{plot} \\left(u,v,1\\right) \\text{ for }' +
+            ' \\left(u,v\\right) \\in \\left[0,1\\right]' +
+            ' \\times \\left[0,2\\pi\\right]',
         },
       ]),
     );
@@ -312,9 +284,10 @@ test('a \\text{for} domain sets the sampled window', async ({ page }) => {
     'SymPy ready',
     { timeout: 120_000 },
   );
-  await expect(page.locator('.js-plotly-plot')).toBeVisible({
+  await expect(page.locator('.js-plotly-plot').first()).toBeVisible({
     timeout: 60_000,
   });
+  await expect(page.locator('.js-plotly-plot')).toHaveCount(2);
   await expect(page.locator('.issue-error')).toHaveCount(0);
 
   // The scatter's x samples run 0→5, not the default -10→10.
@@ -338,4 +311,40 @@ test('a \\text{for} domain sets the sampled window', async ({ page }) => {
   });
   expect(trace.first).toBeCloseTo(0, 5);
   expect(trace.last).toBeCloseTo(5, 5);
+
+  // Second row: the constant component broadcasts (z ≡ 1) and the
+  // product domain samples u over [0,1], v over [0,2π].
+  const flat = await page.evaluate(() => {
+    const gd = document.querySelectorAll('.js-plotly-plot')[1] as unknown as {
+      data?: {
+        name?: string;
+        x?: { dtype?: string; bdata?: string };
+        y?: { dtype?: string; bdata?: string };
+        z?: { dtype?: string; bdata?: string };
+      }[];
+    } | null;
+    const t = gd?.data?.find((tr) => tr.name === 'surf');
+    const dec = (a?: { dtype?: string; bdata?: string }) =>
+      a?.bdata && a.dtype === 'f8'
+        ? new Float64Array(
+            Uint8Array.from(atob(a.bdata), (ch) => ch.charCodeAt(0))
+              .buffer,
+          )
+        : null;
+    const x = dec(t?.x);
+    const y = dec(t?.y);
+    const z = dec(t?.z);
+    return {
+      xFirst: x?.[0],
+      xLast: x?.[x.length - 1],
+      yLast: y?.[y.length - 1],
+      zFirst: z?.[0],
+      zLast: z?.[z.length - 1],
+    };
+  });
+  expect(flat.xFirst).toBeCloseTo(0, 5);
+  expect(flat.xLast).toBeCloseTo(1, 5);
+  expect(flat.yLast).toBeCloseTo(2 * Math.PI, 5);
+  expect(flat.zFirst).toBeCloseTo(1, 5);
+  expect(flat.zLast).toBeCloseTo(1, 5);
 });

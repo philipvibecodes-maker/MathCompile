@@ -1701,6 +1701,39 @@ describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
       expect(tr.z[79][79]).toBeCloseTo(1);
     });
 
+    it('reads the product domain when (a,b) lowers to a row matrix', async () => {
+      // pair-matrix mode turns the membership lhs into Matrix — the
+      // bounds must survive that lowering too.
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} \\left(u,v,1\\right) \\text{ for }' +
+            ' \\left(u,v\\right) \\in \\left[0,1\\right]' +
+            ' \\times \\left[0,2\\pi\\right]',
+          [],
+          { pairTuple: 'matrix' },
+        ),
+      );
+      const tr = plot?.figure.data[0] as {
+        x: number[][];
+        y: number[][];
+      };
+      expect(tr.x[79][79]).toBeCloseTo(1);
+      expect(tr.y[79][79]).toBeCloseTo(2 * Math.PI);
+    });
+
+    it('an (a,b) paren domain gives no bounds in pair-matrix mode', async () => {
+      // Under pair-matrix semantics (0,5) is a 1×2 matrix — Contains
+      // membership in {0,5}, not a range.
+      const plot = plotRow(
+        await interimEvaluate('\\text{plot} x^2 \\text{ for } x \\in (0, 5)', [], {
+          pairTuple: 'matrix',
+        }),
+      );
+      const tr = plot?.figure.data[0] as { x: number[] };
+      expect(tr.x[0]).toBeCloseTo(-10);
+      expect(tr.x[599]).toBeCloseTo(10);
+    });
+
     it('an unreadable \\text{for} condition keeps the default window', async () => {
       const plot = plotRow(
         await interimEvaluate(
