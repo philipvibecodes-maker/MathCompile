@@ -164,12 +164,12 @@ describe('plot statement python codegen', () => {
     ).toBe(true);
   });
 
-  it('R²→R³ lowers to sp.plot3d_parametric_surface on the unit square', () => {
+  it('R²→R³ lowers to sp.plot3d_parametric_surface on the 3-D window', () => {
     const lines = pyLines(
       '\\text{plot} \\begin{pmatrix} u \\cos v \\\\ u \\sin v \\\\ v \\end{pmatrix}',
     );
     expect(lines).toContain(
-      'sp.plot3d_parametric_surface(u * sp.cos(v), u * sp.sin(v), v, (u, 0, 1), (v, 0, 1))',
+      'sp.plot3d_parametric_surface(u * sp.cos(v), u * sp.sin(v), v, (u, -3, 3), (v, -3, 3))',
     );
   });
 

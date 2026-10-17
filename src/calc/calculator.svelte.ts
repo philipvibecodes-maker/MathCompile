@@ -633,9 +633,6 @@ const evalStatement = (
 const PLOT_R1: [number, number] = [-10, 10];
 const PLOT_N1 = 600;
 const PLOT_R2: [number, number] = [-3, 3];
-// ℝ²→ℝ³ parametrizations sample the unit square, matching the
-// worker's _MC_PLOT_UNIT.
-const PLOT_UNIT: [number, number] = [0, 1];
 const PLOT_N2 = 80;
 const PLOT_ACCENT = '#3b82f6';
 
@@ -819,11 +816,11 @@ function interimPlotRow(
       });
     }
   } else if (c === 3) {
-    // ℝ²→ℝ³ parametrization — the surface is the image of the unit
-    // square, so x/y/z are per-component 2-D grids rather than axis
-    // vectors plus a heightfield.
-    const ru = rng(vars[0], PLOT_UNIT);
-    const rv = rng(vars[1], PLOT_UNIT);
+    // ℝ²→ℝ³ parametrization — the surface is the image of the domain,
+    // so x/y/z are per-component 2-D grids rather than axis vectors
+    // plus a heightfield.
+    const ru = rng(vars[0], PLOT_R2);
+    const rv = rng(vars[1], PLOT_R2);
     const us = linspace(ru[0], ru[1], PLOT_N2);
     const vs = linspace(rv[0], rv[1], PLOT_N2);
     const grids = runners.map((run) =>

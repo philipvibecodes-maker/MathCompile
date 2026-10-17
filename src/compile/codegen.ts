@@ -4316,8 +4316,6 @@ function emitPlotPython(
   };
   const R1 = (v: string) => rng(v, -10, 10);
   const R2 = (v: string) => rng(v, -3, 3);
-  // ℝ²→ℝ³ parametrizations plot the image of the unit square.
-  const UNIT = (v: string) => rng(v, 0, 1);
   const d = callVars.length;
   const c = comps.length;
   const unplottable = (why: string): StatementOut => {
@@ -4359,7 +4357,7 @@ function emitPlotPython(
   if (d === 2 && c === 3)
     return {
       lines: [
-        `${sp}plot3d_parametric_surface(${e0}, ${e1}, ${e2}, ${UNIT(w0)}, ${UNIT(w1)})`,
+        `${sp}plot3d_parametric_surface(${e0}, ${e1}, ${e2}, ${R2(w0)}, ${R2(w1)})`,
       ],
       plot: true,
     };

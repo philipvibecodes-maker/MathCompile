@@ -1610,7 +1610,7 @@ describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
       expect(z[0][0]).toBeCloseTo(18);
     });
 
-    it('reads a 2-var 3-vector as a parametric surface on the unit square', async () => {
+    it('reads a 2-var 3-vector as a parametric surface on the 3-D window', async () => {
       const plot = plotRow(
         await interimEvaluate(
           '\\text{plot} \\begin{pmatrix} u \\\\ v \\\\ u^2+v^2 \\end{pmatrix}',
@@ -1625,14 +1625,14 @@ describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
         z: number[][];
       };
       expect(tr.type).toBe('surface');
-      // The grids are the image of [0,1]²: (u,v)=(0,0) → (0,0,0),
-      // (u,v)=(1,1) → (1,1,2).
-      expect(tr.x[0][0]).toBeCloseTo(0);
-      expect(tr.y[0][0]).toBeCloseTo(0);
-      expect(tr.z[0][0]).toBeCloseTo(0);
-      expect(tr.x[79][79]).toBeCloseTo(1);
-      expect(tr.y[79][79]).toBeCloseTo(1);
-      expect(tr.z[79][79]).toBeCloseTo(2);
+      // The grids are the image of [-3,3]²: (u,v)=(-3,-3) → (-3,-3,18),
+      // (u,v)=(3,3) → (3,3,18).
+      expect(tr.x[0][0]).toBeCloseTo(-3);
+      expect(tr.y[0][0]).toBeCloseTo(-3);
+      expect(tr.z[0][0]).toBeCloseTo(18);
+      expect(tr.x[79][79]).toBeCloseTo(3);
+      expect(tr.y[79][79]).toBeCloseTo(3);
+      expect(tr.z[79][79]).toBeCloseTo(18);
     });
 
     it('samples a \\text{for} domain instead of the default window', async () => {
@@ -1674,7 +1674,7 @@ describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
         z: number[][];
       };
       // v sweeps [0, 2π]: the (1, 2π) corner is x = cos(2π) = 1,
-      // z = 2π — not the unit-square corner cos(1)/1.
+      // z = 2π — not the default-window corner 3cos(3)/3.
       expect(tr.x[79][79]).toBeCloseTo(1);
       expect(tr.y[79][79]).toBeCloseTo(Math.sin(2 * Math.PI));
       expect(tr.z[79][79]).toBeCloseTo(2 * Math.PI);

@@ -125,9 +125,6 @@ def _mc_row(val):
 
 _MC_PLOT_R1 = (-10.0, 10.0)
 _MC_PLOT_R2 = (-3.0, 3.0)
-# ℝ²→ℝ³ parametrizations sample the unit square — the surface is the
-# image of [0,1]², not a graph over a symmetric window.
-_MC_PLOT_UNIT = (0.0, 1.0)
 _MC_PLOT_N1 = 600
 _MC_PLOT_N2 = 80
 
@@ -612,9 +609,8 @@ def _mc_plot_figure(d, c, vars_, comps, ranges):
         fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
         return fig, None
 
-    dflt = _MC_PLOT_UNIT if c == 3 else _MC_PLOT_R2
-    ru = _mc_rng(ranges, vars_[0].name, dflt)
-    rv = _mc_rng(ranges, vars_[1].name, dflt)
+    ru = _mc_rng(ranges, vars_[0].name, _MC_PLOT_R2)
+    rv = _mc_rng(ranges, vars_[1].name, _MC_PLOT_R2)
     us = _mc_np.linspace(ru[0], ru[1], _MC_PLOT_N2)
     vs = _mc_np.linspace(rv[0], rv[1], _MC_PLOT_N2)
     U, V = _mc_np.meshgrid(us, vs)
@@ -624,7 +620,7 @@ def _mc_plot_figure(d, c, vars_, comps, ranges):
     fig = go.Figure()
     if c == 3:
         # Parametric surface: x/y/z are the component grids — the image
-        # of the unit square, not axis vectors plus a heightfield.
+        # of the domain, not axis vectors plus a heightfield.
         bounds = _mc_desmos_bounds(
             _mc_extent(vals[0]), _mc_extent(vals[1]),
             _mc_extent(vals[2]))
@@ -798,9 +794,8 @@ def _mc_plot_code(d, c, vars_, comps, bounds, ranges):
             ]
         L.append(f'fig.update_layout(margin={margin}, showlegend=False)')
     else:
-        dflt = _MC_PLOT_UNIT if c == 3 else _MC_PLOT_R2
-        ru = _mc_rng(ranges, vars_[0].name, dflt)
-        rv = _mc_rng(ranges, vars_[1].name, dflt)
+        ru = _mc_rng(ranges, vars_[0].name, _MC_PLOT_R2)
+        rv = _mc_rng(ranges, vars_[1].name, _MC_PLOT_R2)
         L += [
             f'us = _mc_np.linspace({ru[0]}, {ru[1]}, {_MC_PLOT_N2})',
             f'vs = _mc_np.linspace({rv[0]}, {rv[1]}, {_MC_PLOT_N2})',

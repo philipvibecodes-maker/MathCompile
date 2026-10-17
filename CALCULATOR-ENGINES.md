@@ -180,8 +180,9 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   `reserve()` folds this cell's own names in), unknown/def'd
   functions (compile returns non-'expression' calling or all-NaN
   samples), and signatures the worker would reject (d∉{1,2},
-  c∉{1,2,3}, d=2⇒c=2). ℝ²→ℝ³ parametrizations sample the unit
-  square [0,1]² — the surface is the image of the domain, so the
+  c∉{1,2,3}, d=2⇒c=2). ℝ²→ℝ³ parametrizations sample the same
+  [-3,3]² window as 2-D scalar surfaces — the surface is the image
+  of the domain, so the
   trace carries per-component 2-D x/y/z grids instead of axis
   vectors. A `\text{for}` clause sets the sampling domain:
   `\text{plot} f \text{ for } x ∈ (a,b)` (also `[a,b]`, `a ≤ x ≤ b`,

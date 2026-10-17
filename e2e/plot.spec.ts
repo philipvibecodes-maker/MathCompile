@@ -61,7 +61,7 @@ test('plot cell renders an interim echarts figure while SymPy boots', async ({
   expect(dragmode).toBe('pan');
 });
 
-test('R²→R³ plot renders a parametric surface over the unit square', async ({
+test('R²→R³ plot renders a parametric surface over the 3-D window', async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -103,7 +103,8 @@ test('R²→R³ plot renders a parametric surface over the unit square', async (
   // The surface trace is parametric: x/y/z are 80×80 component grids
   // (a heightfield surface would carry 1-D axis vectors — plotly.py
   // serializes numpy arrays as {dtype, bdata, shape}). The samples are
-  // the image of the unit square — u=1, v=1 gives x = cos(1).
+  // the image of the default 3-D window [-3,3]² — u=3, v=3 gives
+  // x = 3cos(3).
   const surf = await page.evaluate(() => {
     const gd = document.querySelector('.js-plotly-plot') as unknown as {
       data?: {
@@ -127,7 +128,7 @@ test('R²→R³ plot renders a parametric surface over the unit square', async (
   expect(surf.type).toBe('surface');
   // plotly.js keeps the numpy payload's shape as "rows, cols".
   expect(String(surf.shape)).toMatch(/^80,\s*80$/);
-  expect(surf.corner).toBeCloseTo(Math.cos(1), 5);
+  expect(surf.corner).toBeCloseTo(3 * Math.cos(3), 5);
 
   // 3-D drags rotate the camera turntable-style — the cartesian 'pan'
   // default would otherwise inherit into the scene.
