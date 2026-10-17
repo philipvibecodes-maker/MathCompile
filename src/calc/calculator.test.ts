@@ -1635,6 +1635,62 @@ describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
       expect(tr.z[79][79]).toBeCloseTo(2);
     });
 
+    it('samples a \\text{for} domain instead of the default window', async () => {
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} x^2 \\text{ for } x \\in (0, 5)',
+        ),
+      );
+      const tr = plot?.figure.data[0] as { x: number[]; y: number[] };
+      expect(tr.x[0]).toBeCloseTo(0);
+      expect(tr.x[599]).toBeCloseTo(5);
+      expect(tr.y[599]).toBeCloseTo(25);
+      // A two-sided chain resolves the same way; a one-sided bound
+      // keeps the default end.
+      const chainTr = plotRow(
+        await interimEvaluate(
+          '\\text{plot} x^2 \\text{ for } 0 \\le x \\le 5',
+        ),
+      )?.figure.data[0] as { x: number[] };
+      expect(chainTr.x[599]).toBeCloseTo(5);
+      const one = plotRow(
+        await interimEvaluate('\\text{plot} x^2 \\text{ for } x > 0'),
+      )?.figure.data[0] as { x: number[] };
+      expect(one.x[0]).toBeCloseTo(0);
+      expect(one.x[599]).toBeCloseTo(10);
+    });
+
+    it('applies a multi-variable domain to a parametric surface', async () => {
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} \\begin{pmatrix} u \\cos v \\\\ u \\sin v \\\\ v \\end{pmatrix}' +
+            ' \\text{ for } u \\in (0,1) \\land v \\in (0, 2\\pi)',
+        ),
+      );
+      expect(plot?.kind).toBe('2x3');
+      const tr = plot?.figure.data[0] as {
+        x: number[][];
+        y: number[][];
+        z: number[][];
+      };
+      // v sweeps [0, 2π]: the (1, 2π) corner is x = cos(2π) = 1,
+      // z = 2π — not the unit-square corner cos(1)/1.
+      expect(tr.x[79][79]).toBeCloseTo(1);
+      expect(tr.y[79][79]).toBeCloseTo(Math.sin(2 * Math.PI));
+      expect(tr.z[79][79]).toBeCloseTo(2 * Math.PI);
+    });
+
+    it('an unreadable \\text{for} condition keeps the default window', async () => {
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} x^2 \\text{ for } x \\in \\{1,2,3\\}',
+        ),
+      );
+      const tr = plot?.figure.data[0] as { x: number[] };
+      expect(tr.x[0]).toBeCloseTo(-10);
+      expect(tr.x[599]).toBeCloseTo(10);
+    });
+
     it('stays empty for unplottable or unknowable signatures', async () => {
       // Def'd names don't bind in the interim — g(x) can't be sampled.
       expect(

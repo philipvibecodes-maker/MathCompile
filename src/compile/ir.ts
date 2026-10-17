@@ -2583,7 +2583,13 @@ export function normalizeIR(
     // (see splitPlotMark).
     if (atStatement) {
       const rest = splitPlotMark(node);
-      if (rest !== undefined) return ['Plot', normalize(rest, false)];
+      if (rest !== undefined) {
+        // `\text{plot} f \text{ for } cond` — the for-clause is the
+        // sampling domain; peel it off the plotted expression.
+        if (isArray(rest) && head(rest) === 'Comprehension' && rest.length === 3)
+          return ['Plot', normalize(rest[1], false), normalize(rest[2], false)];
+        return ['Plot', normalize(rest, false)];
+      }
     }
 
     // Declaration pre-scan: statement-level shapes that bind a callable

@@ -48,6 +48,17 @@ test('plot cell renders an interim echarts figure while SymPy boots', async ({
   });
   await expect(page.locator('.plot-interim')).toHaveCount(0);
   await expect(page.locator('.calc-interim')).toHaveCount(0);
+
+  // Cartesian drags pan.
+  const dragmode = await page.evaluate(
+    () =>
+      (
+        document.querySelector('.js-plotly-plot') as unknown as {
+          layout?: { dragmode?: string };
+        }
+      )?.layout?.dragmode,
+  );
+  expect(dragmode).toBe('pan');
 });
 
 test('R²→R³ plot renders a parametric surface over the unit square', async ({
@@ -117,4 +128,68 @@ test('R²→R³ plot renders a parametric surface over the unit square', async (
   // plotly.js keeps the numpy payload's shape as "rows, cols".
   expect(String(surf.shape)).toMatch(/^80,\s*80$/);
   expect(surf.corner).toBeCloseTo(Math.cos(1), 5);
+
+  // 3-D drags rotate the camera turntable-style — the cartesian 'pan'
+  // default would otherwise inherit into the scene.
+  const sceneDrag = await page.evaluate(
+    () =>
+      (
+        document.querySelector('.js-plotly-plot') as unknown as {
+          layout?: { scene?: { dragmode?: string } };
+        }
+      )?.layout?.scene?.dragmode,
+  );
+  expect(sceneDrag).toBe('turntable');
+});
+
+test('a \\text{for} domain sets the sampled window', async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      'mathcompile-prefs',
+      JSON.stringify({ target: 'calculator' }),
+    );
+    localStorage.setItem(
+      'mathcompile-cells',
+      JSON.stringify([
+        {
+          id: 1,
+          latex: '\\text{plot} x^2 \\text{ for } x \\in (0, 5)',
+        },
+      ]),
+    );
+  });
+  await page.goto('/');
+  await page.waitForSelector('math-field');
+
+  await expect(page.locator('.engine-chip-text')).toContainText(
+    'SymPy ready',
+    { timeout: 120_000 },
+  );
+  await expect(page.locator('.js-plotly-plot')).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(page.locator('.issue-error')).toHaveCount(0);
+
+  // The scatter's x samples run 0→5, not the default -10→10.
+  const trace = await page.evaluate(() => {
+    const gd = document.querySelector('.js-plotly-plot') as unknown as {
+      data?: {
+        type?: string;
+        x?: number[] | { dtype?: string; bdata?: string };
+      }[];
+    } | null;
+    const x = gd?.data?.find((tr) => tr.type === 'scatter')?.x;
+    if (Array.isArray(x)) return { first: x[0], last: x[x.length - 1] };
+    if (x?.bdata && x?.dtype === 'f8') {
+      const bytes = Uint8Array.from(atob(x.bdata), (ch) =>
+        ch.charCodeAt(0),
+      );
+      const flat = new Float64Array(bytes.buffer);
+      return { first: flat[0], last: flat[flat.length - 1] };
+    }
+    return {};
+  });
+  expect(trace.first).toBeCloseTo(0, 5);
+  expect(trace.last).toBeCloseTo(5, 5);
 });

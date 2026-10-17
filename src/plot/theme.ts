@@ -154,7 +154,8 @@ export function themedFigure(plot: PlotData, dark: boolean) {
     plot_bgcolor: 'rgba(0,0,0,0)',
     font: { color: t.font },
     // Pan on drag — plotly's 2-D default is zoom-box, which surprises.
-    // (gl3d scenes ignore this; their dragmode is per-scene 'orbit'.)
+    // gl3d scenes inherit this when their own dragmode is unset, so
+    // the scene pass below pins 'turntable' for them.
     dragmode: 'pan',
     // Keep user-driven view state (camera orbit, zoom) across the mode
     // menu's `update` clicks and row re-renders — without a constant
@@ -190,6 +191,11 @@ export function themedFigure(plot: PlotData, dark: boolean) {
     if (!isObj(entry)) continue;
     const scene: Record<string, unknown> = {
       ...entry,
+      // Drag rotates the camera turntable-style (z stays up).
+      // layout.dragmode 'pan' (set for the cartesian plots) would
+      // otherwise inherit here — plotly takes a scene's drag mode
+      // from the layout default when the scene's own is unset.
+      dragmode: entry.dragmode ?? 'turntable',
       // The panes a scene paints are scene.bgcolor plus each axis's
       // backgroundcolor — fig.to_json() carries them explicitly, so
       // the transparent override must come after the spread.

@@ -183,7 +183,14 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   c∉{1,2,3}, d=2⇒c=2). ℝ²→ℝ³ parametrizations sample the unit
   square [0,1]² — the surface is the image of the domain, so the
   trace carries per-component 2-D x/y/z grids instead of axis
-  vectors.
+  vectors. A `\text{for}` clause sets the sampling domain:
+  `\text{plot} f \text{ for } x ∈ (a,b)` (also `[a,b]`, `a ≤ x ≤ b`,
+  one-sided `x > a`, `u ∈ … \land v ∈ …`, `(u,v) ∈ I₁×I₂`) parses to
+  `['Plot', expr, cond]`; `plotDomainBounds` reads it into per-var
+  (lo, hi) ends — calc emits `_mc_plot(expr, {'v': (lo, hi)})` (None
+  keeps the default end), python emits `(v, lo, hi)` ranges, and
+  `_mc_rng`/the interim's `rng` apply the same defaults-fallback
+  rules.
 - **`src/plot/echarts.ts` converts the figure dict**, not the
   expression: scatter→line (NaN→null gaps), scatter3d→line3D,
   surface→gl `surface` (x/y vectors — or per-component 2-D grids for

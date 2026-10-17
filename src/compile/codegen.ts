@@ -4179,6 +4179,100 @@ export function plotComponents(expr: MathJson): MathJson[] | undefined {
   return [expr];
 }
 
+// A `\text{plot} … \text{for} cond` domain as per-variable bounds:
+// `x ∈ (a,b)` (Element+Interval — open/closed marks are sampling-
+// irrelevant and stripped), `a ≤ x ≤ b` two-sided chains, one-sided
+// `x > a` (a missing end keeps the signature's default), `And`- or
+// List-combined conditions, and `(u,v) ∈ I₁×I₂` product membership —
+// the paren tuple parses as an open Interval of names and zips onto a
+// same-length CircledAst of Intervals. Anything else (finite sets,
+// equalities, non-interval membership) is skipped — the caller flags
+// a note when the condition yields no bounds at all.
+export interface PlotBound {
+  v: string;
+  lo?: MathJson;
+  hi?: MathJson;
+}
+
+export function plotDomainBounds(cond: MathJson | undefined): PlotBound[] {
+  const out: PlotBound[] = [];
+  // `0 ≤ x ≤ 5` normalizes to And(0 ≤ x, x ≤ 5) — one variable's ends
+  // arrive as separate items; merge them into a single entry.
+  const push = (b: PlotBound): void => {
+    const ex = out.find((e) => e.v === b.v);
+    if (ex === undefined) out.push(b);
+    else {
+      if (b.lo !== undefined) ex.lo = b.lo;
+      if (b.hi !== undefined) ex.hi = b.hi;
+    }
+  };
+  const stripOpen = (e: MathJson): MathJson =>
+    isHead(e, 'Open') ? (e as MathJson[])[1] : e;
+  const intervalOf = (
+    n: MathJson,
+  ): { lo: MathJson; hi: MathJson } | undefined =>
+    isArr(n) && headOf(n) === 'Interval' && n.length === 3
+      ? { lo: stripOpen(n[1]), hi: stripOpen(n[2]) }
+      : undefined;
+  const item = (n: MathJson): void => {
+    if (!isArr(n)) return;
+    const h = headOf(n);
+    if (h === 'And' || h === 'List' || h === 'Tuple' || h === 'Sequence') {
+      for (const c of n.slice(1)) item(c);
+      return;
+    }
+    if (h === 'Element') {
+      const [lhs, rhs] = [n[1], n[2]];
+      if (isStr(lhs)) {
+        const iv = intervalOf(rhs);
+        if (iv) push({ v: lhs, ...iv });
+        return;
+      }
+      if (
+        isArr(lhs) &&
+        headOf(lhs) === 'Interval' &&
+        isArr(rhs) &&
+        headOf(rhs) === 'CircledAst'
+      ) {
+        const vars = lhs.slice(1).map(stripOpen);
+        const ivs = rhs.slice(1);
+        if (vars.length === ivs.length)
+          vars.forEach((v, i) => {
+            const iv = intervalOf(ivs[i]);
+            if (iv && isStr(v)) push({ v, ...iv });
+          });
+      }
+      return;
+    }
+    if (
+      h === 'Less' ||
+      h === 'LessEqual' ||
+      h === 'Greater' ||
+      h === 'GreaterEqual'
+    ) {
+      const less = h === 'Less' || h === 'LessEqual';
+      if (n.length === 4 && isStr(n[2])) {
+        // `a < x < b` arrives flat; Greater flips the ends.
+        push(
+          less
+            ? { v: n[2], lo: n[1], hi: n[3] }
+            : { v: n[2], lo: n[3], hi: n[1] },
+        );
+        return;
+      }
+      if (n.length === 3) {
+        const [a, b] = [n[1], n[2]];
+        if (isStr(a) && !isStr(b))
+          push(less ? { v: a, hi: b } : { v: a, lo: b });
+        else if (isStr(b) && !isStr(a))
+          push(less ? { v: b, lo: a } : { v: b, hi: a });
+      }
+    }
+  };
+  if (cond !== undefined) item(cond);
+  return out;
+}
+
 // The python-target lowering of a `Plot` statement: the matching
 // `sp.plot*` call when the signature is statically known (free names ×
 // component count), otherwise an informative comment plus a note — the
@@ -4188,6 +4282,7 @@ function emitPlotPython(
   expr: MathJson,
   emitted: string,
   emitter: Emitter,
+  domain?: Map<string, { lo?: string; hi?: string }>,
 ): StatementOut {
   const sp = emitter.scope.qualified ? 'sp.' : '';
   const vars = [...new Set(freeNames(expr))].sort();
@@ -4206,10 +4301,23 @@ function emitPlotPython(
     isStr(n) && emitter.scope.decls.declaredFns.has(n)
       ? `${n}(${callVars.map(pyIdent).join(', ')})`
       : emitter.emit(n);
-  const R1 = (v: string) => `(${v}, -10, 10)`;
-  const R2 = (v: string) => `(${v}, -3, 3)`;
+  // A `\text{for}` domain bound overrides that end of the variable's
+  // range; a bound naming a variable outside the signature is dead.
+  if (domain)
+    for (const k of domain.keys())
+      if (!callVars.includes(k))
+        emitter.scope.flag(
+          'note',
+          `plot: '${k}' isn't a variable of the plotted expression — its bound is ignored`,
+        );
+  const rng = (v: string, lo: number, hi: number) => {
+    const r = domain?.get(v);
+    return `(${pyIdent(v)}, ${r?.lo ?? lo}, ${r?.hi ?? hi})`;
+  };
+  const R1 = (v: string) => rng(v, -10, 10);
+  const R2 = (v: string) => rng(v, -3, 3);
   // ℝ²→ℝ³ parametrizations plot the image of the unit square.
-  const UNIT = (v: string) => `(${v}, 0, 1)`;
+  const UNIT = (v: string) => rng(v, 0, 1);
   const d = callVars.length;
   const c = comps.length;
   const unplottable = (why: string): StatementOut => {
@@ -4229,29 +4337,29 @@ function emitPlotPython(
     return unplottable(`a function of ${d} variables can't be plotted`);
   if (c > 3)
     return unplottable(`${c} output components is too many to plot`);
-  const [v0, v1] = callVars.map(pyIdent);
   const [e0, e1, e2] = comps.map(emitComp);
+  const [w0, w1] = callVars;
   if (d === 1 && c === 1)
-    return { lines: [`${sp}plot(${e0}, ${R1(v0)})`], plot: true };
+    return { lines: [`${sp}plot(${e0}, ${R1(w0)})`], plot: true };
   if (d === 2 && c === 1)
     return {
-      lines: [`${sp}plot3d(${e0}, ${R2(v0)}, ${R2(v1)})`],
+      lines: [`${sp}plot3d(${e0}, ${R2(w0)}, ${R2(w1)})`],
       plot: true,
     };
   if (d === 1 && c === 2)
     return {
-      lines: [`${sp}plot_parametric(${e0}, ${e1}, ${R1(v0)})`],
+      lines: [`${sp}plot_parametric(${e0}, ${e1}, ${R1(w0)})`],
       plot: true,
     };
   if (d === 1 && c === 3)
     return {
-      lines: [`${sp}plot3d_parametric_line(${e0}, ${e1}, ${e2}, ${R1(v0)})`],
+      lines: [`${sp}plot3d_parametric_line(${e0}, ${e1}, ${e2}, ${R1(w0)})`],
       plot: true,
     };
   if (d === 2 && c === 3)
     return {
       lines: [
-        `${sp}plot3d_parametric_surface(${e0}, ${e1}, ${e2}, ${UNIT(v0)}, ${UNIT(v1)})`,
+        `${sp}plot3d_parametric_surface(${e0}, ${e1}, ${e2}, ${UNIT(w0)}, ${UNIT(w1)})`,
       ],
       plot: true,
     };
@@ -4432,10 +4540,40 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
   if (h === 'Plot') {
     const before = emitter.scope.errorCount;
     const body = emitter.emit(node[1]);
+    // A `\text{for}` domain carries per-variable (lo, hi) bounds —
+    // either end may be absent (a one-sided bound keeps the signature's
+    // default end; the worker fills None with its default).
+    const bounds = plotDomainBounds(node[2]);
+    const domain = new Map<string, { lo?: string; hi?: string }>(
+      bounds.map(
+        ({ v, lo, hi }): [string, { lo?: string; hi?: string }] => [
+          v,
+          {
+            lo: lo === undefined ? undefined : emitter.emit(lo),
+            hi: hi === undefined ? undefined : emitter.emit(hi),
+          },
+        ],
+      ),
+    );
+    if (node[2] !== undefined && domain.size === 0)
+      emitter.scope.flag(
+        'note',
+        'plot: the \\text{for} condition gave no usable variable bounds — plotting over the default window',
+      );
     if (emitter.scope.errorCount > before) return { lines: [] };
-    if (emitter.scope.plotTarget === 'calc')
-      return { lines: [`_mc_plot(${body})`], plot: true };
-    return emitPlotPython(node[1], body, emitter);
+    if (emitter.scope.plotTarget === 'calc') {
+      const dom =
+        domain.size === 0
+          ? ''
+          : `, {${[...domain]
+              .map(
+                ([v, { lo, hi }]) =>
+                  `${JSON.stringify(v)}: (${lo ?? 'None'}, ${hi ?? 'None'})`,
+              )
+              .join(', ')}}`;
+      return { lines: [`_mc_plot(${body}${dom})`], plot: true };
+    }
+    return emitPlotPython(node[1], body, emitter, domain);
   }
   // `\text{solve}` / `\text{dsolve}` / `\text{pdesolve}` statements.
   // IR: ['Solve', eqs, vars, domain?] — eqs a node or List, vars a List
