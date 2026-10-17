@@ -103,12 +103,20 @@
   let zoomText = $state('');
   let baseEye = 0;
   function sceneCam(gd: HTMLDivElement): SceneCam | null {
-    const lay = (gd as unknown as { layout?: Record<string, unknown> })
-      .layout;
-    for (const key of Object.keys(lay ?? {})) {
-      if (!/^scene\d*$/.test(key)) continue;
-      const cam = (lay![key] as { camera?: SceneCam })?.camera;
-      if (cam?.eye) return cam;
+    // `_fullLayout` holds the live camera — user drags update it in
+    // place while `layout.scene.camera` keeps the figure's initial
+    // spec until a relayout rewrites it. Reading the spec source made
+    // the first wheel after an orbit snap back to the shipped view.
+    const g = gd as unknown as {
+      layout?: Record<string, unknown>;
+      _fullLayout?: Record<string, unknown>;
+    };
+    for (const src of [g._fullLayout, g.layout]) {
+      for (const key of Object.keys(src ?? {})) {
+        if (!/^scene\d*$/.test(key)) continue;
+        const cam = (src![key] as { camera?: SceneCam })?.camera;
+        if (cam?.eye) return cam;
+      }
     }
     return null;
   }

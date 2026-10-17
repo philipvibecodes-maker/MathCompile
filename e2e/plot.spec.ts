@@ -140,6 +140,61 @@ test('R²→R³ plot renders a parametric surface over the unit square', async (
       )?.layout?.scene?.dragmode,
   );
   expect(sceneDrag).toBe('turntable');
+
+  // Orbit the camera, then wheel-zoom: the zoom must keep the dragged
+  // orientation. A wheel handler that reads the figure's initial
+  // camera spec (layout.scene.camera) instead of the live camera
+  // (_fullLayout.scene.camera) snaps back to the shipped view.
+  const eyeOf = () =>
+    page.evaluate(
+      () =>
+        (
+          document.querySelector('.js-plotly-plot') as unknown as {
+            _fullLayout?: {
+              scene?: { camera?: { eye?: { x: number; y: number; z: number } } };
+            };
+          }
+        )?._fullLayout?.scene?.camera?.eye,
+    );
+  const spec = await page.evaluate(
+    () =>
+      (
+        document.querySelector('.js-plotly-plot') as unknown as {
+          layout?: {
+            scene?: { camera?: { eye?: { x: number; y: number; z: number } } };
+          };
+        }
+      )?.layout?.scene?.camera?.eye,
+  );
+  const plot = page.locator('.js-plotly-plot');
+  const box = await plot.boundingBox();
+  const cx = box!.x + box!.width / 2;
+  const cy = box!.y + box!.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 120, cy + 60, { steps: 12 });
+  await page.mouse.up();
+  const dragged = await eyeOf();
+  expect(dragged).toBeTruthy();
+
+  await page.mouse.move(cx, cy);
+  await page.mouse.wheel(0, -240);
+  await page.waitForTimeout(300);
+  const zoomed = await eyeOf();
+  expect(zoomed).toBeTruthy();
+
+  // Direction cosines of eye vectors — zoom-to-cursor also shifts
+  // center, so a small tilt is fine; snapping back to the spec is not.
+  const angle = (
+    a: { x: number; y: number; z: number },
+    b: { x: number; y: number; z: number },
+  ) =>
+    Math.acos(
+      (a.x * b.x + a.y * b.y + a.z * b.z) /
+        (Math.hypot(a.x, a.y, a.z) * Math.hypot(b.x, b.y, b.z)),
+    );
+  expect(angle(zoomed!, dragged!)).toBeLessThan(0.5);
+  expect(angle(dragged!, spec!)).toBeGreaterThan(0.5);
 });
 
 test('a \\text{for} domain sets the sampled window', async ({ page }) => {
