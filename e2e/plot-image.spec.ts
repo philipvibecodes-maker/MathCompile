@@ -63,11 +63,14 @@ test('ℝ²→ℝ² plot hides its image-of-grid traces behind the image mode', 
   }
   const labels = info.buttons.map((b) => b.label);
   expect(labels).toEqual(['field', 'image']);
-  const imageRel = info.buttons[1].rel as Record<string, number[]>;
+  const imageRel = info.buttons[1].rel as Record<string, unknown>;
   // 'xaxis.range' is one literal key — array form, or the '.' would
   // read as a nested path.
   expect(imageRel).toHaveProperty(['xaxis.range']);
   expect(imageRel).toHaveProperty(['yaxis.range']);
+  // The image mode annotates which input grid was mapped.
+  const anns = imageRel.annotations as { text?: string }[];
+  expect(anns[0]?.text).toContain('input grid');
 
   // Click the 'image' mode through the updatemenu DOM (plotly draws
   // menus as SVG <g> groups: header opens, options are <g
@@ -92,4 +95,6 @@ test('ℝ²→ℝ² plot hides its image-of-grid traces behind the image mode', 
       return vis;
     })
     .toBe(true);
+  // …and the input-grid annotation lands with it.
+  await expect(plot.locator('.annotation')).toContainText('input grid');
 });

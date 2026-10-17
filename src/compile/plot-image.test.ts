@@ -31,7 +31,8 @@ describe('plot ℝ²→ℝ² image-of-grid python codegen', () => {
     const L = lines(ROT);
     expect(L).toContain("# fnum = sp.lambdify((x, y), (-y, x), 'numpy')");
     expect(L).toContain('# ts = np.linspace(-3, 3, 160)');
-    expect(L).toContain('# for k in range(-3, 4):');
+    expect(L).toContain('# ks = np.arange(-3, 3.5, 0.5)');
+    expect(L).toContain('# for k in ks:');
     expect(
       L.some((l) => l.startsWith('#     ax.plot(*fnum(')),
     ).toBe(true);

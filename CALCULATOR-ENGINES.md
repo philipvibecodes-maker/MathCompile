@@ -188,11 +188,12 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   trace, plotly ≥7.0: 21×21 grid, `anchor='center'`,
   `lengthmode='scaled'` × `lengthfactor 0.8`, hover `F = (%{u}, %{v})`,
   non-finite grid points dropped) and `img-src`/`img-x`/`img-y`
-  (dimmed source grid plus images of the integer x/y grid lines,
-  NaN-broken at poles). A `field`/`image` updatemenu flips `visible`
-  *and* carries a per-mode axis-range relayout — field frames the
-  grid box padded ½·pitch, image frames the finite image extent (~6%
-  pad, 0.5 floor). The python target emits
+  (dimmed source grid plus same-color images of the x/y grid lines —
+  `_MC_GRIDIMG_STEP`-spaced, NaN-broken at poles). A `field`/`image`
+  updatemenu flips `visible` *and* carries a per-mode relayout —
+  field frames the grid box padded ½·pitch, image frames the finite
+  image extent (~6% pad, 0.5 floor) and sets the `input grid: …`
+  annotation the field button clears again. The python target emits
   `sympy.plotting.plot_vector_field` for the field view; the image
   view has no SymPy equivalent, so a numpy+matplotlib equivalent
   rides along *commented* under it. The interim previews the field

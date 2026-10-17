@@ -559,11 +559,10 @@ def _mc_range_rel(box):
 # _mc_plot_figure still passes the module constants explicitly.
 
 _MC_PLOT_NF = 21          # arrows per axis on the field view
-_MC_PLOT_NG = 9           # grid lines per direction on the image view
+_MC_PLOT_GSTEP = 0.5      # spacing between grid lines on the image view
 _MC_PLOT_NGPTS = 160      # samples along each image-view grid line
 _MC_PLOT_FIELD = '#3b82f6'
-_MC_PLOT_IMGX = '#c74440'
-_MC_PLOT_IMGY = '#3b82f6'
+_MC_PLOT_IMG = '#3b82f6'
 _MC_PLOT_SRC = '#8c8c8c'
 
 _MC_FIELD_SRC = '''_MC_FIELD_NAMES = ('field',)
@@ -613,23 +612,30 @@ def _mc_field_view(fig, fnum, rng=(-3.0, 3.0), n=21, color='#3b82f6'):
 _MC_GRIDIMG_SRC = '''_MC_GRIDIMG_NAMES = ('img-src', 'img-x', 'img-y')
 
 
-def _mc_gridimg_view(fig, fnum, rng=(-3.0, 3.0), nlines=9, npts=160,
-                     imgx='#c74440', imgy='#3b82f6', src='#8c8c8c'):
-    # Image-of-grid view: the images of the domain's integer grid lines
-    # under the map, drawn over a dimmed copy of the source grid.
+def _mc_gridimg_view(fig, fnum, rng=(-3.0, 3.0), step=0.5, npts=160,
+                     color='#3b82f6', src='#8c8c8c'):
+    # Image-of-grid view: the images of the domain's coordinate grid
+    # lines under the map, drawn over a dimmed copy of the source grid.
     # 'img-src' is the domain grid itself, 'img-x' the images of the
-    # vertical lines x = k, 'img-y' the horizontals y = k. Traces start
-    # hidden — the mode menu reveals them. Returns (x0, x1, y0, y1)
-    # framing the image curves (with padding), or None when nothing
-    # finite sampled.
+    # vertical lines x = k, 'img-y' the horizontals y = k — one color
+    # for both directions, since the mode menu already separates them
+    # from the field view. Traces start hidden. Returns
+    # ((x0, x1, y0, y1), desc) — the finite image extent padded ~6%
+    # per side, plus a description of the input grid for the mode's
+    # annotation label; box is None when nothing finite sampled.
     import math as _mc_math
     import numpy as _mc_np
 
     lo, hi = rng
     nan = float('nan')
-    ks = list(range(_mc_math.ceil(lo), _mc_math.floor(hi) + 1))
-    if len(ks) > nlines:
-        ks = ks[::_mc_math.ceil(len(ks) / nlines)]
+    # Grid lines every 'step' units — finer than the integer lattice
+    # so small warps still read. A huge window stride-thins rather
+    # than overcrowding.
+    ks = [float(k) for k in _mc_np.arange(lo, hi + step / 2.0, step)]
+    if len(ks) > 26:
+        ks = ks[::_mc_math.ceil(len(ks) / 26)]
+    desc = (f'input grid: x, y = {ks[0]:g}, {ks[1]:g}, …, {ks[-1]:g}'
+            if len(ks) > 1 else f'input grid: x, y = {ks[0]:g}')
     ts = _mc_np.linspace(lo, hi, npts)
 
     def comps_at(xin, yin):
@@ -663,7 +669,7 @@ def _mc_gridimg_view(fig, fnum, rng=(-3.0, 3.0), nlines=9, npts=160,
 
     fx, fy = [], []   # finite image samples, for the framing box
 
-    def image_lines(vertical, name, color):
+    def image_lines(vertical, name):
         # One direction's image curves: vertical=True sweeps the lines
         # x = k (fixed first arg), False the horizontals y = k.
         xs, ys = [], []
@@ -681,20 +687,20 @@ def _mc_gridimg_view(fig, fnum, rng=(-3.0, 3.0), nlines=9, npts=160,
             line=dict(color=color, width=1.5),
             visible=False, hoverinfo='skip')
 
-    image_lines(True, 'img-x', imgx)
-    image_lines(False, 'img-y', imgy)
+    image_lines(True, 'img-x')
+    image_lines(False, 'img-y')
 
     ax = _mc_np.concatenate(fx)
     ay = _mc_np.concatenate(fy)
     if ax.size == 0:
-        return None
+        return None, desc
     x0, x1 = float(ax.min()), float(ax.max())
     y0, y1 = float(ay.min()), float(ay.max())
     # ~6% padding per side — with a floor so a degenerate image (a
     # constant map, a point) still frames to a viewable window.
     px = max(0.06 * (x1 - x0), 0.5)
     py = max(0.06 * (y1 - y0), 0.5)
-    return (x0 - px, x1 + px, y0 - py, y1 + py)
+    return (x0 - px, x1 + px, y0 - py, y1 + py), desc
 '''
 
 exec(_MC_VIEWS_SRC)
@@ -765,9 +771,9 @@ def _mc_plot_figure(d, c, vars_, comps):
         # Equal aspect so arrows and mapped lines don't distort.
         fbox = _mc_field_view(
             fig, fnum, _MC_PLOT_R2, _MC_PLOT_NF, _MC_PLOT_FIELD)
-        ibox = _mc_gridimg_view(
-            fig, fnum, _MC_PLOT_R2, _MC_PLOT_NG, _MC_PLOT_NGPTS,
-            _MC_PLOT_IMGX, _MC_PLOT_IMGY, _MC_PLOT_SRC)
+        ibox, idesc = _mc_gridimg_view(
+            fig, fnum, _MC_PLOT_R2, _MC_PLOT_GSTEP, _MC_PLOT_NGPTS,
+            _MC_PLOT_IMG, _MC_PLOT_SRC)
         box = fbox if fbox is not None else (
             _MC_PLOT_R2[0], _MC_PLOT_R2[1],
             _MC_PLOT_R2[0], _MC_PLOT_R2[1])
@@ -775,11 +781,20 @@ def _mc_plot_figure(d, c, vars_, comps):
         fig.update_yaxes(
             zeroline=True, scaleanchor='x', scaleratio=1,
             range=[box[2], box[3]])
+        # The image mode annotates which input grid was mapped; the
+        # field button's relayout clears it on a switch back.
+        frel = _mc_range_rel(fbox) or {}
+        frel['annotations'] = []
+        irel = _mc_range_rel(ibox) or {}
+        irel['annotations'] = [dict(
+            text=idesc, xref='paper', yref='paper',
+            x=0.02, y=0.98, xanchor='left', yanchor='top',
+            showarrow=False, font=dict(size=12))]
         _mc_plot_menu(
             fig, ['field', 'image'],
             [_mc_mode_vis(fig, _MC_FIELD_NAMES, scene=False),
              _mc_mode_vis(fig, _MC_GRIDIMG_NAMES, scene=False)],
-            [_mc_range_rel(fbox), _mc_range_rel(ibox)])
+            [frel, irel])
         fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
         return fig, None
     vals = _mc_np.asarray(fnum(U, V), dtype=float)
@@ -964,10 +979,9 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
                 'fig = go.Figure()',
                 f'fbox = _mc_field_view(fig, fnum, {_MC_PLOT_R2},'
                 f' {_MC_PLOT_NF}, {_MC_PLOT_FIELD!r})',
-                f'ibox = _mc_gridimg_view(fig, fnum, {_MC_PLOT_R2},'
-                f' {_MC_PLOT_NG}, {_MC_PLOT_NGPTS},'
-                f' {_MC_PLOT_IMGX!r}, {_MC_PLOT_IMGY!r},'
-                f' {_MC_PLOT_SRC!r})',
+                f'ibox, idesc = _mc_gridimg_view(fig, fnum,'
+                f' {_MC_PLOT_R2}, {_MC_PLOT_GSTEP}, {_MC_PLOT_NGPTS},'
+                f' {_MC_PLOT_IMG!r}, {_MC_PLOT_SRC!r})',
                 'box = fbox if fbox is not None else '
                 f'({_MC_PLOT_R2[0]}, {_MC_PLOT_R2[1]},'
                 f' {_MC_PLOT_R2[0]}, {_MC_PLOT_R2[1]})',
@@ -975,12 +989,19 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
                 'zeroline=True, range=[box[0], box[1]])',
                 "fig.update_yaxes(zeroline=True, scaleanchor='x',"
                 ' scaleratio=1, range=[box[2], box[3]])',
+                'frel = _mc_range_rel(fbox) or {}',
+                "frel['annotations'] = []",
+                'irel = _mc_range_rel(ibox) or {}',
+                "irel['annotations'] = [dict(",
+                "    text=idesc, xref='paper', yref='paper',",
+                "    x=0.02, y=0.98, xanchor='left', yanchor='top',",
+                '    showarrow=False, font=dict(size=12))]',
             ]
             menu(
                 ['field', 'image'],
                 ["_mc_mode_vis(fig, _MC_FIELD_NAMES, scene=False)",
                  "_mc_mode_vis(fig, _MC_GRIDIMG_NAMES, scene=False)"],
-                ['_mc_range_rel(fbox)', '_mc_range_rel(ibox)'],
+                ['frel', 'irel'],
             )
         else:
             L += [
