@@ -160,8 +160,8 @@ describe('echartsOption', () => {
           name: 'field',
           marker: { color: '#3b82f6' },
         },
-        // A hidden mode's traces stay hidden — img-* don't convert.
-        { type: 'scatter', x: [0, 1], y: [0, 1], mode: 'lines', visible: false, name: 'img-x' },
+        // A hidden mode's traces stay hidden — the img traces don't convert.
+        { type: 'scatter', x: [0, 1], y: [0, 1], mode: 'lines', visible: false, name: 'image of x = k' },
       ]),
       false,
     );

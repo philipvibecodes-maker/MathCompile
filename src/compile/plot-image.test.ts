@@ -36,6 +36,8 @@ describe('plot ℝ²→ℝ² image-of-grid python codegen', () => {
     expect(
       L.some((l) => l.startsWith('#     ax.plot(*fnum(')),
     ).toBe(true);
+    // The legend names match the app's image-mode legend entries.
+    expect(L.some((l) => l.includes("'image of x = k'"))).toBe(true);
     expect(L).toContain("# ax.set_aspect('equal')");
   });
 

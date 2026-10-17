@@ -187,13 +187,16 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   block) build four named traces — `field` (the native `go.Quiver`
   trace, plotly ≥7.0: 21×21 grid, `anchor='center'`,
   `lengthmode='scaled'` × `lengthfactor 0.8`, hover `F = (%{u}, %{v})`,
-  non-finite grid points dropped) and `img-src`/`img-x`/`img-y`
-  (dimmed source grid plus same-color images of the x/y grid lines —
-  `_MC_GRIDIMG_STEP`-spaced, NaN-broken at poles). A `field`/`image`
-  updatemenu flips `visible` *and* carries a per-mode relayout —
-  field frames the grid box padded ½·pitch, image frames the finite
-  image extent (~6% pad, 0.5 floor) and sets the `input grid: …`
-  annotation the field button clears again. The python target emits
+  non-finite grid points dropped) and `input grid`/`image of x = k`/
+  `image of y = k` (dimmed source grid plus same-color images of the
+  x/y grid lines — `_MC_PLOT_GSTEP`-spaced, NaN-broken at poles; the
+  y-images are dashed so the one-color legend still tells directions
+  apart). A `field`/`image` updatemenu flips `visible` *and* carries
+  a per-mode relayout — field frames the grid box padded ½·pitch,
+  image frames the finite image extent (~6% pad, 0.5 floor), turns
+  `showlegend` on (entries `input grid` / `image of x = k` /
+  `image of y = k`), and sets the `input grid: …` annotation the
+  field button clears again. The python target emits
   `sympy.plotting.plot_vector_field` for the field view; the image
   view has no SymPy equivalent, so a numpy+matplotlib equivalent
   rides along *commented* under it. The interim previews the field
@@ -202,7 +205,15 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   `PLOT_NF = 21` and the echarts converter synthesizes NaN-separated
   shaft+barb segments from x/y/u/v (ECharts has no quiver series —
   worker arrays must stay plain lists, not numpy, or the JSON turns
-  into undecodable `bdata` dicts).
+  into undecodable `bdata` dicts). Two frontend gotchas: `quiver`
+  must count as cartesian in `applyModeAxes` or the field mode
+  renders with the xy axes/grid hidden; and a payload swap rebuilds
+  the figure at its defaults — PlotView captures each updatemenu's
+  active button into `menuSel` (afterplot/relayout) and
+  `applyActiveMenus` re-applies that button's vis/relayout args to
+  the incoming figure, so an edit doesn't snap the mode back to
+  `field` (the interim payload has no menus at all — the selection
+  can't ride on `_fullLayout` alone).
 - **`src/plot/echarts.ts` converts the figure dict**, not the
   expression: scatter→line (NaN→null gaps), scatter3d→line3D,
   surface→gl `surface` (x/y vectors expanded to `[x,y,z]` triples +

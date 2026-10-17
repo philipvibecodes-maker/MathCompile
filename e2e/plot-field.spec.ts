@@ -72,13 +72,14 @@ test('R2->R2 plot cell renders interim field, then a two-mode plotly figure', as
   expect(labels).toContain('field');
   expect(labels).toContain('image');
 
-  // The image button reveals the img-* traces when selected — assert on
-  // the button's update args rather than clicking the plotly menu DOM.
+  // The image button reveals the image-of-grid traces when selected —
+  // assert on the button's update args rather than clicking the plotly
+  // menu DOM.
   const imageButton = figure.buttons.find((b) => b.label === 'image');
   const visArg = (imageButton?.args?.[0] ?? {}) as { visible?: unknown[] };
   const names = figure.traces.map((t) => t.name);
   const imgIndexes = names
-    .map((n, i) => (typeof n === 'string' && n.startsWith('img-') ? i : -1))
+    .map((n, i) => (typeof n === 'string' && n !== 'field' ? i : -1))
     .filter((i) => i >= 0);
   expect(imgIndexes.length).toBeGreaterThan(0);
   expect(Array.isArray(visArg.visible)).toBe(true);

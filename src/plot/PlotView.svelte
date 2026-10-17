@@ -8,7 +8,12 @@
   import { appStore } from '../state/store.svelte';
   import type { PlotData } from './types';
   import EchartsPlot from './EchartsPlot.svelte';
-  import { applyModeAxes, GL3D_TYPES, themedFigure } from './theme';
+  import {
+    applyActiveMenus,
+    applyModeAxes,
+    GL3D_TYPES,
+    themedFigure,
+  } from './theme';
 
   let { plot }: { plot: PlotData } = $props();
 
@@ -328,6 +333,28 @@
     }
   }
 
+  // The user's mode-menu choices, per menu index. Captured from the
+  // outgoing graph's _fullLayout while it still exists — a payload
+  // swap (edit → interim → re-render, and the interim figure carries
+  // no menus at all) rebuilds the figure at its defaults, so the
+  // selection has to live in component state to be re-applied.
+  let menuSel: (number | undefined)[] | undefined;
+  const readMenuSel = (
+    gd: HTMLDivElement,
+  ): (number | undefined)[] | undefined => {
+    const menus = (
+      gd as unknown as {
+        _fullLayout?: { updatemenus?: { active?: number }[] };
+      }
+    )._fullLayout?.updatemenus;
+    // A figure with no menus (the interim) yields nothing — keep the
+    // last selection rather than wiping it.
+    return menus?.length ? menus.map((m) => m.active) : undefined;
+  };
+  const captureMenuSel = (gd: HTMLDivElement) => {
+    menuSel = readMenuSel(gd) ?? menuSel;
+  };
+
   // The afterplot listener is bound once per graph element — a remount
   // (the fail branch swapping in/out) gets a fresh element and a fresh
   // binding.
@@ -360,6 +387,10 @@
     if (!target || !P) return;
     const { data, layout } = themedFigure(p, dark);
     applyModeAxes({ data, layout });
+    // Freshest read first — if the outgoing render still has its
+    // menus, their actives beat the stored selection.
+    captureMenuSel(target);
+    applyActiveMenus(menuSel, { data, layout });
     P.react(target, data, { ...layout, autosize: true }, CONFIG).catch(
       (e) => {
         failed = e instanceof Error ? e.message : String(e);
@@ -380,6 +411,7 @@
         target as unknown as { on: (ev: string, cb: () => void) => void }
       ).on('plotly_afterplot', () => {
         plotted = true;
+        captureMenuSel(target);
         unpickSheet(target);
         syncMenuVisibility(target);
         updateZoom(target);
@@ -390,6 +422,7 @@
       (
         target as unknown as { on: (ev: string, cb: () => void) => void }
       ).on('plotly_relayout', () => {
+        captureMenuSel(target);
         updateZoom(target);
         markActiveMenuItem(target);
       });
