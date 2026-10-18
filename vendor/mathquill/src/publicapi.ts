@@ -131,6 +131,9 @@ class Options {
   infixOperatorNames: { [name in string]?: true };
   prefixOperatorNames: { [name in string]?: true };
   autoCommands: AutoDict;
+  // MATHCOMPILE: whole-word variant of autoCommands — see
+  // basicSymbols.ts (option processor) and Letter.checkAutoCmds.
+  autoWordCommands: AutoDict;
   autoParenthesizedFunctions: AutoDict;
   quietEmptyDelimiters: { [id: string]: any };
   disableAutoSubstitutionInSubscripts?:

@@ -9,7 +9,7 @@ import { attachAutocompleteMenu } from './ac-menu';
 import { attachSymbolPicker } from './ac-picker';
 import { attachMatrixMenu } from './matrix-menu';
 import { readHelpContext, type HelpContext } from './context-help';
-import { SMART_AUTO_COMMANDS } from './smart-commands';
+import { SMART_AUTO_COMMANDS, SMART_WORD_COMMANDS } from './smart-commands';
 
 export interface FieldCallbacks {
   onChange: (latex: string) => void;
@@ -151,6 +151,7 @@ export function attachField(
     setSmartMode: (v) =>
       el.config({
         autoCommands: v ? SMART_AUTO_COMMANDS : '',
+        autoWordCommands: v ? SMART_WORD_COMMANDS : '',
         autoSubscriptNumerals: v,
       }),
     lineAnchors: () => {

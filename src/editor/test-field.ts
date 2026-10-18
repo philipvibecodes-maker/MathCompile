@@ -15,7 +15,10 @@
 import { mq3, type MQ, type MQConfig } from './mathquill';
 import { defineMathField, type MathFieldElement } from './math-field';
 import { attachField, type FieldHandle } from './attach-field';
-import { SMART_AUTO_COMMANDS } from './smart-commands';
+import {
+  SMART_AUTO_COMMANDS,
+  SMART_WORD_COMMANDS,
+} from './smart-commands';
 
 // Same autoCommands spike.html uses for its bare field.
 export const RAW_AUTO_COMMANDS = 'int sum sqrt prod pi infty theta';
@@ -25,6 +28,7 @@ export const ADAPTER_AUTO_COMMANDS =
 /** The app's smart-mode config (MathField.svelte -> setSmartMode). */
 export const SMART_OPTIONS: MQConfig = {
   autoCommands: SMART_AUTO_COMMANDS,
+  autoWordCommands: SMART_WORD_COMMANDS,
   autoSubscriptNumerals: true,
 };
 
