@@ -97,9 +97,9 @@
     // Same for the import-* pref: it rewrites the emitted program's
     // import line + qualifiers, so the eval must re-run with it.
     const importAll = appStore.importAll;
-    // Same for the debug quiver density — moving the slider re-runs
+    // Same for the debug quiver knobs — moving either slider re-runs
     // the eval so the arrow grid resamples.
-    void plotDebug.quiverN;
+    void (plotDebug.quiverN, plotDebug.arrowScale);
     const mine = ++seq;
     if (
       cell.kind === 'python'

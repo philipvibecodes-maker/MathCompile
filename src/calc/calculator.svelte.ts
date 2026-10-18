@@ -77,11 +77,11 @@ export const cellIssues = $state<
   Record<number, (Issue & { line?: number })[]>
 >({});
 
-// Debug knobs — the corner slider's quiver density. Read inside
-// evaluate/interimFieldTraces, so changing it and re-running the cells
-// resamples the arrow grid (it's also folded into the worker's snapshot
-// key, so the cached figure can't survive a change).
-export const plotDebug = $state({ quiverN: 21 });
+// Debug knobs — the corner sliders' quiver density and relative arrow
+// length. Read inside evaluate/interimFieldTraces, so changing them and
+// re-running the cells resamples the grid (they're also folded into the
+// worker's snapshot key, so the cached figure can't survive a change).
+export const plotDebug = $state({ quiverN: 21, arrowScale: 0.8 });
 
 interface WorkerReply {
   type?: 'ready' | 'init-error';
@@ -261,13 +261,15 @@ export function evaluate(
         failAll('calculation timed out — the SymPy engine is restarting');
       }, 30000);
     let timer = armWatchdog();
-    // The debug quiver density rides the message (and the snapshot key,
-    // so a density change rewinds the cache instead of replaying the
-    // old figure).
+    // The debug quiver knobs ride the message (and the snapshot key,
+    // so a change rewinds the cache instead of replaying the old
+    // figure).
     const quiverN = plotDebug.quiverN;
+    const arrowScale = plotDebug.arrowScale;
     w.postMessage({
       id,
       quiverN,
+      arrowScale,
       program: {
         prelude: prog.prelude,
         cells: prog.cells.map((c) => ({
@@ -277,6 +279,7 @@ export function evaluate(
             defs: c.defs,
             statements: c.statements,
             quiverN,
+            arrowScale,
           }),
           defs: c.defs,
           statements: c.statements,
@@ -729,7 +732,7 @@ function interimFieldTraces(
       name: 'field',
       anchor: 'center',
       lengthmode: 'scaled',
-      lengthfactor: 0.8,
+      lengthfactor: plotDebug.arrowScale,
       marker: { color: PLOT_ACCENT },
     },
   ];

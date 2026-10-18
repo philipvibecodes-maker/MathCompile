@@ -50,8 +50,10 @@ interface EvalRequest {
   // plus every cell's program in order. The reply's `rows` are the last
   // cell's results.
   program: { prelude: string[]; cells: EvalCellMsg[] };
-  // Debug quiver density — overrides _MC_PLOT_NF for this run.
+  // Debug quiver knobs — override _MC_PLOT_NF / _MC_PLOT_FSCALE for
+  // this run.
   quiverN?: number;
+  arrowScale?: number;
 }
 
 // First message the main thread sends — the page knows BASE_URL (the
@@ -594,6 +596,7 @@ _MC_PLOT_NF = 21          # arrows per axis on the field view
 _MC_PLOT_GLINES = 10      # horizontal grid lines on the image view
 _MC_PLOT_NGPTS = 160      # samples along each image-view grid line
 _MC_PLOT_FIELD = '#3b82f6'
+_MC_PLOT_FSCALE = 0.8     # quiver lengthfactor — arrow length vs cell
 _MC_PLOT_IMG = '#3b82f6'
 _MC_PLOT_SRC = '#8c8c8c'
 
@@ -601,7 +604,7 @@ _MC_FIELD_SRC = '''_MC_FIELD_NAMES = ('field',)
 
 
 def _mc_field_view(fig, fnum, rng=((-3.0, 3.0), (-3.0, 3.0)), n=21,
-                   color='#3b82f6'):
+                   color='#3b82f6', scale=0.8):
     # Quiver view of the vector field: the native go.Quiver trace —
     # one arrow per point of an n x n uniform grid over rng (a per-axis
     # ((x0,x1),(y0,y1)) pair, so a for-domain reshapes the grid), anchored at its center on the grid point and scaled by
@@ -637,7 +640,7 @@ def _mc_field_view(fig, fnum, rng=((-3.0, 3.0), (-3.0, 3.0)), n=21,
     fig.add_quiver(
         x=U[ok].tolist(), y=V[ok].tolist(),
         u=FU[ok].tolist(), v=FV[ok].tolist(),
-        name='field', anchor='center', lengthfactor=0.8,
+        name='field', anchor='center', lengthfactor=scale,
         marker=dict(color=color),
         hovertemplate='x: %{x:.2f} y: %{y:.2f}<br>'
                       'F = (%{u:.2f}, %{v:.2f})<extra></extra>')
@@ -854,7 +857,8 @@ def _mc_plot_figure(d, c, vars_, comps, ranges):
         # on a switch (the image usually outruns the domain window).
         # Equal aspect so arrows and mapped lines don't distort.
         fbox = _mc_field_view(
-            fig, fnum, (ru, rv), _MC_PLOT_NF, _MC_PLOT_FIELD)
+            fig, fnum, (ru, rv), _MC_PLOT_NF, _MC_PLOT_FIELD,
+            _MC_PLOT_FSCALE)
         ibox, idesc = _mc_gridimg_view(
             fig, fnum, (ru, rv), _MC_PLOT_GLINES, _MC_PLOT_NGPTS,
             _MC_PLOT_IMG, _MC_PLOT_SRC)
@@ -1075,7 +1079,8 @@ def _mc_plot_code(d, c, vars_, comps, bounds, ranges):
         if c == 2:
             L += [
                 f'fbox = _mc_field_view(fig, fnum, ({ru}, {rv}),'
-                f' {_MC_PLOT_NF}, {_MC_PLOT_FIELD!r})',
+                f' {_MC_PLOT_NF}, {_MC_PLOT_FIELD!r},'
+                f' {_MC_PLOT_FSCALE})',
                 f'ibox, idesc = _mc_gridimg_view(fig, fnum,'
                 f' ({ru}, {rv}), {_MC_PLOT_GLINES}, {_MC_PLOT_NGPTS},'
                 f' {_MC_PLOT_IMG!r}, {_MC_PLOT_SRC!r})',
@@ -1224,15 +1229,17 @@ def _mc_run_cell(cell, ns):
             out.append({'ok': False, 'error': str(e)})
     return out
 
-def mc_run(prog_json, quiver_n=None):
+def mc_run(prog_json, quiver_n=None, arrow_scale=None):
     prog = json.loads(prog_json)
     cells = prog['cells']
-    # The debug quiver density — _mc_plot_figure reads _MC_PLOT_NF as a
-    # global at call time, so assigning it here takes effect for the
-    # whole run (the snapshot key carries it too, so cached figures
-    # can't leak across densities).
+    # The debug quiver knobs — _mc_plot_figure reads _MC_PLOT_NF /
+    # _MC_PLOT_FSCALE as globals at call time, so assigning them here
+    # takes effect for the whole run (the snapshot key carries them
+    # too, so cached figures can't leak across settings).
     if quiver_n is not None:
         globals()['_MC_PLOT_NF'] = int(quiver_n)
+    if arrow_scale is not None:
+        globals()['_MC_PLOT_FSCALE'] = float(arrow_scale)
     # First cell whose program changed since its last run — its snapshot
     # is stale, so state rewinds to the boundary just before it.
     div = 0
@@ -1405,7 +1412,7 @@ scope.onmessage = (e) => {
       // a shared globals slot would race when evals overlap.
       const call = `mc_run(${JSON.stringify(JSON.stringify(program))}, ${
         msg.quiverN === undefined ? 'None' : Math.trunc(msg.quiverN)
-      })`;
+      }, ${msg.arrowScale === undefined ? 'None' : msg.arrowScale})`;
       const json = await py.runPythonAsync(call);
       scope.postMessage({ id, ok: true, rows: JSON.parse(json as string) });
     })

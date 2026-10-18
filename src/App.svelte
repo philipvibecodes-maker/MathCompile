@@ -731,15 +731,27 @@
   <CommandPalette {commands} />
   <HelpSearch />
   {#if appStore.target === 'calculator'}
-    <label class="quiver-n-debug">
-      arrows/axis: {plotDebug.quiverN} ({plotDebug.quiverN}×{plotDebug.quiverN})
-      <input
-        type="range"
-        min="2"
-        max="40"
-        step="1"
-        bind:value={plotDebug.quiverN}
-      />
-    </label>
+    <div class="quiver-n-debug">
+      <label>
+        arrows/axis: {plotDebug.quiverN} ({plotDebug.quiverN}×{plotDebug.quiverN})
+        <input
+          type="range"
+          min="2"
+          max="40"
+          step="1"
+          bind:value={plotDebug.quiverN}
+        />
+      </label>
+      <label>
+        arrow length: ×{plotDebug.arrowScale.toFixed(2)}
+        <input
+          type="range"
+          min="0.1"
+          max="2"
+          step="0.05"
+          bind:value={plotDebug.arrowScale}
+        />
+      </label>
+    </div>
   {/if}
 </div>
