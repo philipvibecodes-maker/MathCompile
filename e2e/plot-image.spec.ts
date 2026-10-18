@@ -62,6 +62,7 @@ test('ℝ²→ℝ² plot hides its image-of-grid traces behind the image mode', 
   const byName = new Map(info.traces.map((t) => [t.name, t.visible]));
   for (const name of [
     'input square',
+    'input y = k',
     'image of square',
     'image of y = k',
   ]) {
@@ -112,7 +113,8 @@ test('ℝ²→ℝ² plot hides its image-of-grid traces behind the image mode', 
   await expect(inputToggle).toBeVisible();
   await inputToggle.check();
   await expect.poll(() => traceVis('input square')).toBe(true);
-  // Its legend entry sits below the image traces.
+  await expect.poll(() => traceVis('input y = k')).toBe(true);
+  // Its legend entries sit below the image traces.
   const legendOrder = await plot
     .locator('.legend .traces .legendtext')
     .allTextContents();
@@ -120,6 +122,7 @@ test('ℝ²→ℝ² plot hides its image-of-grid traces behind the image mode', 
     'image of square',
     'image of y = k',
     'input square',
+    'input y = k',
   ]);
   // Switching to field mode hides the square (input is image-only) and
   // drops the checkbox; the checked state persists for image mode.
@@ -130,16 +133,20 @@ test('ℝ²→ℝ² plot hides its image-of-grid traces behind the image mode', 
     .click();
   await expect.poll(() => traceVis('image of y = k')).toBe(false);
   await expect.poll(() => traceVis('input square')).toBe(false);
+  await expect.poll(() => traceVis('input y = k')).toBe(false);
   await expect(inputToggle).toBeHidden();
   await header2.click({ force: true });
   await plot
     .locator('.updatemenu-dropdown-button', { hasText: 'image' })
     .click();
   await expect.poll(() => traceVis('image of y = k')).toBe(true);
-  // …and the still-checked checkbox re-shows the square in image mode.
+  // …and the still-checked checkbox re-shows the square + its y = k
+  // lines in image mode.
   await expect.poll(() => traceVis('input square')).toBe(true);
+  await expect.poll(() => traceVis('input y = k')).toBe(true);
   await inputToggle.uncheck();
   await expect.poll(() => traceVis('input square')).toBe(false);
+  await expect.poll(() => traceVis('input y = k')).toBe(false);
 
   // Editing the cell regenerates the figure — the mode selection must
   // survive the payload swap (the component re-applies the captured

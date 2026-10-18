@@ -187,16 +187,17 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   block) build four named traces — `field` (the native `go.Quiver`
   trace, plotly ≥7.0: 21×21 grid, `anchor='center'`,
   `lengthmode='scaled'` × `lengthfactor 0.8`, hover `F = (%{u}, %{v})`,
-  non-finite grid points dropped) and `input square`/`image of square`/
-  `image of y = k` (a filled dimmed [-3,3]² source-domain square —
-  owned by the `input` checkbox's `meta.inputToggle`, not the mode
-  lists — plus the mapped boundary and same-color images of the
-  horizontal grid lines `y = k`, `_MC_PLOT_GSTEP`-spaced,
-  NaN-broken at poles). A `field`/`image` updatemenu flips `visible`
-  *and* carries a per-mode relayout — field frames the grid box
-  padded ½·pitch, image frames the finite image extent (~6% pad, 0.5
-  floor), turns `showlegend` on (entries `image of square` /
-  `image of y = k`), and sets the `input: the square [-3,3]² — …`
+  non-finite grid points dropped) and `input square`/`input y = k`/
+  `image of square`/`image of y = k` (a filled dimmed [-3,3]²
+  source-domain square plus its horizontal grid lines — owned by the
+  `input square` checkbox's `meta.inputToggle`, image-mode only —
+  plus the mapped boundary and same-color images of those `y = k`
+  lines, `_MC_PLOT_GSTEP`-spaced, NaN-broken at poles; `legendrank`
+  sinks the two input entries below the image ones). A
+  `field`/`image` updatemenu flips `visible` *and* carries a
+  per-mode relayout — field frames the grid box padded ½·pitch,
+  image frames the finite image extent (~6% pad, 0.5 floor), turns
+  `showlegend` on, and sets the `input: the square [-3,3]² — …`
   annotation the field button clears again. The python target emits
   `sympy.plotting.plot_vector_field` for the field view; the image
   view has no SymPy equivalent, so a numpy+matplotlib equivalent

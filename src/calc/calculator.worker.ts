@@ -667,6 +667,18 @@ def _mc_gridimg_view(fig, fnum, rng=(-3.0, 3.0), step=0.5, npts=160,
         visible=False, showlegend=True, legendrank=2000,
         hoverinfo='skip', meta=dict(inputToggle=True))
 
+    # The input's horizontal grid lines y = k inside the square —
+    # also checkbox-owned, and legend-ordered below the square.
+    gx, gy = [], []
+    for k in ks:
+        gx += [lo, hi, nan]
+        gy += [k, k, nan]
+    fig.add_scatter(
+        x=gx, y=gy, mode='lines', name='input y = k',
+        line=dict(color=src, width=1),
+        visible=False, showlegend=True, legendrank=2001,
+        hoverinfo='skip', meta=dict(inputToggle=True))
+
     fx, fy = [], []   # finite image samples, for the framing box
 
     # The square's boundary, mapped: (t, lo) → (hi, t) → (t, hi) →
