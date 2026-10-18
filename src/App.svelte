@@ -15,7 +15,7 @@
   import { appStore, THEME_STORAGE_KEY } from './state/store.svelte';
   import { savePrefs } from './state/persistence';
   import { copyableLatex, displayLatex } from './compile/latex';
-  import { calcEngine, plotDebug, prewarm } from './calc/calculator.svelte.ts';
+  import { calcEngine, prewarm } from './calc/calculator.svelte.ts';
   import { buildCommands } from './commands';
   import { installGlobalKeymap } from './editor/keymap';
   import { compileWorksheet } from './compile/codegen';
@@ -730,28 +730,4 @@
   </div>
   <CommandPalette {commands} />
   <HelpSearch />
-  {#if appStore.target === 'calculator'}
-    <div class="quiver-n-debug">
-      <label>
-        arrows/axis: {plotDebug.quiverN} ({plotDebug.quiverN}×{plotDebug.quiverN})
-        <input
-          type="range"
-          min="2"
-          max="40"
-          step="1"
-          bind:value={plotDebug.quiverN}
-        />
-      </label>
-      <label>
-        arrow length: ×{plotDebug.arrowScale.toFixed(2)}
-        <input
-          type="range"
-          min="0.1"
-          max="2"
-          step="0.05"
-          bind:value={plotDebug.arrowScale}
-        />
-      </label>
-    </div>
-  {/if}
 </div>

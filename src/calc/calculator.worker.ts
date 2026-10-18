@@ -50,10 +50,6 @@ interface EvalRequest {
   // plus every cell's program in order. The reply's `rows` are the last
   // cell's results.
   program: { prelude: string[]; cells: EvalCellMsg[] };
-  // Debug quiver knobs — override _MC_PLOT_NF / _MC_PLOT_FSCALE for
-  // this run.
-  quiverN?: number;
-  arrowScale?: number;
 }
 
 // First message the main thread sends — the page knows BASE_URL (the
@@ -592,25 +588,25 @@ def _mc_range_rel(box):
 # which includes these source strings verbatim — runs standalone.
 # _mc_plot_figure still passes the module constants explicitly.
 
-_MC_PLOT_NF = 21          # arrows per axis on the field view
+_MC_PLOT_NF = 9           # arrows per axis on the field view
 _MC_PLOT_GLINES = 10      # horizontal grid lines on the image view
 _MC_PLOT_NGPTS = 160      # samples along each image-view grid line
 _MC_PLOT_FIELD = '#3b82f6'
-_MC_PLOT_FSCALE = 0.8     # quiver lengthfactor — arrow length vs cell
+_MC_PLOT_FSCALE = 1.5     # quiver lengthfactor — arrow length vs cell
 _MC_PLOT_IMG = '#3b82f6'
 _MC_PLOT_SRC = '#8c8c8c'
 
 _MC_FIELD_SRC = '''_MC_FIELD_NAMES = ('field',)
 
 
-def _mc_field_view(fig, fnum, rng=((-3.0, 3.0), (-3.0, 3.0)), n=21,
-                   color='#3b82f6', scale=0.8):
+def _mc_field_view(fig, fnum, rng=((-3.0, 3.0), (-3.0, 3.0)), n=9,
+                   color='#3b82f6', scale=1.5):
     # Quiver view of the vector field: the native go.Quiver trace —
     # one arrow per point of an n x n uniform grid over rng (a per-axis
     # ((x0,x1),(y0,y1)) pair, so a for-domain reshapes the grid), anchored at its center on the grid point and scaled by
     # plotly's 'scaled' lengthmode (the longest arrow is normalized
-    # against the point density, so it behaves like the 0.8-of-a-cell
-    # cap without us measuring magnitudes). Grid points where the
+    # against the point density, so 'scale' multiplies the cell-pitch
+    # length without us measuring magnitudes). Grid points where the
     # field isn't finite are dropped — a missing arrow is the honest
     # draw for a pole. The hover reports the vector itself. Returns
     # (x0, x1, y0, y1) framing the drawn arrows — the rng box padded
@@ -1229,17 +1225,9 @@ def _mc_run_cell(cell, ns):
             out.append({'ok': False, 'error': str(e)})
     return out
 
-def mc_run(prog_json, quiver_n=None, arrow_scale=None):
+def mc_run(prog_json):
     prog = json.loads(prog_json)
     cells = prog['cells']
-    # The debug quiver knobs — _mc_plot_figure reads _MC_PLOT_NF /
-    # _MC_PLOT_FSCALE as globals at call time, so assigning them here
-    # takes effect for the whole run (the snapshot key carries them
-    # too, so cached figures can't leak across settings).
-    if quiver_n is not None:
-        globals()['_MC_PLOT_NF'] = int(quiver_n)
-    if arrow_scale is not None:
-        globals()['_MC_PLOT_FSCALE'] = float(arrow_scale)
     # First cell whose program changed since its last run — its snapshot
     # is stale, so state rewinds to the boundary just before it.
     div = 0
@@ -1410,9 +1398,7 @@ scope.onmessage = (e) => {
     .then(async (py) => {
       // The program travels inside the python source as a quoted literal —
       // a shared globals slot would race when evals overlap.
-      const call = `mc_run(${JSON.stringify(JSON.stringify(program))}, ${
-        msg.quiverN === undefined ? 'None' : Math.trunc(msg.quiverN)
-      }, ${msg.arrowScale === undefined ? 'None' : msg.arrowScale})`;
+      const call = `mc_run(${JSON.stringify(JSON.stringify(program))})`;
       const json = await py.runPythonAsync(call);
       scope.postMessage({ id, ok: true, rows: JSON.parse(json as string) });
     })

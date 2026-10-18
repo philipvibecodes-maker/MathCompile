@@ -77,12 +77,6 @@ export const cellIssues = $state<
   Record<number, (Issue & { line?: number })[]>
 >({});
 
-// Debug knobs — the corner sliders' quiver density and relative arrow
-// length. Read inside evaluate/interimFieldTraces, so changing them and
-// re-running the cells resamples the grid (they're also folded into the
-// worker's snapshot key, so the cached figure can't survive a change).
-export const plotDebug = $state({ quiverN: 21, arrowScale: 0.8 });
-
 interface WorkerReply {
   type?: 'ready' | 'init-error';
   id: number;
@@ -261,15 +255,8 @@ export function evaluate(
         failAll('calculation timed out — the SymPy engine is restarting');
       }, 30000);
     let timer = armWatchdog();
-    // The debug quiver knobs ride the message (and the snapshot key,
-    // so a change rewinds the cache instead of replaying the old
-    // figure).
-    const quiverN = plotDebug.quiverN;
-    const arrowScale = plotDebug.arrowScale;
     w.postMessage({
       id,
-      quiverN,
-      arrowScale,
       program: {
         prelude: prog.prelude,
         cells: prog.cells.map((c) => ({
@@ -278,8 +265,6 @@ export function evaluate(
           key: JSON.stringify({
             defs: c.defs,
             statements: c.statements,
-            quiverN,
-            arrowScale,
           }),
           defs: c.defs,
           statements: c.statements,
@@ -652,6 +637,7 @@ const PLOT_R1: [number, number] = [-10, 10];
 const PLOT_N1 = 600;
 const PLOT_R2: [number, number] = [-3, 3];
 const PLOT_N2 = 80;
+const PLOT_NF = 9;
 const PLOT_ACCENT = '#3b82f6';
 
 const linspace = (lo: number, hi: number, n: number): number[] => {
@@ -693,8 +679,8 @@ function interimFieldTraces(
   ru: [number, number],
   rv: [number, number],
 ): Record<string, unknown>[] | null {
-  const us = linspace(ru[0], ru[1], plotDebug.quiverN);
-  const vs = linspace(rv[0], rv[1], plotDebug.quiverN);
+  const us = linspace(ru[0], ru[1], PLOT_NF);
+  const vs = linspace(rv[0], rv[1], PLOT_NF);
   const x: number[] = [];
   const y: number[] = [];
   const u: number[] = [];
@@ -732,7 +718,7 @@ function interimFieldTraces(
       name: 'field',
       anchor: 'center',
       lengthmode: 'scaled',
-      lengthfactor: plotDebug.arrowScale,
+      lengthfactor: 1.5,
       marker: { color: PLOT_ACCENT },
     },
   ];

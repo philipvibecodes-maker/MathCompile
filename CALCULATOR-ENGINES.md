@@ -185,8 +185,8 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   `_mc_field_view`/`_mc_gridimg_view` (sources in `_MC_FIELD_SRC`/
   `_MC_GRIDIMG_SRC`, exec'd and shown verbatim in the generating-code
   block) build four named traces — `field` (the native `go.Quiver`
-  trace, plotly ≥7.0: 21×21 grid, `anchor='center'`,
-  `lengthmode='scaled'` × `lengthfactor 0.8`, hover `F = (%{u}, %{v})`,
+  trace, plotly ≥7.0: 9×9 grid, `anchor='center'`,
+  `lengthmode='scaled'` × `lengthfactor 1.5`, hover `F = (%{u}, %{v})`,
   non-finite grid points dropped) and `input square`/`input y = k`/
   `image of square`/`image of y = k` (a filled dimmed [-3,3]²
   source-domain square plus its horizontal grid lines — owned by the
@@ -206,7 +206,7 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   rides along *commented* under it. The interim previews the field
   view only (image mode is worker-figure-only);
   `interimFieldTraces` emits the same quiver trace shape on
-  `PLOT_NF = 21` and the echarts converter synthesizes NaN-separated
+  `PLOT_NF = 9` and the echarts converter synthesizes NaN-separated
   shaft+barb segments from x/y/u/v (ECharts has no quiver series —
   worker arrays must stay plain lists, not numpy, or the JSON turns
   into undecodable `bdata` dicts). Two frontend gotchas: `quiver`

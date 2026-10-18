@@ -37,10 +37,10 @@ describe('ℝ²→ℝ² plot interim (quiver field view)', () => {
     const tr = fieldTrace(rows);
     expect(tr?.type).toBe('quiver');
     expect(tr?.anchor).toBe('center');
-    // 21×21 grid, every point finite — 441 arrows.
-    expect(tr!.x.length).toBe(441);
+    // 9×9 grid, every point finite — 81 arrows.
+    expect(tr!.x.length).toBe(81);
     for (const a of [tr!.x, tr!.y, tr!.u, tr!.v]) {
-      expect(a.length).toBe(441);
+      expect(a.length).toBe(81);
       expect(a.every(Number.isFinite)).toBe(true);
     }
   });
@@ -51,7 +51,7 @@ describe('ℝ²→ℝ² plot interim (quiver field view)', () => {
         '\\text{plot} \\begin{pmatrix} -y \\\\ x \\end{pmatrix}',
       ),
     )!;
-    // Grid points sit on the 21×21 uniform grid over [-3,3]²; the
+    // Grid points sit on the 9×9 uniform grid over [-3,3]²; the
     // rotation map's u is the negated y, v is x.
     for (let i = 0; i < tr.x.length; i++) {
       expect(tr.u[i]).toBeCloseTo(-tr.y[i], 9);
@@ -71,7 +71,7 @@ describe('ℝ²→ℝ² plot interim (quiver field view)', () => {
   });
 
   it('drops grid points where the field is not finite', async () => {
-    // 1/x is non-finite on the x=0 grid column — those 21 points drop
+    // 1/x is non-finite on the x=0 grid column — those 9 points drop
     // out instead of carrying NaN vectors the renderer can't take.
     const tr = fieldTrace(
       await interimEvaluate(
@@ -79,7 +79,7 @@ describe('ℝ²→ℝ² plot interim (quiver field view)', () => {
       ),
     );
     expect(tr).toBeDefined();
-    expect(tr!.x.length).toBe(441 - 21);
+    expect(tr!.x.length).toBe(81 - 9);
     expect(tr!.x.every((px) => px !== 0)).toBe(true);
   });
 
