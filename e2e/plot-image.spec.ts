@@ -78,7 +78,7 @@ test('ℝ²→ℝ² plot hides its image-of-grid traces behind the image mode', 
   expect(imageRel).toHaveProperty(['yaxis.range']);
   // The image mode annotates which input was mapped.
   const anns = imageRel.annotations as { text?: string }[];
-  expect(anns[0]?.text).toContain('square');
+  expect(anns[0]?.text).toContain('input: [-3,3]×[-3,3]');
 
   // Click the 'image' mode through the updatemenu DOM (plotly draws
   // menus as SVG <g> groups: header opens, options are <g

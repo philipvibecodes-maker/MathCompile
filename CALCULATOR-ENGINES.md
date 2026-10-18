@@ -197,7 +197,8 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   `field`/`image` updatemenu flips `visible` *and* carries a
   per-mode relayout — field frames the grid box padded ½·pitch,
   image frames the finite image extent (~6% pad, 0.5 floor), turns
-  `showlegend` on, and sets the `input: the square [-3,3]² — …`
+  `showlegend` on, and sets the `input: [x0,x1]×[y0,y1] — line
+  images at y = …`
   annotation the field button clears again. The python target emits
   `sympy.plotting.plot_vector_field` for the field view; the image
   view has no SymPy equivalent, so a numpy+matplotlib equivalent
