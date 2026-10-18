@@ -609,21 +609,20 @@ def _mc_field_view(fig, fnum, rng=(-3.0, 3.0), n=21, color='#3b82f6'):
     return (rng[0] - pad, rng[1] + pad, rng[0] - pad, rng[1] + pad)
 '''
 
-_MC_GRIDIMG_SRC = '''_MC_GRIDIMG_NAMES = ('input grid', 'image of x = k', 'image of y = k')
+_MC_GRIDIMG_SRC = '''_MC_GRIDIMG_NAMES = ('image of square', 'image of y = k')
 
 
 def _mc_gridimg_view(fig, fnum, rng=(-3.0, 3.0), step=0.5, npts=160,
                      color='#3b82f6', src='#8c8c8c'):
-    # Image-of-grid view: the images of the domain's coordinate grid
-    # lines under the map, drawn over a dimmed copy of the source grid.
-    # 'input grid' is the domain grid itself, 'image of x = k' the
-    # images of the vertical lines x = k, 'image of y = k' the
-    # horizontals y = k (dashed) — one color for both directions, the
-    # legend tells them apart. Traces start hidden — the mode menu
-    # reveals them. Returns ((x0, x1, y0, y1), desc) — the finite
-    # image extent padded ~6% per side, plus a description of the
-    # input grid for the mode's annotation label; box is None when
-    # nothing finite sampled.
+    # Image-of-grid view: the input is the whole square rng x rng — a
+    # filled patch ('input square') the view's 'input' checkbox toggles
+    # via meta.inputToggle, so it stays out of _MC_GRIDIMG_NAMES and
+    # the mode menu never touches it. Under the map: 'image of square'
+    # fills the mapped boundary and 'image of y = k' draws the images
+    # of the horizontal grid lines y = k. Traces start hidden. Returns
+    # ((x0, x1, y0, y1), desc) — the finite image extent padded ~6%
+    # per side, plus a description of the input for the mode's
+    # annotation label; box is None when nothing finite sampled.
     import math as _mc_math
     import numpy as _mc_np
 
@@ -635,62 +634,73 @@ def _mc_gridimg_view(fig, fnum, rng=(-3.0, 3.0), step=0.5, npts=160,
     ks = [float(k) for k in _mc_np.arange(lo, hi + step / 2.0, step)]
     if len(ks) > 26:
         ks = ks[::_mc_math.ceil(len(ks) / 26)]
-    desc = (f'input grid: x, y = {ks[0]:g}, {ks[1]:g}, …, {ks[-1]:g}'
-            if len(ks) > 1 else f'input grid: x, y = {ks[0]:g}')
+    desc = (f'input: the square [{lo:g},{hi:g}]² — line images at '
+            f'y = {ks[0]:g}, {ks[1]:g}, …, {ks[-1]:g}'
+            if len(ks) > 1 else
+            f'input: the square [{lo:g},{hi:g}]² — line at {ks[0]:g}')
     ts = _mc_np.linspace(lo, hi, npts)
 
     def comps_at(xin, yin):
-        # The two image components along one grid line — lambdify can
-        # return a tuple, a nested list (Matrix), or broadcast a
+        # The two image components along one sampled curve — lambdify
+        # can return a tuple, a nested list (Matrix), or broadcast a
         # constant component to a scalar; normalize each to a length-n
         # array. Non-finite coords become NaN so the polyline gaps at
         # poles instead of streaking across the plot.
+        n = xin.shape[0]
         out = fnum(xin, yin)
         parts = []
         for i in range(2):
             a = _mc_np.asarray(out[i], dtype=float).reshape(-1)
             if a.size == 1:
-                a = _mc_np.full(npts, float(a[0]))
+                a = _mc_np.full(n, float(a[0]))
             parts.append(
                 _mc_np.where(_mc_np.isfinite(a), a, nan))
         return parts[0], parts[1]
 
-    # The source grid: one NaN-separated scatter of straight segments —
-    # vertical (k, lo)->(k, hi) then horizontal (lo, k)->(hi, k) per k.
-    sx, sy = [], []
-    for k in ks:
-        sx += [k, k, nan]
-        sy += [lo, hi, nan]
-        sx += [lo, hi, nan]
-        sy += [k, k, nan]
+    # The input square: a filled patch — checkbox-owned (meta
+    # .inputToggle), so neither mode button's vis list touches it.
     fig.add_scatter(
-        x=sx, y=sy, mode='lines', name='input grid',
-        line=dict(color=src, width=1),
-        visible=False, showlegend=True, hoverinfo='skip')
+        x=[lo, hi, hi, lo, lo], y=[lo, lo, hi, hi, lo],
+        mode='lines', name='input square', fill='toself',
+        fillcolor='rgba(140,140,140,0.12)',
+        line=dict(color=src, width=1.5),
+        visible=False, showlegend=True, hoverinfo='skip',
+        meta=dict(inputToggle=True))
 
     fx, fy = [], []   # finite image samples, for the framing box
 
-    def image_lines(vertical, name, dash):
-        # One direction's image curves: vertical=True sweeps the lines
-        # x = k (fixed first arg), False the horizontals y = k. dash
-        # tells the two directions apart in the one-color legend.
-        xs, ys = [], []
-        for k in ks:
-            xin = _mc_np.full_like(ts, k) if vertical else ts
-            yin = ts if vertical else _mc_np.full_like(ts, k)
-            cx, cy = comps_at(xin, yin)
-            fin = _mc_np.isfinite(cx) & _mc_np.isfinite(cy)
-            fx.append(cx[fin])
-            fy.append(cy[fin])
-            xs += list(cx) + [nan]
-            ys += list(cy) + [nan]
-        fig.add_scatter(
-            x=xs, y=ys, mode='lines', name=name,
-            line=dict(color=color, width=1.5, dash=dash),
-            visible=False, showlegend=True, hoverinfo='skip')
+    # The square's boundary, mapped: (t, lo) → (hi, t) → (t, hi) →
+    # (lo, t) walks one closed loop, so its fill is the image region.
+    bx_in = _mc_np.concatenate(
+        [ts, _mc_np.full_like(ts, hi), ts[::-1],
+         _mc_np.full_like(ts, lo)])
+    by_in = _mc_np.concatenate(
+        [_mc_np.full_like(ts, lo), ts, _mc_np.full_like(ts, hi),
+         ts[::-1]])
+    bx, by = comps_at(bx_in, by_in)
+    fin = _mc_np.isfinite(bx) & _mc_np.isfinite(by)
+    fx.append(bx[fin])
+    fy.append(by[fin])
+    fig.add_scatter(
+        x=list(bx), y=list(by), mode='lines', name='image of square',
+        fill='toself', fillcolor='rgba(59,130,246,0.10)',
+        line=dict(color=color, width=2),
+        visible=False, showlegend=True, hoverinfo='skip')
 
-    image_lines(True, 'image of x = k', 'solid')
-    image_lines(False, 'image of y = k', 'dash')
+    # The images of the horizontal lines y = k — one NaN-separated
+    # polyline; the verticals' images are omitted.
+    xs, ys = [], []
+    for k in ks:
+        cx, cy = comps_at(ts, _mc_np.full_like(ts, k))
+        fin = _mc_np.isfinite(cx) & _mc_np.isfinite(cy)
+        fx.append(cx[fin])
+        fy.append(cy[fin])
+        xs += list(cx) + [nan]
+        ys += list(cy) + [nan]
+    fig.add_scatter(
+        x=xs, y=ys, mode='lines', name='image of y = k',
+        line=dict(color=color, width=1.5),
+        visible=False, showlegend=True, hoverinfo='skip')
 
     ax = _mc_np.concatenate(fx)
     ay = _mc_np.concatenate(fy)

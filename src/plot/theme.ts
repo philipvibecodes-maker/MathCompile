@@ -115,12 +115,16 @@ function themedTrace(
       return isObj(tr.line)
         ? { ...tr, line: { ...tr.line, color: t.surfGrid } }
         : tr;
-    // 2x2 grid-image view: the dimmed copy of the domain's source
-    // grid follows the theme's guide-line color.
-    case 'input grid':
-      return isObj(tr.line)
-        ? { ...tr, line: { ...tr.line, color: t.wallGrid } }
-        : tr;
+    // 2x2 grid-image view: the dimmed fill/outline of the domain's
+    // input square follows the theme's guide-line colors.
+    case 'input square':
+      return {
+        ...tr,
+        fillcolor: t.wallGrid,
+        ...(isObj(tr.line)
+          ? { line: { ...tr.line, color: t.axis } }
+          : {}),
+      };
     case 'xysheet':
       return {
         ...tr,

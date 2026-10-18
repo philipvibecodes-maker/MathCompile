@@ -355,6 +355,34 @@
     menuSel = readMenuSel(gd) ?? menuSel;
   };
 
+  // Traces tagged meta.inputToggle are owned by the 'input' checkbox,
+  // not the mode menu — every mode button's vis list hides them, so
+  // the checkbox state must be re-applied after each render and
+  // restyle. Off by default.
+  let inputShown = $state(false);
+  let inputIdxs = $state<number[]>([]);
+  const inputToggleIdxs = (data: Record<string, unknown>[]) =>
+    data
+      .map((t, i) =>
+        (t.meta as { inputToggle?: unknown } | undefined)?.inputToggle
+          ? i
+          : -1,
+      )
+      .filter((i) => i >= 0);
+  const applyInputToggle = (gd: HTMLDivElement) => {
+    if (!Plotly || !inputIdxs.length) return;
+    const data = (gd as unknown as { data?: { visible?: unknown }[] })
+      .data;
+    const fix = inputIdxs.filter(
+      (i) => i < (data?.length ?? 0) && data![i].visible !== inputShown,
+    );
+    if (fix.length) void Plotly.restyle(gd, 'visible', inputShown, fix);
+  };
+  const onInputToggle = () => {
+    if (el && Plotly && inputIdxs.length)
+      void Plotly.restyle(el, 'visible', inputShown, inputIdxs);
+  };
+
   // The afterplot listener is bound once per graph element — a remount
   // (the fail branch swapping in/out) gets a fresh element and a fresh
   // binding.
@@ -391,6 +419,8 @@
     // menus, their actives beat the stored selection.
     captureMenuSel(target);
     applyActiveMenus(menuSel, { data, layout });
+    inputIdxs = inputToggleIdxs(data);
+    if (inputShown) for (const i of inputIdxs) data[i].visible = true;
     P.react(target, data, { ...layout, autosize: true }, CONFIG).catch(
       (e) => {
         failed = e instanceof Error ? e.message : String(e);
@@ -414,6 +444,7 @@
         captureMenuSel(target);
         unpickSheet(target);
         syncMenuVisibility(target);
+        applyInputToggle(target);
         updateZoom(target);
         markActiveMenuItem(target);
       });
@@ -457,6 +488,15 @@
           bind:rendered={ecRendered}
         />
       </div>
+    {/if}
+    {#if inputIdxs.length}
+      <label class="plot-input-toggle">
+        <input
+          type="checkbox"
+          bind:checked={inputShown}
+          onchange={onInputToggle}
+        />input
+      </label>
     {/if}
     <div
       class="plot-grip"
@@ -554,6 +594,24 @@
   .plot-grip-side:hover::before,
   .plot-grip-side:active::before {
     background: var(--muted, #94a3b8);
+  }
+  .plot-input-toggle {
+    /* Bottom-left of the plot, above the grip strip — top-right is the
+       modebar's spot, top-left the mode menu's. */
+    position: absolute;
+    left: 8px;
+    bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text);
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 7px;
+    cursor: pointer;
+    user-select: none;
   }
   .plot-zoom {
     /* Debug aid — live camera-zoom readout (remove with updateZoom). */

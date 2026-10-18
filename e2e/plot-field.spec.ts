@@ -79,7 +79,9 @@ test('R2->R2 plot cell renders interim field, then a two-mode plotly figure', as
   const visArg = (imageButton?.args?.[0] ?? {}) as { visible?: unknown[] };
   const names = figure.traces.map((t) => t.name);
   const imgIndexes = names
-    .map((n, i) => (typeof n === 'string' && n !== 'field' ? i : -1))
+    .map((n, i) =>
+      typeof n === 'string' && n.startsWith('image of') ? i : -1,
+    )
     .filter((i) => i >= 0);
   expect(imgIndexes.length).toBeGreaterThan(0);
   expect(Array.isArray(visArg.visible)).toBe(true);
