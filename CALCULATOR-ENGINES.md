@@ -192,7 +192,8 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   source-domain square plus its horizontal grid lines — owned by the
   `input square` checkbox's `meta.inputToggle`, image-mode only —
   plus the mapped boundary and same-color images of those `y = k`
-  lines, `_MC_PLOT_GSTEP`-spaced, NaN-broken at poles; `legendrank`
+  lines — always `_MC_PLOT_GLINES` = 10, evenly spaced across the
+  y-window regardless of domain size, NaN-broken at poles; `legendrank`
   sinks the two input entries below the image ones). A
   `field`/`image` updatemenu flips `visible` *and* carries a
   per-mode relayout — field frames the grid box padded ½·pitch,

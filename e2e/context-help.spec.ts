@@ -102,6 +102,34 @@ test('the field height stays fixed as the strip fades in and out', async () => {
   expect(on).toBe(off);
 });
 
+test('caret after a \\text{plot} marker shows the for-domain hints', async () => {
+  const mf = cell(page);
+  await setValue(mf, '\\text{plot} x^2');
+  await page.keyboard.press('Control+End');
+  await expect(help(mf)).toHaveClass(/\bon\b/);
+  await expect(help(mf)).toContainText('\\text{for}');
+  await expect(help(mf)).toContainText('set the domain');
+  await expect(help(mf)).toContainText('one-sided');
+  await expect(help(mf)).toContainText('2-variable domain');
+});
+
+test('the plot hints follow the caret into nested blocks but not before the marker', async () => {
+  const mf = cell(page);
+  await setValue(mf, '\\text{plot} \\frac{x^2}{y}');
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('ArrowLeft'); // into the fraction
+  await expect(help(mf)).toContainText('set the domain');
+  await page.keyboard.press('Control+Home'); // before \text{plot}
+  await expect(help(mf)).not.toHaveClass(/\bon\b/);
+});
+
+test('a plot marker on a previous line does not trigger the hints', async () => {
+  const mf = cell(page);
+  await setValue(mf, '\\displaylines{\\text{plot} x^2\\\\ y}');
+  await page.keyboard.press('Control+End'); // caret on the second row
+  await expect(help(mf)).not.toHaveClass(/\bon\b/);
+});
+
 test('the strip follows the caret out of and back into a matrix', async () => {
   const mf = cell(page);
   await setValue(mf, '\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}');

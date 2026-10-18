@@ -589,7 +589,7 @@ def _mc_range_rel(box):
 # _mc_plot_figure still passes the module constants explicitly.
 
 _MC_PLOT_NF = 21          # arrows per axis on the field view
-_MC_PLOT_GSTEP = 0.5      # spacing between grid lines on the image view
+_MC_PLOT_GLINES = 10      # horizontal grid lines on the image view
 _MC_PLOT_NGPTS = 160      # samples along each image-view grid line
 _MC_PLOT_FIELD = '#3b82f6'
 _MC_PLOT_IMG = '#3b82f6'
@@ -647,7 +647,7 @@ _MC_GRIDIMG_SRC = '''_MC_GRIDIMG_NAMES = ('image of square', 'image of y = k')
 
 
 def _mc_gridimg_view(fig, fnum, rng=((-3.0, 3.0), (-3.0, 3.0)),
-                     step=0.5, npts=160, color='#3b82f6',
+                     nlines=10, npts=160, color='#3b82f6',
                      src='#8c8c8c'):
     # Image-of-grid view: the input is the whole rng box (a per-axis
     # ((x0,x1),(y0,y1)) pair — a for-domain reshapes it from the
@@ -667,12 +667,10 @@ def _mc_gridimg_view(fig, fnum, rng=((-3.0, 3.0), (-3.0, 3.0)),
     x0, x1 = rx
     y0, y1 = ry
     nan = float('nan')
-    # Grid lines every 'step' units — finer than the integer lattice
-    # so small warps still read. A huge window stride-thins rather
-    # than overcrowding.
-    ks = [float(k) for k in _mc_np.arange(y0, y1 + step / 2.0, step)]
-    if len(ks) > 26:
-        ks = ks[::_mc_math.ceil(len(ks) / 26)]
+    # Always 'nlines' horizontal grid lines, evenly spaced across the
+    # window — the count is fixed so a for-domain resizes the spacing,
+    # not the line count.
+    ks = [float(k) for k in _mc_np.linspace(y0, y1, nlines)]
     desc = (f'input: [{x0:g},{x1:g}]×[{y0:g},{y1:g}] — line images at '
             f'y = {ks[0]:g}, {ks[1]:g}, …, {ks[-1]:g}'
             if len(ks) > 1 else
@@ -856,7 +854,7 @@ def _mc_plot_figure(d, c, vars_, comps, ranges):
         fbox = _mc_field_view(
             fig, fnum, (ru, rv), _MC_PLOT_NF, _MC_PLOT_FIELD)
         ibox, idesc = _mc_gridimg_view(
-            fig, fnum, (ru, rv), _MC_PLOT_GSTEP, _MC_PLOT_NGPTS,
+            fig, fnum, (ru, rv), _MC_PLOT_GLINES, _MC_PLOT_NGPTS,
             _MC_PLOT_IMG, _MC_PLOT_SRC)
         box = fbox if fbox is not None else (
             ru[0], ru[1], rv[0], rv[1])
@@ -1077,7 +1075,7 @@ def _mc_plot_code(d, c, vars_, comps, bounds, ranges):
                 f'fbox = _mc_field_view(fig, fnum, ({ru}, {rv}),'
                 f' {_MC_PLOT_NF}, {_MC_PLOT_FIELD!r})',
                 f'ibox, idesc = _mc_gridimg_view(fig, fnum,'
-                f' ({ru}, {rv}), {_MC_PLOT_GSTEP}, {_MC_PLOT_NGPTS},'
+                f' ({ru}, {rv}), {_MC_PLOT_GLINES}, {_MC_PLOT_NGPTS},'
                 f' {_MC_PLOT_IMG!r}, {_MC_PLOT_SRC!r})',
                 'box = fbox if fbox is not None else '
                 f'({ru[0]}, {ru[1]}, {rv[0]}, {rv[1]})',

@@ -4470,7 +4470,7 @@ function emitPlotImagePython(
       'import matplotlib.pyplot as plt',
       `ts = np.linspace(${x0}, ${x1}, 160)`,
       `ty = np.linspace(${y0}, ${y1}, 160)`,
-      `ks = np.arange(${y0}, ${y1} + 0.5, 0.5)`,
+      `ks = np.linspace(${y0}, ${y1}, 10)`,
       'fig, ax = plt.subplots()',
       `ax.fill([${x0}, ${x1}, ${x1}, ${x0}, ${x0}],`,
       `        [${y0}, ${y0}, ${y1}, ${y1}, ${y0}],`,
