@@ -3,7 +3,7 @@
   // min) is dynamically imported on first mount so worksheets without
   // plots never pay for it; `Plotly.react` re-diffs on every payload
   // change so edits re-render the figure in place.
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import type PlotlyT from 'plotly.js-dist-min';
   import { appStore } from '../state/store.svelte';
   import type { PlotData } from './types';
@@ -419,8 +419,14 @@
     // menus, their actives beat the stored selection.
     captureMenuSel(target);
     applyActiveMenus(menuSel, { data, layout });
-    inputIdxs = inputToggleIdxs(data);
-    if (inputShown) for (const i of inputIdxs) data[i].visible = true;
+    // `inputIdxs` is written here for the checkbox's {#if}, and the
+    // checkbox's own onchange restyles — reads of both states are
+    // untracked: tracking them would make the effect depend on a state
+    // it writes, self-retriggering react() forever (frozen page).
+    const idxs = inputToggleIdxs(data);
+    inputIdxs = idxs;
+    if (untrack(() => inputShown))
+      for (const i of idxs) data[i].visible = true;
     P.react(target, data, { ...layout, autosize: true }, CONFIG).catch(
       (e) => {
         failed = e instanceof Error ? e.message : String(e);
