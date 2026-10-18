@@ -50,6 +50,8 @@ interface EvalRequest {
   // plus every cell's program in order. The reply's `rows` are the last
   // cell's results.
   program: { prelude: string[]; cells: EvalCellMsg[] };
+  // Debug quiver density — overrides _MC_PLOT_NF for this run.
+  quiverN?: number;
 }
 
 // First message the main thread sends — the page knows BASE_URL (the
@@ -1222,9 +1224,15 @@ def _mc_run_cell(cell, ns):
             out.append({'ok': False, 'error': str(e)})
     return out
 
-def mc_run(prog_json):
+def mc_run(prog_json, quiver_n=None):
     prog = json.loads(prog_json)
     cells = prog['cells']
+    # The debug quiver density — _mc_plot_figure reads _MC_PLOT_NF as a
+    # global at call time, so assigning it here takes effect for the
+    # whole run (the snapshot key carries it too, so cached figures
+    # can't leak across densities).
+    if quiver_n is not None:
+        globals()['_MC_PLOT_NF'] = int(quiver_n)
     # First cell whose program changed since its last run — its snapshot
     # is stale, so state rewinds to the boundary just before it.
     div = 0
@@ -1395,7 +1403,9 @@ scope.onmessage = (e) => {
     .then(async (py) => {
       // The program travels inside the python source as a quoted literal —
       // a shared globals slot would race when evals overlap.
-      const call = `mc_run(${JSON.stringify(JSON.stringify(program))})`;
+      const call = `mc_run(${JSON.stringify(JSON.stringify(program))}, ${
+        msg.quiverN === undefined ? 'None' : Math.trunc(msg.quiverN)
+      })`;
       const json = await py.runPythonAsync(call);
       scope.postMessage({ id, ok: true, rows: JSON.parse(json as string) });
     })

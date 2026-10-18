@@ -77,6 +77,12 @@ export const cellIssues = $state<
   Record<number, (Issue & { line?: number })[]>
 >({});
 
+// Debug knobs — the corner slider's quiver density. Read inside
+// evaluate/interimFieldTraces, so changing it and re-running the cells
+// resamples the arrow grid (it's also folded into the worker's snapshot
+// key, so the cached figure can't survive a change).
+export const plotDebug = $state({ quiverN: 21 });
+
 interface WorkerReply {
   type?: 'ready' | 'init-error';
   id: number;
@@ -255,14 +261,23 @@ export function evaluate(
         failAll('calculation timed out — the SymPy engine is restarting');
       }, 30000);
     let timer = armWatchdog();
+    // The debug quiver density rides the message (and the snapshot key,
+    // so a density change rewinds the cache instead of replaying the
+    // old figure).
+    const quiverN = plotDebug.quiverN;
     w.postMessage({
       id,
+      quiverN,
       program: {
         prelude: prog.prelude,
         cells: prog.cells.map((c) => ({
           // Content key for the worker's snapshot chain — the first
           // cell whose program differs is where eval rewinds to.
-          key: JSON.stringify({ defs: c.defs, statements: c.statements }),
+          key: JSON.stringify({
+            defs: c.defs,
+            statements: c.statements,
+            quiverN,
+          }),
           defs: c.defs,
           statements: c.statements,
         })),
@@ -634,7 +649,6 @@ const PLOT_R1: [number, number] = [-10, 10];
 const PLOT_N1 = 600;
 const PLOT_R2: [number, number] = [-3, 3];
 const PLOT_N2 = 80;
-const PLOT_NF = 21;
 const PLOT_ACCENT = '#3b82f6';
 
 const linspace = (lo: number, hi: number, n: number): number[] => {
@@ -676,8 +690,8 @@ function interimFieldTraces(
   ru: [number, number],
   rv: [number, number],
 ): Record<string, unknown>[] | null {
-  const us = linspace(ru[0], ru[1], PLOT_NF);
-  const vs = linspace(rv[0], rv[1], PLOT_NF);
+  const us = linspace(ru[0], ru[1], plotDebug.quiverN);
+  const vs = linspace(rv[0], rv[1], plotDebug.quiverN);
   const x: number[] = [];
   const y: number[] = [];
   const u: number[] = [];
