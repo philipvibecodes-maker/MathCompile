@@ -223,7 +223,7 @@ describe('plot statement python codegen', () => {
     ).toBe(true);
   });
 
-  it('R²→R² comments out with a note — SymPy has no vector-field call', () => {
+  it('R²→R² emits the field view plus commented image view', () => {
     const out = compileWorksheet(
       [
         {
@@ -235,12 +235,24 @@ describe('plot statement python codegen', () => {
       'python',
       { importAll: false },
     );
-    expect(out.cellLines[0].some((l) => l.startsWith('# plot('))).toBe(
-      true,
+    expect(out.cellLines[0]).toContain(
+      'from sympy.plotting import plot_vector_field',
+    );
+    expect(out.cellLines[0]).toContain(
+      'plot_vector_field((-y, x), (x, -3, 3), (y, -3, 3))',
     );
     expect(
-      out.issues.some((i) => i.message.includes('vector field')),
+      out.cellLines[0].some((l) => l.startsWith('# image-of-grid')),
     ).toBe(true);
+  });
+
+  it('bare-variable vector components emit as symbols, not calls', () => {
+    // A component that is itself a free var (here `t`) is not a def'd
+    // name — the old emitComp produced `t(t, x)`, which raises on a
+    // Symbol. Declared-fn components still apply.
+    expect(
+      pyLines('\\text{plot} \\begin{pmatrix} t \\\\ x \\end{pmatrix}'),
+    ).toContain('plot_vector_field((t, x), (t, -3, 3), (x, -3, 3))');
   });
 });
 

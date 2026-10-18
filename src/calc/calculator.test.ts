@@ -1752,15 +1752,10 @@ describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
       ).toEqual([]);
       // A name bound by a cell above is unknowable to the interim.
       expect(await interimEvaluate('\\text{plot} a*x', ['a = 2'])).toEqual([]);
-      // Constants / too many vars / R²→R²: the worker's error row lands.
+      // Constants / too many vars: the worker's error row lands.
       expect(await interimEvaluate('\\text{plot} 5')).toEqual([]);
       expect(
         await interimEvaluate('\\text{plot} x+y+z'),
-      ).toEqual([]);
-      expect(
-        await interimEvaluate(
-          '\\text{plot} \\begin{pmatrix} u \\\\ v \\end{pmatrix}',
-        ),
       ).toEqual([]);
     });
 

@@ -179,6 +179,45 @@ describe('echartsOption', () => {
     expect(opt.visualMap).toBeDefined();
   });
 
+  it('synthesizes arrow segments for a quiver trace', () => {
+    // Two unit +x arrows on a 2-point grid, pitch 1. Each arrow packs
+    // as shaft + 2 head barbs — 7 slots per arrow, NaN-separated —
+    // into one line series.
+    const opt = echartsOption(
+      plot([
+        {
+          type: 'quiver',
+          x: [0, 1],
+          y: [0, 0],
+          u: [1, 1],
+          v: [0, 0],
+          name: 'field',
+          marker: { color: '#3b82f6' },
+        },
+        // A hidden mode's traces stay hidden — the img traces don't convert.
+        { type: 'scatter', x: [0, 1], y: [0, 1], mode: 'lines', visible: false, name: 'image of x = k' },
+      ]),
+      false,
+    );
+    expect(opt).not.toBeNull();
+    const s = series(opt!);
+    expect(s).toHaveLength(1);
+    expect(s[0].type).toBe('line');
+    const data = s[0].data as [number, number | null][];
+    expect(data.length).toBe(14);
+    // Nulls break the line between shaft and barbs of each arrow.
+    expect(data[2][1]).toBeNull();
+    expect(data[6][1]).toBeNull();
+    // Arrow length is normalized: the longest vector spans 0.8·pitch
+    // (pitch=1 here) centered on its grid point — shafts run ±0.4
+    // around each anchor.
+    expect(data[0][0]).toBeCloseTo(-0.4, 9);
+    expect(data[1][0]).toBeCloseTo(0.4, 9);
+    expect(data[7][0]).toBeCloseTo(0.6, 9);
+    expect(data[8][0]).toBeCloseTo(1.4, 9);
+    expect((s[0].lineStyle as { color: string }).color).toBe('#3b82f6');
+  });
+
   it('skips decor and text traces', () => {
     const opt = echartsOption(
       plot([

@@ -88,6 +88,8 @@ interface TraceLike extends Record<string, unknown> {
   x?: unknown;
   y?: unknown;
   z?: unknown;
+  u?: unknown;
+  v?: unknown;
 }
 
 // Split a figure's traces by what this converter can draw. Decor and
@@ -100,6 +102,7 @@ function bucketTraces(data: PlotData['figure']['data']): {
   surfaces: TraceLike[];
   paramSurfaces: TraceLike[];
   heatmaps: TraceLike[];
+  quivers: TraceLike[];
 } {
   const out = {
     lines2d: [] as TraceLike[],
@@ -108,6 +111,7 @@ function bucketTraces(data: PlotData['figure']['data']): {
     surfaces: [] as TraceLike[],
     paramSurfaces: [] as TraceLike[],
     heatmaps: [] as TraceLike[],
+    quivers: [] as TraceLike[],
   };
   for (const raw of data) {
     if (!isObj(raw)) continue;
@@ -116,6 +120,14 @@ function bucketTraces(data: PlotData['figure']['data']): {
     if (!shown(tr.visible) && tr.type !== 'heatmap') continue;
     if (tr.type === 'scatter' && numArr(tr.x) && numArr(tr.y))
       out.lines2d.push(tr);
+    else if (
+      tr.type === 'quiver' &&
+      numArr(tr.x) &&
+      numArr(tr.y) &&
+      numArr(tr.u) &&
+      numArr(tr.v)
+    )
+      out.quivers.push(tr);
     else if (tr.type === 'scatter3d' && numArr(tr.x) && numArr(tr.y) && numArr(tr.z))
       (str(tr.mode, '').includes('markers') ? out.points3d : out.curves3d).push(
         tr,
@@ -129,6 +141,92 @@ function bucketTraces(data: PlotData['figure']['data']): {
       out.heatmaps.push(tr);
   }
   return out;
+}
+
+// ECharts has no quiver series — synthesize the arrows as a
+// NaN-separated line segment list (shaft + two head barbs per arrow)
+// so a quiver trace can flow through the 2-D line pipeline. Arrows
+// are centered on their grid point; the longest magnitude spans 0.8
+// of the grid pitch, matching the worker's Desmos-style look.
+function quiverSegments(
+  xs: number[],
+  ys: number[],
+  us: number[],
+  vs: number[],
+): { x: number[]; y: number[] } {
+  // Grid pitch: the smallest gap between sorted unique positions. A
+  // degenerate (single-column) grid falls back to a tenth of the span
+  // so arrow length stays sane.
+  const pitchOf = (a: number[]): number => {
+    const u = [...new Set(a.filter(Number.isFinite))].sort(
+      (p, q) => p - q,
+    );
+    let d = Infinity;
+    for (let i = 1; i < u.length; i++) d = Math.min(d, u[i] - u[i - 1]);
+    if (Number.isFinite(d) && d > 0) return d;
+    return u.length > 1 ? (u[u.length - 1] - u[0]) / 10 : 0;
+  };
+  const pitch = pitchOf(xs) || pitchOf(ys) || 1;
+  let mmax = 0;
+  for (let i = 0; i < us.length; i++) {
+    const m = Math.hypot(us[i], vs[i]);
+    if (Number.isFinite(m) && m > mmax) mmax = m;
+  }
+  const x: number[] = [];
+  const y: number[] = [];
+  if (!(mmax > 0)) return { x, y };
+  const k = (0.8 * pitch) / mmax;
+  const phi = Math.PI / 9; // quiver's default head angle, ~20 deg
+  for (let i = 0; i < xs.length; i++) {
+    const dx = us[i] * k;
+    const dy = vs[i] * k;
+    const dl = Math.hypot(dx, dy);
+    if (!Number.isFinite(dl) || dl < 1e-12) continue;
+    const x0 = xs[i] - dx / 2;
+    const y0 = ys[i] - dy / 2;
+    const x1 = xs[i] + dx / 2;
+    const y1 = ys[i] + dy / 2;
+    const h = 0.3 * dl;
+    const ang = Math.atan2(dy, dx);
+    x.push(
+      x0,
+      x1,
+      NaN,
+      x1 - h * Math.cos(ang + phi),
+      x1,
+      x1 - h * Math.cos(ang - phi),
+      NaN,
+    );
+    y.push(
+      y0,
+      y1,
+      NaN,
+      y1 - h * Math.sin(ang + phi),
+      y1,
+      y1 - h * Math.sin(ang - phi),
+      NaN,
+    );
+  }
+  return { x, y };
+}
+
+// Fold a quiver trace into a line-segment trace the 2-D pipeline can
+// draw — marker.color (a single accent) becomes the line color.
+function quiverToLine(tr: TraceLike): TraceLike | undefined {
+  const segs = quiverSegments(
+    tr.x as number[],
+    tr.y as number[],
+    tr.u as number[],
+    tr.v as number[],
+  );
+  if (segs.x.length === 0) return undefined;
+  const marker = isObj(tr.marker) ? tr.marker : {};
+  return {
+    name: tr.name,
+    x: segs.x,
+    y: segs.y,
+    line: { color: str(marker.color, '#3b82f6'), width: 2 },
+  };
 }
 
 function axis2d(t: ReturnType<typeof plotPalette>): Record<string, unknown> {
@@ -383,8 +481,15 @@ export function echartsOption(
   dark: boolean,
 ): Record<string, unknown> | null {
   const t = plotPalette(dark);
-  const { lines2d, curves3d, points3d, surfaces, paramSurfaces, heatmaps } =
-    bucketTraces(plot.figure.data);
+  const {
+    lines2d,
+    curves3d,
+    points3d,
+    surfaces,
+    paramSurfaces,
+    heatmaps,
+    quivers,
+  } = bucketTraces(plot.figure.data);
   // 3-D first — a 2x1 figure carries a hidden cartesian heatmap behind
   // the surface; the gl view is the closer match to the final figure.
   if (
@@ -394,7 +499,13 @@ export function echartsOption(
     points3d.length > 0
   )
     return opt3d(surfaces, paramSurfaces, curves3d, points3d, t);
-  if (lines2d.length > 0) return opt2d(lines2d, t);
+  // Quiver traces ride the 2-D pipeline as synthesized arrow segments.
+  const lines = [...lines2d];
+  for (const q of quivers) {
+    const seg = quiverToLine(q);
+    if (seg) lines.push(seg);
+  }
+  if (lines.length > 0) return opt2d(lines, t);
   if (heatmaps.length > 0) return optHeatmap(heatmaps[0], t);
   return null;
 }

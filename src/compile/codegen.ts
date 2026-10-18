@@ -4327,10 +4327,7 @@ function emitPlotPython(
       ? [expr]
       : (plotComponents(expr) ?? []);
   const callVars = applied !== undefined && applied.length > 0 ? applied : vars;
-  const emitComp = (n: MathJson | string): string =>
-    isStr(n) && emitter.scope.decls.declaredFns.has(n)
-      ? `${n}(${callVars.map(pyIdent).join(', ')})`
-      : emitter.emit(n);
+  const emitComp = emitPlotComp(emitter, callVars);
   // A `\text{for}` domain bound overrides that end of the variable's
   // range; a bound naming a variable outside the signature is dead.
   if (domain)
@@ -4391,8 +4388,114 @@ function emitPlotPython(
       ],
       plot: true,
     };
-  // d === 2 && c === 2 — SymPy has no vector-field renderer.
-  return unplottable('a ℝ²→ℝ² vector field has no SymPy plotting call');
+  // d === 2 && c === 2 — ℝ²→ℝ². The field view lowers to a real
+  // plotting call; the image-of-grid view has no SymPy equivalent, so
+  // its program rides along as comments under it (the calculator
+  // target renders both interactively behind the figure's mode menu).
+  const field = emitPlotFieldPython(expr, comps, callVars, emitter, [
+    R2(w0),
+    R2(w1),
+  ]);
+  const image = emitPlotImagePython(expr, comps, callVars, emitter, [
+    domain?.get(w0)?.lo ?? '-3',
+    domain?.get(w0)?.hi ?? '3',
+    domain?.get(w1)?.lo ?? '-3',
+    domain?.get(w1)?.hi ?? '3',
+  ]);
+  return {
+    lines: [
+      ...field.lines,
+      ...image.lines.map((l) => (l === '' ? '#' : `# ${l}`)),
+    ],
+    plot: field.plot === true || image.plot === true,
+  };
+}
+
+// A bare-string component is an applied call only when it's a declared
+// fn name — `\text{plot} f` applies f's recorded params and a vector of
+// def'd names like pmatrix{f \\ g} applies each; a free-variable
+// component like `x` emits as a symbol, not `x(t)`.
+const emitPlotComp =
+  (emitter: Emitter, callVars: string[]) =>
+  (n: MathJson | string): string =>
+    isStr(n) && emitter.scope.decls.declaredFns.has(n)
+      ? `${n}(${callVars.map(pyIdent).join(', ')})`
+      : emitter.emit(n);
+
+// The field (quiver) view of an ℝ²→ℝ² plot, python target:
+// `plot_vector_field` (sympy.plotting, ≥1.9 — shipped by the pinned
+// pyodide). It isn't re-exported at sympy's top level on every version,
+// so the import line rides ahead of the call rather than relying on a
+// `sp.` prefix; in import-* mode the bare name is already the right one.
+function emitPlotFieldPython(
+  _expr: MathJson,
+  comps: MathJson[],
+  callVars: string[],
+  emitter: Emitter,
+  rngs: [string, string],
+): StatementOut {
+  const emitComp = emitPlotComp(emitter, callVars);
+  const [e0, e1] = comps.map(emitComp);
+  return {
+    lines: [
+      'from sympy.plotting import plot_vector_field',
+      `plot_vector_field((${e0}, ${e1}), ${rngs[0]}, ${rngs[1]})`,
+    ],
+    plot: true,
+  };
+}
+
+// The image-of-grid view of an ℝ²→ℝ² plot, python target. SymPy has
+// no equivalent plotting call, so this emits a standalone
+// numpy+matplotlib program as lines — the caller '# '-prefixes them so
+// they ride under the field view's real code as a commented program
+// documenting the second view the calculator's mode menu offers. Not
+// executed by our pipeline, so `plot` stays unset.
+function emitPlotImagePython(
+  _expr: MathJson,
+  comps: MathJson[],
+  callVars: string[],
+  emitter: Emitter,
+  dom: [string, string, string, string] = ['-3', '3', '-3', '3'],
+): StatementOut {
+  const sp = emitter.scope.qualified ? 'sp.' : '';
+  const [v0, v1] = callVars.map(pyIdent);
+  const [e0, e1] = comps.map(emitPlotComp(emitter, callVars));
+  const [x0, x1, y0, y1] = dom;
+  return {
+    lines: [
+      'image-of-grid view of the same map',
+      `fnum = ${sp}lambdify((${v0}, ${v1}), (${e0}, ${e1}), 'numpy')`,
+      'import numpy as np',
+      'import matplotlib.pyplot as plt',
+      `ts = np.linspace(${x0}, ${x1}, 160)`,
+      `ty = np.linspace(${y0}, ${y1}, 160)`,
+      `ks = np.linspace(${y0}, ${y1}, 10)`,
+      'fig, ax = plt.subplots()',
+      `ax.fill([${x0}, ${x1}, ${x1}, ${x0}, ${x0}],`,
+      `        [${y0}, ${y0}, ${y1}, ${y1}, ${y0}],`,
+      "        color='#8c8c8c', alpha=0.12)",
+      'for k in ks:',
+      `    ax.plot([${x0}, ${x1}], [k, k], color='#8c8c8c', lw=1)`,
+      `bx = np.concatenate([ts, np.full_like(ty, ${x1}), ts[::-1],`,
+      `                     np.full_like(ty, ${x0})])`,
+      `by = np.concatenate([np.full_like(ts, ${y0}), ty,`,
+      `                     np.full_like(ts, ${y1}), ty[::-1]])`,
+      "ax.fill(*fnum(bx, by), color='#3b82f6', alpha=0.10)",
+      'for k in ks:',
+      "    ax.plot(*fnum(ts, np.full_like(ts, k)), color='#3b82f6',",
+      "            lw=1.5)",
+      "ax.set_aspect('equal')",
+      `ax.set_title('image of [${x0},${x1}]x[${y0},${y1}]; y=k lines')`,
+      "ax.legend([plt.Patch(color='#3b82f6', alpha=0.3),",
+      "           plt.Line2D([0], [0], color='#3b82f6'),",
+      "           plt.Line2D([0], [0], color='#8c8c8c'),",
+      "           plt.Line2D([0], [0], color='#8c8c8c', lw=1)],",
+      "          ['image of square', 'image of y = k', 'input square',",
+      "           'input y = k'])",
+      'plt.show()',
+    ],
+  };
 }
 
 function emitStatement(node: MathJson, emitter: Emitter): StatementOut {

@@ -115,6 +115,16 @@ function themedTrace(
       return isObj(tr.line)
         ? { ...tr, line: { ...tr.line, color: t.surfGrid } }
         : tr;
+    // 2x2 grid-image view: the dimmed fill/outline of the domain's
+    // input square follows the theme's guide-line colors.
+    case 'input square':
+      return {
+        ...tr,
+        fillcolor: t.wallGrid,
+        ...(isObj(tr.line)
+          ? { line: { ...tr.line, color: t.axis } }
+          : {}),
+      };
     case 'xysheet':
       return {
         ...tr,
@@ -228,8 +238,11 @@ export function themedFigure(plot: PlotData, dark: boolean) {
     (menu.font as Record<string, unknown>).color ??= t.font;
   }
   // Legend sits over the plot — a mostly-opaque themed panel keeps its
-  // entries readable over traces/heatmaps.
-  if (layout.showlegend || isObj(layout.legend)) {
+  // entries readable over traces/heatmaps. A mode menu can flip
+  // `showlegend` on later (the 2x2 image view), so theme it whenever a
+  // trace could carry an entry, not just when it's already on.
+  const legendable = figure.data.some((tr) => tr.showlegend === true);
+  if (layout.showlegend || isObj(layout.legend) || legendable) {
     const legend: Record<string, unknown> = {
       bgcolor: dark ? 'rgba(35,38,45,0.85)' : 'rgba(255,255,255,0.85)',
       bordercolor: t.grid,
@@ -261,6 +274,7 @@ export const GL3D_TYPES = new Set([
 const CARTESIAN_TYPES = new Set([
   'scatter',
   'scattergl',
+  'quiver',
   'bar',
   'heatmap',
   'heatmapgl',
@@ -328,6 +342,61 @@ export function applyModeAxes(figure: {
       relayout['yaxis.visible'] = button2d;
     }
   }
+}
+
+// Re-apply the user's mode-menu selection to a fresh figure payload.
+// A payload swap rebuilds data/layout at their defaults — without this
+// the menu snaps back to its first button on every edit. `actives` is
+// the per-menu active-button index the caller captured while the old
+// figure was on screen (an interim figure carries no menus at all, so
+// the choice must persist in component state, not on the graph).
+export function applyActiveMenus(
+  actives: readonly (number | undefined)[] | undefined,
+  figure: {
+    data: Record<string, unknown>[];
+    layout: Record<string, unknown>;
+  },
+): void {
+  if (!actives) return;
+  const menus = layoutMenus(figure.layout);
+  actives.forEach((a, i) => {
+    if (typeof a !== 'number' || a <= 0) return;
+    const menu = menus[i];
+    const buttons = menu?.buttons;
+    const button = Array.isArray(buttons) ? buttons[a] : undefined;
+    if (!isObj(button) || !Array.isArray(button.args)) return;
+    // Mark the row so the menu's own active highlight matches the
+    // trace/relayout state we're about to apply by hand.
+    menu.active = a;
+    for (const arg of button.args as unknown[]) {
+      if (!isObj(arg)) continue;
+      if (Array.isArray(arg.visible)) {
+        arg.visible.forEach((v, ti) => {
+          if (ti < figure.data.length) figure.data[ti].visible = v;
+        });
+      } else {
+        for (const [key, val] of Object.entries(arg))
+          setDeep(figure.layout, key, val);
+      }
+    }
+  });
+}
+
+// A relayout arg's keys are dotted paths ('xaxis.range') — nest them
+// back into the layout object.
+function setDeep(
+  o: Record<string, unknown>,
+  dotted: string,
+  val: unknown,
+): void {
+  const parts = dotted.split('.');
+  let cur = o;
+  for (const part of parts.slice(0, -1)) {
+    const next = cur[part];
+    cur[part] = isObj(next) ? next : {};
+    cur = cur[part] as Record<string, unknown>;
+  }
+  cur[parts[parts.length - 1]] = val;
 }
 
 function layoutMenus(

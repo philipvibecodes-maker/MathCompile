@@ -3,12 +3,17 @@
   // min) is dynamically imported on first mount so worksheets without
   // plots never pay for it; `Plotly.react` re-diffs on every payload
   // change so edits re-render the figure in place.
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import type PlotlyT from 'plotly.js-dist-min';
   import { appStore } from '../state/store.svelte';
   import type { PlotData } from './types';
   import EchartsPlot from './EchartsPlot.svelte';
-  import { applyModeAxes, GL3D_TYPES, themedFigure } from './theme';
+  import {
+    applyActiveMenus,
+    applyModeAxes,
+    GL3D_TYPES,
+    themedFigure,
+  } from './theme';
 
   let { plot }: { plot: PlotData } = $props();
 
@@ -381,6 +386,71 @@
     }
   }
 
+  // The user's mode-menu choices, per menu index. Captured from the
+  // outgoing graph's _fullLayout while it still exists — a payload
+  // swap (edit → interim → re-render, and the interim figure carries
+  // no menus at all) rebuilds the figure at its defaults, so the
+  // selection has to live in component state to be re-applied.
+  let menuSel: (number | undefined)[] | undefined;
+  const readMenuSel = (
+    gd: HTMLDivElement,
+  ): (number | undefined)[] | undefined => {
+    const menus = (
+      gd as unknown as {
+        _fullLayout?: { updatemenus?: { active?: number }[] };
+      }
+    )._fullLayout?.updatemenus;
+    // A figure with no menus (the interim) yields nothing — keep the
+    // last selection rather than wiping it.
+    return menus?.length ? menus.map((m) => m.active) : undefined;
+  };
+  const captureMenuSel = (gd: HTMLDivElement) => {
+    menuSel = readMenuSel(gd) ?? menuSel;
+    const menus = (
+      gd as unknown as {
+        _fullLayout?: {
+          updatemenus?: { active?: number; buttons?: { label?: string }[] }[];
+        };
+      }
+    )._fullLayout?.updatemenus;
+    if (menus?.length)
+      modeIsImage = menus.some(
+        (m) => m.buttons?.[m.active ?? -1]?.label === 'image',
+      );
+  };
+
+  // Traces tagged meta.inputToggle are owned by the 'input' checkbox,
+  // not the mode menu — every mode button's vis list hides them, so
+  // the checkbox state must be re-applied after each render and
+  // restyle. Off by default.
+  let inputShown = $state(false);
+  let inputIdxs = $state<number[]>([]);
+  // The input square is image-view only — the checkbox shows and the
+  // trace is allowed visible only while the 'image' mode is active.
+  let modeIsImage = $state(false);
+  const inputToggleIdxs = (data: Record<string, unknown>[]) =>
+    data
+      .map((t, i) =>
+        (t.meta as { inputToggle?: unknown } | undefined)?.inputToggle
+          ? i
+          : -1,
+      )
+      .filter((i) => i >= 0);
+  const applyInputToggle = (gd: HTMLDivElement) => {
+    if (!Plotly || !inputIdxs.length) return;
+    const data = (gd as unknown as { data?: { visible?: unknown }[] })
+      .data;
+    const want = inputShown && modeIsImage;
+    const fix = inputIdxs.filter(
+      (i) => i < (data?.length ?? 0) && data![i].visible !== want,
+    );
+    if (fix.length) void Plotly.restyle(gd, 'visible', want, fix);
+  };
+  const onInputToggle = () => {
+    if (el && Plotly && inputIdxs.length)
+      void Plotly.restyle(el, 'visible', inputShown && modeIsImage, inputIdxs);
+  };
+
   // The afterplot listener is bound once per graph element — a remount
   // (the fail branch swapping in/out) gets a fresh element and a fresh
   // binding.
@@ -413,6 +483,32 @@
     if (!target || !P) return;
     const { data, layout } = themedFigure(p, dark);
     applyModeAxes({ data, layout });
+    // Freshest read first — if the outgoing render still has its
+    // menus, their actives beat the stored selection.
+    captureMenuSel(target);
+    applyActiveMenus(menuSel, { data, layout });
+    // `inputIdxs` is written here for the checkbox's {#if}, and the
+    // checkbox's own onchange restyles — reads of both states are
+    // untracked: tracking them would make the effect depend on a state
+    // it writes, self-retriggering react() forever (frozen page).
+    const idxs = inputToggleIdxs(data);
+    inputIdxs = idxs;
+    // The figure the mode replay produces: menuSel overrides the
+    // payload's declared active button. Interim figures carry no menus
+    // — keep the last known mode instead of flickering the checkbox.
+    const menus = (
+      layout as {
+        updatemenus?: { active?: number; buttons?: { label?: string }[] }[];
+      }
+    ).updatemenus;
+    if (menus?.length) {
+      modeIsImage = menus.some(
+        (m, i) =>
+          m.buttons?.[menuSel?.[i] ?? m.active ?? -1]?.label === 'image',
+      );
+    }
+    if (untrack(() => inputShown) && modeIsImage)
+      for (const i of idxs) data[i].visible = true;
     P.react(target, data, { ...layout, autosize: true }, CONFIG)
       .then(() => {
         // Re-anchor the modebar's "last save" home state to this
@@ -465,8 +561,10 @@
         target as unknown as { on: (ev: string, cb: () => void) => void }
       ).on('plotly_afterplot', () => {
         plotted = true;
+        captureMenuSel(target);
         unpickSheet(target);
         syncMenuVisibility(target);
+        applyInputToggle(target);
         updateZoom(target);
         markActiveMenuItem(target);
       });
@@ -475,6 +573,7 @@
       (
         target as unknown as { on: (ev: string, cb: () => void) => void }
       ).on('plotly_relayout', () => {
+        captureMenuSel(target);
         syncSceneCam(target);
         updateZoom(target);
         markActiveMenuItem(target);
@@ -510,6 +609,15 @@
           bind:rendered={ecRendered}
         />
       </div>
+    {/if}
+    {#if inputIdxs.length && modeIsImage}
+      <label class="plot-input-toggle">
+        <input
+          type="checkbox"
+          bind:checked={inputShown}
+          onchange={onInputToggle}
+        />input square
+      </label>
     {/if}
     <div
       class="plot-grip"
@@ -607,6 +715,24 @@
   .plot-grip-side:hover::before,
   .plot-grip-side:active::before {
     background: var(--muted, #94a3b8);
+  }
+  .plot-input-toggle {
+    /* Bottom-left of the plot, above the grip strip — top-right is the
+       modebar's spot, top-left the mode menu's. */
+    position: absolute;
+    left: 8px;
+    bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text);
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 7px;
+    cursor: pointer;
+    user-select: none;
   }
   .plot-zoom {
     /* Debug aid — live camera-zoom readout (remove with updateZoom). */

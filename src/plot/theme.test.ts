@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyModeAxes, themedFigure } from './theme';
+import { applyActiveMenus, applyModeAxes, themedFigure } from './theme';
 import type { PlotData } from './types';
 
 // A minimal 3-D figure dict as the worker emits it: the named scene
@@ -239,5 +239,101 @@ describe('applyModeAxes', () => {
       }[]
     )[0].buttons;
     expect(buttons[0].args).toHaveLength(1);
+  });
+
+  it('counts a visible quiver trace as an active 2-D mode', () => {
+    // The 2x2 field view's only visible trace is the quiver — it must
+    // keep the cartesian axes (and their xy grid) on, or the field
+    // mode renders with no axes at all.
+    const fig = {
+      data: [
+        { type: 'quiver', name: 'field' },
+        { type: 'scatter', name: 'input grid', visible: false },
+      ],
+      layout: {
+        xaxis: { gridcolor: 'x' },
+        yaxis: { gridcolor: 'y' },
+      },
+    };
+    applyModeAxes(fig);
+    expect(
+      (fig.layout.xaxis as Record<string, unknown>).visible,
+    ).toBe(true);
+    expect(
+      (fig.layout.yaxis as Record<string, unknown>).visible,
+    ).toBe(true);
+  });
+});
+
+// A minimal 2x2 figure as the worker emits it: the field quiver plus
+// the hidden image-of-grid traces behind a two-button mode menu.
+function fig2x2() {
+  return {
+    data: [
+      { type: 'quiver', name: 'field', visible: true },
+      { type: 'scatter', name: 'input grid', visible: false },
+      { type: 'scatter', name: 'image of x = k', visible: false },
+    ],
+    layout: {
+      updatemenus: [
+        {
+          buttons: [
+            {
+              args: [
+                { visible: [true, false, false] },
+                {
+                  'xaxis.range': [-3.15, 3.15],
+                  showlegend: false,
+                  annotations: [],
+                } as Record<string, unknown>,
+              ],
+            },
+            {
+              args: [
+                { visible: [false, true, true] },
+                {
+                  'xaxis.range': [-9, 9],
+                  showlegend: true,
+                  annotations: [{ text: 'input grid' }],
+                } as Record<string, unknown>,
+              ],
+            },
+          ],
+        },
+      ],
+    } as Record<string, unknown>,
+  };
+}
+
+describe('applyActiveMenus', () => {
+  it('re-applies a non-default selection to a fresh figure', () => {
+    const fig = fig2x2();
+    applyActiveMenus([1], fig);
+    expect(fig.data.map((t) => t.visible)).toEqual([false, true, true]);
+    expect((fig.layout.xaxis as Record<string, unknown>).range).toEqual([
+      -9, 9,
+    ]);
+    expect(fig.layout.showlegend).toBe(true);
+    expect(fig.layout.annotations).toEqual([{ text: 'input grid' }]);
+    const menus = fig.layout.updatemenus as { active?: number }[];
+    expect(menus[0].active).toBe(1);
+  });
+
+  it('leaves the figure at defaults for the first button', () => {
+    const fig = fig2x2();
+    applyActiveMenus([0], fig);
+    expect(fig.data[0].visible).toBe(true);
+    expect(fig.layout.showlegend).toBeUndefined();
+    const menus = fig.layout.updatemenus as { active?: number }[];
+    expect(menus[0].active).toBeUndefined();
+  });
+
+  it('no-ops without a selection, menus, or a matching button', () => {
+    const fig = fig2x2();
+    applyActiveMenus(undefined, fig);
+    applyActiveMenus([], fig);
+    applyActiveMenus([7], fig); // no such button
+    applyActiveMenus([1], { data: [], layout: {} }); // no menus
+    expect(fig.data.map((t) => t.visible)).toEqual([true, false, false]);
   });
 });

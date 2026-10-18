@@ -2,10 +2,22 @@
 // the caret's position relative to a .mq-matrix decides which hints
 // apply — inside the grid (row/column editing), just left of it
 // (determinant/trace), or just right (transpose/adjoint/pseudoinverse).
-export type HelpContext = 'inside-matrix' | 'left-of-matrix' | 'right-of-matrix';
+// A caret at or after a `\text{plot}` marker shows the for-domain
+// spellings instead.
+export type HelpContext =
+  | 'inside-matrix'
+  | 'left-of-matrix'
+  | 'right-of-matrix'
+  | 'in-plot';
 
 const isMatrix = (el: Element | null | undefined): boolean =>
   !!el && el.classList.contains('mq-matrix');
+
+// `\text{plot}` renders as a .mq-text-mode span whose text is 'plot'.
+const isPlotMarker = (el: Element | null | undefined): boolean =>
+  !!el &&
+  el.classList.contains('mq-text-mode') &&
+  (el.textContent ?? '').trim() === 'plot';
 
 // Accepting a typed `\pmatrix`/`\begin{...}`/autocomplete command leaves
 // an empty, invisible latex-command-input wrapper as a sibling of the
@@ -31,6 +43,8 @@ export function readHelpContext(field: HTMLElement): HelpContext | null {
   if (!cursor) return null;
 
   if (cursor.closest('.mq-matrix')) return 'inside-matrix';
+  const insideText = cursor.closest('.mq-text-mode');
+  if (isPlotMarker(insideText)) return 'in-plot';
 
   // Adjacency: at each ancestor level the element's siblings are the
   // baseline atoms, so the walk covers both a caret sitting directly
@@ -43,6 +57,19 @@ export function readHelpContext(field: HTMLElement): HelpContext | null {
   ) {
     if (isMatrix(atomAfter(el))) return 'left-of-matrix';
     if (isMatrix(atomBefore(el))) return 'right-of-matrix';
+    // The `\text{plot}` marker can sit anywhere earlier in the
+    // statement — scan every earlier sibling at this level (the level
+    // stops at the displaylines row, so a plot marker on a previous
+    // line doesn't bleed through: tr/td row elements aren't
+    // .mq-text-mode).
+    for (
+      let sib = el.previousElementSibling;
+      sib;
+      sib = sib.previousElementSibling
+    ) {
+      if (isInputResidue(sib)) continue;
+      if (isPlotMarker(sib)) return 'in-plot';
+    }
   }
   return null;
 }
@@ -67,5 +94,15 @@ export const HELP_ENTRIES: Record<HelpContext, { key: string; does: string }[]> 
       { key: '^T', does: 'transpose' },
       { key: '^\\dagger', does: 'adjoint' },
       { key: '^+', does: 'pseudoinverse' },
+    ],
+    // The `\text{for}` domain clause the compiler reads off a plot
+    // statement — interval, inequality, conjunction, and product forms.
+    'in-plot': [
+      { key: '\\text{for} x \\in (a,b)', does: 'set the domain' },
+      { key: '\\text{for} x > a', does: 'one-sided bound' },
+      {
+        key: '\\text{for} u \\in I \\land v \\in J',
+        does: '2-variable domain',
+      },
     ],
   };
