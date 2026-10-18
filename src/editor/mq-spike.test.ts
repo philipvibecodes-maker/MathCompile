@@ -29,38 +29,6 @@ describe('MathQuill spike (headless)', () => {
     expect(out.prod).toContain('\\prod');
   });
 
-  it('smart mode: bare "for" expands to \\text{ for }', () => {
-    const { mq } = mountAppField();
-    type(mq, '2x for x>0');
-    expect(mq.latex()).toContain('\\text{ for }');
-    expect(mq.latex()).not.toContain('for x');
-    // The expansion is a real TextBlock, not bare letters.
-    expect(mq.latex()).toBe('2x\\ \\text{ for }\\ x>0');
-    // 'for' at the very start of the field, then the typed space lands
-    // after the block.
-    mq.latex('');
-    type(mq, 'for x');
-    expect(mq.latex()).toBe('\\text{ for }\\ x');
-  });
-
-  it('smart mode: "for" does not rewrite words containing it', () => {
-    const { mq } = mountAppField();
-    // Suffix-embedded runs ('before' ends in 'for' but isn't 'for').
-    // 'format'-style prefixes still convert early — the same tradeoff
-    // every auto-op makes ('sine' -> \sin e).
-    for (const word of ['before', 'therefore', 'effort']) {
-      mq.latex('');
-      type(mq, word);
-      expect(mq.latex()).toBe(word);
-    }
-  });
-
-  it('smart mode off: "for" stays ordinary letters', () => {
-    const { mq } = mountRaw({ autoCommands: '', autoWordCommands: '' });
-    type(mq, 'for');
-    expect(mq.latex()).toBe('for');
-  });
-
   it('.write preserves empty blocks; caret traverses sub then sup', () => {
     const { mq } = mountRaw();
     mq.write('\\int_{ }^{ }');

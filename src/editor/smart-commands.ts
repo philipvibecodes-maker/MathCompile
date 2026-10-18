@@ -9,10 +9,3 @@
 // through the `\ode`/`\pde` command input.
 export const SMART_AUTO_COMMANDS =
   'int iint antid sum sqrt prod lim pi phi infty theta derivative def nabla gradient solve dsolve pdesolve plot';
-
-// Whole-word commands (MQ autoWordCommands): same insertion alias path
-// as autoCommands, but the contiguous letter run must BE the word —
-// 'for' expands to \text{ for } while 'before'/'therefore' stay
-// ordinary letters. Kept out of SMART_AUTO_COMMANDS because its suffix
-// match would rewrite the tail of those words.
-export const SMART_WORD_COMMANDS = 'for';

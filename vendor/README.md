@@ -114,11 +114,7 @@ Inline `// MATHCOMPILE:` edits, by file:
   a nonexistent child.
 - `src/commands/math/basicSymbols.ts` — `autoCommands` accepts `''` to
   disable the list entirely (upstream's processor throws on empty
-  strings — needed for the smartMode toggle); `autoWordCommands` is a
-  whole-word variant — the contiguous letter run ending at the typed
-  letter must BE the word, not just end with it, so 'for' can expand
-  to `\text{ for }` while 'before'/'therefore' stay ordinary letters
-  (autoCommands' suffix match would split them); a letter run inside
+  strings — needed for the smartMode toggle); a letter run inside
   `\operatorname{…}`/`\mathrm{…}` is kept whole instead of re-scanned
   for built-in names, and `sign` serializes as `\operatorname{sign}`
   for SymPy; `\operatorname{…}` is a real one-block editable group —

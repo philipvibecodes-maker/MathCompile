@@ -361,39 +361,6 @@ baseOptionProcessors.autoCommands = function (cmds: string | undefined) {
   return dict;
 };
 
-// MATHCOMPILE: whole-word autoCommands — the same insertion alias
-// mechanism as autoCommands, but the contiguous letter run ending at
-// the typed letter must BE the word, not just end with it. Guards
-// short words like 'for' so 'before'/'therefore' stay ordinary
-// letters (autoCommands' suffix match would split them, the same way
-// 'ode'/'pde' were kept out for 'node'/'mode'). '' disables, matching
-// the autoCommands processor.
-Options.prototype.autoWordCommands = { _maxLength: 0 };
-baseOptionProcessors.autoWordCommands = function (
-  cmds: string | undefined
-) {
-  if (cmds === '') {
-    return { _maxLength: 0 };
-  }
-  if (typeof cmds !== 'string' || !/^[a-z]+(?: [a-z]+)*$/i.test(cmds)) {
-    throw '"' + cmds + '" not a space-delimited list of only letters';
-  }
-  var list = cmds.split(' ');
-  var dict: AutoDict = {};
-  var maxLength = 0;
-
-  for (var i = 0; i < list.length; i += 1) {
-    var cmd = list[i];
-    if (cmd.length < 2) {
-      throw 'autocommand "' + cmd + '" not minimum length of 2';
-    }
-    dict[cmd] = 1;
-    maxLength = max(maxLength, cmd.length);
-  }
-  dict._maxLength = maxLength;
-  return dict;
-};
-
 Options.prototype.quietEmptyDelimiters = {};
 baseOptionProcessors.quietEmptyDelimiters = function (dlms: string = '') {
   var list = dlms.split(' ');
@@ -471,32 +438,6 @@ class Letter extends Variable {
 
     //handle autoCommands
     var autoCmds = cursor.options.autoCommands;
-    // MATHCOMPILE: whole-word commands (autoWordCommands) fire only when
-    // the contiguous letter run ending at this letter IS the word —
-    // fetching maxLength + 1 letters means a longer run ('befor')
-    // returns more chars than the longest word and can never match.
-    var wordCmds = cursor.options.autoWordCommands;
-    var wordMaxLength = (wordCmds && wordCmds._maxLength) || 0;
-    if (wordMaxLength > 0) {
-      let wstr = letterSequenceEndingAtNode(this, wordMaxLength + 1) ?? '';
-      if (wstr.length <= wordMaxLength && wordCmds.hasOwnProperty(wstr)) {
-        let wl: NodeRef = this;
-        for (let i = 1; wl && i < wstr.length; i += 1, wl = wl[L]);
-
-        new Fragment(wl, this).remove();
-        cursor[L] = (wl as MQNode)[L];
-
-        var wcmd = LatexCmds[wstr];
-        var wnode;
-        if (isMQNodeClass(wcmd)) {
-          wnode = new (wcmd as typeof TempSingleCharNode)(wstr);
-        } else {
-          wnode = wcmd(wstr);
-        }
-
-        return wnode.createLeftOf(cursor);
-      }
-    }
     var maxLength = autoCmds._maxLength || 0;
     if (maxLength > 0) {
       // want longest possible autocommand, so join together longest

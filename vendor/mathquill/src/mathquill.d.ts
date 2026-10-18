@@ -134,9 +134,6 @@ declare namespace MathQuill {
       infixOperatorNames?: string;
       prefixOperatorNames?: string;
       autoCommands?: string;
-      // MATHCOMPILE: whole-word autoCommands — 'for' expands only as a
-      // standalone word, not inside 'before'/'therefore'.
-      autoWordCommands?: string;
       logAriaAlerts?: boolean;
       autoParenthesizedFunctions?: string;
       quietEmptyDelimiters?: string;

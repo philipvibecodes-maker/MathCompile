@@ -214,16 +214,9 @@ and empty blocks serialize as `{ }`.
   `localStorage['mathcompile-theme']`; `index.html` sets `data-theme`
   pre-paint, `App.svelte`'s `$effect` keeps it synced with
   `appStore.darkMode`.
-- Smart mode maps to `autoCommands` + `autoWordCommands` +
-  `autoSubscriptNumerals` config. The vendored patch extends
-  `autoCommands` to accept `''` = off (upstream's processor throws on
-  empty strings — no way to disable), and adds `autoWordCommands`: a
-  whole-word variant where the contiguous letter run must BE the word
-  (`for` → `\text{ for }`, but 'before'/'therefore' stay ordinary
-  letters — the same tradeoff autoCommands' suffix match couldn't
-  express for `ode`/`pde`). Prefix-extended words still convert early
-  ('format' → `\text{ for }mat`), matching how `sin` fires inside
-  'sine'.
+- Smart mode maps to `autoCommands` + `autoSubscriptNumerals` config.
+  The vendored patch extends `autoCommands` to accept `''` = off
+  (upstream's processor throws on empty strings — no way to disable).
 - `\derivative` (typed via the latex command input, or `mq.cmd`) expands
   at insertion time to real `\frac{d }{d }` atoms — or `D( )` when
   `dIsDerivative` is off — with the caret in the denominator/parens.

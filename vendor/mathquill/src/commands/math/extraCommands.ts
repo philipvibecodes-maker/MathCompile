@@ -1302,33 +1302,6 @@ LatexCmds.def = () =>
   );
 
 //======================================================================
-//  \for — insertion alias for \text{ for } (the comprehension qualifier)
-//======================================================================
-
-// Expands to a real \text{ for } TextBlock plus a trailing space — the
-// qualifier marker the compiler reads for comprehensions / solve
-// domains (`2x \text{ for } x > 0` — src/compile/ir.ts reads
-// \text{for}-style markers). Unlike the other aliases, 'for' is a word
-// of ordinary English, so it expands through autoWordCommands (whole
-// letter-run match only — 'before'/'therefore' don't split) rather
-// than autoCommands' suffix match. `\for` in pasted latex or the
-// command input inserts the same block.
-class ForAlias extends MQSymbol {
-  createLeftOf(cursor: Cursor) {
-    // No trailing space — the typed space that follows 'for' lands after
-    // the block and already separates it ('x for y' -> \text{ for } y).
-    cursor.parent.writeLatex(cursor, '\\text{ for }');
-  }
-}
-LatexCmds.for = () =>
-  new ForAlias(
-    '\\text{ for }',
-    h('span', { class: 'mq-text-mode' }, [h.text(' for ')]) as HTMLElement,
-    'for',
-    'comprehension qualifier'
-  );
-
-//======================================================================
 //  \solve / \dsolve / \pdesolve — insertion aliases for the
 //  \text{…} solver statement markers
 //======================================================================

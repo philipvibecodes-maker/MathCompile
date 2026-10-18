@@ -1,4 +1,3 @@
-"use strict";
 /**
  * MathQuill v0.10.1, by Han, Jeanine, and Mary
  * http://mathquill.com | maintainers@mathquill.com
@@ -8952,35 +8951,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         dict._maxLength = maxLength;
         return dict;
     };
-    // MATHCOMPILE: whole-word autoCommands \u2014 the same insertion alias
-    // mechanism as autoCommands, but the contiguous letter run ending at
-    // the typed letter must BE the word, not just end with it. Guards
-    // short words like 'for' so 'before'/'therefore' stay ordinary
-    // letters (autoCommands' suffix match would split them, the same way
-    // 'ode'/'pde' were kept out for 'node'/'mode'). '' disables, matching
-    // the autoCommands processor.
-    Options.prototype.autoWordCommands = { _maxLength: 0 };
-    baseOptionProcessors.autoWordCommands = function (cmds) {
-        if (cmds === '') {
-            return { _maxLength: 0 };
-        }
-        if (typeof cmds !== 'string' || !/^[a-z]+(?: [a-z]+)*$/i.test(cmds)) {
-            throw '"' + cmds + '" not a space-delimited list of only letters';
-        }
-        var list = cmds.split(' ');
-        var dict = {};
-        var maxLength = 0;
-        for (var i = 0; i < list.length; i += 1) {
-            var cmd = list[i];
-            if (cmd.length < 2) {
-                throw 'autocommand "' + cmd + '" not minimum length of 2';
-            }
-            dict[cmd] = 1;
-            maxLength = max(maxLength, cmd.length);
-        }
-        dict._maxLength = maxLength;
-        return dict;
-    };
     Options.prototype.quietEmptyDelimiters = {};
     baseOptionProcessors.quietEmptyDelimiters = function (dlms) {
         if (dlms === void 0) { dlms = ''; }
@@ -9037,43 +9007,18 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             return _this_1;
         }
         Letter.prototype.checkAutoCmds = function (cursor) {
-            var _c, _d;
+            var _c;
             //exit early if in simple subscript and disableAutoSubstitutionInSubscripts is set.
             if (this.shouldIgnoreSubstitutionInSimpleSubscript(cursor.options)) {
                 return;
             }
             //handle autoCommands
             var autoCmds = cursor.options.autoCommands;
-            // MATHCOMPILE: whole-word commands (autoWordCommands) fire only when
-            // the contiguous letter run ending at this letter IS the word \u2014
-            // fetching maxLength + 1 letters means a longer run ('befor')
-            // returns more chars than the longest word and can never match.
-            var wordCmds = cursor.options.autoWordCommands;
-            var wordMaxLength = (wordCmds && wordCmds._maxLength) || 0;
-            if (wordMaxLength > 0) {
-                var wstr = (_c = letterSequenceEndingAtNode(this, wordMaxLength + 1)) !== null && _c !== void 0 ? _c : '';
-                if (wstr.length <= wordMaxLength && wordCmds.hasOwnProperty(wstr)) {
-                    var wl = this;
-                    for (var i = 1; wl && i < wstr.length; i += 1, wl = wl[L])
-                        ;
-                    new Fragment(wl, this).remove();
-                    cursor[L] = wl[L];
-                    var wcmd = LatexCmds[wstr];
-                    var wnode;
-                    if (isMQNodeClass(wcmd)) {
-                        wnode = new wcmd(wstr);
-                    }
-                    else {
-                        wnode = wcmd(wstr);
-                    }
-                    return wnode.createLeftOf(cursor);
-                }
-            }
             var maxLength = autoCmds._maxLength || 0;
             if (maxLength > 0) {
                 // want longest possible autocommand, so join together longest
                 // sequence of letters
-                var str = (_d = letterSequenceEndingAtNode(this, maxLength)) !== null && _d !== void 0 ? _d : '';
+                var str = (_c = letterSequenceEndingAtNode(this, maxLength)) !== null && _c !== void 0 ? _c : '';
                 // check for an autocommand, going thru substrings longest to shortest
                 while (str.length) {
                     if (autoCmds.hasOwnProperty(str)) {
@@ -13517,32 +13462,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     }(MQSymbol));
     LatexCmds.def = function () {
         return new DefAlias('\\text{def}', h('span', { class: 'mq-text-mode' }, [h.text('def')]), 'def', 'def');
-    };
-    //======================================================================
-    //  \for \u2014 insertion alias for \text{ for } (the comprehension qualifier)
-    //======================================================================
-    // Expands to a real \text{ for } TextBlock plus a trailing space \u2014 the
-    // qualifier marker the compiler reads for comprehensions / solve
-    // domains (`2x \text{ for } x > 0` \u2014 src/compile/ir.ts reads
-    // \text{for}-style markers). Unlike the other aliases, 'for' is a word
-    // of ordinary English, so it expands through autoWordCommands (whole
-    // letter-run match only \u2014 'before'/'therefore' don't split) rather
-    // than autoCommands' suffix match. `\for` in pasted latex or the
-    // command input inserts the same block.
-    var ForAlias = /** @class */ (function (_super) {
-        __extends(ForAlias, _super);
-        function ForAlias() {
-            return _super !== null && _super.apply(this, arguments) || this;
-        }
-        ForAlias.prototype.createLeftOf = function (cursor) {
-            // No trailing space \u2014 the typed space that follows 'for' lands after
-            // the block and already separates it ('x for y' -> \text{ for } y).
-            cursor.parent.writeLatex(cursor, '\\text{ for }');
-        };
-        return ForAlias;
-    }(MQSymbol));
-    LatexCmds.for = function () {
-        return new ForAlias('\\text{ for }', h('span', { class: 'mq-text-mode' }, [h.text(' for ')]), 'for', 'comprehension qualifier');
     };
     //======================================================================
     //  \solve / \dsolve / \pdesolve \u2014 insertion aliases for the

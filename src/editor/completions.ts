@@ -58,7 +58,6 @@ export const COMPLETIONS: CompletionItem[] = [
   { name: 'pdesolve', hint: 'solve a PDE', preview: '\\text{pdesolve} ' },
   { name: 'ode', hint: 'solve an ODE (alias)', preview: '\\text{ode} ' },
   { name: 'pde', hint: 'solve a PDE (alias)', preview: '\\text{pde} ' },
-  { name: 'for', hint: 'comprehension qualifier', preview: '\\text{ for }' },
   { name: 'python', hint: 'inline Python code', preview: '\\python{x = 1}' },
   // `\tr` and the other matrix word-ops are insertion aliases — they
   // expand to `\mathrm{<word>}`; the items come from their registry
