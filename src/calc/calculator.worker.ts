@@ -187,6 +187,36 @@ def _mc_plot_signature(v):
     return free, comps, label
 
 
+def _mc_plot_ranges(dom):
+    # The marker's {name: (lo, hi)} dict from the statement's for-clause —
+    # coerce ends to floats, keep None (the signature default fills it
+    # later), drop pairs that can't be read at all.
+    out = {}
+    if isinstance(dom, dict):
+        for name, pair in dom.items():
+            try:
+                lo, hi = pair
+                lo = None if lo is None else float(lo)
+                hi = None if hi is None else float(hi)
+            except Exception:
+                continue
+            out[str(name)] = (lo, hi)
+    return out
+
+
+def _mc_rng(ranges, name, dflt):
+    # One variable's effective (lo, hi): the domain's ends override the
+    # signature default; a reversed or non-finite pair falls back
+    # wholesale.
+    import math as _mc_math
+    lo, hi = ranges.get(name, (None, None))
+    lo = dflt[0] if lo is None else lo
+    hi = dflt[1] if hi is None else hi
+    if not (lo < hi and _mc_math.isfinite(lo) and _mc_math.isfinite(hi)):
+        return dflt
+    return (lo, hi)
+
+
 _MC_PLOT_ACC = '#3b82f6'
 _MC_PLOT_MARGIN = dict(l=40, r=10, t=30, b=40)
 
@@ -528,21 +558,38 @@ def _mc_mode_vis(fig, data_names, scene=True):
 
 exec(_MC_DESMOS_SRC)
 
+# Shared with the shown generating-code block: lambdify hands back a
+# list of per-component values and a constant component stays a
+# scalar, so broadcast every row onto the grid shape or np.asarray
+# dies on the inhomogeneous list.
+_MC_ROWS_SRC = '''
+def _mc_rows(raw, shape):
+    import numpy as _np
 
-def _mc_plot_figure(d, c, vars_, comps):
+    if isinstance(raw, _np.ndarray) and raw.dtype != object:
+        raw = [raw]
+    return _np.stack(
+        [_np.broadcast_to(_np.asarray(v, dtype=float), shape)
+         for v in raw])
+'''
+
+exec(_MC_ROWS_SRC)
+
+
+def _mc_plot_figure(d, c, vars_, comps, ranges):
     # Sample the components and build the plotly figure for the
     # signature. Non-finite samples stay NaN — plotly gaps on them,
-    # which is what makes poles/asymptotes break cleanly.
+    # which is what makes poles/asymptotes break cleanly. 'ranges'
+    # carries any for-clause domain bounds the user wrote.
     import numpy as _mc_np
     import plotly.graph_objects as go
 
     fnum = sp.lambdify(vars_, comps, 'numpy')
     acc = _MC_PLOT_ACC
     if d == 1:
-        ts = _mc_np.linspace(_MC_PLOT_R1[0], _MC_PLOT_R1[1], _MC_PLOT_N1)
-        vals = _mc_np.asarray(fnum(ts), dtype=float)
-        if vals.ndim == 1:
-            vals = vals.reshape(1, -1)
+        r1 = _mc_rng(ranges, vars_[0].name, _MC_PLOT_R1)
+        ts = _mc_np.linspace(r1[0], r1[1], _MC_PLOT_N1)
+        vals = _mc_rows(fnum(ts), ts.shape)
         if c == 1:
             fig = go.Figure(go.Scatter(
                 x=ts, y=vals[0], mode='lines',
@@ -577,13 +624,25 @@ def _mc_plot_figure(d, c, vars_, comps):
         fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
         return fig, None
 
-    us = _mc_np.linspace(_MC_PLOT_R2[0], _MC_PLOT_R2[1], _MC_PLOT_N2)
-    vs = _mc_np.linspace(_MC_PLOT_R2[0], _MC_PLOT_R2[1], _MC_PLOT_N2)
+    ru = _mc_rng(ranges, vars_[0].name, _MC_PLOT_R2)
+    rv = _mc_rng(ranges, vars_[1].name, _MC_PLOT_R2)
+    us = _mc_np.linspace(ru[0], ru[1], _MC_PLOT_N2)
+    vs = _mc_np.linspace(rv[0], rv[1], _MC_PLOT_N2)
     U, V = _mc_np.meshgrid(us, vs)
-    vals = _mc_np.asarray(fnum(U, V), dtype=float)
-    if vals.ndim == 2:
-        vals = vals.reshape(1, vals.shape[0], vals.shape[1])
+    vals = _mc_rows(fnum(U, V), U.shape)
     fig = go.Figure()
+    if c == 3:
+        # Parametric surface: x/y/z are the component grids — the image
+        # of the domain, not axis vectors plus a heightfield.
+        bounds = _mc_desmos_bounds(
+            _mc_extent(vals[0]), _mc_extent(vals[1]),
+            _mc_extent(vals[2]))
+        _mc_desmos_decor(fig, bounds)
+        _mc_desmos_surf(fig, vals[0], vals[1], vals[2])
+        _mc_desmos_sheet(fig, bounds)
+        _mc_desmos_scene(fig, bounds)
+        fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
+        return fig, bounds
     bounds = _mc_desmos_bounds(
         (float(us[0]), float(us[-1])),
         (float(vs[0]), float(vs[-1])),
@@ -642,7 +701,7 @@ class _MCCodePrinter(_MCStrPrinter):
     def _print_NaN(self, expr): return 'sp.nan'
 
 
-def _mc_plot_code(d, c, vars_, comps, bounds):
+def _mc_plot_code(d, c, vars_, comps, bounds, ranges):
     # The literal program _mc_plot_figure ran for this signature — the
     # generating-code block shows it in place of the opaque _mc_plot
     # marker. Mirrors the figure fn's branches; constants interpolate
@@ -678,7 +737,7 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
             f"{', '.join(names)} = sp.symbols('{' '.join(names)}')"
         )
         L.append('')
-    helpers = []
+    helpers = [_MC_ROWS_SRC]
     if bounds is not None:
         helpers.append(_MC_DESMOS_SRC)
     for src in helpers:
@@ -704,12 +763,11 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
         L.append("    text='mode', font=dict(size=11))")
 
     if d == 1:
+        r1 = _mc_rng(ranges, vars_[0].name, _MC_PLOT_R1)
         L += [
-            f'ts = _mc_np.linspace({_MC_PLOT_R1[0]}, {_MC_PLOT_R1[1]},'
+            f'ts = _mc_np.linspace({r1[0]}, {r1[1]},'
             f' {_MC_PLOT_N1})',
-            'vals = _mc_np.asarray(fnum(ts), dtype=float)',
-            'if vals.ndim == 1:',
-            '    vals = vals.reshape(1, -1)',
+            'vals = _mc_rows(fnum(ts), ts.shape)',
         ]
         if c == 1:
             L += [
@@ -747,37 +805,47 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
             ]
         L.append(f'fig.update_layout(margin={margin}, showlegend=False)')
     else:
+        ru = _mc_rng(ranges, vars_[0].name, _MC_PLOT_R2)
+        rv = _mc_rng(ranges, vars_[1].name, _MC_PLOT_R2)
         L += [
-            f'us = _mc_np.linspace({_MC_PLOT_R2[0]}, {_MC_PLOT_R2[1]},'
-            f' {_MC_PLOT_N2})',
-            f'vs = _mc_np.linspace({_MC_PLOT_R2[0]}, {_MC_PLOT_R2[1]},'
-            f' {_MC_PLOT_N2})',
+            f'us = _mc_np.linspace({ru[0]}, {ru[1]}, {_MC_PLOT_N2})',
+            f'vs = _mc_np.linspace({rv[0]}, {rv[1]}, {_MC_PLOT_N2})',
             'U, V = _mc_np.meshgrid(us, vs)',
-            'vals = _mc_np.asarray(fnum(U, V), dtype=float)',
-            'if vals.ndim == 2:',
-            '    vals = vals.reshape('
-            '1, vals.shape[0], vals.shape[1])',
+            'vals = _mc_rows(fnum(U, V), U.shape)',
             'fig = go.Figure()',
-            'bounds = _mc_desmos_bounds(',
-            '    (float(us[0]), float(us[-1])),',
-            '    (float(vs[0]), float(vs[-1])),',
-            '    _mc_extent(vals[0]))',
-            '_mc_desmos_decor(fig, bounds)',
-            '_mc_desmos_surf(fig, us, vs, vals[0])',
-            'fig.add_heatmap(',
-            '    x=us, y=vs, z=vals[0],'
-            " colorscale='Viridis',",
-            '    showscale=False, visible=False,',
-            "    name='heatmap',",
-            ')',
-            '_mc_desmos_sheet(fig, bounds)',
-            '_mc_desmos_scene(fig, bounds)',
         ]
-        menu(
-            ['surface', 'heatmap'],
-            ["_mc_mode_vis(fig, ('surf',))",
-             "_mc_mode_vis(fig, ('heatmap',), scene=False)"],
-        )
+        if c == 3:
+            L += [
+                'bounds = _mc_desmos_bounds(',
+                '    _mc_extent(vals[0]), _mc_extent(vals[1]),',
+                '    _mc_extent(vals[2]))',
+                '_mc_desmos_decor(fig, bounds)',
+                '_mc_desmos_surf(fig, vals[0], vals[1], vals[2])',
+                '_mc_desmos_sheet(fig, bounds)',
+                '_mc_desmos_scene(fig, bounds)',
+            ]
+        else:
+            L += [
+                'bounds = _mc_desmos_bounds(',
+                '    (float(us[0]), float(us[-1])),',
+                '    (float(vs[0]), float(vs[-1])),',
+                '    _mc_extent(vals[0]))',
+                '_mc_desmos_decor(fig, bounds)',
+                '_mc_desmos_surf(fig, us, vs, vals[0])',
+                'fig.add_heatmap(',
+                '    x=us, y=vs, z=vals[0],'
+                " colorscale='Viridis',",
+                '    showscale=False, visible=False,',
+                "    name='heatmap',",
+                ')',
+                '_mc_desmos_sheet(fig, bounds)',
+                '_mc_desmos_scene(fig, bounds)',
+            ]
+            menu(
+                ['surface', 'heatmap'],
+                ["_mc_mode_vis(fig, ('surf',))",
+                 "_mc_mode_vis(fig, ('heatmap',), scene=False)"],
+            )
         L.append(f'fig.update_layout(margin={margin}, showlegend=False)')
     L += [
         '# the figure dict the frontend hands to plotly.js',
@@ -787,7 +855,7 @@ def _mc_plot_code(d, c, vars_, comps, bounds):
 
 
 def _mc_plot_payload(v):
-    vars_, comps, label = _mc_plot_signature(v)
+    vars_, comps, label = _mc_plot_signature(v['expr'])
     d = len(vars_)
     c = len(comps)
     if d not in (1, 2):
@@ -798,12 +866,13 @@ def _mc_plot_payload(v):
         raise ValueError(
             f'cannot plot {c} output components (needs 1, 2, or 3)'
         )
-    if d == 2 and c != 1:
+    if d == 2 and c == 2:
         raise ValueError(
-            f'cannot plot a 2-variable function producing {c} '
-            'components — only ℝ²→ℝ surfaces are supported for now'
+            'cannot plot a 2-variable function producing 2 '
+            'components — ℝ²→ℝ² fields are not supported for now'
         )
-    fig, bounds = _mc_plot_figure(d, c, vars_, comps)
+    ranges = _mc_plot_ranges(v.get('domain'))
+    fig, bounds = _mc_plot_figure(d, c, vars_, comps, ranges)
     return {
         'plot': {
             'kind': f'{d}x{c}',
@@ -816,7 +885,7 @@ def _mc_plot_payload(v):
         },
         # The literal program that built the figure, for the cell's
         # generating-code block.
-        'code': _mc_plot_code(d, c, vars_, comps, bounds),
+        'code': _mc_plot_code(d, c, vars_, comps, bounds, ranges),
     }
 
 
@@ -854,7 +923,7 @@ def _mc_run_cell(cell, ns):
             # A _mc_plot marker isn't a value row — sample the
             # expression and hand the frontend plot data instead.
             if isinstance(val, dict) and val.get('__mcplot__') is True:
-                res = _mc_plot_payload(val['expr'])
+                res = _mc_plot_payload(val)
                 out.append({'ok': True, 'plot': res['plot'], 'code': res['code']})
                 continue
             row = _mc_row(val)

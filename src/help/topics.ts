@@ -133,9 +133,9 @@ export const HELP_TOPICS: HelpTopic[] = [
   {
     id: 'plot',
     goal: 'Plot',
-    keywords: 'graph figure curve surface draw chart',
-    smart: 'plot — then the expression; Output → Calculator renders it',
-    plain: '\\plot ⏎ — then the expression; Output → Calculator renders it',
+    keywords: 'graph figure curve surface draw chart domain range window',
+    smart: 'plot — then the expression (for x∈(a,b) sets the domain); Output → Calculator renders it',
+    plain: '\\plot ⏎ — then the expression (for x∈(a,b) sets the domain); Output → Calculator renders it',
     insert: '\\plot',
     default: true,
   },

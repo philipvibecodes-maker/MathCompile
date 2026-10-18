@@ -1610,6 +1610,141 @@ describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
       expect(z[0][0]).toBeCloseTo(18);
     });
 
+    it('reads a 2-var 3-vector as a parametric surface on the 3-D window', async () => {
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} \\begin{pmatrix} u \\\\ v \\\\ u^2+v^2 \\end{pmatrix}',
+        ),
+      );
+      expect(plot?.kind).toBe('2x3');
+      expect(plot?.vars).toEqual(['u', 'v']);
+      const tr = plot?.figure.data[0] as {
+        type: string;
+        x: number[][];
+        y: number[][];
+        z: number[][];
+      };
+      expect(tr.type).toBe('surface');
+      // The grids are the image of [-3,3]²: (u,v)=(-3,-3) → (-3,-3,18),
+      // (u,v)=(3,3) → (3,3,18).
+      expect(tr.x[0][0]).toBeCloseTo(-3);
+      expect(tr.y[0][0]).toBeCloseTo(-3);
+      expect(tr.z[0][0]).toBeCloseTo(18);
+      expect(tr.x[79][79]).toBeCloseTo(3);
+      expect(tr.y[79][79]).toBeCloseTo(3);
+      expect(tr.z[79][79]).toBeCloseTo(18);
+    });
+
+    it('samples a \\text{for} domain instead of the default window', async () => {
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} x^2 \\text{ for } x \\in (0, 5)',
+        ),
+      );
+      const tr = plot?.figure.data[0] as { x: number[]; y: number[] };
+      expect(tr.x[0]).toBeCloseTo(0);
+      expect(tr.x[599]).toBeCloseTo(5);
+      expect(tr.y[599]).toBeCloseTo(25);
+      // A two-sided chain resolves the same way; a one-sided bound
+      // keeps the default end.
+      const chainTr = plotRow(
+        await interimEvaluate(
+          '\\text{plot} x^2 \\text{ for } 0 \\le x \\le 5',
+        ),
+      )?.figure.data[0] as { x: number[] };
+      expect(chainTr.x[599]).toBeCloseTo(5);
+      const one = plotRow(
+        await interimEvaluate('\\text{plot} x^2 \\text{ for } x > 0'),
+      )?.figure.data[0] as { x: number[] };
+      expect(one.x[0]).toBeCloseTo(0);
+      expect(one.x[599]).toBeCloseTo(10);
+    });
+
+    it('applies a multi-variable domain to a parametric surface', async () => {
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} \\begin{pmatrix} u \\cos v \\\\ u \\sin v \\\\ v \\end{pmatrix}' +
+            ' \\text{ for } u \\in (0,1) \\land v \\in (0, 2\\pi)',
+        ),
+      );
+      expect(plot?.kind).toBe('2x3');
+      const tr = plot?.figure.data[0] as {
+        x: number[][];
+        y: number[][];
+        z: number[][];
+      };
+      // v sweeps [0, 2π]: the (1, 2π) corner is x = cos(2π) = 1,
+      // z = 2π — not the default-window corner 3cos(3)/3.
+      expect(tr.x[79][79]).toBeCloseTo(1);
+      expect(tr.y[79][79]).toBeCloseTo(Math.sin(2 * Math.PI));
+      expect(tr.z[79][79]).toBeCloseTo(2 * Math.PI);
+    });
+
+    it('applies a (u,v) ∈ I₁×I₂ product domain and broadcasts a constant component', async () => {
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} \\left(u,v,1\\right) \\text{ for }' +
+            ' \\left(u,v\\right) \\in \\left[0,1\\right]' +
+            ' \\times \\left[0,2\\pi\\right]',
+        ),
+      );
+      expect(plot?.kind).toBe('2x3');
+      const tr = plot?.figure.data[0] as {
+        x: number[][];
+        y: number[][];
+        z: number[][];
+      };
+      expect(tr.x[0][0]).toBeCloseTo(0);
+      expect(tr.x[79][79]).toBeCloseTo(1);
+      expect(tr.y[0][0]).toBeCloseTo(0);
+      expect(tr.y[79][79]).toBeCloseTo(2 * Math.PI);
+      expect(tr.z[79][79]).toBeCloseTo(1);
+    });
+
+    it('reads the product domain when (a,b) lowers to a row matrix', async () => {
+      // pair-matrix mode turns the membership lhs into Matrix — the
+      // bounds must survive that lowering too.
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} \\left(u,v,1\\right) \\text{ for }' +
+            ' \\left(u,v\\right) \\in \\left[0,1\\right]' +
+            ' \\times \\left[0,2\\pi\\right]',
+          [],
+          { pairTuple: 'matrix' },
+        ),
+      );
+      const tr = plot?.figure.data[0] as {
+        x: number[][];
+        y: number[][];
+      };
+      expect(tr.x[79][79]).toBeCloseTo(1);
+      expect(tr.y[79][79]).toBeCloseTo(2 * Math.PI);
+    });
+
+    it('an (a,b) paren domain gives no bounds in pair-matrix mode', async () => {
+      // Under pair-matrix semantics (0,5) is a 1×2 matrix — Contains
+      // membership in {0,5}, not a range.
+      const plot = plotRow(
+        await interimEvaluate('\\text{plot} x^2 \\text{ for } x \\in (0, 5)', [], {
+          pairTuple: 'matrix',
+        }),
+      );
+      const tr = plot?.figure.data[0] as { x: number[] };
+      expect(tr.x[0]).toBeCloseTo(-10);
+      expect(tr.x[599]).toBeCloseTo(10);
+    });
+
+    it('an unreadable \\text{for} condition keeps the default window', async () => {
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} x^2 \\text{ for } x \\in \\{1,2,3\\}',
+        ),
+      );
+      const tr = plot?.figure.data[0] as { x: number[] };
+      expect(tr.x[0]).toBeCloseTo(-10);
+      expect(tr.x[599]).toBeCloseTo(10);
+    });
+
     it('stays empty for unplottable or unknowable signatures', async () => {
       // Def'd names don't bind in the interim — g(x) can't be sampled.
       expect(
@@ -1617,14 +1752,14 @@ describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
       ).toEqual([]);
       // A name bound by a cell above is unknowable to the interim.
       expect(await interimEvaluate('\\text{plot} a*x', ['a = 2'])).toEqual([]);
-      // Constants / too many vars / R²→R³: the worker's error row lands.
+      // Constants / too many vars / R²→R²: the worker's error row lands.
       expect(await interimEvaluate('\\text{plot} 5')).toEqual([]);
       expect(
         await interimEvaluate('\\text{plot} x+y+z'),
       ).toEqual([]);
       expect(
         await interimEvaluate(
-          '\\text{plot} \\begin{pmatrix} u \\\\ v \\\\ u+v \\end{pmatrix}',
+          '\\text{plot} \\begin{pmatrix} u \\\\ v \\end{pmatrix}',
         ),
       ).toEqual([]);
     });

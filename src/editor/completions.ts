@@ -53,6 +53,7 @@ export const COMPLETIONS: CompletionItem[] = [
   { name: 'begin', hint: 'environment (pmatrix, cases, …)' },
   { name: 'def', hint: 'function definition', preview: '\\text{def} ' },
   { name: 'plot', hint: 'plot a function', preview: '\\text{plot} ' },
+  { name: 'for', hint: 'domain condition', preview: '\\text{for} ' },
   { name: 'solve', hint: 'solve equations', preview: '\\text{solve} ' },
   { name: 'dsolve', hint: 'solve an ODE', preview: '\\text{dsolve} ' },
   { name: 'pdesolve', hint: 'solve a PDE', preview: '\\text{pdesolve} ' },

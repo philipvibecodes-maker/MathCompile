@@ -102,15 +102,68 @@
   }
   let zoomText = $state('');
   let baseEye = 0;
-  function sceneCam(gd: HTMLDivElement): SceneCam | null {
-    const lay = (gd as unknown as { layout?: Record<string, unknown> })
-      .layout;
-    for (const key of Object.keys(lay ?? {})) {
+  // The render-truth camera for a gl3d scene is the
+  // orbit-camera-controller at `_fullLayout.<scene>._scene.camera`
+  // (plain [x,y,z] arrays — drags mutate it continuously). Before any
+  // relayout, `_fullLayout.<scene>.camera` shares refs with it; the
+  // first `Plotly.relayout` re-coerces a detached copy, so neither
+  // `layout` nor `_fullLayout` camera specs can be trusted after an
+  // interaction — they hold whatever the last relayout wrote.
+  function liveSceneCam(
+    gd: HTMLDivElement,
+  ): { key: string; cam: SceneCam } | null {
+    const g = gd as unknown as {
+      layout?: Record<string, unknown>;
+      _fullLayout?: Record<string, unknown>;
+    };
+    for (const key of Object.keys(g._fullLayout ?? {})) {
       if (!/^scene\d*$/.test(key)) continue;
-      const cam = (lay![key] as { camera?: SceneCam })?.camera;
-      if (cam?.eye) return cam;
+      const sc = g._fullLayout![key] as {
+        camera?: SceneCam;
+        _scene?: {
+          camera?: { eye?: number[]; center?: number[]; up?: number[] };
+        };
+      };
+      const live = sc?._scene?.camera;
+      if (live?.eye) {
+        const v = (a?: number[]) =>
+          a ? { x: a[0], y: a[1], z: a[2] } : undefined;
+        return {
+          key,
+          cam: { eye: v(live.eye), center: v(live.center), up: v(live.up) },
+        };
+      }
+      if (sc?.camera?.eye) return { key, cam: sc.camera };
+    }
+    // No gl3d subplot yet (pre-render or 2-D) — fall back to the spec.
+    for (const key of Object.keys(g.layout ?? {})) {
+      if (!/^scene\d*$/.test(key)) continue;
+      const cam = (g.layout![key] as { camera?: SceneCam })?.camera;
+      if (cam?.eye) return { key, cam };
     }
     return null;
+  }
+  function sceneCam(gd: HTMLDivElement): SceneCam | null {
+    return liveSceneCam(gd)?.cam ?? null;
+  }
+  // Drags mutate the controller but never write `layout.scene.camera`,
+  // so any later relayout (modebar zoom, reset, restyle) re-coerces a
+  // stale camera and `setCamera` snaps the view back — including the
+  // "random" first frame of the home button's two-step reset. Mirror
+  // the live camera into the layout after every relayout so the next
+  // coerce starts from what the user is actually looking at.
+  function syncSceneCam(gd: HTMLDivElement) {
+    const live = liveSceneCam(gd);
+    if (!live) return;
+    const lay = (gd as unknown as { layout?: Record<string, unknown> })
+      .layout;
+    const sc = lay?.[live.key] as { camera?: SceneCam } | undefined;
+    if (!sc) return;
+    sc.camera = {
+      eye: live.cam.eye,
+      center: live.cam.center,
+      up: live.cam.up,
+    };
   }
   function eyeDist(cam: SceneCam): number {
     const e = cam.eye!;
@@ -360,11 +413,43 @@
     if (!target || !P) return;
     const { data, layout } = themedFigure(p, dark);
     applyModeAxes({ data, layout });
-    P.react(target, data, { ...layout, autosize: true }, CONFIG).catch(
-      (e) => {
+    P.react(target, data, { ...layout, autosize: true }, CONFIG)
+      .then(() => {
+        // Re-anchor the modebar's "last save" home state to this
+        // payload's spec. `_scene.viewInitial` is captured once at
+        // scene creation — which happens on the interim overlay's
+        // unspecced frame — so without this the home button lands on
+        // plotly's stock (1.25,1.25,1.25) camera forever.
+        const g = target as unknown as {
+          _fullLayout?: Record<string, unknown>;
+        };
+        const lay = layout as Record<string, unknown>;
+        for (const key of Object.keys(g._fullLayout ?? {})) {
+          if (!/^scene\d*$/.test(key)) continue;
+          const spec = lay[key] as
+            | {
+                camera?: SceneCam;
+                aspectratio?: V3;
+                aspectmode?: string;
+              }
+            | undefined;
+          const vi = (
+            g._fullLayout?.[key] as {
+              _scene?: { viewInitial?: Record<string, unknown> };
+            }
+          )?._scene?.viewInitial;
+          if (!vi || !spec?.camera?.eye) continue;
+          const cp = (v?: V3) => (v ? { ...v } : v);
+          vi.eye = cp(spec.camera.eye);
+          vi.center = cp(spec.camera.center) ?? { x: 0, y: 0, z: 0 };
+          vi.up = cp(spec.camera.up) ?? { x: 0, y: 0, z: 1 };
+          if (spec.aspectratio) vi.aspectratio = { ...spec.aspectratio };
+          if (spec.aspectmode) vi.aspectmode = spec.aspectmode;
+        }
+      })
+      .catch((e) => {
         failed = e instanceof Error ? e.message : String(e);
-      },
-    );
+      });
     // Baseline eye↔center distance for the zoom readout — reset
     // whenever the payload re-renders.
     const lay = layout as Record<string, unknown>;
@@ -390,6 +475,7 @@
       (
         target as unknown as { on: (ev: string, cb: () => void) => void }
       ).on('plotly_relayout', () => {
+        syncSceneCam(target);
         updateZoom(target);
         markActiveMenuItem(target);
       });

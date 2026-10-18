@@ -64,7 +64,10 @@ New files:
   One override also lives here: `LatexCmds.def` (extracted from
   `advancedSymbols.ts`, tagged at the cut site) — an insertion alias
   that expands to a real `\text{def}` TextBlock, which is the
-  function-definition marker the app's compiler reads.
+  function-definition marker the app's compiler reads. Its siblings
+  `\solve`/`\dsolve`/`\pdesolve`/`\ode`/`\pde`/`\plot`/`\for` expand to
+  the other `\text{…}` statement markers the same way (the solver, plot,
+  and domain/comprehension markers).
   Because these commands previously shipped inside `commands.ts` — part
   of `mathquill-basic` — `extraCommands.ts` is in `SOURCES_BASIC` too:
   anything added there may only reference symbols from `BASE_SOURCES` +

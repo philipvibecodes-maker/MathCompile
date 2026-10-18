@@ -1461,6 +1461,30 @@ LatexCmds.plot = () =>
   );
 
 //======================================================================
+//  \for — insertion alias for \text{for}
+//======================================================================
+
+// Typing `\for` (or `for` under autoCommands) expands to a real
+// \text{for} TextBlock plus a trailing space — the marker the compiler
+// reads as the comprehension/domain keyword (\text{plot} f \text{for}
+// x ∈ (a,b)) — with the caret after the space ready for the
+// condition — the same insertion-time expansion \def and \plot use. A
+// `\for` in pasted latex renders the same "for" text and serializes as
+// \text{for}, so stored latex canonicalizes on the next save.
+class ForAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{for}\\ ');
+  }
+}
+LatexCmds.for = () =>
+  new ForAlias(
+    '\\text{for}',
+    h('span', { class: 'mq-text-mode' }, [h.text('for')]) as HTMLElement,
+    'for',
+    'for'
+  );
+
+//======================================================================
 //  \dotproduct — insertion alias for \bullet
 //======================================================================
 

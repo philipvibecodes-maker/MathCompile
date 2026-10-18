@@ -181,12 +181,14 @@ export const CALC_RUNTIME_PY = `def clean_and_simplify(val, ans_var=None, layout
     return out
 
 
-def _mc_plot(value):  # plot marker
+def _mc_plot(value, domain=None):  # plot marker
     """Tag a value as a plot request.
 
-    The 'plot' statement emits _mc_plot(<expr>). The returned dict is a
-    marker, not a result — the calculator's engine samples the
-    expression's signature and renders it. Outside the engine it just
-    carries the expression in its 'expr' slot.
+    The 'plot' statement emits _mc_plot(<expr>[, domain]). The returned
+    dict is a marker, not a result — the calculator's engine samples the
+    expression's signature and renders it. 'domain' is a {name: (lo, hi)}
+    dict from the statement's for-clause; a None end keeps the
+    signature's default. Outside the engine it just carries the
+    expression in its 'expr' slot.
     """
-    return {'__mcplot__': True, 'expr': value}`;
+    return {'__mcplot__': True, 'expr': value, 'domain': domain}`;
