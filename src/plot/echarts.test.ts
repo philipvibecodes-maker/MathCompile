@@ -118,6 +118,40 @@ describe('echartsOption', () => {
     ]);
   });
 
+  it('converts a parametric surface (2-D x/y/z grids) to a gl surface', () => {
+    const opt = echartsOption(
+      plot([
+        {
+          type: 'surface',
+          x: [
+            [0, 1],
+            [0, 1],
+          ],
+          y: [
+            [0, 0],
+            [1, 1],
+          ],
+          z: [
+            [0, 1],
+            [1, 2],
+          ],
+          name: 'surf',
+        },
+      ]),
+      false,
+    )!;
+    const s = series(opt);
+    expect(s).toHaveLength(1);
+    expect(s[0].type).toBe('surface');
+    expect(s[0].dataShape).toEqual([2, 2]);
+    expect(s[0].data).toEqual([
+      [0, 0, 0],
+      [1, 0, 1],
+      [0, 1, 1],
+      [1, 1, 2],
+    ]);
+  });
+
   it('falls back to a heatmap when no gl trace exists', () => {
     const opt = echartsOption(
       plot([

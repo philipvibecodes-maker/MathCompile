@@ -54,6 +54,17 @@ describe('plot statement IR', () => {
     expect(node(ir)[0]).toBe('Assign');
     expect(JSON.stringify(ir)).not.toContain('"Plot"');
   });
+
+  it('\\text{plot} … \\text{for} keeps the condition as the domain', () => {
+    const { ir } = normalizeIR(
+      parseCellLatex('\\text{plot} x^2 \\text{ for } x \\in (0, 5)'),
+    );
+    const n = node(ir);
+    expect(n[0]).toBe('Plot');
+    expect(node(n[1])[0]).toBe('Power');
+    // The for-condition rides on the Plot node — Element(x, Interval).
+    expect(node(n[2])[0]).toBe('Element');
+  });
 });
 
 describe('plot statement calc codegen', () => {
@@ -76,6 +87,49 @@ describe('plot statement calc codegen', () => {
       { json: parseCellLatex('\\text{plot} g(x)') },
     ]);
     expect(prog.cells[1].statements[0].code).toBe('_mc_plot(g(x))');
+  });
+
+  it('a \\text{for} domain emits a {var: (lo, hi)} dict argument', () => {
+    expect(
+      calcCode('\\text{plot} x^2 \\text{ for } x \\in (0, 5)'),
+    ).toBe('_mc_plot(x**2, {"x": (0, 5)})');
+    // Two-sided chains merge; one-sided bounds keep a None end.
+    expect(
+      calcCode('\\text{plot} x^2 \\text{ for } 0 \\le x \\le 5'),
+    ).toBe('_mc_plot(x**2, {"x": (0, 5)})');
+    expect(
+      calcCode('\\text{plot} \\sqrt{x} \\text{ for } x > 0'),
+    ).toBe('_mc_plot(sqrt(x), {"x": (0, None)})');
+    // And-joined conditions cover several variables.
+    expect(
+      calcCode(
+        '\\text{plot} \\begin{pmatrix} u \\\\ v \\\\ u+v \\end{pmatrix} ' +
+          '\\text{ for } u \\in (0,1) \\land v \\in (0, 2\\pi)',
+      ),
+    ).toBe(
+      '_mc_plot(Matrix([[u], [v], [u + v]]), ' +
+        '{"u": (0, 1), "v": (0, 2 * pi)})',
+    );
+  });
+
+  it('an unreadable \\text{for} condition flags a note, defaults stand', () => {
+    expect(
+      calcCode('\\text{plot} x^2 \\text{ for } x \\in \\{1,2,3\\}'),
+    ).toBe('_mc_plot(x**2)');
+    const out = compileWorksheet(
+      [
+        {
+          json: parseCellLatex(
+            '\\text{plot} x^2 \\text{ for } x \\in \\{1,2,3\\}',
+          ),
+        },
+      ],
+      'python',
+      { importAll: false },
+    );
+    expect(
+      out.issues.some((i) => i.message.includes('no usable')),
+    ).toBe(true);
   });
 });
 
@@ -110,12 +164,62 @@ describe('plot statement python codegen', () => {
     ).toBe(true);
   });
 
-  it('R²→R³ lowers to sp.plot3d_parametric_surface', () => {
+  it('R²→R³ lowers to sp.plot3d_parametric_surface on the 3-D window', () => {
     const lines = pyLines(
       '\\text{plot} \\begin{pmatrix} u \\cos v \\\\ u \\sin v \\\\ v \\end{pmatrix}',
     );
+    expect(lines).toContain(
+      'sp.plot3d_parametric_surface(u * sp.cos(v), u * sp.sin(v), v, (u, -3, 3), (v, -3, 3))',
+    );
+  });
+
+  it('a \\text{for} domain overrides the default ranges', () => {
     expect(
-      lines.some((l) => l.startsWith('sp.plot3d_parametric_surface(')),
+      pyLines('\\text{plot} x^2 \\text{ for } x \\in (0, 5)'),
+    ).toContain('sp.plot(x**2, (x, 0, 5))');
+    // A one-sided bound keeps the signature's default other end.
+    expect(
+      pyLines('\\text{plot} \\sqrt{x} \\text{ for } x > 0'),
+    ).toContain('sp.plot(sp.sqrt(x), (x, 0, 10))');
+    expect(
+      pyLines(
+        '\\text{plot} \\begin{pmatrix} u \\cos v \\\\ u \\sin v \\\\ v \\end{pmatrix}' +
+          ' \\text{ for } u \\in (0,1) \\land v \\in (0, 2\\pi)',
+      ),
+    ).toContain(
+      'sp.plot3d_parametric_surface(u * sp.cos(v), u * sp.sin(v), v, (u, 0, 1), (v, 0, 2 * sp.pi))',
+    );
+  });
+
+  it('a (u,v) ∈ I₁×I₂ product domain bounds each variable', () => {
+    expect(
+      pyLines(
+        '\\text{plot} \\begin{pmatrix} u \\\\ v \\\\ 1 \\end{pmatrix}' +
+          ' \\text{ for } \\left(u,v\\right) \\in \\left[0,1\\right]' +
+          ' \\times \\left[0,2\\pi\\right]',
+      ),
+    ).toContain(
+      'sp.plot3d_parametric_surface(u, v, 1, (u, 0, 1), (v, 0, 2 * sp.pi))',
+    );
+  });
+
+  it('a bound on a non-variable flags a note', () => {
+    const out = compileWorksheet(
+      [
+        {
+          json: parseCellLatex(
+            '\\text{plot} x^2 \\text{ for } y \\in (0, 5)',
+          ),
+        },
+      ],
+      'python',
+      { importAll: false },
+    );
+    expect(out.cellLines[0]).toContain('sp.plot(x**2, (x, -10, 10))');
+    expect(
+      out.issues.some(
+        (i) => i.message.includes("'y' isn't a variable"),
+      ),
     ).toBe(true);
   });
 
@@ -266,5 +370,28 @@ describe('plot theming', () => {
     expect(
       (createdScene.xaxis as Record<string, unknown>).backgroundcolor,
     ).toBe('rgba(0,0,0,0)');
+  });
+
+  it('drags turntable a scene, pan cartesian plots', () => {
+    // layout.dragmode 'pan' inherits into a scene whose own dragmode
+    // is unset — the theme pins 'turntable' so 3-D drags rotate.
+    const withScene: PlotData = {
+      ...base,
+      figure: { ...base.figure, layout: { scene: {} } },
+    };
+    const { layout } = themedFigure(withScene, true);
+    expect((layout.scene as Record<string, unknown>).dragmode).toBe(
+      'turntable',
+    );
+    expect(layout.dragmode).toBe('pan');
+    const noScene: PlotData = {
+      ...base,
+      figure: { ...base.figure, layout: {} },
+    };
+    const created = themedFigure(noScene, true).layout;
+    // No scene in the figure → none is created just for dragmode; the
+    // scatter's own dragmode is the layout's.
+    expect(created.scene).toBeUndefined();
+    expect(created.dragmode).toBe('pan');
   });
 });

@@ -180,7 +180,7 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   `reserve()` folds this cell's own names in), unknown/def'd
   functions (compile returns non-'expression' calling or all-NaN
   samples), and signatures the worker would reject (d∉{1,2},
-  c∉{1,2,3}, d=2⇒c∈{1,2}).
+  c∉{1,2,3}).
 - **ℝ²→ℝ² (`kind: '2x2'`) is one figure, two views**: the worker's
   `_mc_field_view`/`_mc_gridimg_view` (sources in `_MC_FIELD_SRC`/
   `_MC_GRIDIMG_SRC`, exec'd and shown verbatim in the generating-code
@@ -216,9 +216,24 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   the incoming figure, so an edit doesn't snap the mode back to
   `field` (the interim payload has no menus at all — the selection
   can't ride on `_fullLayout` alone).
+- **ℝ²→ℝ³ (`kind: '2x3'`) parametrizations** sample the same
+  [-3,3]² window as 2-D scalar surfaces — the surface is the image
+  of the domain, so the
+  trace carries per-component 2-D x/y/z grids instead of axis
+  vectors. A `\text{for}` clause sets the sampling domain:
+  `\text{plot} f \text{ for } x ∈ (a,b)` (also `[a,b]`, `a ≤ x ≤ b`,
+  one-sided `x > a`, `u ∈ … \land v ∈ …`, `(u,v) ∈ I₁×I₂`) parses to
+  `['Plot', expr, cond]`; `plotDomainBounds` reads it into per-var
+  (lo, hi) ends — calc emits `_mc_plot(expr, {'v': (lo, hi)})` (None
+  keeps the default end), python emits `(v, lo, hi)` ranges, and
+  `_mc_rng`/the interim's `rng` apply the same defaults-fallback
+  rules.
+  The same per-var domain also drives the 2x2 quiver/image
+  sampling windows.
 - **`src/plot/echarts.ts` converts the figure dict**, not the
   expression: scatter→line (NaN→null gaps), scatter3d→line3D,
-  surface→gl `surface` (x/y vectors expanded to `[x,y,z]` triples +
+  surface→gl `surface` (x/y vectors — or per-component 2-D grids for
+  a 2x3 parametrization — flattened to `[x,y,z]` triples +
   `dataShape`), heatmap→category-axis heatmap + viridis `visualMap`.
   Scene-decor names (`wallgrid`/`box`/`axis`/`ticks`/`xysheet`) and
   `mode:'text'` traces are skipped; a 2x1 figure prefers the gl

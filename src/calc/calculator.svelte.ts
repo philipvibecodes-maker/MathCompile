@@ -5,6 +5,7 @@ import {
   firstFreeCapital,
   freeNames,
   plotComponents,
+  plotDomainBounds,
   type CalcWorksheetProgram,
   type CompileOptions,
 } from '../compile/codegen';
@@ -672,14 +673,17 @@ const sampleNum = (run: (vars: Record<string, number>) => unknown, vars: Record<
 function interimFieldTraces(
   runners: ((vars: Record<string, number>) => unknown)[],
   vars: string[],
+  ru: [number, number],
+  rv: [number, number],
 ): Record<string, unknown>[] | null {
-  const us = linspace(PLOT_R2[0], PLOT_R2[1], PLOT_NF);
+  const us = linspace(ru[0], ru[1], PLOT_NF);
+  const vs = linspace(rv[0], rv[1], PLOT_NF);
   const x: number[] = [];
   const y: number[] = [];
   const u: number[] = [];
   const v: number[] = [];
   let mmax = 0;
-  for (const vy of us) {
+  for (const vy of vs) {
     for (const ux of us) {
       const du = sampleNum(runners[0], {
         [vars[0]]: ux,
@@ -717,6 +721,28 @@ function interimFieldTraces(
   ];
 }
 
+// A `\text{for}` domain bound's numeric end: compile + evaluate the
+// endpoint; one that can't compile or isn't a finite number (it
+// references an unknowable name) keeps the signature default, same as
+// the worker's _mc_rng.
+const domainEnd = (
+  node: MathJson,
+  ce: ComputeEngine,
+): number | undefined => {
+  try {
+    const res = compile(ce.box(node as never));
+    if (res.calling !== 'expression' || typeof res.run !== 'function')
+      return undefined;
+    const v = sampleNum(
+      res.run as (vars: Record<string, number>) => unknown,
+      {},
+    );
+    return Number.isFinite(v) ? v : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 // A `\text{plot}` statement's interim row: the expression is compiled
 // to JS by CE's `compile` and sampled on the worker's grid, producing a
 // real PlotData payload — CalcOutput renders it through the same
@@ -728,6 +754,7 @@ function interimPlotRow(
   expr: MathJson,
   ce: ComputeEngine,
   priorDeclared: Set<string>,
+  domain?: MathJson,
 ): CalcRow | null {
   const h = headOf(expr);
   // The worker rejects sets/intervals with a "cannot be plotted"
@@ -778,8 +805,27 @@ function interimPlotRow(
   const c = compNodes.length;
   // Same constraints the worker reports as errors — the interim leaves
   // the row empty and the real diagnostic lands with SymPy.
-  if (d < 1 || d > 2 || c < 1 || c > 3 || (d === 2 && c > 2))
+  // d === 2 accepts c = 1 (surface), 2 (quiver field), 3 (parametric
+  // surface) — everything beyond the dim/component bounds.
+  if (d < 1 || d > 2 || c < 1 || c > 3)
     return null;
+
+  // A `\text{for}` domain's readable ends override each variable's
+  // signature default — mirrored by the worker's _mc_rng.
+  const domRanges = new Map<string, [number?, number?]>();
+  if (domain !== undefined)
+    for (const { v, lo, hi } of plotDomainBounds(domain))
+      domRanges.set(v, [
+        lo === undefined ? undefined : domainEnd(lo, ce),
+        hi === undefined ? undefined : domainEnd(hi, ce),
+      ]);
+  const rng = (v: string, dflt: [number, number]): [number, number] => {
+    const r = domRanges.get(v);
+    if (!r) return dflt;
+    const lo = r[0] ?? dflt[0];
+    const hi = r[1] ?? dflt[1];
+    return lo < hi ? [lo, hi] : dflt;
+  };
 
   const data: Record<string, unknown>[] = [];
   const layout: Record<string, unknown> = {
@@ -790,7 +836,8 @@ function interimPlotRow(
     v.every((x) => !Number.isFinite(x));
 
   if (d === 1) {
-    const ts = linspace(PLOT_R1[0], PLOT_R1[1], PLOT_N1);
+    const r1 = rng(vars[0], PLOT_R1);
+    const ts = linspace(r1[0], r1[1], PLOT_N1);
     const vals = runners.map((run) =>
       ts.map((t) => sampleNum(run, { [vars[0]]: t })),
     );
@@ -833,7 +880,12 @@ function interimPlotRow(
   } else if (c === 2) {
     // d === 2, c === 2 — ℝ²→ℝ²: the interim previews the field view
     // only; the real figure adds the grid-image mode behind the menu.
-    const tr = interimFieldTraces(runners, vars);
+    const tr = interimFieldTraces(
+      runners,
+      vars,
+      rng(vars[0], PLOT_R2),
+      rng(vars[1], PLOT_R2),
+    );
     if (tr === null) return null;
     data.push(...tr);
     layout['xaxis'] = { zeroline: true };
@@ -842,11 +894,34 @@ function interimPlotRow(
       scaleanchor: 'x',
       scaleratio: 1,
     };
+  } else if (c === 3) {
+    // ℝ²→ℝ³ parametrization — the surface is the image of the domain,
+    // so x/y/z are per-component 2-D grids rather than axis vectors
+    // plus a heightfield.
+    const ru = rng(vars[0], PLOT_R2);
+    const rv = rng(vars[1], PLOT_R2);
+    const us = linspace(ru[0], ru[1], PLOT_N2);
+    const vs = linspace(rv[0], rv[1], PLOT_N2);
+    const grids = runners.map((run) =>
+      vs.map((v) =>
+        us.map((u) => sampleNum(run, { [vars[0]]: u, [vars[1]]: v })),
+      ),
+    );
+    if (grids.some((g) => g.every(allGaps))) return null;
+    data.push({
+      type: 'surface',
+      x: grids[0],
+      y: grids[1],
+      z: grids[2],
+      name: 'surf',
+    });
   } else {
     // d === 2, c === 1 — ℝ²→ℝ: a surface plus the hidden heatmap trace
     // (the same shape the worker emits, minus the Desmos scene decor).
-    const us = linspace(PLOT_R2[0], PLOT_R2[1], PLOT_N2);
-    const vs = linspace(PLOT_R2[0], PLOT_R2[1], PLOT_N2);
+    const ru = rng(vars[0], PLOT_R2);
+    const rv = rng(vars[1], PLOT_R2);
+    const us = linspace(ru[0], ru[1], PLOT_N2);
+    const vs = linspace(rv[0], rv[1], PLOT_N2);
     const grid: number[][] = vs.map((v) =>
       us.map((u) => sampleNum(runners[0], { [vars[0]]: u, [vars[1]]: v })),
     );
@@ -953,8 +1028,8 @@ export async function interimEvaluate(
           // `\text{plot}` statements sample through the JS compiler —
           // evalStatement's SKIP_HEADS would leave them empty until
           // SymPy lands.
-          if (isArr(s) && headOf(s) === 'Plot' && s.length === 2)
-            return interimPlotRow(s[1], engine, priorDeclared);
+          if (isArr(s) && headOf(s) === 'Plot' && (s.length === 2 || s.length === 3))
+            return interimPlotRow(s[1], engine, priorDeclared, s[2]);
           return evalStatement(s, engine, nextConst);
         } catch {
           // A statement CE can't read shouldn't sink the other rows.

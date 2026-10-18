@@ -11040,6 +11040,51 @@ var __assign = (this && this.__assign) || function () {
         return new GradientAlias('\\nabla ', h('span', {}, [h.entityText('&nabla;')]), '\u2207', 'gradient');
     };
     //======================================================================
+    //  \plot \u2014 insertion alias for \text{plot}
+    //======================================================================
+    // Typing `\plot` expands to a real \text{plot} TextBlock plus a trailing
+    // space \u2014 the statement marker the compiler reads as a plot request,
+    // with the caret after the space ready for the expression \u2014 the same
+    // insertion-time expansion \def uses. A `\plot` in pasted latex renders
+    // the same "plot" text and serializes as \text{plot}, so stored latex
+    // canonicalizes on the next save.
+    var PlotAlias = /** @class */ (function (_super) {
+        __extends(PlotAlias, _super);
+        function PlotAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        PlotAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{plot}\\ ');
+        };
+        return PlotAlias;
+    }(MQSymbol));
+    LatexCmds.plot = function () {
+        return new PlotAlias('\\text{plot}', h('span', { class: 'mq-text-mode' }, [h.text('plot')]), 'plot', 'plot');
+    };
+    //======================================================================
+    //  \for \u2014 insertion alias for \text{for}
+    //======================================================================
+    // Typing `\for` (or `for` under autoCommands) expands to a real
+    // \text{for} TextBlock plus a trailing space \u2014 the marker the compiler
+    // reads as the comprehension/domain keyword (\text{plot} f \text{for}
+    // x \u2208 (a,b)) \u2014 with the caret after the space ready for the
+    // condition \u2014 the same insertion-time expansion \def and \plot use. A
+    // `\for` in pasted latex renders the same "for" text and serializes as
+    // \text{for}, so stored latex canonicalizes on the next save.
+    var ForAlias = /** @class */ (function (_super) {
+        __extends(ForAlias, _super);
+        function ForAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        ForAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{for}\\ ');
+        };
+        return ForAlias;
+    }(MQSymbol));
+    LatexCmds.for = function () {
+        return new ForAlias('\\text{for}', h('span', { class: 'mq-text-mode' }, [h.text('for')]), 'for', 'for');
+    };
+    //======================================================================
     //  \dotproduct \u2014 insertion alias for \bullet
     //======================================================================
     // Typing `\dotproduct` expands to the \bullet sign the compiler reads
