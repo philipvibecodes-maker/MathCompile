@@ -664,8 +664,8 @@ def _mc_gridimg_view(fig, fnum, rng=(-3.0, 3.0), step=0.5, npts=160,
         mode='lines', name='input square', fill='toself',
         fillcolor='rgba(140,140,140,0.12)',
         line=dict(color=src, width=1.5),
-        visible=False, showlegend=True, hoverinfo='skip',
-        meta=dict(inputToggle=True))
+        visible=False, showlegend=True, legendrank=2000,
+        hoverinfo='skip', meta=dict(inputToggle=True))
 
     fx, fy = [], []   # finite image samples, for the framing box
 

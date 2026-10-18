@@ -105,26 +105,41 @@ test('ℝ²→ℝ² plot hides its image-of-grid traces behind the image mode', 
   await expect(plot.locator('.legend')).toContainText('image of square');
   await expect(plot.locator('.legend')).toContainText('image of y = k');
 
-  // The 'input' checkbox reveals the input square; switching modes
-  // can't clear it (the menu's vis lists don't own it).
+  // The 'input square' checkbox lives on the image view only — in
+  // field mode there's no checkbox and no way to show the square.
   const inputToggle = page.locator('.plot-input-toggle input');
+  await expect(inputToggle).toBeVisible();
   await expect(inputToggle).toBeVisible();
   await inputToggle.check();
   await expect.poll(() => traceVis('input square')).toBe(true);
+  // Its legend entry sits below the image traces.
+  const legendOrder = await plot
+    .locator('.legend .traces .legendtext')
+    .allTextContents();
+  expect(legendOrder).toEqual([
+    'image of square',
+    'image of y = k',
+    'input square',
+  ]);
+  // Switching to field mode hides the square (input is image-only) and
+  // drops the checkbox; the checked state persists for image mode.
   const header2 = plot.locator('.updatemenu-header-group');
   await header2.click({ force: true });
   await plot
     .locator('.updatemenu-dropdown-button', { hasText: 'field' })
     .click();
   await expect.poll(() => traceVis('image of y = k')).toBe(false);
-  await expect.poll(() => traceVis('input square')).toBe(true);
-  await inputToggle.uncheck();
   await expect.poll(() => traceVis('input square')).toBe(false);
+  await expect(inputToggle).toBeHidden();
   await header2.click({ force: true });
   await plot
     .locator('.updatemenu-dropdown-button', { hasText: 'image' })
     .click();
   await expect.poll(() => traceVis('image of y = k')).toBe(true);
+  // …and the still-checked checkbox re-shows the square in image mode.
+  await expect.poll(() => traceVis('input square')).toBe(true);
+  await inputToggle.uncheck();
+  await expect.poll(() => traceVis('input square')).toBe(false);
 
   // Editing the cell regenerates the figure — the mode selection must
   // survive the payload swap (the component re-applies the captured

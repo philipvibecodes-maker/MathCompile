@@ -353,6 +353,17 @@
   };
   const captureMenuSel = (gd: HTMLDivElement) => {
     menuSel = readMenuSel(gd) ?? menuSel;
+    const menus = (
+      gd as unknown as {
+        _fullLayout?: {
+          updatemenus?: { active?: number; buttons?: { label?: string }[] }[];
+        };
+      }
+    )._fullLayout?.updatemenus;
+    if (menus?.length)
+      modeIsImage = menus.some(
+        (m) => m.buttons?.[m.active ?? -1]?.label === 'image',
+      );
   };
 
   // Traces tagged meta.inputToggle are owned by the 'input' checkbox,
@@ -361,6 +372,9 @@
   // restyle. Off by default.
   let inputShown = $state(false);
   let inputIdxs = $state<number[]>([]);
+  // The input square is image-view only — the checkbox shows and the
+  // trace is allowed visible only while the 'image' mode is active.
+  let modeIsImage = $state(false);
   const inputToggleIdxs = (data: Record<string, unknown>[]) =>
     data
       .map((t, i) =>
@@ -373,14 +387,15 @@
     if (!Plotly || !inputIdxs.length) return;
     const data = (gd as unknown as { data?: { visible?: unknown }[] })
       .data;
+    const want = inputShown && modeIsImage;
     const fix = inputIdxs.filter(
-      (i) => i < (data?.length ?? 0) && data![i].visible !== inputShown,
+      (i) => i < (data?.length ?? 0) && data![i].visible !== want,
     );
-    if (fix.length) void Plotly.restyle(gd, 'visible', inputShown, fix);
+    if (fix.length) void Plotly.restyle(gd, 'visible', want, fix);
   };
   const onInputToggle = () => {
     if (el && Plotly && inputIdxs.length)
-      void Plotly.restyle(el, 'visible', inputShown, inputIdxs);
+      void Plotly.restyle(el, 'visible', inputShown && modeIsImage, inputIdxs);
   };
 
   // The afterplot listener is bound once per graph element — a remount
@@ -425,7 +440,21 @@
     // it writes, self-retriggering react() forever (frozen page).
     const idxs = inputToggleIdxs(data);
     inputIdxs = idxs;
-    if (untrack(() => inputShown))
+    // The figure the mode replay produces: menuSel overrides the
+    // payload's declared active button. Interim figures carry no menus
+    // — keep the last known mode instead of flickering the checkbox.
+    const menus = (
+      layout as {
+        updatemenus?: { active?: number; buttons?: { label?: string }[] }[];
+      }
+    ).updatemenus;
+    if (menus?.length) {
+      modeIsImage = menus.some(
+        (m, i) =>
+          m.buttons?.[menuSel?.[i] ?? m.active ?? -1]?.label === 'image',
+      );
+    }
+    if (untrack(() => inputShown) && modeIsImage)
       for (const i of idxs) data[i].visible = true;
     P.react(target, data, { ...layout, autosize: true }, CONFIG).catch(
       (e) => {
@@ -495,13 +524,13 @@
         />
       </div>
     {/if}
-    {#if inputIdxs.length}
+    {#if inputIdxs.length && modeIsImage}
       <label class="plot-input-toggle">
         <input
           type="checkbox"
           bind:checked={inputShown}
           onchange={onInputToggle}
-        />input
+        />input square
       </label>
     {/if}
     <div
