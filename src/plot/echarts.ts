@@ -176,7 +176,7 @@ function quiverSegments(
   const y: number[] = [];
   if (!(mmax > 0)) return { x, y };
   const k = (0.8 * pitch) / mmax;
-  const phi = Math.PI / 12; // quiver's head barb angle, 15 deg
+  const phi = Math.PI / 9; // quiver's default head angle, ~20 deg
   for (let i = 0; i < xs.length; i++) {
     const dx = us[i] * k;
     const dy = vs[i] * k;
@@ -186,9 +186,7 @@ function quiverSegments(
     const y0 = ys[i] - dy / 2;
     const x1 = xs[i] + dx / 2;
     const y1 = ys[i] + dy / 2;
-    // Head = 0.7 x shaft — plotly's quiver caps barb length there, so
-    // matching it keeps the interim and real figures' proportions.
-    const h = 0.7 * dl;
+    const h = 0.3 * dl;
     const ang = Math.atan2(dy, dx);
     x.push(
       x0,

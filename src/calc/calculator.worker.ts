@@ -641,11 +641,7 @@ def _mc_field_view(fig, fnum, rng=((-3.0, 3.0), (-3.0, 3.0)), n=21,
         x=U[ok].tolist(), y=V[ok].tolist(),
         u=FU[ok].tolist(), v=FV[ok].tolist(),
         name='field', anchor='center', lengthfactor=scale,
-        # marker.arrowsize is trace-scalar and the head's real bound is
-        # a per-arrow 0.7 x shaft cap — a huge value saturates the cap
-        # on every arrow, so heads stay proportional to magnitude
-        # (plotly's default is a constant ~11.6px head instead).
-        marker=dict(color=color, arrowsize=1e6),
+        marker=dict(color=color),
         hovertemplate='x: %{x:.2f} y: %{y:.2f}<br>'
                       'F = (%{u:.2f}, %{v:.2f})<extra></extra>')
     return (rx[0] - 0.5 * pitchx, rx[1] + 0.5 * pitchx,

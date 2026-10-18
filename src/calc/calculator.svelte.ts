@@ -733,7 +733,7 @@ function interimFieldTraces(
       anchor: 'center',
       lengthmode: 'scaled',
       lengthfactor: plotDebug.arrowScale,
-      marker: { color: PLOT_ACCENT, arrowsize: 1e6 },
+      marker: { color: PLOT_ACCENT },
     },
   ];
 }
