@@ -187,7 +187,10 @@ First row lands in ~ms, dimmed until SymPy's answer replaces it.
   block) build four named traces — `field` (the native `go.Quiver`
   trace, plotly ≥7.0: 21×21 grid, `anchor='center'`,
   `lengthmode='scaled'` × `lengthfactor 0.8`, hover `F = (%{u}, %{v})`,
-  non-finite grid points dropped) and `input square`/`input y = k`/
+  `marker.arrowsize=1e6` saturates plotly's per-arrow head cap so barb
+  length stays 0.7 × shaft — tips scale with magnitude (the default is
+  a constant ~11.6px head); non-finite grid points dropped) and
+  `input square`/`input y = k`/
   `image of square`/`image of y = k` (a filled dimmed [-3,3]²
   source-domain square plus its horizontal grid lines — owned by the
   `input square` checkbox's `meta.inputToggle`, image-mode only —
