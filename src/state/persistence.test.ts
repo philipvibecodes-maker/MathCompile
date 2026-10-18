@@ -244,6 +244,7 @@ describe('prefs', () => {
       showPlumbing: true,
       importAll: false,
       pairTuple: 'matrix',
+      stats: false,
       fadeMs: 150,
       debounceMs: 600,
       fadeInMs: 150,
@@ -258,6 +259,7 @@ describe('prefs', () => {
       showPlumbing: true,
       importAll: false,
       pairTuple: 'matrix',
+      stats: false,
       fadeMs: 150,
       debounceMs: 600,
       fadeInMs: 150,
@@ -275,6 +277,7 @@ describe('prefs', () => {
         hiddenHelp: [1, 'greek'],
         showPlumbing: 42,
         pairTuple: 'tuple',
+        stats: 'on',
       }),
     });
     expect(loadPrefs()).toEqual({
@@ -286,6 +289,7 @@ describe('prefs', () => {
       showPlumbing: undefined,
       importAll: undefined,
       pairTuple: undefined,
+      stats: undefined,
     });
   });
 

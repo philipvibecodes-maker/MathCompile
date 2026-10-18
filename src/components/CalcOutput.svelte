@@ -96,6 +96,10 @@
     // Same for the import-* pref: it rewrites the emitted program's
     // import line + qualifiers, so the eval must re-run with it.
     const importAll = appStore.importAll;
+    // Read in the effect body so the dependency is tracked — a stats
+    // flip must re-run this eval (reading it inside the setTimeout
+    // callback would subscribe nothing and the toggle would be dead).
+    const stats = appStore.stats;
     const mine = ++seq;
     if (
       cell.kind === 'python'
@@ -122,6 +126,7 @@
       if (calcEngine.status !== 'ready' && cell.kind === 'math') {
         interimEvaluate(latex, prefixLatex.slice(0, -1), {
           pairTuple,
+          stats,
         }).then((r) => {
           if (mine === seq && pending && r.length > 0) {
             rows = r;
@@ -132,6 +137,7 @@
       evaluate(appStore.cells.slice(0, index + 1), {
         pairTuple,
         importAll,
+        stats,
         // The registry spans the whole worksheet so a def below the
         // call still resolves (with the ordering note).
         worksheetCells: appStore.cells,

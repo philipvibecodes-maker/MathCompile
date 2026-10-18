@@ -67,6 +67,7 @@
       ? compileWorksheet(appStore.cells, appStore.target, {
           importAll: appStore.importAll,
           pairTuple: appStore.pairTuple,
+          stats: appStore.stats,
         })
       : null,
   );
@@ -80,17 +81,33 @@
   // prevIssues tracks issue presence, not count — the debounce only
   // needs re-arming on a keystroke or a cross-cell appear/disappear.
   const prevIssues: Record<number, boolean> = {};
+  // Freeze a cell's code lines while it has issues — the overlay
+  // explains the error, so churning (invalid) code underneath is just
+  // noise. The cache refreshes whenever the cell compiles clean.
+  let frozenLines = $state<Record<number, string[]>>({});
+  let prevStats = appStore.stats;
   // pre-effect: hides the overlay before the render that a keystroke
   // triggers — a normal $effect runs post-render and the panel would
   // mount for a frame, fade out, then re-fade in after the debounce.
   // Once shown it stays latched until the cell has no issues left.
   $effect.pre(() => {
+    // A stats-pref flip rewrites issue sets without a keystroke — treat
+    // every cell as changed: re-arm its overlay debounce, and (below)
+    // drop the frozen lines so the fresh emission shows.
+    const statsFlip = prevStats !== appStore.stats;
+    prevStats = appStore.stats;
+    if (statsFlip) frozenLines = {};
     appStore.cells.forEach((c, i) => {
       const hasIssues = (compiled?.cellIssues[i]?.length ?? 0) > 0;
       // A latex change re-arms the debounce; so does an issue flipping
       // without one — cross-cell notes (a python cell below flagging a
-      // caller's ordering) produce issues with no keystroke here.
-      if (prevLatex[c.id] === c.latex && prevIssues[c.id] === hasIssues)
+      // caller's ordering) produce issues with no keystroke here, and
+      // a stats-pref flip rewrites issue sets the same way.
+      if (
+        prevLatex[c.id] === c.latex &&
+        prevIssues[c.id] === hasIssues &&
+        !statsFlip
+      )
         return;
       prevLatex[c.id] = c.latex;
       prevIssues[c.id] = hasIssues;
@@ -107,10 +124,6 @@
     });
   });
 
-  // Freeze a cell's code lines while it has issues — the overlay
-  // explains the error, so churning (invalid) code underneath is just
-  // noise. The cache refreshes whenever the cell compiles clean.
-  let frozenLines = $state<Record<number, string[]>>({});
   $effect.pre(() => {
     appStore.cells.forEach((c, i) => {
       if ((compiled?.cellIssues[i]?.length ?? 0) === 0) {
@@ -197,6 +210,7 @@
       showPlumbing: appStore.showPlumbing,
       importAll: appStore.importAll,
       pairTuple: appStore.pairTuple,
+      stats: appStore.stats,
       fadeMs: appStore.fadeMs,
       debounceMs: appStore.debounceMs,
       fadeInMs: appStore.fadeInMs,
@@ -303,6 +317,15 @@
                   (appStore.smartMode = e.currentTarget.checked)}
               />
               Smart mode
+            </label>
+            <label class="option-checkbox">
+              <input
+                type="checkbox"
+                checked={appStore.stats}
+                onchange={(e) =>
+                  (appStore.stats = e.currentTarget.checked)}
+              />
+              Statistics
             </label>
             <button
               type="button"

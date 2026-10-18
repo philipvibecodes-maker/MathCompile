@@ -145,6 +145,9 @@ export class AppStore {
   // `(a,b)` lowers to the open interval (default) or a 1×2 row matrix —
   // longer tuples are row matrices either way.
   pairTuple = $state<PairTupleMode>(loadPrefs().pairTuple ?? 'interval');
+  // scipy.stats/numpy builtins (\mathrm{normcdf}, \mathrm{ttest}, …) —
+  // off means they parse and emit as ordinary unknown functions.
+  stats = $state(loadPrefs().stats ?? true);
   // Animation knobs (persisted prefs). fadeMs drives code-line fades
   // (also exported as --fade-ms for CSS mount animations); debounceMs
   // delays issue overlays until typing pauses; fadeInMs/fadeOutMs are
