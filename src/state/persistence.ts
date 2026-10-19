@@ -116,6 +116,36 @@ export function recordCompletionUse(name: string): void {
   }
 }
 
+// ── Matrix menu defaults ─────────────────────────────────────────────
+// localStorage['mathcompile-matrix-dims'] holds { rows, cols } — the
+// last size the dimensions menu inserted, pre-filled on the next open.
+export const MATRIX_DIMS_STORAGE_KEY = 'mathcompile-matrix-dims';
+
+export function loadMatrixDims(): { rows: number; cols: number } | null {
+  const raw = storage()?.getItem(MATRIX_DIMS_STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const { rows, cols } = parsed as Record<string, unknown>;
+    if (typeof rows !== 'number' || typeof cols !== 'number') return null;
+    return { rows, cols };
+  } catch {
+    return null;
+  }
+}
+
+export function recordMatrixDims(rows: number, cols: number): void {
+  try {
+    storage()?.setItem(
+      MATRIX_DIMS_STORAGE_KEY,
+      JSON.stringify({ rows, cols }),
+    );
+  } catch {
+    // Storage full or disabled — the menu just falls back to 2x2.
+  }
+}
+
 // ── Workbook: every worksheet in one document ────────────────────────
 //
 // localStorage['mathcompile-worksheets'] holds { version, active, sheets }

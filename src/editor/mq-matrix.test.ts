@@ -47,6 +47,34 @@ describe('matrix environments', () => {
     expect(el.value).toBe('\\begin{array}{cc}&\\\\&\\end{array}');
   });
 
+  it('the dimensions menu pre-fills the last inserted size', () => {
+    localStorage.removeItem('mathcompile-matrix-dims');
+    const { el, mq } = mountAppField();
+    type(mq, '\\pmatrix');
+    mq.keystroke('Enter'); // accept the command -> menu opens
+    let dims = el.querySelectorAll<HTMLInputElement>('.mc-mat-dim');
+    expect(dims[0].value).toBe('2');
+    expect(dims[1].value).toBe('2');
+    dims[0].value = '3';
+    dims[1].value = '4';
+    dims[0].dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+    );
+    expect(el.value).toBe(
+      '\\begin{pmatrix}&&&\\\\&&&\\\\&&&\\end{pmatrix}',
+    );
+    expect(localStorage.getItem('mathcompile-matrix-dims')).toBe(
+      '{"rows":3,"cols":4}',
+    );
+    // A fresh field's menu defaults to the size just inserted.
+    const second = mountAppField();
+    type(second.mq, '\\pmatrix');
+    second.mq.keystroke('Enter');
+    dims = second.el.querySelectorAll<HTMLInputElement>('.mc-mat-dim');
+    expect(dims[0].value).toBe('3');
+    expect(dims[1].value).toBe('4');
+  });
+
   it('Enter inside a matrix cell adds a row, not a displaylines wrap', () => {
     const { el, mq } = mountAppField();
     el.value = '\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}';

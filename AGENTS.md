@@ -257,7 +257,9 @@ and empty blocks serialize as `{ }`.
   `\begin{name}{arg}` input that applies the arg on `}`/Enter/Tab.
   Typed matrix-family commands defer to a rows/columns menu
   (`src/editor/matrix-menu.ts` via the vendored `matrixDimensionsMenu`
-  option — Enter inserts the grid, Escape cancels); `\cases` and the
+  option — Enter inserts the grid, Escape cancels); the menu pre-fills
+  the last inserted size, persisted in
+  `localStorage['mathcompile-matrix-dims']`. `\cases` and the
   non-matrix grids skip it. Inside a matrix cell, Enter adds a row and
   Shift+Space adds a column (Ctrl+Enter adds a row ABOVE the caret,
   Ctrl+Shift+Spacebar a column left of it); Ctrl+Shift+Backspace deletes
