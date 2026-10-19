@@ -2291,5 +2291,7 @@ body {
 .host-eval-accept {
   background: var(--accent);
   border: 1px solid var(--accent);
-  color: var(--accent-text, #fff);
+  /* --accent-text is the text color (dark blue in light mode) — wrong
+     on the accent-blue fill; the button needs white. */
+  color: #fff;
 }
