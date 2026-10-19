@@ -7,8 +7,8 @@ import { arcTrigNames } from './result-latex';
 // known operator name, while every arc<name> is.
 describe('arcTrigNames', () => {
   it('rewrites a- names inside \\operatorname and \\mathrm wrappers', () => {
-    // nerdamer emits \mathrm{atan}; SymPy's abbreviated style emits
-    // \operatorname{asin}.
+    // \mathrm- and \operatorname-wrapped spellings both come through
+    // (SymPy's abbreviated style emits \operatorname{asin}).
     expect(arcTrigNames('2 \\mathrm{atan}\\left(\\sqrt{x}\\right)')).toBe(
       '2 \\operatorname{arctan}\\left(\\sqrt{x}\\right)',
     );

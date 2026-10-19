@@ -1,20 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { compileCellForCalc, compileCellsForCalc } from '../compile/codegen';
-import { normalizeIR, parseCellLatex } from '../compile/ir';
-import { interimConstNames, irToNerdamer } from './nerdamer-emit';
-import { evaluate, interimEvaluate } from './calculator.svelte.ts';
-
-// latex statement -> nerdamer input through the shared pipeline —
-// '' is a poisoned row, null falls back to nerdamer's latex reader.
-const toN = (s: string) => {
-  const norm = normalizeIR(parseCellLatex(s));
-  return norm.ir === undefined
-    ? null
-    : irToNerdamer(norm.ir, interimConstNames(norm.ir));
-};
-const calc = (latex: string) => compileCellForCalc({ json: parseCellLatex(latex) });
+import { parseCellLatex } from '../compile/ir';
+import {
+  evaluate,
+  interimEvaluate,
+  shownPrograms,
+  type CalcRow,
+} from './calculator.svelte.ts';
+// Assertions below pin the `import sympy as sp` (qualified) emission —
+// the helpers pass importAll:false; import-* mode has its own describe.
+const calc = (latex: string) =>
+  compileCellForCalc({ json: parseCellLatex(latex) }, { importAll: false });
 const calcAll = (...latexs: string[]) =>
-  compileCellsForCalc(latexs.map((latex) => ({ json: parseCellLatex(latex) })));
+  compileCellsForCalc(
+    latexs.map((latex) => ({ json: parseCellLatex(latex) })),
+    { importAll: false },
+  );
 // The calc pipeline wraps every evaluated expression — expectations
 // spell the inner emitted expression; F() applies the worker's
 // clean_and_simplify wrap.
@@ -50,7 +51,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
       expect.stringContaining('def clean_and_simplify'),
     ]);
     expect(prog.statements).toEqual([
-      { code: 'a = 5', display: F('sp.Eq(sp.Symbol("a"), 5)') },
+      { code: 'a = 5', display: F('sp.Eq(sp.Symbol("a"), 5)'), defines: true },
     ]);
   });
 
@@ -60,6 +61,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
       {
         code: 'def f(x):\n    return x**2',
         display: F('(lambda x: sp.Eq(sp.Function("f")(x), x**2))(sp.Symbol("x"))'),
+        defines: true,
       },
     ]);
   });
@@ -69,6 +71,33 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(prog.statements[0].code).toBe(F('sp.integrate(x, (x, 0, 1))'));
     expect(calc('\\sum_{i=0}^{n}\\binom{i}{n}').statements[0].code).toBe(
       F('sp.summation(sp.binomial(i, n), (i, 0, n))'),
+    );
+  });
+
+  it('passes the solve var to clean_and_simplify so the row shows x = a1, a2, …', () => {
+    // The python target keeps the bare `sp.solve(…)` line; the calc
+    // statement carries the solved-for name as a second arg.
+    expect(calc('\\text{solve} x^2-5x+6=0, x').statements[0].code).toBe(
+      'clean_and_simplify(sp.solve(sp.Eq(x**2 - 5 * x + 6, 0), x), x)',
+    );
+    expect(
+      calc('\\text{solve} x+y=3, x-y=1, x, y').statements[0].code,
+    ).toBe(
+      'clean_and_simplify(sp.solve([sp.Eq(x + y, 3), sp.Eq(x - y, 1)], [x, y]), sp.Tuple(x, y))',
+    );
+    expect(
+      calc('\\text{solve} x^2=1 \\text{ for } x>0').statements[0].code,
+    ).toBe(
+      'clean_and_simplify(sp.solveset(sp.Eq(x**2, 1), x, domain=sp.Interval.open(0, sp.oo)), x)',
+    );
+    // No var named — the lone free symbol still labels the answers.
+    expect(calc('\\text{solve} x^2-5x+6=0').statements[0].code).toBe(
+      'clean_and_simplify(sp.solve(sp.Eq(x**2 - 5 * x + 6, 0)), x)',
+    );
+    // dsolve/pdesolve rows keep the plain pipeline — a `y(x) = …`
+    // equation already reads as an answer.
+    expect(calc('\\text{dsolve} \\frac{dy}{dx}=y').statements[0].code).toBe(
+      F('sp.dsolve(sp.Eq(sp.diff(y(x), x), y(x)), y(x))'),
     );
   });
 
@@ -431,7 +460,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(calc('x!!').statements[0].code).toBe(F('sp.factorial2(x)'));
     const prog = calc('f\\circ g');
     expect(prog.statements[0].code).toBe(
-      F('sp.Lambda(sp.Symbol("x"), f(g(sp.Symbol("x"))))'),
+      F('sp.Lambda(sp.Symbol("a"), f(g(sp.Symbol("a"))))'),
     );
     expect(prog.prelude).toContain('f = sp.Function("f")');
     expect(prog.prelude).toContain('g = sp.Function("g")');
@@ -691,6 +720,21 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(t.statements[2].display).toContain('evaluate=False');
   });
 
+  it('displays a list-bound name as a column vector, not a raw list', () => {
+    // `u = [1,2,3]` binds a python list — `Eq(Symbol, <raw list>)`
+    // SympifyError'd at eval; the display wraps sp.Matrix and stays
+    // unevaluated like other matrix RHSes.
+    const l = calc('u = [1,2,3]');
+    expect(l.statements[0].code).toBe('u = [1, 2, 3]');
+    expect(l.statements[0].display).toBe(
+      F('sp.Eq(sp.Symbol("u"), sp.Matrix([1, 2, 3]), evaluate=False)'),
+    );
+    // Assigning a list-bound name on keeps the wrap.
+    const v = calc('u = [1,2,3] \\ \\\\ \\ v = u');
+    expect(v.statements[1].display).toContain('sp.Matrix(u)');
+    expect(v.statements[1].display).toContain('evaluate=False');
+  });
+
   it('marks an `a = I_2` binding matrix-typed for later ops', () => {
     // `det a` reads `a` as its bound DenseMatrix, not a new MatrixSymbol.
     const prog = calc('a = I_2 \\ \\\\ \\ \\det a');
@@ -810,9 +854,10 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // `sp.Pow(x, -007)` is invalid Python — the integer value is emitted.
     expect(calc('x^{-007}').statements[0].code).toBe(F('sp.Pow(x, -7)'));
     expect(
-      compileCellForCalc({
-        json: ['Power', 'x', ['Negate', { num: '007' }]],
-      }).statements[0].code,
+      compileCellForCalc(
+        { json: ['Power', 'x', ['Negate', { num: '007' }]] },
+        { importAll: false },
+      ).statements[0].code,
     ).toBe(F('sp.Pow(x, -7)'));
   });
 
@@ -901,65 +946,104 @@ describe('compileCellsForCalc (worksheet cells share one scope)', () => {
     expect(prog.cells[1].issues).toEqual([]);
     expect(prog.cells[1].statementLines).toEqual([0]);
   });
+
+  describe('derivatives over names bound in earlier cells', () => {
+    // `decls.defined` used to conflate a `sp.Symbol` def line — still a
+    // free symbolic variable — with a concrete value binding, so `\D`
+    // and `\nabla` below saw no free variables (or a shrunken
+    // coordinate basis).
+    it('total-differentiates over symbols bound above', () => {
+      const prog = calcAll('x + y', '\\text{D}xy^{2}');
+      expect(prog.cells[1].defs).toEqual([]);
+      expect(prog.cells[1].statements).toEqual([
+        {
+          code: F('sp.Matrix([x * y**2]).jacobian([x, y])'),
+          display: undefined,
+        },
+      ]);
+    });
+
+    it('gradients a coordinate symbol bound above to (1, 0, 0)', () => {
+      const prog = calcAll('x + y', '\\nabla x');
+      expect(prog.cells[1].defs).toEqual(['z = sp.Symbol("z")']);
+      expect(prog.cells[1].statements).toEqual([
+        {
+          code: F('sp.Matrix([x]).jacobian([x, y, z])'),
+          display: undefined,
+        },
+      ]);
+    });
+
+    it('gradients a product over the full (x, y, z) basis', () => {
+      for (const [latex, expected] of [
+        ['\\nabla xy', 'sp.Matrix([x * y]).jacobian([x, y, z])'],
+        ['\\nabla xyz', 'sp.Matrix([x * y * z]).jacobian([x, y, z])'],
+      ] as const) {
+        const prog = calcAll('x + y', latex);
+        expect(prog.cells[1].statements).toEqual([
+          { code: F(expected), display: undefined },
+        ]);
+      }
+    });
+
+    it('a value-bound coordinate differentiates as its value: ∇x = (0,0,0)', () => {
+      const prog = calcAll('x = 5', '\\nabla x');
+      expect(prog.cells[1].statements).toEqual([
+        {
+          code: F('sp.Matrix([[0, sp.diff(x, y), sp.diff(x, z)]])'),
+          display: undefined,
+        },
+      ]);
+    });
+
+    it('still flags a value-bound name inside the gradient body', () => {
+      const prog = calcAll('x = 5', '\\nabla xy');
+      expect(prog.cells[1].statements[0].error).toContain(
+        'bound to a value',
+      );
+    });
+
+    it('applies a lambda-bound name at its declared signature', () => {
+      // `f = x \mapsto x^2` binds a one-param Lambda — `\nabla f` is
+      // f(x)'s gradient, not f(x, y, z)'s.
+      const prog = calcAll('f = x\\mapsto x^2', '\\nabla f');
+      expect(prog.cells[1].statements).toEqual([
+        {
+          code: F('sp.Matrix([f(x)]).jacobian([x, y, z])'),
+          display: undefined,
+        },
+      ]);
+      const prog2 = calcAll(
+        'f = \\left(x,y\\right)\\mapsto x+y',
+        '\\nabla f',
+      );
+      expect(prog2.cells[1].statements).toEqual([
+        {
+          code: F('sp.Matrix([f(x, y)]).jacobian([x, y, z])'),
+          display: undefined,
+        },
+      ]);
+    });
+
+    it('applies a lambda-bound name under \\D at its own arity', () => {
+      const prog = calcAll('f = x\\mapsto x^2', '\\D f');
+      expect(prog.cells[1].statements).toEqual([
+        { code: F('sp.diff(f(x), x)'), display: undefined },
+      ]);
+    });
+
+    it('types a gradient/jacobian assign target as a matrix', () => {
+      // `Eq(Symbol, Matrix)` collapses to literal False without
+      // evaluate=False — `a = \nabla xyz` displayed `false`.
+      for (const latex of ['a = \\nabla xyz', 'a = \\text{D}xy']) {
+        const prog = calc(latex);
+        expect(prog.statements[0].display).toContain('evaluate=False');
+      }
+    });
+  });
 });
 
-describe('irToNerdamer (normalized IR → nerdamer input)', () => {
-  it('emits plain algebra in written order', () => {
-    expect(toN('x+1')).toBe('x+1');
-  });
-
-  it('maps a definite integral to defint', () => {
-    expect(toN('\\int_{0}^{1}x')).toBe('defint(x, 0, 1, x)');
-    expect(toN('\\int_{0}^{1}x dx')).toBe('defint(x, 0, 1, x)');
-  });
-
-  it('maps an indefinite integral to integrate + constant', () => {
-    expect(toN('\\int x')).toBe('(integrate(x, x)+C)');
-    expect(toN('\\int C dx')).toBe('(integrate(C, x)+D)');
-  });
-
-  it('maps \\sum_{i=lo}^{hi} to sum', () => {
-    expect(toN('\\sum_{i=0}^{n}k')).toBe('sum(k, i, 0, n)');
-  });
-
-  it('maps \\prod_{i=lo}^{hi} to product', () => {
-    expect(toN('\\prod_{i=1}^{n}k')).toBe('product(k, i, 1, n)');
-  });
-
-  it('maps \\lim_{x\\to a} to limit', () => {
-    expect(toN('\\lim_{x\\to 0}y')).toBe('limit(y, x, 0)');
-  });
-
-  it('maps the MathQuill \\derivative form to diff', () => {
-    expect(toN('\\frac{d }{d x}x^2')).toBe('diff(x^2, x)');
-    expect(toN('\\frac{d^2}{d x^2}x^3')).toBe('diff(x^3, x, 2)');
-  });
-
-  it('expands \\binom into factorials', () => {
-    // The factorial expansion self-wraps so it stays atomic under
-    // division/power.
-    expect(toN('\\binom{n}{k}')).toBe(
-      '(factorial(n)/(factorial(k)*factorial(n-k)))',
-    );
-  });
-
-  it('maps \\sqrt[n]{x} to nthroot', () => {
-    expect(toN('\\sqrt[3]{8}')).toBe('nthroot(8, 3)');
-  });
-
-  it("keeps an equation's lhs before a translated command", () => {
-    expect(toN('2^{n}=\\sum_{i=0}^{n}\\binom{i}{n}')).toBe(
-      '2^n = sum((factorial(i)/(factorial(n)*factorial(i-n))), i, 0, n)',
-    );
-  });
-
-  it('keeps a leading operator after a translated command verbatim', () => {
-    // `+m` is a top-level Add term — the binomial stays inside its own
-    // Multiply factor.
-    expect(toN('n\\binom{n}{k}+m')).toBe(
-      'n*(factorial(n)/(factorial(k)*factorial(n-k)))+m',
-    );
-  });
+describe('codegen edge cases', () => {
   it('reads a bare prime as a primed variable name', () => {
     const p = calc("x'");
     expect(p.statements[0]?.code).toBe(F('x_prime'));
@@ -991,7 +1075,7 @@ describe('irToNerdamer (normalized IR → nerdamer input)', () => {
   });
   it("evaluates f'(0) at 0 instead of differentiating a constant", () => {
     const p = calc("f'(0)");
-    expect(p.statements[0]?.code).toContain('.subs(x, 0)');
+    expect(p.statements[0]?.code).toContain('.subs(a, 0)');
     expect(p.statements[0]?.code).not.toContain('diff(f(0), 0)');
   });
 
@@ -1001,11 +1085,11 @@ describe('irToNerdamer (normalized IR → nerdamer input)', () => {
     // at the point, not diff(f(2), 2).
     for (const l of ['f\\prime(2)', 'f^{\\prime}(2)']) {
       const p = calc(l);
-      expect(p.statements[0]?.code).toContain('diff(f(x), x)');
-      expect(p.statements[0]?.code).toContain('.subs(x, 2)');
+      expect(p.statements[0]?.code).toContain('diff(f(a), a)');
+      expect(p.statements[0]?.code).toContain('.subs(a, 2)');
     }
     expect(calc('f\\prime\\prime(2)').statements[0]?.code).toBe(
-      F('sp.diff(f(x), x, 2).subs(x, 2)'),
+      F('sp.diff(f(a), a, 2).subs(a, 2)'),
     );
   });
 
@@ -1015,7 +1099,128 @@ describe('irToNerdamer (normalized IR → nerdamer input)', () => {
   });
 });
 
-describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
+describe('function applied to a set emits its image', () => {
+  it('maps a defd function elementwise over a set arg', () => {
+    // f(\{1,2,3\}) is the image {f(1), f(2), f(3)} — f(FiniteSet) would
+    // raise TypeError at exec.
+    const prog = calcAll(
+      '\\text{def} f(x) = x^2',
+      'f\\left(\\{1,2,3\\}\\right)',
+    );
+    expect(prog.cells[1].statements).toEqual([
+      {
+        code: F(
+          'sp.imageset(sp.Lambda(sp.Symbol("a"), f(sp.Symbol("a"))), sp.FiniteSet(1, 2, 3))',
+        ),
+        display: undefined,
+      },
+    ]);
+  });
+
+  it('maps a call-tier function name elementwise', () => {
+    const p = calc('\\operatorname{foo}\\left(\\{1,2\\}\\right)');
+    expect(p.prelude).toContain('foo = sp.Function("foo")');
+    expect(p.statements[0]?.code).toBe(
+      F(
+        'sp.imageset(sp.Lambda(sp.Symbol("a"), foo(sp.Symbol("a"))), sp.FiniteSet(1, 2))',
+      ),
+    );
+  });
+
+  it('maps over a set-bound name the same way', () => {
+    const prog = calcAll(
+      'S = \\{1,2,3\\}',
+      '\\text{def} f(x) = x^2',
+      'f\\left(S\\right)',
+    );
+    expect(prog.cells[2].statements[0]?.code).toBe(
+      F('sp.imageset(sp.Lambda(sp.Symbol("a"), f(sp.Symbol("a"))), S)'),
+    );
+  });
+
+  it('keeps non-set args fixed and maps several sets over their product', () => {
+    const prog = calcAll(
+      '\\text{def} g(x,y) = x + y',
+      'g\\left(\\{1,2\\}, y\\right)',
+      'g\\left(\\{1,2\\}, \\{3,4\\}\\right)',
+    );
+    expect(prog.cells[1].statements[0]?.code).toBe(
+      F(
+        'sp.imageset(sp.Lambda(sp.Symbol("a"), g(sp.Symbol("a"), y)), sp.FiniteSet(1, 2))',
+      ),
+    );
+    expect(prog.cells[2].statements[0]?.code).toBe(
+      F(
+        'sp.imageset(sp.Lambda((sp.Symbol("a"), sp.Symbol("b")), g(sp.Symbol("a"), sp.Symbol("b"))), sp.FiniteSet(1, 2), sp.FiniteSet(3, 4))',
+      ),
+    );
+  });
+
+  it('maps over infinite and compound set args', () => {
+    const prog = calcAll(
+      '\\text{def} f(x) = x^2',
+      'f\\left(\\mathbb{R}\\right)',
+      'f\\left(\\{1,2\\} \\cup \\{3\\}\\right)',
+    );
+    expect(prog.cells[1].statements[0]?.code).toBe(
+      F('sp.imageset(sp.Lambda(sp.Symbol("a"), f(sp.Symbol("a"))), sp.S.Reals)'),
+    );
+    expect(prog.cells[2].statements[0]?.code).toBe(
+      F(
+        'sp.imageset(sp.Lambda(sp.Symbol("a"), f(sp.Symbol("a"))), sp.Union(sp.FiniteSet(1, 2), sp.FiniteSet(3)))',
+      ),
+    );
+  });
+
+  it('maps a derivative or lambda callee over the set', () => {
+    const prog = calcAll(
+      '\\text{def} f(x) = x^2',
+      "f'\\left(\\{1,2\\}\\right)",
+      '\\left(x \\mapsto x^2\\right)\\left(\\{3,4\\}\\right)',
+    );
+    expect(prog.cells[1].statements[0]?.code).toBe(
+      F('sp.imageset(sp.Lambda(a, sp.diff(f(a), a)), sp.FiniteSet(1, 2))'),
+    );
+    expect(prog.cells[2].statements[0]?.code).toBe(
+      F(
+        'sp.imageset(sp.Lambda(sp.Symbol("b"), sp.Lambda(x, x**2)(sp.Symbol("b"))), sp.FiniteSet(3, 4))',
+      ),
+    );
+  });
+
+  it('maps an inverse function over the set', () => {
+    expect(calc('\\sin^{-1}\\left(\\{0,1\\}\\right)').statements[0]?.code).toBe(
+      F(
+        'sp.imageset(sp.Lambda(sp.Symbol("a"), sp.asin(sp.Symbol("a"))), sp.FiniteSet(0, 1))',
+      ),
+    );
+  });
+
+  it('names Lambda params the first unused lowercase letters', () => {
+    // `g(\{1,2\}, x)` — `x` is free beside the set, so it can't bind
+    // the element variable; `a` is the first unused letter. A letter
+    // bound anywhere in the program (`a = 5`) is also skipped — the
+    // param would resolve to the bound value.
+    const prog = calcAll(
+      'a = 5',
+      '\\text{def} g(x,y) = x + y',
+      'g\\left(\\{1,2\\}, x\\right)',
+      'g\\left(\\{1,2\\}, \\{3,4\\}\\right)',
+    );
+    expect(prog.cells[2].statements[0]?.code).toBe(
+      F(
+        'sp.imageset(sp.Lambda(sp.Symbol("b"), g(sp.Symbol("b"), x)), sp.FiniteSet(1, 2))',
+      ),
+    );
+    expect(prog.cells[3].statements[0]?.code).toBe(
+      F(
+        'sp.imageset(sp.Lambda((sp.Symbol("b"), sp.Symbol("c")), g(sp.Symbol("b"), sp.Symbol("c"))), sp.FiniteSet(1, 2), sp.FiniteSet(3, 4))',
+      ),
+    );
+  });
+});
+
+describe('interimEvaluate (Compute Engine fallback while SymPy boots)', () => {
   it('evaluates arithmetic to its latex form', async () => {
     expect(await interimEvaluate('2+2')).toEqual([{ ok: true, latex: '4' }]);
   });
@@ -1027,7 +1232,7 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
     expect((rows[0] as { latex?: string }).latex).toContain('\\sqrt{2}');
   });
 
-  it('evaluates a definite integral via nerdamer defint', async () => {
+  it('evaluates a definite integral', async () => {
     const rows = await interimEvaluate('\\int_{0}^{1}x');
     expect(rows[0].ok).toBe(true);
     expect((rows[0] as { latex?: string }).latex).toBe('\\frac{1}{2}');
@@ -1037,14 +1242,90 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
     const rows = await interimEvaluate('\\int x dx');
     expect(rows[0].ok).toBe(true);
     const latex = (rows[0] as { latex?: string }).latex ?? '';
-    expect(latex).toContain('x^{2}');
+    expect(latex).toContain('x^2');
     expect(latex).toContain('C');
   });
 
-  it('evaluates a derivative via nerdamer diff', async () => {
+  it('uses the next free capital for the constant (mirrors codegen)', async () => {
+    const rows = await interimEvaluate('\\int C dx');
+    expect(rows[0].ok).toBe(true);
+    expect((rows[0] as { latex?: string }).latex).toContain('D');
+  });
+
+  it('evaluates a derivative', async () => {
     const rows = await interimEvaluate('\\frac{d }{d x}x^2');
     expect(rows[0].ok).toBe(true);
-    expect((rows[0] as { latex?: string }).latex).toBe('2 \\cdot x');
+    expect((rows[0] as { latex?: string }).latex).toBe('2x');
+  });
+
+  it('evaluates limits, sums, products, binomials, and nth roots', async () => {
+    expect((await interimEvaluate('\\lim_{x\\to 0}\\frac{\\sin x}{x}'))[0])
+      .toMatchObject({ ok: true, latex: '1' });
+    expect((await interimEvaluate('\\sum_{i=1}^{10}i'))[0]).toMatchObject({
+      ok: true,
+      latex: '55',
+    });
+    expect((await interimEvaluate('\\prod_{i=1}^{4}i'))[0]).toMatchObject({
+      ok: true,
+      latex: '24',
+    });
+    expect((await interimEvaluate('\\binom{5}{2}'))[0]).toMatchObject({
+      ok: true,
+      latex: '10',
+    });
+    expect((await interimEvaluate('\\sqrt[3]{8}'))[0]).toMatchObject({
+      ok: true,
+      latex: '2',
+    });
+  });
+
+  it('keeps a symbolic sum unevaluated like the old interim', async () => {
+    const rows = await interimEvaluate('\\sum_{i=0}^{n}\\binom{i}{n}');
+    expect(rows[0].ok).toBe(true);
+    expect((rows[0] as { latex?: string }).latex).toContain('\\sum');
+  });
+
+  it('binds `name = rhs` for the rows below it within the cell', async () => {
+    // Mirrors codegen's statement binding: a = 5 then a+1 → 6, like the
+    // real engine's shared worksheet namespace.
+    const rows = await interimEvaluate('a = 5\\\\ a+1');
+    expect(rows).toEqual([
+      { ok: true, latex: 'a=5' },
+      { ok: true, latex: '6' },
+    ]);
+  });
+
+  it('shows the evaluated rhs on assignments', async () => {
+    const rows = await interimEvaluate('x = \\frac{1}{2}');
+    expect(rows).toEqual([{ ok: true, latex: 'x=\\frac{1}{2}' }]);
+  });
+
+  it('stays empty on \\text{def} statements', async () => {
+    expect(await interimEvaluate('\\text{def} g(x) = x^2')).toEqual([]);
+  });
+
+  it('cleans CE-only serializer names MathQuill cannot render', async () => {
+    // e^{x} evaluates to \exponentialE^{x} — rendered as plain e.
+    const rows = await interimEvaluate('e^{x}');
+    expect(rows[0].ok).toBe(true);
+    expect((rows[0] as { latex?: string }).latex).toBe('e^{x}');
+  });
+
+  it('maps \\vert absolute bars to a pipe MathQuill renders', async () => {
+    // CE emits \ln(\vert x\vert) for integrate(1/x) — MathQuill shows
+    // "vertical bar" literally, so the interim maps it to a plain |.
+    const rows = await interimEvaluate('\\int\\frac{1}{x}dx');
+    const latex = (rows[0] as { latex?: string }).latex ?? '';
+    expect(latex).not.toContain('\\vert');
+    expect(latex).toContain('| x|');
+  });
+
+  it('evaluates iterated integrals with per-level constants', async () => {
+    const rows = await interimEvaluate('\\int\\int x dxdy');
+    expect(rows[0].ok).toBe(true);
+    const latex = (rows[0] as { latex?: string }).latex ?? '';
+    expect(latex).toContain('C');
+    expect(latex).toContain('D');
   });
 
   it('evaluates a boundless \\iint as an iterated integrate', async () => {
@@ -1054,7 +1335,7 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].ok).toBe(true);
     const latex = (rows[0] as { latex?: string }).latex ?? '';
-    expect(latex).toContain('x^{2}');
+    expect(latex).toContain('x^2');
     expect(latex).toContain('C');
     expect(latex).toContain('D');
   });
@@ -1075,7 +1356,7 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
   });
 
   it('does not let one bad row sink the others', async () => {
-    // A matrix row can't be nerdamer-evaluated — the plain rows around
+    // A matrix row can't be CE-evaluated — the plain rows around
     // it must still get interim results.
     const rows = await interimEvaluate('1+1\\\\ x+1');
     expect(rows).toEqual([
@@ -1095,6 +1376,110 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
     expect(await interimEvaluate('')).toEqual([]);
   });
 
+  it('treats chained equality as an equation, not an assignment', async () => {
+    // a=b=c normalizes to a multi-arg Equal — the real engine emits
+    // comparisons, so the interim must not bind `a` for the rows below.
+    const rows = await interimEvaluate('a=b=c\\\\ a+1');
+    expect(rows).toEqual([
+      { ok: true, latex: 'a=b=c' },
+      { ok: true, latex: 'a+1' },
+    ]);
+  });
+
+  it('peels \\text{d} differentials out of the integrand', async () => {
+    const rows = await interimEvaluate('\\int x^{2}\\text{d}x');
+    expect(rows[0].ok).toBe(true);
+    const latex = (rows[0] as { latex?: string }).latex ?? '';
+    expect(latex).toContain('x^3');
+    expect(latex).toContain('C');
+  });
+
+  it('peels differentials nested inside the integrand tail', async () => {
+    const rows = await interimEvaluate('\\int \\sin x\\text{d}x');
+    expect(rows[0].ok).toBe(true);
+    expect((rows[0] as { latex?: string }).latex ?? '').toContain('\\cos(x)');
+  });
+
+  it('expands a where-block into body and condition rows', async () => {
+    const rows = await interimEvaluate('x^{2}\\text{ where }x>0');
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => r.ok)).toBe(true);
+  });
+
+  it('infers the integration variable past named constants', async () => {
+    // \int \pi x has one real free variable — Pi is a constant, not a
+    // candidate (codegen's freeNames excludes it).
+    const rows = await interimEvaluate('\\int \\pi x');
+    expect(rows[0].ok).toBe(true);
+    expect((rows[0] as { latex?: string }).latex ?? '').toContain('\\pi');
+  });
+
+  it('evaluates a matrix literal row', async () => {
+    const rows = await interimEvaluate(
+      '\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}',
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].ok).toBe(true);
+  });
+
+  it('renders evaluated matrices as \\begin{pmatrix}, not \\lbrack lists', async () => {
+    // CE evaluates a Matrix to a List of row Lists whose serializer
+    // emits \bigl\lbrack…\bigr\rbrack — MathQuill has no \lbrack
+    // sized-delimiter glyph and prints "lbrack" literally. The interim
+    // reboxes list-of-lists as Matrix so the grid renders.
+    for (const s of [
+      '\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}',
+      '\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}^{-1}',
+      '\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}^{T}',
+      '\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}\\begin{pmatrix}5&6\\\\7&8\\end{pmatrix}',
+      '\\begin{pmatrix}x&y\\\\z&w\\end{pmatrix}',
+    ]) {
+      const rows = await interimEvaluate(s);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].ok).toBe(true);
+      const latex = (rows[0] as { latex?: string }).latex ?? '';
+      expect(latex).toContain('\\begin{pmatrix}');
+      expect(latex).not.toContain('lbrack');
+    }
+  });
+
+  it('renders the matrix on a `name = matrix` assign row', async () => {
+    const rows = await interimEvaluate(
+      'A = \\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}\\\\ A^{-1}',
+    );
+    expect(rows).toHaveLength(2);
+    expect((rows[0] as { latex?: string }).latex).toContain(
+      '\\begin{pmatrix}',
+    );
+    // The bound name resolves — the inverse row is a pmatrix too.
+    expect((rows[1] as { latex?: string }).latex).toContain(
+      '\\begin{pmatrix}',
+    );
+  });
+
+  it('still renders flat list results with real brackets', async () => {
+    // Non-matrix List results (intervals, tuples, sets) serialize with
+    // \lbrack/\lbrace — map them to the delimiters MathQuill knows.
+    const rows = await interimEvaluate('\\{1,2,3\\}');
+    const latex = (rows[0] as { latex?: string }).latex ?? '';
+    expect(latex).not.toContain('lbrace');
+    expect(latex).not.toContain('lbrack');
+  });
+
+  it('suppresses rows whose result is a CE Error node', async () => {
+    // \det on a scalar-bound name produces an Error tree — serializing
+    // it would emit \mathtip{\error{…}} junk MathQuill can't read.
+    const rows = await interimEvaluate('a = 2\\\\ \\det a');
+    expect(rows).toHaveLength(1);
+    expect((rows[0] as { latex?: string }).latex).toBe('a=2');
+  });
+
+  it('shows no row for a call on a skipped def', async () => {
+    // \text{def} statements don't bind in the interim, so g(3) can't be
+    // evaluated honestly — no row rather than a wrong one.
+    expect(await interimEvaluate('\\text{def} g(x)=x^{2}\\\\ g(3)')).toEqual([]);
+  });
+
   it('groups power bases — (2^3)^2 is 64, -2^2 squares the group', async () => {
     expect((await interimEvaluate('\\left(2^3\\right)^2'))[0])
       .toEqual({ ok: true, latex: '64' });
@@ -1103,19 +1488,13 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
   });
 
   it('evaluates \\log like codegen — base 10', async () => {
-    // nerdamer spells the base-10 default as the change-of-base
-    // quotient (symbolic — it doesn't simplify it to 2).
     const latex = (await interimEvaluate('\\log(100)'))[0] as { latex?: string };
-    expect(latex.latex).toBe(
-      '\\frac{\\mathrm{log}\\left(100\\right)}{\\mathrm{log}\\left(10\\right)}',
-    );
+    expect(latex.latex).toBe('2');
   });
 
   it('keeps the binomial quotient atomic under division', async () => {
-    // nerdamer flips the reciprocal — (2!·3!)/5! is still 1/10, not
-    // the old 1/1440.
     const latex = (await interimEvaluate('1/\\binom{5}{2}'))[0] as { latex?: string };
-    expect(latex.latex).toBe('\\frac{2! \\cdot 3!}{5!}');
+    expect(latex.latex).toBe('\\frac{1}{10}');
   });
 
   it('shows no interim for extrema over a bound variable', async () => {
@@ -1124,11 +1503,33 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
     expect(await interimEvaluate('\\max_{x}x^2')).toEqual([]);
   });
 
-  it('shows no interim for one-sided limits', async () => {
-    // nerdamer has no direction arg; a two-sided guess at a
-    // discontinuity would contradict the real engine.
-    expect(await interimEvaluate('\\lim_{x\\to 0^{-}}\\frac{1}{x}')).toEqual([]);
-    expect(await interimEvaluate('\\lim_{x\\to 0^{+}}\\frac{1}{x}')).toEqual([]);
+  it('evaluates one-sided limits in the right direction', async () => {
+    // CE reads the direction superscript — a wrong-sided or two-sided
+    // guess would contradict the real engine.
+    expect(await interimEvaluate('\\lim_{x\\to 0^{-}}\\frac{1}{x}')).toEqual([
+      { ok: true, latex: '-\\infty' },
+    ]);
+    expect(await interimEvaluate('\\lim_{x\\to 0^{+}}\\frac{1}{x}')).toEqual([
+      { ok: true, latex: '\\infty' },
+    ]);
+  });
+
+  it('does not leak `name = rhs` bindings into later cells', async () => {
+    // Each call gets a fresh engine — an `a = 5` in one cell can't bind
+    // `a` in another's interim (CE Assign survives popScope on a shared
+    // engine, which flipped earlier cells' +C to +7 in the UI).
+    expect(await interimEvaluate('a = 5')).toEqual([
+      { ok: true, latex: 'a=5' },
+    ]);
+    expect(await interimEvaluate('a+1')).toEqual([
+      { ok: true, latex: 'a+1' },
+    ]);
+  });
+
+  it('shows no interim row for a \\python cell', async () => {
+    // PythonSource is a statement the interim can't evaluate — boxing
+    // it would echo PythonSource(...) junk; silent-empty instead.
+    expect(await interimEvaluate('\\python{x = 3\nx * 2}')).toEqual([]);
   });
 
   it('reserves declared names from cells above for + C letters', async () => {
@@ -1141,6 +1542,368 @@ describe('interimEvaluate (nerdamer fallback while SymPy boots)', () => {
     // Unrelated names don't reserve letters.
     const rows2 = await interimEvaluate('\\int x dx', ['a = 7']);
     expect((rows2[0] as { latex?: string }).latex ?? '').toContain('C');
+  });
+
+  describe('plot statements (CE-sampled interim figure)', () => {
+    const plotRow = (rows: CalcRow[]) =>
+      rows[0].ok && rows[0].plot !== undefined ? rows[0].plot : undefined;
+
+    it('samples a 1-D expression into a 1x1 scatter figure', async () => {
+      const plot = plotRow(await interimEvaluate('\\text{plot} x^2'));
+      expect(plot?.kind).toBe('1x1');
+      expect(plot?.vars).toEqual(['x']);
+      const tr = plot?.figure.data[0] as {
+        type: string;
+        x: number[];
+        y: number[];
+      };
+      expect(tr.type).toBe('scatter');
+      expect(tr.x).toHaveLength(600);
+      expect(tr.y[0]).toBeCloseTo(100);
+      expect(tr.y[300]).toBeCloseTo(0);
+    });
+
+    it('leaves gaps where the sampled value is not real-finite', async () => {
+      // √x is complex for x < 0 — the left half of the [-10,10] grid
+      // comes back as gaps (plotly/echarts break the trace on them).
+      const plot = plotRow(await interimEvaluate('\\text{plot} \\sqrt{x}'));
+      const tr = plot?.figure.data[0] as { y: number[] };
+      expect(Number.isFinite(tr.y[150])).toBe(false); // x ≈ -5
+      expect(tr.y[599]).toBeCloseTo(Math.sqrt(10));
+    });
+
+    it('reads a column vector as a parametric 1x2 curve', async () => {
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} \\begin{pmatrix} \\cos t \\\\ \\sin t \\end{pmatrix}',
+        ),
+      );
+      expect(plot?.kind).toBe('1x2');
+      expect(plot?.vars).toEqual(['t']);
+      const tr = plot?.figure.data[0] as { x: number[]; y: number[] };
+      // Unit circle — every sample's radius is 1.
+      for (let i = 0; i < tr.x.length; i += 97)
+        expect(Math.hypot(tr.x[i], tr.y[i])).toBeCloseTo(1, 5);
+    });
+
+    it('reads a 3-vector as a 1x3 curve trace', async () => {
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} \\begin{pmatrix} \\cos t \\\\ \\sin t \\\\ t \\end{pmatrix}',
+        ),
+      );
+      expect(plot?.kind).toBe('1x3');
+      const tr = plot?.figure.data[0] as { type: string; z: number[] };
+      expect(tr.type).toBe('scatter3d');
+      expect(tr.z[0]).toBeCloseTo(-10);
+    });
+
+    it('samples a 2-D scalar into a surface plus hidden heatmap', async () => {
+      const plot = plotRow(
+        await interimEvaluate('\\text{plot} x^{2}+y^{2}'),
+      );
+      expect(plot?.kind).toBe('2x1');
+      expect(plot?.vars).toEqual(['x', 'y']);
+      const types = plot?.figure.data.map((t) => t.type);
+      expect(types).toEqual(['surface', 'heatmap']);
+      const z = (plot!.figure.data[0] as { z: number[][] }).z;
+      // Corner of the [-3,3]² grid: (-3,-3) → 18.
+      expect(z[0][0]).toBeCloseTo(18);
+    });
+
+    it('reads a 2-var 3-vector as a parametric surface on the 3-D window', async () => {
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} \\begin{pmatrix} u \\\\ v \\\\ u^2+v^2 \\end{pmatrix}',
+        ),
+      );
+      expect(plot?.kind).toBe('2x3');
+      expect(plot?.vars).toEqual(['u', 'v']);
+      const tr = plot?.figure.data[0] as {
+        type: string;
+        x: number[][];
+        y: number[][];
+        z: number[][];
+      };
+      expect(tr.type).toBe('surface');
+      // The grids are the image of [-3,3]²: (u,v)=(-3,-3) → (-3,-3,18),
+      // (u,v)=(3,3) → (3,3,18).
+      expect(tr.x[0][0]).toBeCloseTo(-3);
+      expect(tr.y[0][0]).toBeCloseTo(-3);
+      expect(tr.z[0][0]).toBeCloseTo(18);
+      expect(tr.x[79][79]).toBeCloseTo(3);
+      expect(tr.y[79][79]).toBeCloseTo(3);
+      expect(tr.z[79][79]).toBeCloseTo(18);
+    });
+
+    it('samples a \\text{for} domain instead of the default window', async () => {
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} x^2 \\text{ for } x \\in (0, 5)',
+        ),
+      );
+      const tr = plot?.figure.data[0] as { x: number[]; y: number[] };
+      expect(tr.x[0]).toBeCloseTo(0);
+      expect(tr.x[599]).toBeCloseTo(5);
+      expect(tr.y[599]).toBeCloseTo(25);
+      // A two-sided chain resolves the same way; a one-sided bound
+      // keeps the default end.
+      const chainTr = plotRow(
+        await interimEvaluate(
+          '\\text{plot} x^2 \\text{ for } 0 \\le x \\le 5',
+        ),
+      )?.figure.data[0] as { x: number[] };
+      expect(chainTr.x[599]).toBeCloseTo(5);
+      const one = plotRow(
+        await interimEvaluate('\\text{plot} x^2 \\text{ for } x > 0'),
+      )?.figure.data[0] as { x: number[] };
+      expect(one.x[0]).toBeCloseTo(0);
+      expect(one.x[599]).toBeCloseTo(10);
+    });
+
+    it('applies a multi-variable domain to a parametric surface', async () => {
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} \\begin{pmatrix} u \\cos v \\\\ u \\sin v \\\\ v \\end{pmatrix}' +
+            ' \\text{ for } u \\in (0,1) \\land v \\in (0, 2\\pi)',
+        ),
+      );
+      expect(plot?.kind).toBe('2x3');
+      const tr = plot?.figure.data[0] as {
+        x: number[][];
+        y: number[][];
+        z: number[][];
+      };
+      // v sweeps [0, 2π]: the (1, 2π) corner is x = cos(2π) = 1,
+      // z = 2π — not the default-window corner 3cos(3)/3.
+      expect(tr.x[79][79]).toBeCloseTo(1);
+      expect(tr.y[79][79]).toBeCloseTo(Math.sin(2 * Math.PI));
+      expect(tr.z[79][79]).toBeCloseTo(2 * Math.PI);
+    });
+
+    it('applies a (u,v) ∈ I₁×I₂ product domain and broadcasts a constant component', async () => {
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} \\left(u,v,1\\right) \\text{ for }' +
+            ' \\left(u,v\\right) \\in \\left[0,1\\right]' +
+            ' \\times \\left[0,2\\pi\\right]',
+        ),
+      );
+      expect(plot?.kind).toBe('2x3');
+      const tr = plot?.figure.data[0] as {
+        x: number[][];
+        y: number[][];
+        z: number[][];
+      };
+      expect(tr.x[0][0]).toBeCloseTo(0);
+      expect(tr.x[79][79]).toBeCloseTo(1);
+      expect(tr.y[0][0]).toBeCloseTo(0);
+      expect(tr.y[79][79]).toBeCloseTo(2 * Math.PI);
+      expect(tr.z[79][79]).toBeCloseTo(1);
+    });
+
+    it('reads the product domain when (a,b) lowers to a row matrix', async () => {
+      // pair-matrix mode turns the membership lhs into Matrix — the
+      // bounds must survive that lowering too.
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} \\left(u,v,1\\right) \\text{ for }' +
+            ' \\left(u,v\\right) \\in \\left[0,1\\right]' +
+            ' \\times \\left[0,2\\pi\\right]',
+          [],
+          { pairTuple: 'matrix' },
+        ),
+      );
+      const tr = plot?.figure.data[0] as {
+        x: number[][];
+        y: number[][];
+      };
+      expect(tr.x[79][79]).toBeCloseTo(1);
+      expect(tr.y[79][79]).toBeCloseTo(2 * Math.PI);
+    });
+
+    it('an (a,b) paren domain gives no bounds in pair-matrix mode', async () => {
+      // Under pair-matrix semantics (0,5) is a 1×2 matrix — Contains
+      // membership in {0,5}, not a range.
+      const plot = plotRow(
+        await interimEvaluate('\\text{plot} x^2 \\text{ for } x \\in (0, 5)', [], {
+          pairTuple: 'matrix',
+        }),
+      );
+      const tr = plot?.figure.data[0] as { x: number[] };
+      expect(tr.x[0]).toBeCloseTo(-10);
+      expect(tr.x[599]).toBeCloseTo(10);
+    });
+
+    it('an unreadable \\text{for} condition keeps the default window', async () => {
+      const plot = plotRow(
+        await interimEvaluate(
+          '\\text{plot} x^2 \\text{ for } x \\in \\{1,2,3\\}',
+        ),
+      );
+      const tr = plot?.figure.data[0] as { x: number[] };
+      expect(tr.x[0]).toBeCloseTo(-10);
+      expect(tr.x[599]).toBeCloseTo(10);
+    });
+
+    it('stays empty for unplottable or unknowable signatures', async () => {
+      // Def'd names don't bind in the interim — g(x) can't be sampled.
+      expect(
+        await interimEvaluate('\\text{plot} g(x)', ['\\text{def} g(x)=x^2']),
+      ).toEqual([]);
+      // A name bound by a cell above is unknowable to the interim.
+      expect(await interimEvaluate('\\text{plot} a*x', ['a = 2'])).toEqual([]);
+      // Constants / too many vars: the worker's error row lands.
+      expect(await interimEvaluate('\\text{plot} 5')).toEqual([]);
+      expect(
+        await interimEvaluate('\\text{plot} x+y+z'),
+      ).toEqual([]);
+    });
+
+    it('folds same-cell assignments before sampling', async () => {
+      const rows = await interimEvaluate('a = 2\\\\ \\text{plot} a*x');
+      expect(rows).toHaveLength(2);
+      const plot = rows[1].ok ? rows[1].plot : undefined;
+      expect(plot?.kind).toBe('1x1');
+      const tr = plot?.figure.data[0] as { y: number[] };
+      expect(tr.y[599]).toBeCloseTo(20);
+    });
+  });
+});
+
+
+describe('shownPrograms (generating-code block assembly)', () => {
+  it('marks definition statements, not expressions', () => {
+    const prog = calcAll(
+      'a = 5',
+      '\\text{def} f(x) = x^2',
+      '\\text{def} g(y)',
+      'f: x \\mapsto x^2',
+      'a + 1',
+    );
+    expect(
+      prog.cells.flatMap((c) => c.statements).map((s) => s.defines ?? false),
+    ).toEqual([true, true, true, true, false]);
+  });
+
+  it('never shows the e = capture line for defs/assignments', () => {
+    const prog = calcAll('a = 5', '\\text{def} f(x) = x^2', 'a + 1');
+    const { code, displayCode } = shownPrograms(prog);
+    // Non-plumbing shows no capture lines at all.
+    expect(code).not.toContain('e = clean_and_simplify');
+    // Plumbing swaps expressions for their capture — the definition
+    // displays just echo the statement, so no `e = …` line exists for
+    // them even here.
+    expect(displayCode).toContain('e = clean_and_simplify(a + 1)');
+    expect(displayCode).toContain('a = 5');
+    expect(displayCode).toContain('def f(x):');
+    expect(displayCode).not.toContain('sp.Eq(sp.Symbol("a"), 5)');
+    expect(displayCode).not.toContain('sp.Function("f")');
+  });
+
+  it('keeps the e = capture for non-definition displays', () => {
+    // A \python body's trailing expression echoes a value, not a
+    // definition — its capture still shows under plumbing.
+    const prog = calcAll('\\python{x = 3\nx * 2}');
+    const { displayCode } = shownPrograms(prog);
+    expect(displayCode).toContain('e = clean_and_simplify(x * 2)');
+  });
+
+  it('splices worker-supplied code into the last cell only', () => {
+    // A plot row's literal program replaces the opaque _mc_plot
+    // statement in both views; rowCode indexes the last cell's
+    // statements (the worker only returns rows for the cell it just
+    // evaluated), so earlier cells keep their emitted text.
+    const prog = calcAll('x + 1', '\\text{plot} x^2');
+    const plotCode = 'fnum = sp.lambdify((x,), [x**2])\nfig.to_json()';
+    const { code, displayCode } = shownPrograms(prog, [plotCode]);
+    expect(code).toContain(plotCode);
+    // The statement call is gone — `def _mc_plot` in the runtime
+    // prelude stays.
+    expect(code).not.toContain('_mc_plot(x**2)');
+    expect(displayCode).toContain(plotCode);
+    expect(displayCode).not.toContain('_mc_plot(x**2)');
+    expect(code).toContain('x + 1');
+  });
+
+  it('leaves earlier cells on emitted text when rows only cover the last', () => {
+    const prog = calcAll('\\text{plot} x^2', 'x + 1');
+    const { code } = shownPrograms(prog, ['x + 1']);
+    // Cell 1's plot statement stays the opaque marker — the worker only
+    // returns rows for the cell it just evaluated.
+    expect(code).toContain('_mc_plot(x**2)');
+    expect(code).toContain('x + 1');
+  });
+});
+
+describe('calculator import-* mode (from sympy import *)', () => {
+  // Same option as compileWorksheet: importAll:true (also the default)
+  // emits a star import + unqualified names; the worker execs the
+  // prelude itself so the namespace gets every bare name.
+  const calcStar = (latex: string) =>
+    compileCellForCalc({ json: parseCellLatex(latex) }, { importAll: true });
+  const calcAllStar = (...latexs: string[]) =>
+    compileCellsForCalc(
+      latexs.map((latex) => ({ json: parseCellLatex(latex) })),
+      { importAll: true },
+    );
+
+  it('is the default emission', () => {
+    expect(compileCellForCalc({ json: parseCellLatex('x+1') }).prelude[0]).toBe(
+      'from sympy import *',
+    );
+    expect(
+      compileCellsForCalc([{ json: parseCellLatex('x+1') }]).prelude[0],
+    ).toBe('from sympy import *');
+  });
+
+  it('emits unqualified names through the whole program', () => {
+    const prog = calcStar('x + \\sin(y) + \\sqrt{2}');
+    expect(prog.prelude[0]).toBe('from sympy import *');
+    // Multi-name cells batch into one symbols() decl, like qualified
+    // mode's sp.symbols('x y').
+    expect(prog.prelude).toContain("x, y = symbols('x y')");
+    expect(prog.statements).toEqual([
+      { code: F('x + sin(y) + sqrt(2)'), display: undefined },
+    ]);
+  });
+
+  it('dequalifies the runtime helper so the shown program runs standalone', () => {
+    const prog = calcStar('x+1');
+    const helper = prog.prelude.find((l) =>
+      l.includes('def clean_and_simplify'),
+    );
+    expect(helper).toBeDefined();
+    expect(helper).not.toContain('sp.');
+    expect(helper).toContain('Poly(');
+    expect(helper).toContain('simplify(');
+  });
+
+  it('emits unqualified set heads', () => {
+    const prog = calcStar('\\{1,2\\} \\cup \\{3\\}');
+    expect(prog.statements[0].code).toBe(
+      F('Union(FiniteSet(1, 2), FiniteSet(3))'),
+    );
+  });
+
+  it('emits an unqualified imageset for a function applied to a set', () => {
+    const prog = calcAllStar(
+      '\\text{def} f(x) = x^2',
+      'f\\left(\\{1,2,3\\}\\right)',
+    );
+    expect(prog.cells[1].statements[0].code).toBe(
+      F('imageset(Lambda(Symbol("a"), f(Symbol("a"))), FiniteSet(1, 2, 3))'),
+    );
+  });
+
+  it('shared-scope defs stay unqualified down the worksheet', () => {
+    const prog = calcAllStar('a = 5', 'a + 1');
+    expect(prog.cells[0].statements).toEqual([
+      { code: 'a = 5', display: F('Eq(Symbol("a"), 5)'), defines: true },
+    ]);
+    expect(prog.cells[1].statements).toEqual([
+      { code: F('a + 1'), display: undefined },
+    ]);
   });
 });
 
@@ -1207,4 +1970,3 @@ describe('evaluate() over the desktop (pywebview) transport', () => {
     );
   });
 });
-

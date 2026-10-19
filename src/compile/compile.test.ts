@@ -119,16 +119,152 @@ const FIXTURES: {
     expectedPython: ["x, a, b = sp.symbols('x a b')", 'sp.integrate(x, (x, a, b))'],
   },
   {
-    // Term order is preserved: Multiply(a, 2), not canonical Multiply(2, a).
+    // \cdot is plain multiplication now — a real Multiply, operands in
+    // user order. (The dot product lives on \bullet/\dotproduct.)
     latex: 'a \\cdot 2',
     expectedIR: ['Multiply', 'a', 2],
     expectedPython: ['a = sp.Symbol("a")', 'a * 2'],
+  },
+  {
+    // `\bullet` is the dot product — vectors emit .dot(), scalars
+    // multiply. `\dotproduct` is the insertion alias for \bullet.
+    latex: '[1,2,3] \\bullet [4,5,6]',
+    expectedIR: [
+      'CircleMinus',
+      ['List', 1, 2, 3],
+      ['List', 4, 5, 6],
+    ],
+    expectedPython: ['sp.Matrix([1, 2, 3]).dot(sp.Matrix([4, 5, 6]))'],
+  },
+  {
+    latex: '[1,2,3] \\dotproduct [4,5,6]',
+    expectedIR: [
+      'CircleMinus',
+      ['List', 1, 2, 3],
+      ['List', 4, 5, 6],
+    ],
+    expectedPython: ['sp.Matrix([1, 2, 3]).dot(sp.Matrix([4, 5, 6]))'],
+  },
+  {
+    // \cdot is real multiplication even between vectors — bracket
+    // lists wrap in sp.Matrix so `*` is a genuine matmul (a column·
+    // column shape error is the honest answer, not a dot product).
+    latex: '[1,2,3] \\cdot [4,5,6]',
+    expectedIR: [
+      'Multiply',
+      ['List', 1, 2, 3],
+      ['List', 4, 5, 6],
+    ],
+    expectedPython: ['sp.Matrix([1, 2, 3]) * sp.Matrix([4, 5, 6])'],
   },
   {
     // Implicit multiplication keeps user order too.
     latex: '2 x y',
     expectedIR: ['Multiply', 2, 'x', 'y'],
     expectedPython: ["x, y = sp.symbols('x y')", '2 * x * y'],
+  },
+  {
+    // `u \times v` — the cross product. latex.ts rewrites \times to
+    // \circledast so CE keeps it distinct from \cdot/juxtaposition:
+    // vector operands emit .cross(), and scalar \times stays multiplication.
+    latex: '[1,2,3] \\times [4,5,6]',
+    expectedIR: [
+      'CircledAst',
+      ['List', 1, 2, 3],
+      ['List', 4, 5, 6],
+    ],
+    expectedPython: ['sp.Matrix([1, 2, 3]).cross(sp.Matrix([4, 5, 6]))'],
+  },
+  {
+    latex: 'u \\times v',
+    expectedIR: ['CircledAst', 'u', 'v'],
+    expectedPython: ["u, v = sp.symbols('u v')", 'u * v'],
+  },
+  {
+    latex: '2 \\times 3',
+    expectedIR: ['CircledAst', 2, 3],
+    expectedPython: ['2 * 3'],
+  },
+  {
+    // pmatrix column vectors — concrete .cross() directly on the
+    // emitted Matrix.
+    latex:
+      '\\begin{pmatrix}1\\\\2\\\\3\\end{pmatrix} \\times ' +
+      '\\begin{pmatrix}4\\\\5\\\\6\\end{pmatrix}',
+    expectedPython: [
+      'sp.Matrix([[1], [2], [3]]).cross(sp.Matrix([[4], [5], [6]]))',
+    ],
+  },
+  {
+    // A list-bound name wraps in sp.Matrix for .cross.
+    latex: 'u = [1,2,3] \\\\ u \\times [4,5,6]',
+    expectedPython: ['u = [1, 2, 3]', 'sp.Matrix(u).cross(sp.Matrix([4, 5, 6]))'],
+  },
+  {
+    // Set × set is the Cartesian product — same `*` Multiply emits.
+    latex: '\\mathbb{R} \\times \\mathbb{Z}',
+    expectedIR: ['CircledAst', 'RealNumbers', 'Integers'],
+    expectedPython: ['sp.S.Reals * sp.S.Integers'],
+  },
+  {
+    // Symbolic vectors declared via \mathbb{R}^{3\times1} lower through
+    // .as_explicit() — MatrixSymbol has no .cross.
+    latex:
+      'u \\in \\mathbb{R}^{3\\times1} \\\\ v \\in \\mathbb{R}^{3\\times1} ' +
+      '\\\\ u \\times v',
+    expectedPython: [
+      'u = sp.MatrixSymbol("u", 3, 1)',
+      'v = sp.MatrixSymbol("v", 3, 1)',
+      'Element = sp.Function("Element")',
+      'MatrixSpace = sp.Function("MatrixSpace")',
+      'Element(u, MatrixSpace(sp.S.Reals, 3, 1))',
+      'Element(v, MatrixSpace(sp.S.Reals, 3, 1))',
+      '(u).as_explicit().cross((v).as_explicit())',
+    ],
+    issues: ['matrix space'],
+  },
+  {
+    // A scalar mixed into a cross is an error — the statement drops.
+    latex: 'u \\times [1,2,3]',
+    expectedPython: ['u = sp.Symbol("u")'],
+    issues: ['cross product needs vectors'],
+  },
+  {
+    // \nabla \times F is the curl — the \nabla Error operand the
+    // nabla-gradient rule leaves folds to the Nabla head.
+    latex: '\\nabla \\times [x^2, y, z]',
+    expectedIR: ['CircledAst', ['Nabla'], ['List', ['Power', 'x', 2], 'y', 'z']],
+    expectedPython: [
+      "z, y, x = sp.symbols('z y x')",
+      'sp.Matrix([sp.diff(z, y) - sp.diff(y, z), sp.diff(x**2, z) - sp.diff(z, x), sp.diff(y, x) - sp.diff(x**2, y)])',
+    ],
+  },
+  {
+    // \nabla \cdot F is the divergence — \cdot rewrites to \bullet on
+    // the way in. Literal vectors emit per-component diffs (no
+    // re-emitted Matrix literal per term).
+    latex: '\\nabla \\cdot [x^2, y, z]',
+    expectedIR: ['CircleMinus', ['Nabla'], ['List', ['Power', 'x', 2], 'y', 'z']],
+    expectedPython: [
+      "x, y, z = sp.symbols('x y z')",
+      "sp.diff(x**2, sp.Symbol('x')) + sp.diff(y, sp.Symbol('y')) + sp.diff(z, sp.Symbol('z'))",
+    ],
+  },
+  {
+    // A row-vector/paren-tuple field is the same 3-vector.
+    latex: '\\nabla \\cdot \\begin{bmatrix}x^2&y&z\\end{bmatrix}',
+    expectedPython: [
+      "x, y, z = sp.symbols('x y z')",
+      "sp.diff(x**2, sp.Symbol('x')) + sp.diff(y, sp.Symbol('y')) + sp.diff(z, sp.Symbol('z'))",
+    ],
+  },
+  {
+    latex: '\\nabla \\bullet [x^2, y, z]',
+    expectedIR: ['CircleMinus', ['Nabla'], ['List', ['Power', 'x', 2], 'y', 'z']],
+    expectedPython: [
+      "x, y, z = sp.symbols('x y z')",
+      "sp.diff(x**2, sp.Symbol('x')) + sp.diff(y, sp.Symbol('y')) + sp.diff(z, sp.Symbol('z'))",
+    ],
   },
   {
     // `e` is Euler's constant (sp.E), never a Symbol.
@@ -145,6 +281,41 @@ const FIXTURES: {
     latex: '\\prod_{k=1}^{n} k',
     expectedIR: ['Product', 'k', ['Limits', 'k', 1, 'n']],
     expectedPython: ["k, n = sp.symbols('k n')", 'sp.product(k, (k, 1, n))'],
+  },
+  {
+    // \bigcup/\bigcap compile to a comprehension — SymPy's Union/
+    // Intersection take args, not bounds.
+    latex: '\\bigcup_{i=1}^{n} A_i',
+    expectedIR: ['BigUnion', 'A_i', ['Limits', 'i', 1, 'n']],
+    expectedPython: [
+      "A_i, i, n = sp.symbols('A_i i n')",
+      'sp.Union(*[A_i for i in sp.Range(1, n + 1)])',
+    ],
+  },
+  {
+    latex: '\\bigcap_{i=1}^{n} A_i',
+    expectedIR: ['BigIntersection', 'A_i', ['Limits', 'i', 1, 'n']],
+    expectedPython: [
+      "A_i, i, n = sp.symbols('A_i i n')",
+      'sp.Intersection(*[A_i for i in sp.Range(1, n + 1)])',
+    ],
+  },
+  {
+    // `i \in S` iterates the set directly, no Range.
+    latex: '\\bigcup_{i \\in S} A_i',
+    expectedIR: ['BigUnion', 'A_i', ['Element', 'i', 'S']],
+    expectedPython: [
+      "A_i, i, S = sp.symbols('A_i i S')",
+      'sp.Union(*[A_i for i in S])',
+    ],
+  },
+  {
+    latex: 'A \\cup B',
+    expectedIR: ['Union', 'A', 'B'],
+    expectedPython: [
+      "A, B = sp.symbols('A B')",
+      'sp.Union(sp.FiniteSet(A), sp.FiniteSet(B))',
+    ],
   },
   {
     latex: '\\lim_{x\\to 0} \\frac{\\sin x}{x}',
@@ -168,6 +339,142 @@ const FIXTURES: {
       'f = sp.Function("f")',
       'sp.diff(f(x), x)',
     ],
+  },
+  {
+    // `\D f` — the TOTAL derivative: takes no variable; for a scalar
+    // field of x it is plain `diff`. `\text{D}` is what the field
+    // stores after the alias.
+    latex: '\\D f',
+    expectedIR: ['TotalD', 'f'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+      'sp.diff(f(x), x)',
+    ],
+  },
+  {
+    latex: '\\D(x*y)',
+    expectedIR: ['TotalD', ['Multiply', 'x', 'y']],
+    expectedPython: [
+      "x, y = sp.symbols('x y')",
+      'sp.Matrix([x * y]).jacobian([x, y])',
+    ],
+  },
+  {
+    // `\D^2 f` — the second total derivative.
+    latex: '\\D^2 f',
+    expectedIR: ['TotalD', 'f', 'Nothing', 2],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+      'sp.diff(f(x), x, 2)',
+    ],
+  },
+  {
+    // `\D_x f` — a PARTIAL in x: folds to the ordinary D head, so other
+    // symbols stay constants. Confusing notation, but that is how it is.
+    latex: '\\D_x f',
+    expectedIR: ['D', 'f', 'x'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+      'sp.diff(f(x), x)',
+    ],
+  },
+  {
+    latex: '\\D_x^2 f',
+    expectedIR: ['D', 'f', 'x', 2],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+      'sp.diff(f(x), x, 2)',
+    ],
+  },
+  {
+    latex: '\\D_t(x*y)',
+    expectedIR: ['D', ['Multiply', 'x', 'y'], 't'],
+    expectedPython: [
+      "x, y, t = sp.symbols('x y t')",
+      'sp.diff(x * y, t)',
+    ],
+  },
+  {
+    // `\frac{\D f}{\D x}` — not the total-derivative notation: flagged
+    // as an error, so the statement itself is dropped.
+    latex: '\\frac{\\text{D}y}{\\text{D}x}',
+    expectedIR: ['TotalD', 'y', 'x'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+    ],
+    issues: ['not the notation'],
+  },
+  {
+    latex: '\\frac{\\D f}{\\D x}',
+    expectedIR: ['TotalD', 'f', 'x'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+    ],
+    issues: ['not the notation'],
+  },
+  {
+    latex: '\\frac{\\D}{\\D x}f',
+    expectedIR: ['TotalD', 'f', 'x'],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'f = sp.Function("f")',
+    ],
+    issues: ['not the notation'],
+  },
+  {
+    // `\nabla`/`\gradient` lower to `\operatorname{grad}` pre-parse; the
+    // gradient is over the canonical coordinates (x, y, z), so a
+    // bare-name body reads as a field of all three.
+    latex: '\\nabla f',
+    expectedIR: ['Gradient', 'f'],
+    expectedPython: [
+      "x, y, z = sp.symbols('x y z')",
+      'f = sp.Function("f")',
+      'sp.Matrix([f(x, y, z)]).jacobian([x, y, z])',
+    ],
+  },
+  {
+    latex: '\\gradient f',
+    expectedIR: ['Gradient', 'f'],
+    expectedPython: [
+      "x, y, z = sp.symbols('x y z')",
+      'f = sp.Function("f")',
+      'sp.Matrix([f(x, y, z)]).jacobian([x, y, z])',
+    ],
+  },
+  {
+    // `\nabla x` — the coordinate field itself: (1, 0, 0).
+    latex: '\\nabla x',
+    expectedIR: ['Gradient', 'x'],
+    expectedPython: [
+      "x, y, z = sp.symbols('x y z')",
+      'sp.Matrix([x]).jacobian([x, y, z])',
+    ],
+  },
+  {
+    latex: '\\nabla (x^2+y^2)',
+    expectedIR: [
+      'Gradient',
+      ['Add', ['Power', 'x', 2], ['Power', 'y', 2]],
+    ],
+    expectedPython: [
+      "x, y, z = sp.symbols('x y z')",
+      'sp.Matrix([x**2 + y**2]).jacobian([x, y, z])',
+    ],
+  },
+  {
+    // `\nabla^2` is laplacian, not the gradient — flagged honestly
+    // rather than guessed. `\nabla \cdot F` on an opaque name can't
+    // diff the field either; a concrete vector field works.
+    latex: '\\nabla \\cdot F',
+    expectedPython: ['F = sp.Symbol("F")'],
+    issues: ['divergence needs a concrete vector field'],
   },
   {
     // A non-name "callee" is juxtaposed factors, not a call — emitting
@@ -433,6 +740,47 @@ const FIXTURES: {
     expectedPython: ["x_hat, v_vec = sp.symbols('x_hat v_vec')", 'x_hat + v_vec'],
   },
   {
+    // Font-styled letters mint latex-style prefixes: CE tags the letter
+    // `a_upright`; the python variable reads `mathrm_a` while the
+    // Symbol's own name keeps the CE form.
+    latex: '\\mathrm{a}',
+    expectedPython: ['mathrm_a = sp.Symbol("a_upright")'],
+  },
+  {
+    latex: '\\mathrm{a} + \\mathbf{x} + \\mathcal{A}',
+    expectedPython: [
+      'mathrm_a = sp.Symbol("a_upright")',
+      'mathbf_x = sp.Symbol("x_bold")',
+      'mathcal_A = sp.Symbol("A_calligraphic")',
+      'mathrm_a + mathbf_x + mathcal_A',
+    ],
+  },
+  {
+    latex: '\\mathit{u} + \\mathscr{s} + \\mathsf{v} + \\mathtt{w} + \\mathfrak{k}',
+    expectedPython: [
+      'mathit_u = sp.Symbol("u_italic")',
+      'mathscr_s = sp.Symbol("s_script")',
+      'mathsf_v = sp.Symbol("v_sansserif")',
+      'mathtt_w = sp.Symbol("w_monospace")',
+      'mathfrak_k = sp.Symbol("k_fraktur")',
+      'mathit_u + mathscr_s + mathsf_v + mathtt_w + mathfrak_k',
+    ],
+  },
+  {
+    // The tag is per name piece: `a_{\mathrm{i}}` -> `a_i_upright`.
+    latex: 'a_{\\mathrm{i}}',
+    expectedPython: ['a_mathrm_i = sp.Symbol("a_i_upright")'],
+  },
+  {
+    latex: '\\mathrm{a}_{\\mathrm{i}}',
+    expectedPython: ['mathrm_a_mathrm_i = sp.Symbol("a_upright_i_upright")'],
+  },
+  {
+    // Font names bind like any symbol — \mathrm{a} = 5 assigns mathrm_a.
+    latex: '\\mathrm{a} = 5',
+    expectedPython: ['mathrm_a = 5'],
+  },
+  {
     latex: '\\|v\\|',
     expectedPython: ['v = sp.Symbol("v")', 'sp.Abs(v)'],
   },
@@ -688,12 +1036,14 @@ const FIXTURES: {
     ],
   },
   {
-    // (x, y) \in \mathbb{R}^2 — the member is a Tuple (a python list
-    // isn't a SymPy arg) and S.Reals**2 is a real ProductSet.
+    // (x, y) is the open interval — a 2-element paren tuple behaves
+    // like one, so the membership asks whether the interval is an
+    // element of the real plane (evaluates False; ⊆ would be the
+    // subset question).
     latex: '(x, y) \\in \\mathbb{R}^{2}',
     expectedPython: [
       "x, y = sp.symbols('x y')",
-      'sp.Contains(sp.Tuple(x, y), sp.S.Reals**2)',
+      'sp.Contains(sp.Interval(x, y, left_open=True, right_open=True), sp.S.Reals**2)',
     ],
   },
   {
@@ -729,21 +1079,32 @@ const FIXTURES: {
     ],
   },
   {
+    // A function applied to a set emits its image — imageset maps the
+    // call elementwise (f(FiniteSet) would raise TypeError at exec).
+    latex:
+      '\\displaylines{\\text{def} f(x) = x^2\\\\ f\\left(\\{1,2,3\\}\\right)}',
+    expectedPython: [
+      'def f(x):',
+      '    return x**2',
+      'sp.imageset(sp.Lambda(sp.Symbol("a"), f(sp.Symbol("a"))), sp.FiniteSet(1, 2, 3))',
+    ],
+  },
+  {
     // f'(0)/f'(\pi): sp.diff can't take a literal/constant as its
     // variable — diff at a fresh symbol, then substitute the point.
     latex: "f'(0)",
     expectedPython: [
-      'x = sp.Symbol("x")',
+      'a = sp.Symbol("a")',
       'f = sp.Function("f")',
-      'sp.diff(f(x), x).subs(x, 0)',
+      'sp.diff(f(a), a).subs(a, 0)',
     ],
   },
   {
     latex: "f'(\\pi)",
     expectedPython: [
-      'x = sp.Symbol("x")',
+      'a = sp.Symbol("a")',
       'f = sp.Function("f")',
-      'sp.diff(f(x), x).subs(x, sp.pi)',
+      'sp.diff(f(a), a).subs(a, sp.pi)',
     ],
   },
   {
@@ -868,6 +1229,96 @@ const FIXTURES: {
     // sp.Eq([x,y],[1,2]) which SympifyError'd on the python lists.
     latex: '(x,y) = (1,2)',
     expectedPython: ['x, y = [1, 2]'],
+  },
+  {
+    // A paren tuple with 3+ elements is a 1×n row matrix — the same
+    // shape a one-row pmatrix literal lowers to.
+    latex: '(a,b,c)',
+    expectedPython: [
+      "a, b, c = sp.symbols('a b c')",
+      'sp.Matrix([[a, b, c]])',
+    ],
+  },
+  {
+    // An assigned tuple binds a matrix name — later statements take
+    // matrix-op paths.
+    latex: 'v = (a,b,c)',
+    expectedPython: [
+      "a, b, c = sp.symbols('a b c')",
+      'v = sp.Matrix([[a, b, c]])',
+    ],
+  },
+  {
+    // A 2-element paren tuple is the open interval — same Interval
+    // node CE mints for `x \in (a,b)`.
+    latex: '(a,b)',
+    expectedPython: [
+      "a, b = sp.symbols('a b')",
+      'sp.Interval(a, b, left_open=True, right_open=True)',
+    ],
+  },
+  {
+    // A bracket list is not a tuple — stays a python list.
+    latex: '[a,b,c]',
+    expectedPython: [
+      "a, b, c = sp.symbols('a b c')",
+      '[a, b, c]',
+    ],
+  },
+  {
+    // A bare comma list (no parens) stays a python list — CE marks it
+    // with a ',' delimiter rather than '(,)'.
+    latex: 'a,b,c',
+    expectedPython: [
+      "a, b, c = sp.symbols('a b c')",
+      '[a, b, c]',
+    ],
+  },
+  {
+    // (x,y,z) = (a,b,c): the paren-tuple rhs still unpacks from its
+    // element list.
+    latex: '(x,y,z) = (a,b,c)',
+    expectedPython: [
+      "a, b, c = sp.symbols('a b c')",
+      'x, y, z = [a, b, c]',
+    ],
+  },
+  {
+    // (a,b,c)^T transposes the row matrix — previously SympifyError'd
+    // on the python list.
+    latex: '(a,b,c)^T',
+    expectedPython: [
+      "a, b, c = sp.symbols('a b c')",
+      'sp.Matrix([[a, b, c]]).T',
+    ],
+  },
+  {
+    // A tuple member of a finite-domain membership splats its elements
+    // — x ∈ (a,b,c) reads as x ∈ {a,b,c}.
+    latex: 'x \\in (a,b,c)',
+    expectedPython: [
+      "x, a, b, c = sp.symbols('x a b c')",
+      'sp.Contains(x, sp.FiniteSet(*sp.Matrix([[a, b, c]])))',
+    ],
+  },
+  {
+    // A juxtaposed tuple keeps its matrix value — u·(a,b,c) is scalar
+    // times row matrix, not u·a·b·c. (\cdot is plain multiplication;
+    // the tuple was already a row-matrix node.)
+    latex: 'u \\cdot (a,b,c)',
+    expectedPython: [
+      "u, a, b, c = sp.symbols('u a b c')",
+      'u * sp.Matrix([[a, b, c]])',
+    ],
+  },
+  {
+    // Juxtaposition multiplies by the tuple's value: f(x,y) is f times
+    // the open interval, not f·x·y.
+    latex: 'f(x,y)',
+    expectedPython: [
+      "f, x, y = sp.symbols('f x y')",
+      'f * sp.Interval(x, y, left_open=True, right_open=True)',
+    ],
   },
   {
     // \widehat{AB}: CE reads the decoration as Arc(A,B); previously the
@@ -1130,21 +1581,19 @@ const FIXTURES: {
   },
   {
     // det/trace/inverse/transpose exist on sympy MatrixExpr, so they
-    // emit on symbolic matrix expressions too; rank needs every matrix
-    // leaf literal — flag + stub on declared names.
+    // emit on symbolic matrix expressions too; rank joins them —
+    // concreteMatrix sees through matrix-bound names.
     latex:
       'A = \\begin{pmatrix} 1 & 0 \\\\ 0 & 1 \\end{pmatrix} \\\\ B = \\begin{pmatrix} 2 & 0 \\\\ 0 & 2 \\end{pmatrix} \\\\ \\det(A+B) \\\\ \\mathrm{tr}(A+B) \\\\ \\mathrm{inverse}(A+B) \\\\ \\mathrm{transpose}(A+B) \\\\ \\mathrm{rank}(A+B)',
     expectedPython: [
-      'rank = sp.Function("rank")',
       'A = sp.Matrix([[1, 0], [0, 1]])',
       'B = sp.Matrix([[2, 0], [0, 2]])',
       '(A + B).det()',
       'sp.Trace((A + B))',
       '(A + B).inv()',
       '(A + B).T',
-      'rank(A + B)',
+      '(A + B).rank()',
     ],
-    issues: ['rank needs a concrete matrix'],
   },
   {
     // The \tr alias stores \mathrm{tr} — same lowering as \mathrm{trace}.
@@ -1152,13 +1601,57 @@ const FIXTURES: {
     expectedPython: ['(sp.Matrix([[1, 2], [3, 4]])).trace()'],
   },
   {
+    // A bare name under a matrix word-op mints a MatrixSymbol (the
+    // \det A convention) instead of a `word(M)` Function stub.
     latex: '\\mathrm{trace}(M)',
     expectedPython: [
-      'M = sp.Symbol("M")',
-      'trace = sp.Function("trace")',
-      'trace(M)',
+      'M = sp.MatrixSymbol("M", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
+      'sp.Trace(M)',
     ],
-    issues: ['trace needs a matrix'],
+  },
+  {
+    // `\mathrm{eigenvects}(A)` on a bare name — same MatrixSymbol mint,
+    // concrete-only methods lower through .as_explicit().
+    latex: '\\mathrm{eigenvects}(A)',
+    expectedPython: [
+      'A = sp.MatrixSymbol("A", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
+      '(A).as_explicit().eigenvects()',
+    ],
+  },
+  {
+    // The juxtaposed form folds to the same call.
+    latex: '\\mathrm{eigenvects} A',
+    expectedPython: [
+      'A = sp.MatrixSymbol("A", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
+      '(A).as_explicit().eigenvects()',
+    ],
+  },
+  {
+    // `\ker` is the kernel — CE files it as Kernel; it lowers to
+    // .nullspace() like \mathrm{nullspace}.
+    latex: '\\ker A',
+    expectedPython: [
+      'A = sp.MatrixSymbol("A", sp.Symbol("n", integer=True, positive=True), sp.Symbol("n", integer=True, positive=True))',
+      '(A).as_explicit().nullspace()',
+    ],
+  },
+  {
+    latex: '\\ker(\\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix})',
+    expectedPython: ['(sp.Matrix([[1, 2], [3, 4]])).nullspace()'],
+  },
+  {
+    // I_n lowers to sp.eye(n) — already a concrete matrix, so no
+    // .as_explicit() (MutableDenseMatrix has no such method).
+    latex: '\\ker I_{2}',
+    expectedPython: ['(sp.eye(2)).nullspace()'],
+  },
+  {
+    // A name already bound to a scalar flags an error — the broken
+    // statement emits nothing (the Function decl is minted while
+    // emitting, before the flag lands).
+    latex: 'x = 5 \\\\ \\mathrm{rank}(x)',
+    expectedPython: ['rank = sp.Function("rank")', 'x = 5'],
+    issues: ['rank needs a matrix'],
   },
   {
     // M^{\mathrm{T}} reads as transpose — CE wraps the text superscript
@@ -1384,6 +1877,49 @@ const FIXTURES: {
     ],
   },
   {
+    // A bare `[a,b]` is the same closed interval `I = [a,b]` binds —
+    // CE only mints Interval in set context (`x ∈ [a,b]`, `[a,b)`),
+    // leaving the bracket pair as a 2-element List in expression
+    // position; the parse-stage rewrite closes that gap everywhere.
+    latex: '[0,1]',
+    expectedPython: ['sp.Interval(0, 1)'],
+  },
+  {
+    latex: '[a,b]',
+    expectedPython: [
+      'a, b = sp.symbols(\'a b\')',
+      'sp.Interval(a, b)',
+    ],
+  },
+  {
+    // `\left[…\right]` spellings parse to the same List node.
+    latex: '\\left[0,1\\right]',
+    expectedPython: ['sp.Interval(0, 1)'],
+  },
+  {
+    // Nested `[a,b]` reads as the interval too — here a finite set of
+    // two closed intervals.
+    latex: '\\{[0,1], [2,3]\\}',
+    expectedPython: [
+      'sp.FiniteSet(sp.Interval(0, 1), sp.Interval(2, 3))',
+    ],
+  },
+  {
+    // `[x,y] = [1,2]` destructures — the bound value must stay a real
+    // iterable list (an Interval isn't iterable), so the rhs keeps its
+    // List node.
+    latex: '[x,y] = [1,2]',
+    expectedPython: ['x, y = [1, 2]'],
+  },
+  {
+    // Matrix rows are structural List nodes — never bracket literals.
+    latex: '\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}',
+    expectedPython: [
+      'a, b, c, d = sp.symbols(\'a b c d\')',
+      'sp.Matrix([[a, b], [c, d]])',
+    ],
+  },
+  {
     // `expr \text{ for } x \in S` — set-builder notation, rewritten to
     // the Comprehension head at parse (its ForAll IR is identical to
     // `\forall`'s); a relational bound becomes a real domain.
@@ -1402,10 +1938,194 @@ const FIXTURES: {
     expectedPython: [
       'f = sp.Function("f")',
       'g = sp.Function("g")',
-      'sp.Lambda(sp.Symbol("x"), f(g(sp.Symbol("x"))))',
+      'sp.Lambda(sp.Symbol("a"), f(g(sp.Symbol("a"))))',
+    ],
+  },
+  // ---- \text{solve}/\text{dsolve}/\text{pdesolve} statements --------
+  {
+    latex: '\\text{solve} x^2 = 1',
+    expectedIR: ['Solve', ['Equal', ['Power', 'x', 2], 1], ['List']],
+    expectedPython: ['x = sp.Symbol("x")', 'sp.solve(sp.Eq(x**2, 1))'],
+  },
+  {
+    // Trailing bare symbols are the variables to solve for.
+    latex: '\\text{solve} x^2 - 5x + 6 = 0, x',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.solve(sp.Eq(x**2 - 5 * x + 6, 0), x)',
+    ],
+  },
+  {
+    // A comma list of equations is a system.
+    latex: '\\text{solve} x + y = 3, x - y = 1, x, y',
+    expectedPython: [
+      "x, y = sp.symbols('x y')",
+      'sp.solve([sp.Eq(x + y, 3), sp.Eq(x - y, 1)], [x, y])',
+    ],
+  },
+  {
+    // `\text{for} x > 0` reads as a solveset domain.
+    latex: '\\text{solve} x^2 = 1 \\text{ for } x > 0',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.solveset(sp.Eq(x**2, 1), x, domain=sp.Interval.open(0, sp.oo))',
+    ],
+  },
+  {
+    latex: '\\text{solve} x^2 = 1 \\text{ for } x \\in \\mathbb{R}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'sp.solveset(sp.Eq(x**2, 1), x, domain=sp.S.Reals)',
+    ],
+  },
+  {
+    // The unknown is inferred from the derivative — `y` is a function
+    // of `x` everywhere, including the bare `y` on the rhs.
+    latex: '\\text{dsolve} \\frac{dy}{dx} = y',
+    expectedIR: [
+      'DSolve',
+      ['Equal', ['D', 'y', 'x'], 'y'],
+      ['List', ['DepVar', 'y', 'x']],
+      ['List'],
+    ],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+      'sp.dsolve(sp.Eq(sp.diff(y(x), x), y(x)), y(x))',
+    ],
+  },
+  {
+    // `y(0)=1` with a dependent `y` is an initial condition, not an eq.
+    latex: '\\text{dsolve} \\frac{dy}{dx} = y, y(0)=1',
+    expectedIR: [
+      'DSolve',
+      ['Equal', ['D', 'y', 'x'], 'y'],
+      ['List', ['DepVar', 'y', 'x']],
+      ['List', ['IC', 'y', 'Nothing', 0, 1]],
+    ],
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+      'sp.dsolve(sp.Eq(sp.diff(y(x), x), y(x)), y(x), ics={y(0): 1})',
+    ],
+  },
+  {
+    // Prime notation on a dependent name rewrites to a D node.
+    latex: "\\text{dsolve} y^{\\prime\\prime} + y = 0",
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+      'sp.dsolve(sp.Eq(sp.diff(y(x), x, 2) + y(x), 0), y(x))',
+    ],
+  },
+  {
+    latex: '\\text{dsolve} \\dot{x} + x = 0, x(0)=1',
+    expectedPython: [
+      't = sp.Symbol("t")',
+      'x = sp.Function("x")',
+      'sp.dsolve(sp.Eq(sp.diff(x(t), t) + x(t), 0), x(t), ics={x(0): 1})',
+    ],
+  },
+  {
+    // An ODE system: comma-separated equations, several unknowns.
+    latex: '\\text{dsolve} \\frac{dy}{dx} = z, \\frac{dz}{dx} = -y, y(0)=1',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+      'z = sp.Function("z")',
+      'sp.dsolve([sp.Eq(sp.diff(y(x), x), z(x)), sp.Eq(sp.diff(z(x), x), -y(x))], [y(x), z(x)], ics={y(0): 1})',
+    ],
+  },
+  {
+    latex: '\\text{dsolve} \\begin{cases} \\frac{dy}{dx}=z \\\\ \\frac{dz}{dx}=y \\end{cases}',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+      'z = sp.Function("z")',
+      'sp.dsolve([sp.Eq(sp.diff(y(x), x), z(x)), sp.Eq(sp.diff(z(x), x), y(x))], [y(x), z(x)])',
+    ],
+  },
+  {
+    // `f^{(k)}(pt)=rhs` — a derivative initial condition.
+    latex: '\\text{dsolve} \\frac{d^2y}{dx^2} = y, y^{\\prime}(0)=0',
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+      'sp.dsolve(sp.Eq(sp.diff(sp.diff(y(x), x), x), y(x)), y(x), ics={sp.diff(y(x), x, 1).subs(x, 0): 0})',
+    ],
+  },
+  {
+    latex: '\\text{ode} \\dot{x} = -x',
+    expectedPython: [
+      't = sp.Symbol("t")',
+      'x = sp.Function("x")',
+      'sp.dsolve(sp.Eq(sp.diff(x(t), t), -x(t)), x(t))',
+    ],
+  },
+  {
+    // A `u(x,t)` spec declares the unknown's signature — every
+    // derivative site applies it (u(x,t) at both sites, and the target).
+    latex: '\\text{pdesolve} \\frac{\\partial u}{\\partial x} + \\frac{\\partial u}{\\partial t} = 0, u(x,t)',
+    expectedPython: [
+      "x, t = sp.symbols('x t')",
+      'u = sp.Function("u")',
+      'sp.pdsolve(sp.Eq(sp.diff(u(x, t), x) + sp.diff(u(x, t), t), 0), u(x, t))',
+    ],
+  },
+  {
+    // Subscript derivative notation — `u_x`/`u_t` infer the unknown u
+    // and its variables (first-seen order).
+    latex: '\\text{pdesolve} u_x + u_t = 0',
+    expectedIR: [
+      'PDESolve',
+      ['Equal', ['Add', ['D', 'u', 'x'], ['D', 'u', 't']], 0],
+      ['List', ['DepVar', 'u', 'x', 't']],
+      ['List'],
+    ],
+    expectedPython: [
+      "x, t = sp.symbols('x t')",
+      'u = sp.Function("u")',
+      'sp.pdsolve(sp.Eq(sp.diff(u(x, t), x) + sp.diff(u(x, t), t), 0), u(x, t))',
     ],
   },
 ];
+
+describe('solver statement markers', () => {
+  const compile = (latex: string) =>
+    compileWorksheet([{ json: parseCellLatex(latex) }], 'python', {
+      importAll: false,
+    });
+
+  it('a marker with no equation flags an error', () => {
+    const out = compile('\\text{solve}');
+    expect(
+      out.issues.some((i) => i.message.includes('needs an equation')),
+    ).toBe(true);
+  });
+
+  it('\\text{ode} and \\text{pde} are aliases for dsolve/pdesolve', () => {
+    const ir = normalizeIR(
+      parseCellLatex('\\text{ode} \\frac{dx}{dt} = x'),
+    ).ir;
+    expect(Array.isArray(ir) && ir[0]).toBe('DSolve');
+    const pir = normalizeIR(parseCellLatex('\\text{pde} u_t = 0')).ir;
+    expect(Array.isArray(pir) && pir[0]).toBe('PDESolve');
+  });
+
+  it('a bare \\text{solve} call still works — \\mathrm{solve}(eq, x)', () => {
+    const out = compile('\\mathrm{solve}(x^2 - 1, x)');
+    expect(out.cellLines[0].some((l) => l.includes('solve'))).toBe(true);
+  });
+
+  it('differentiating a symbol by itself stays a plain derivative', () => {
+    // seedDepVarArgs must not claim `x` as a function of `x` — a name is
+    // never a dependent of its own differentiation variable.
+    const out = compile('x + \\frac{dx}{dx}');
+    expect(out.cellLines[0]).toContain('x = sp.Symbol("x")');
+    expect(out.cellLines[0]).toContain('x + sp.diff(x, x)');
+    expect(out.cellLines[0].join('\n')).not.toContain('x(x)');
+  });
+});
 
 describe('worksheet matrix tracking', () => {
   const cells = (...latex: string[]) =>
@@ -1465,6 +2185,65 @@ describe('worksheet matrix tracking', () => {
         (i) => i.severity === 'error' && i.message.includes('needs a matrix'),
       ),
     ).toBe(true);
+  });
+});
+
+describe('pair-tuple mode', () => {
+  const compile = (latex: string, pairTuple?: 'interval' | 'matrix') =>
+    compileWorksheet([{ json: parseCellLatex(latex) }], 'python', {
+      importAll: false,
+      pairTuple,
+    }).cellLines[0].slice(1); // drop the import line
+
+  it('(a,b) is the open interval by default, the 1×2 matrix in matrix mode', () => {
+    expect(compile('(a,b)')).toEqual([
+      "a, b = sp.symbols('a b')",
+      'sp.Interval(a, b, left_open=True, right_open=True)',
+    ]);
+    expect(compile('(a,b)', 'interval')).toEqual(compile('(a,b)'));
+    expect(compile('(a,b)', 'matrix')).toEqual([
+      "a, b = sp.symbols('a b')",
+      'sp.Matrix([[a, b]])',
+    ]);
+    // 3+-element tuples are row matrices in both modes.
+    expect(compile('(a,b,c)', 'matrix')).toEqual(compile('(a,b,c)'));
+  });
+
+  it('v = (a,b) binds the matrix in matrix mode', () => {
+    expect(compile('v = (a,b)', 'matrix')).toEqual([
+      "a, b = sp.symbols('a b')",
+      'v = sp.Matrix([[a, b]])',
+    ]);
+  });
+
+  it('x ∈ (a,b) reads as membership in the matrix elements in matrix mode', () => {
+    expect(compile('x \\in (a,b)', 'matrix')).toEqual([
+      "x, a, b = sp.symbols('x a b')",
+      'sp.Contains(x, sp.FiniteSet(*sp.Matrix([[a, b]])))',
+    ]);
+    // A closed [a,b] interval is unaffected by the mode — same
+    // assuming-block emission as in interval mode.
+    expect(compile('x \\in [a,b]', 'matrix')).toEqual(
+      compile('x \\in [a,b]'),
+    );
+  });
+
+  it('(x,y) ∈ ℝ² is point membership again in matrix mode', () => {
+    expect(compile('(x,y) \\in \\mathbb{R}^2', 'matrix')).toEqual([
+      "x, y = sp.symbols('x y')",
+      'sp.Contains(sp.Tuple(x, y), sp.S.Reals**2)',
+    ]);
+  });
+
+  it('(x,y) = (1,2) still unpacks in matrix mode', () => {
+    expect(compile('(x,y) = (1,2)', 'matrix')).toEqual(['x, y = [1, 2]']);
+  });
+
+  it('f(x,y) multiplies by the matrix — no Symbol*Interval TypeError', () => {
+    expect(compile('f(x,y)', 'matrix')).toEqual([
+      "f, x, y = sp.symbols('f x y')",
+      'f * sp.Matrix([[x, y]])',
+    ]);
   });
 });
 
@@ -1734,6 +2513,22 @@ describe('error messages + resilient emission', () => {
     // Previously these emitted Sum(i) / Sum(i, i) — every non-tuple
     // shape raises ValueError at eval time.
     expect(compile('\\sum i').lines.join('\n')).not.toContain('summation');
+  });
+
+  it('\\bigcup/\\bigcap flag missing bounds and unbounded ranges', () => {
+    expect(compile('\\bigcup A').issues).toContain(
+      'big union needs an index and bounds — write \\bigcup_{i=1}^{n}',
+    );
+    expect(compile('\\bigcap A').issues).toContain(
+      'big intersection needs an index and bounds',
+    );
+    expect(compile('\\bigcup_{i=1}^{ }A_i').issues).toContain(
+      'upper bound is empty — fill it in or delete it',
+    );
+    // `for i in Range(1, oo)` never finishes — flagged at compile time.
+    expect(compile('\\bigcup_{i=1}^{\\infty} A_i').issues).toContain(
+      "can't enumerate",
+    );
   });
 
   it('under-arity builtins say how many args they need', () => {
@@ -2057,11 +2852,7 @@ describe('\\python{...} source blocks', () => {
 
   it('statement-ending bodies still echo the source', () => {
     // keyword-ending, assignment-ending, and suite-member endings
-    for (const body of [
-      'x = 1\ny = 2',
-      'def f(x):\n    return x + 1',
-      'if True:\n    y = 1',
-    ]) {
+    for (const body of ['x = 1\ny = 2', 'if True:\n    y = 1']) {
       const out = compileCellForCalc({
         json: parseCellLatex(`\\python{${body}}`),
       });
@@ -2069,6 +2860,34 @@ describe('\\python{...} source blocks', () => {
         `clean_and_simplify(${JSON.stringify(body)})`,
       );
     }
+  });
+
+  it('def-only sources exec silently — the defs never echo', () => {
+    for (const body of [
+      'def f(x):\n    return x + 1',
+      'def f(x):\n    return x + 1\n\ndef g(x):\n    return x * 2',
+      'f = lambda x: x + 1',
+      '# @latex \\mathcal{F}\ndef f(x):\n    return x',
+      '@deco\ndef f(x):\n    return x',
+    ]) {
+      const out = compileCellForCalc({
+        json: parseCellLatex(`\\python{${body}}`),
+      });
+      expect(out.statements).toEqual([{ code: body, silent: true }]);
+    }
+  });
+
+  it('a mixed source echoes only its non-def statements', () => {
+    const body = 'import math\ndef f(x):\n    return math.floor(x)';
+    const out = compileCellForCalc({
+      json: parseCellLatex(`\\python{${body}}`),
+    });
+    expect(out.statements).toEqual([
+      {
+        code: body,
+        display: `clean_and_simplify(${JSON.stringify('import math')})`,
+      },
+    ]);
   });
 
   it('an empty \\python{} parses to no statement at all', () => {

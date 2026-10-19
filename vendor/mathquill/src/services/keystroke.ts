@@ -36,10 +36,13 @@ class MQNode extends NodeBase {
         ctrlr.escapeDir(L, key, e);
         return;
 
-      // End -> move to the end of the current block.
+      // End -> move to the end of the current visual line: the
+      // innermost grid cell (\displaylines row, matrix cell), or the
+      // root block in a single-line field.
       case 'End':
-        ctrlr.notify('move').cursor.insAtRightEnd(cursor.parent);
-        ctrlr.aria.queue('end of').queue(cursor.parent, true);
+        var endBlock = ctrlr.lineBlock();
+        ctrlr.notify('move').cursor.insAtRightEnd(endBlock);
+        ctrlr.aria.queue('end of').queue(endBlock, true);
         break;
 
       // Ctrl-End -> move all the way to the end of the root block.
@@ -52,9 +55,9 @@ class MQNode extends NodeBase {
           .queue(ctrlr.ariaPostLabel);
         break;
 
-      // Shift-End -> select to the end of the current block.
+      // Shift-End -> select to the end of the current line.
       case 'Shift-End':
-        ctrlr.selectToBlockEndInDir(R);
+        ctrlr.selectToLineEndInDir(R);
         break;
 
       // Ctrl-Shift-End -> select all the way to the end of the root block.
@@ -62,10 +65,11 @@ class MQNode extends NodeBase {
         ctrlr.selectToRootEndInDir(R);
         break;
 
-      // Home -> move to the start of the current block.
+      // Home -> move to the start of the current visual line.
       case 'Home':
-        ctrlr.notify('move').cursor.insAtLeftEnd(cursor.parent);
-        ctrlr.aria.queue('beginning of').queue(cursor.parent, true);
+        var homeBlock = ctrlr.lineBlock();
+        ctrlr.notify('move').cursor.insAtLeftEnd(homeBlock);
+        ctrlr.aria.queue('beginning of').queue(homeBlock, true);
         break;
 
       // Ctrl-Home -> move all the way to the start of the root block.
@@ -78,9 +82,9 @@ class MQNode extends NodeBase {
           .queue(ctrlr.ariaPostLabel);
         break;
 
-      // Shift-Home -> select to the start of the current block.
+      // Shift-Home -> select to the start of the current line.
       case 'Shift-Home':
-        ctrlr.selectToBlockEndInDir(L);
+        ctrlr.selectToLineEndInDir(L);
         break;
 
       // Ctrl-Shift-Home -> select all the way to the start of the root block.
@@ -151,6 +155,18 @@ class MQNode extends NodeBase {
       case 'Meta-A':
       case 'Ctrl-A':
         ctrlr.selectAll();
+        break;
+
+      // MATHCOMPILE: undo/redo — snapshot history (services/undo.ts).
+      case 'Meta-Z':
+      case 'Ctrl-Z':
+        ctrlr.undo();
+        break;
+
+      case 'Meta-Shift-Z':
+      case 'Ctrl-Shift-Z':
+      case 'Ctrl-Y':
+        ctrlr.redo();
         break;
 
       // These remaining hotkeys are only of benefit to people running screen readers.
@@ -263,17 +279,55 @@ class Controller_keystroke extends Controller_focusBlur {
     prayDirection(dir);
     var cursor = this.cursor;
 
+    // MATHCOMPILE: a caret in the dir-edge cell of a grid that fills
+    // the root (\displaylines) can't step out to the root edge —
+    // Cursor::rootEdgeEnd snaps it back — so it counts as root-level
+    // for Tab/Shift-Tab: no preventDefault, and the browser default
+    // leaves the field exactly like a single-line cell.
+    var atFieldEdge =
+      cursor.parent === this.root || this.atRootFillingCellEdge(dir);
+
     // only prevent default of Tab if not in the root editable
-    if (cursor.parent !== this.root) e?.preventDefault();
+    if (!atFieldEdge) e?.preventDefault();
 
     // want to be a noop if in the root editable (in fact, Tab has an unrelated
     // default browser action if so)
-    if (cursor.parent === this.root) return;
+    if (atFieldEdge) return;
 
     cursor.clearSelection();
     cursor.parent.moveOutOf(dir, cursor);
     cursor.controller.aria.alert();
     return this.notify('move');
+  }
+
+  // MATHCOMPILE: the caret sits in the dir-edge cell of a grid that
+  // fills the whole root — that cell is the field edge this direction.
+  private atRootFillingCellEdge(dir: Direction): boolean {
+    var edge = this.root.getEnd(L);
+    if (
+      !edge ||
+      edge !== this.root.getEnd(R) ||
+      !(edge as MQNode & { fillsRootEdge?: boolean }).fillsRootEdge
+    )
+      return false;
+    var parent = this.cursor.parent;
+    return parent.parent === edge && !parent[dir];
+  }
+
+  // MATHCOMPILE: the innermost ancestor block that frames a visual
+  // line — a grid cell (<td>, flagged lineCell) or, failing that, the
+  // root block. Home/End and Shift-Home/Shift-End target it so the
+  // keys mean "line start/end" at any nesting depth.
+  lineBlock(): MQNode {
+    var block: MQNode = this.cursor.parent;
+    while (
+      block.parent &&
+      !(block as MQNode & { lineCell?: boolean }).lineCell &&
+      block !== this.root
+    ) {
+      block = block.parent;
+    }
+    return block;
   }
   moveDir(dir: Direction) {
     prayDirection(dir);
@@ -571,20 +625,46 @@ class Controller_keystroke extends Controller_focusBlur {
     const cursor = this.cursor;
     cursor.insAtRightEnd(this.root);
     this.withIncrementalSelection((selectDir) => {
-      while (cursor[L]) selectDir(L);
+      // MATHCOMPILE: stepping out of a root-filling grid
+      // (\displaylines) snaps the caret back into the edge cell, so
+      // march until the far edge and stop when a step makes no
+      // progress — otherwise select-all only covers the last line.
+      while (cursor[L] || cursor.parent !== this.root) {
+        const parent = cursor.parent,
+          l = cursor[L],
+          r = cursor[R];
+        selectDir(L);
+        if (cursor.parent === parent && cursor[L] === l && cursor[R] === r)
+          break;
+      }
     });
   }
-  selectToBlockEndInDir(dir: Direction) {
+  selectToLineEndInDir(dir: Direction) {
     const cursor = this.cursor;
+    const lineBlock = this.lineBlock();
     this.withIncrementalSelection((selectDir) => {
-      while (cursor[dir]) selectDir(dir);
+      while (cursor[dir] || cursor.parent !== lineBlock) {
+        const parent = cursor.parent,
+          l = cursor[L],
+          r = cursor[R];
+        selectDir(dir);
+        if (cursor.parent === parent && cursor[L] === l && cursor[R] === r)
+          break;
+      }
     });
   }
   selectToRootEndInDir(dir: Direction) {
     const cursor = this.cursor;
     this.withIncrementalSelection((selectDir) => {
       while (cursor[dir] || cursor.parent !== this.root) {
+        const parent = cursor.parent,
+          l = cursor[L],
+          r = cursor[R];
         selectDir(dir);
+        // same root-filling-grid stall as selectAll — without this
+        // Ctrl-Shift-Home/End loops forever inside the edge cell.
+        if (cursor.parent === parent && cursor[L] === l && cursor[R] === r)
+          break;
       }
     });
   }

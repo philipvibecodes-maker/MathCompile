@@ -1,6 +1,6 @@
-// Result-latex touch-ups for calculator rows: both engines name inverse
-// trig functions with an `a` prefix — nerdamer writes \mathrm{atan},
-// SymPy \operatorname{asin} under the abbreviated style (the worker asks
+// Result-latex touch-ups for calculator rows: inverse trig can arrive
+// with an `a` prefix — SymPy writes \operatorname{asin} under the
+// abbreviated style (the worker asks
 // for 'full' names, but rows can also come from unevaluated/user-defined
 // functions). MathQuill doesn't know `atan` as an operator name, so it
 // unitalicizes the trailing builtin (`tan`) and renders "a tan".

@@ -5,6 +5,16 @@
     font-family: Symbola;
     .font-srcs;
   }
+  // MATHCOMPILE: \mathcal/\mathscr script shapes (A-Z only, OFL-licensed
+  // KaTeX font — the system-font stack in .mq-caligraphic rendered
+  // plain italic on machines without a script font installed).
+  @font-face {
+    font-family: 'KaTeX_Caligraphic';
+    src:
+      local('KaTeX_Caligraphic Regular'),
+      local('KaTeX_Caligraphic'),
+      url(fonts/KaTeX_Caligraphic-Regular.woff2) format('woff2');
+  }
 }
 
 @basic:~ "";

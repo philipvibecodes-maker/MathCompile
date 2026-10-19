@@ -30,6 +30,10 @@
   src: url(fonts/Symbola-basic.eot);
   src: local('Symbola Regular'), local('Symbola'), url(fonts/Symbola-basic.woff2) format('woff2'), url(fonts/Symbola-basic.woff) format('woff'), url(fonts/Symbola-basic.ttf) format('truetype');
 }
+@font-face {
+  font-family: 'KaTeX_Caligraphic';
+  src: local('KaTeX_Caligraphic Regular'), local('KaTeX_Caligraphic'), url(fonts/KaTeX_Caligraphic-Regular.woff2) format('woff2');
+}
 .mq-editable-field {
   display: -moz-inline-box;
   display: inline-block;
@@ -206,17 +210,17 @@
   user-select: none;
   box-sizing: border-box;
 }
-.mq-math-mode .mq-empty {
+.mq-math-mode .mq-empty:not(.mq-python) {
   background: rgba(0, 0, 0, 0.2);
 }
-.mq-math-mode .mq-empty.mq-root-block {
+.mq-math-mode .mq-empty:not(.mq-python).mq-root-block {
   background: transparent;
 }
-.mq-math-mode .mq-empty.mq-quiet-delimiter {
+.mq-math-mode .mq-empty:not(.mq-python).mq-quiet-delimiter {
   background: transparent;
 }
-.mq-math-mode .mq-hasCursor:has(> .mq-cursor:only-child):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input),
-.mq-math-mode .mq-hasCursor:has(> .mq-cursor):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):is(.mq-font, .mq-bf, .mq-text-mode) {
+.mq-math-mode .mq-hasCursor:has(> .mq-cursor:only-child):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):not(.mq-python),
+.mq-math-mode .mq-hasCursor:has(> .mq-cursor):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):is(.mq-font, .mq-bf, .mq-text-mode):not(.mq-python) {
   background: rgba(0, 0, 0, 0.2);
 }
 .mq-math-mode.mq-empty {
@@ -226,7 +230,7 @@
   display: inline-block;
   white-space: pre;
 }
-.mq-math-mode .mq-text-mode.mq-hasCursor {
+.mq-math-mode .mq-text-mode.mq-hasCursor:not(.mq-python) {
   box-shadow: inset darkgray 0 0.1em 0.2em;
   padding: 0 0.1em;
   margin: 0 -0.1em;
@@ -280,6 +284,7 @@
 }
 .mq-math-mode .mq-int > big {
   display: inline-block;
+  font-size: 330%;
   -webkit-transform: scaleX(0.7);
   -moz-transform: scaleX(0.7);
   -ms-transform: scaleX(0.7);
@@ -289,11 +294,11 @@
 }
 .mq-math-mode .mq-int > .mq-supsub {
   font-size: 80%;
-  vertical-align: -1.1em;
+  vertical-align: -1.5em;
   padding-right: 0.2em;
 }
 .mq-math-mode .mq-int > .mq-supsub > .mq-sup > .mq-sup-inner {
-  vertical-align: 1.3em;
+  vertical-align: 2.1em;
 }
 .mq-math-mode .mq-int > .mq-supsub > .mq-sub {
   margin-left: -0.35em;
@@ -301,25 +306,25 @@
 .mq-math-mode .mq-int + .mq-supsub,
 .mq-math-mode .mq-int + .mq-cursor + .mq-supsub {
   font-size: 80%;
-  vertical-align: -1.1em;
+  vertical-align: -1.5em;
   padding-right: 0.2em;
 }
 .mq-math-mode .mq-int + .mq-supsub.mq-sup-only,
 .mq-math-mode .mq-int + .mq-cursor + .mq-supsub.mq-sup-only {
-  vertical-align: -1.1em;
+  vertical-align: -1.5em;
 }
 .mq-math-mode .mq-int + .mq-supsub.mq-sup-only > .mq-sup,
 .mq-math-mode .mq-int + .mq-cursor + .mq-supsub.mq-sup-only > .mq-sup {
-  vertical-align: 1.9em;
+  vertical-align: 3.25em;
 }
 .mq-math-mode .mq-int + .mq-supsub > .mq-sup,
 .mq-math-mode .mq-int + .mq-cursor + .mq-supsub > .mq-sup {
-  margin-bottom: 0.4em;
+  margin-bottom: 0.55em;
 }
 .mq-math-mode .mq-int + .mq-supsub:not(.mq-sup-only) > .mq-sup,
 .mq-math-mode .mq-int + .mq-cursor + .mq-supsub:not(.mq-sup-only) > .mq-sup {
   position: relative;
-  top: -0.45em;
+  top: -2.1em;
 }
 .mq-math-mode .mq-int + .mq-supsub > .mq-sub,
 .mq-math-mode .mq-int + .mq-cursor + .mq-supsub > .mq-sub {
@@ -335,7 +340,12 @@
   font-family: monospace, Symbola, serif;
 }
 .mq-math-mode .mq-caligraphic {
-  font-family: 'Lucida Calligraphy', 'Apple Chancery', cursive, Symbola, serif;
+  font-family: 'KaTeX_Caligraphic', Symbola, serif;
+  font-style: normal;
+}
+.mq-math-mode .mq-caligraphic var,
+.mq-math-mode .mq-caligraphic i {
+  font-style: normal;
 }
 .mq-math-mode .mq-fraktur {
   font-family: 'Old English Text MT', 'UnifrakturMaguntia', fantasy, Symbola, serif;
@@ -433,7 +443,7 @@
   vertical-align: -0.65em;
 }
 .mq-math-mode .mq-supsub.mq-sup-only {
-  vertical-align: 0.65em;
+  vertical-align: 0.5em;
 }
 .mq-math-mode .mq-supsub.mq-sup-only > .mq-sup {
   display: inline-block;
@@ -441,6 +451,8 @@
 }
 .mq-math-mode .mq-supsub .mq-sup {
   display: block;
+}
+.mq-math-mode .mq-supsub:not(.mq-sup-only) .mq-sup {
   margin-bottom: 0.15em;
 }
 .mq-math-mode .mq-supsub .mq-sub {
@@ -533,6 +545,10 @@
 }
 .mq-math-mode .mq-displaylines > table {
   border-spacing: 0 3px;
+  margin-top: -3px;
+}
+.mq-math-mode .mq-displaylines > table > tr:first-child > td {
+  padding-top: 0;
 }
 .mq-math-mode .mq-displaylines > table > tr > td {
   padding-left: 0;
@@ -554,6 +570,8 @@
   display: inline-block;
   vertical-align: top;
   overflow: visible;
+  position: relative;
+  top: -0.4em;
 }
 .mq-math-mode .mq-matrix + .mq-supsub:not(.mq-sup-only) > .mq-sup,
 .mq-math-mode .mq-matrix + .mq-cursor + .mq-supsub:not(.mq-sup-only) > .mq-sup,
@@ -568,6 +586,16 @@
   display: inline-block;
   float: none;
   vertical-align: bottom;
+  position: relative;
+  top: 0.13em;
+}
+.mq-math-mode .mq-root-block:has(.mq-matrix ~ .mq-supsub),
+.mq-math-mode .mq-root-block:has(.mq-displaylines ~ .mq-supsub),
+.mq-math-mode .mq-root-block:has(.mq-bracket-container ~ .mq-supsub) {
+  padding-top: 0.5em;
+  padding-bottom: 0.4em;
+  margin-top: -0.5em;
+  margin-bottom: -0.4em;
 }
 .mq-math-mode .mq-array > span {
   display: block;
@@ -582,6 +610,42 @@
 }
 .mq-math-mode var.mq-operator-name.mq-last,
 .mq-math-mode .mq-supsub.mq-after-operator-name {
+  padding-right: 0.2em;
+}
+.mq-math-mode .mq-operatorname {
+  padding-left: 0.2em;
+  padding-right: 0.2em;
+}
+.mq-math-mode .mq-operatorname:first-child {
+  padding-left: 0;
+}
+.mq-math-mode .mq-operatorname:last-child {
+  padding-right: 0;
+}
+.mq-math-mode .mq-binary-operator + .mq-operatorname,
+.mq-math-mode .mq-binary-operator + .mq-cursor + .mq-operatorname,
+.mq-math-mode .mq-large-operator + .mq-operatorname,
+.mq-math-mode .mq-large-operator + .mq-cursor + .mq-operatorname,
+.mq-math-mode .mq-int:not(.mq-boundless-int) + .mq-operatorname,
+.mq-math-mode .mq-int:not(.mq-boundless-int) + .mq-cursor + .mq-operatorname {
+  padding-left: 0;
+}
+.mq-math-mode .mq-operatorname:has(+ .mq-binary-operator),
+.mq-math-mode .mq-operatorname:has(+ .mq-cursor + .mq-binary-operator),
+.mq-math-mode .mq-operatorname:has(+ .mq-large-operator),
+.mq-math-mode .mq-operatorname:has(+ .mq-cursor + .mq-large-operator),
+.mq-math-mode .mq-operatorname:has( + .mq-int:not(.mq-boundless-int)),
+.mq-math-mode .mq-operatorname:has( + .mq-cursor + .mq-int:not(.mq-boundless-int)),
+.mq-math-mode .mq-operatorname:has( + .mq-bracket-container:not(.mq-binomial)),
+.mq-math-mode .mq-operatorname:has( + .mq-cursor + .mq-bracket-container:not(.mq-binomial)) {
+  padding-right: 0;
+}
+.mq-math-mode .mq-operatorname:has(+ .mq-supsub),
+.mq-math-mode .mq-operatorname:has(+ .mq-cursor + .mq-supsub) {
+  padding-right: 0;
+}
+.mq-math-mode .mq-operatorname + .mq-supsub:not( :has( + .mq-bracket-container:not(.mq-binomial))):not( :has( + .mq-cursor + .mq-bracket-container:not(.mq-binomial))),
+.mq-math-mode .mq-operatorname + .mq-cursor + .mq-supsub:not( :has( + .mq-bracket-container:not(.mq-binomial))):not( :has( + .mq-cursor + .mq-bracket-container:not(.mq-binomial))) {
   padding-right: 0.2em;
 }
 .mq-math-mode .mq-fraction {
@@ -617,7 +681,9 @@
 }
 .mq-math-mode .mq-dot-recurring {
   text-align: center;
-  height: 0.3em;
+  line-height: 0.3em;
+  margin-top: 0.1em;
+  margin-bottom: -0.6em;
 }
 .mq-math-mode .mq-sqrt-prefix {
   position: absolute;

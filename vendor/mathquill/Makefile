@@ -43,6 +43,7 @@ BASE_SOURCES = \
   $(SRC_DIR)/services/focusBlur.ts \
   $(SRC_DIR)/services/keystroke.ts \
   $(SRC_DIR)/services/latex.ts \
+  $(SRC_DIR)/services/undo.ts \
   $(SRC_DIR)/services/mouse.ts \
   $(SRC_DIR)/services/scrollHoriz.ts \
   $(SRC_DIR)/services/textarea.ts

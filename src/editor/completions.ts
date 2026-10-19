@@ -36,20 +36,48 @@ export const COMPLETIONS: CompletionItem[] = [
   { name: 'sum', hint: 'summation', preview: '\\sum_{k=1}^{n}' },
   { name: 'prod', hint: 'product', preview: '\\prod_{k=1}^{n}' },
   { name: 'lim', hint: 'limit', preview: '\\lim_{x\\to 0}' },
+  // `\D` and `\gradient` are insertion aliases — they expand to
+  // `\text{D}` and `\nabla`; the items come from their registry
+  // entries. `D` must outrank 'derivative' — Enter accepts the first
+  // prefix match, and a typed `\D` means the total derivative.
+  fromRegistry('D'),
   {
     name: 'derivative',
     hint: 'd/dx operator',
     preview: '\\frac{d }{d x}',
   },
   { name: 'partial', hint: 'partial derivative', preview: '\\partial' },
+  fromRegistry('gradient'),
   { name: 'binom', hint: 'binomial coefficient', preview: '\\binom{n}{k}' },
   { name: 'pmatrix', hint: 'matrix', preview: '\\pmatrix{a&b\\\\c&d}' },
   { name: 'begin', hint: 'environment (pmatrix, cases, …)' },
   { name: 'def', hint: 'function definition', preview: '\\text{def} ' },
+  { name: 'plot', hint: 'plot a function', preview: '\\text{plot} ' },
+  { name: 'for', hint: 'domain condition', preview: '\\text{for} ' },
+  { name: 'solve', hint: 'solve equations', preview: '\\text{solve} ' },
+  { name: 'dsolve', hint: 'solve an ODE', preview: '\\text{dsolve} ' },
+  { name: 'pdesolve', hint: 'solve a PDE', preview: '\\text{pdesolve} ' },
+  { name: 'ode', hint: 'solve an ODE (alias)', preview: '\\text{ode} ' },
+  { name: 'pde', hint: 'solve a PDE (alias)', preview: '\\text{pde} ' },
   { name: 'python', hint: 'inline Python code', preview: '\\python{x = 1}' },
-  // `\tr` is an insertion alias — it expands to `\mathrm{tr}`; the item
-  // comes from the trace registry entry.
+  // `\tr` and the other matrix word-ops are insertion aliases — they
+  // expand to `\mathrm{<word>}`; the items come from their registry
+  // entries. `\ker` is a real LaTeX command (the kernel, emitted as
+  // nullspace).
   fromRegistry('tr'),
+  fromRegistry('rank'),
+  fromRegistry('eigenvals'),
+  fromRegistry('eigenvects'),
+  fromRegistry('inverse'),
+  fromRegistry('transpose'),
+  fromRegistry('norm'),
+  fromRegistry('rref'),
+  fromRegistry('charpoly'),
+  fromRegistry('nullspace'),
+  { name: 'ker', hint: 'kernel / null space', preview: '\\ker A' },
+  fromRegistry('columnspace'),
+  fromRegistry('diagonalize'),
+  fromRegistry('adjugate'),
   { name: 'matrix', hint: 'matrix grid', preview: '\\begin{matrix}a&b\\\\c&d\\end{matrix}' },
   { name: 'bmatrix', hint: '[ ] matrix', preview: '\\begin{bmatrix}a&b\\\\c&d\\end{bmatrix}' },
   { name: 'Bmatrix', hint: '{ } matrix', preview: '\\begin{Bmatrix}a&b\\\\c&d\\end{Bmatrix}' },
@@ -152,7 +180,10 @@ export const COMPLETIONS: CompletionItem[] = [
   { name: 'mp', hint: '∓' },
   { name: 'times', hint: '×' },
   { name: 'div', hint: '÷' },
-  { name: 'cdot', hint: '·' },
+  { name: 'cdot', hint: '· multiplication' },
+  // `\dotproduct` is an insertion alias for `\bullet` — the dot product
+  // (\cdot is multiplication/matrix multiplication now).
+  fromRegistry('dotproduct'),
   { name: 'circ', hint: '∘' },
   { name: 'bullet', hint: '•' },
   { name: 'wedge', hint: '∧' },
@@ -161,6 +192,10 @@ export const COMPLETIONS: CompletionItem[] = [
   { name: 'otimes', hint: '⊗' },
   { name: 'cup', hint: 'union ∪' },
   { name: 'cap', hint: 'intersection ∩' },
+  // Aliases for \cup/\cap — serialize as the canonical command.
+  { name: 'union', hint: 'union ∪ (alias for cup)' },
+  { name: 'intersect', hint: 'intersection ∩ (alias for cap)' },
+  { name: 'intersection', hint: 'intersection ∩ (alias for cap)' },
   { name: 'setminus', hint: '∖' },
   { name: 'in', hint: '∈' },
   { name: 'notin', hint: '∉' },

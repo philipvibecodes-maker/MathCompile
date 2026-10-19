@@ -10,6 +10,9 @@
 
   let query = $state('');
   let index = $state(0);
+  // The picked command when it takes a text argument: the input switches
+  // to prompt mode (Enter submits `query`, Escape backs out to the list).
+  let prompting: Command | null = $state(null);
   let inputRef: HTMLInputElement;
   let listRef: HTMLUListElement;
   let rootRef: HTMLDivElement;
@@ -36,6 +39,7 @@
     if (!appStore.paletteOpen) return;
     query = '';
     index = 0;
+    prompting = null;
     inputRef?.focus();
     const t = setTimeout(() => {
       if (appStore.paletteOpen) inputRef?.focus();
@@ -51,7 +55,11 @@
     const onKeydown = (e: KeyboardEvent) => {
       if (appStore.paletteOpen && e.key === 'Escape') {
         e.preventDefault();
-        close();
+        if (prompting) {
+          prompting = null;
+          query = '';
+          index = 0;
+        } else close();
       }
     };
     window.addEventListener('keydown', onKeydown, true);
@@ -87,11 +95,30 @@
   };
 
   const pick = (c: Command) => {
-    c.run();
+    if (c.prompt) {
+      prompting = c;
+      query = c.prompt.initial;
+      index = 0;
+      inputRef?.focus();
+      inputRef?.select();
+      return;
+    }
+    c.run?.();
     close();
   };
 
   const onKeydown = (e: KeyboardEvent) => {
+    if (prompting) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        prompting.prompt?.run(query);
+        prompting = null;
+        close();
+      }
+      // Arrows/Escape: Escape exits via the capture listener; let the
+      // input keep its native caret keys while prompting.
+      return;
+    }
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       index = Math.min(index + 1, matches.length - 1);
@@ -133,7 +160,7 @@
     <input
       bind:this={inputRef}
       class="palette-input"
-      placeholder="Type a command…"
+      placeholder={prompting ? prompting.prompt!.placeholder : 'Type a command…'}
       bind:value={query}
       role="combobox"
       aria-expanded="true"
@@ -142,6 +169,7 @@
       oninput={() => (index = 0)}
       onkeydown={onKeydown}
     />
+    {#if !prompting}
     <ul class="palette-list" id="palette-list" role="listbox" bind:this={listRef}>
       {#each matches as m, i (m.c.id)}
         <li
@@ -162,6 +190,9 @@
         <li class="cmd-empty">No matching commands</li>
       {/if}
     </ul>
-    <div class="palette-footer">↑↓ navigate · Enter run · Esc close</div>
+    {/if}
+    <div class="palette-footer">
+      {prompting ? 'Enter confirm · Esc cancel' : '↑↓ navigate · Enter run · Esc close'}
+    </div>
   </div>
 </div>

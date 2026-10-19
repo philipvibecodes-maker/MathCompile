@@ -68,11 +68,6 @@ export interface Notation {
   /** Latex the printer should show for the CE leaf name
    *  ('epsilonSymbol' -> \varepsilon). */
   display?: string;
-  /** nerdamer emission name for the interim calculator engine — the
-   *  same role `sympy` plays for codegen. */
-  nerdamer?: string;
-  /** nerdamer name when a head sits inside InverseFunction. */
-  nerdamerInverse?: string;
   /** Palette completion generated for this notation's insertion alias. */
   completion?: { name: string; hint?: string; preview?: string };
   /** Alternate latex spellings that normalize to this notation's
@@ -95,7 +90,6 @@ export const NOTATION: Notation[] = [
     heads: ['Sqrt'],
     sympy: 'sqrt',
     commands: ['sqrt'],
-    nerdamer: 'sqrt',
     spellings: ['\\sqrt{x}', '\\sqrt x'],
     probes: [{ latex: '\\sqrt{x}', expect: 'sp.sqrt(x)' }],
   },
@@ -104,22 +98,19 @@ export const NOTATION: Notation[] = [
     name: 'Abs',
     heads: ['Abs'],
     sympy: 'Abs',
-    nerdamer: 'abs',
     spellings: ['|x|', '\\left|x\\right|', '\\operatorname{abs}(x)'],
   },
-  { name: 'Sign', heads: ['Sign'], sympy: 'sign', nerdamer: 'sign' },
+  { name: 'Sign', heads: ['Sign'], sympy: 'sign' },
   {
     name: 'Floor',
     heads: ['Floor'],
     sympy: 'floor',
-    nerdamer: 'floor',
     spellings: ['\\lfloor x\\rfloor', '\\operatorname{floor}(x)'],
   },
   {
     name: 'Ceil',
     heads: ['Ceil'],
     sympy: 'ceiling',
-    nerdamer: 'ceil',
     spellings: ['\\lceil x\\rceil', '\\operatorname{ceil}(x)'],
   },
   {
@@ -128,7 +119,6 @@ export const NOTATION: Notation[] = [
     sympy: 'Min',
     minArgs: 1,
     commands: ['min'],
-    nerdamer: 'min',
     spellings: ['\\min(a,b)', '\\operatorname{min}(a,b)'],
     probes: [{ latex: '\\min(a,b)', expect: 'sp.Min(a, b)' }],
   },
@@ -138,19 +128,16 @@ export const NOTATION: Notation[] = [
     sympy: 'Max',
     minArgs: 1,
     commands: ['max'],
-    nerdamer: 'max',
     spellings: ['\\max(a,b)', '\\operatorname{max}(a,b)'],
   },
   // \min_{x} f / \max_{x} f — the underscript forms lower to
-  // sp.minimum/sp.maximum in codegen. No nerdamer spelling: min/max are
-  // pointwise there and would compare body against bound var.
+  // sp.minimum/sp.maximum in codegen.
   { name: 'Minimum', heads: ['Minimum'] },
   { name: 'Maximum', heads: ['Maximum'] },
   {
     name: 'Factorial',
     heads: ['Factorial'],
     sympy: 'factorial',
-    nerdamer: 'factorial',
     probes: [{ latex: 'n!', expect: 'sp.factorial(n)' }],
   },
   {
@@ -159,7 +146,7 @@ export const NOTATION: Notation[] = [
     callSympy: 'factorial2',
     note: 'x!! — a call-position name only, never a canonical head',
   },
-  { name: 'Gamma', heads: ['Gamma'], sympy: 'gamma', nerdamer: 'gamma' },
+  { name: 'Gamma', heads: ['Gamma'], sympy: 'gamma' },
   {
     name: 'Binomial',
     heads: ['Binomial'],
@@ -182,7 +169,6 @@ export const NOTATION: Notation[] = [
     sympy: 'gcd',
     minArgs: 2,
     commands: ['gcd'],
-    nerdamer: 'gcd',
     spellings: ['\\gcd(6,8)', '\\operatorname{gcd}(6,8)'],
     probes: [{ latex: '\\gcd(6,8)', expect: 'sp.gcd(6, 8)' }],
   },
@@ -191,14 +177,12 @@ export const NOTATION: Notation[] = [
     heads: ['LCM'],
     sympy: 'lcm',
     minArgs: 2,
-    nerdamer: 'lcm',
   },
   {
     name: 'Mod',
     heads: ['Mod'],
     sympy: 'Mod',
     minArgs: 2,
-    nerdamer: 'mod',
     probes: [{ latex: 'x \\bmod y', expect: 'sp.Mod(x, y)' }],
   },
   {
@@ -207,7 +191,6 @@ export const NOTATION: Notation[] = [
     sympy: 'exp',
     inverse: 'log',
     commands: ['exp'],
-    nerdamer: 'exp',
     spellings: ['\\exp(x)', '\\exp x'],
   },
   {
@@ -216,7 +199,6 @@ export const NOTATION: Notation[] = [
     sympy: 'log',
     inverse: 'exp',
     commands: ['ln'],
-    nerdamer: 'log',
     spellings: ['\\ln(x)', '\\ln x'],
   },
   {
@@ -236,8 +218,6 @@ export const NOTATION: Notation[] = [
     sympy: 'sin',
     inverse: 'asin',
     commands: ['sin'],
-    nerdamer: 'sin',
-    nerdamerInverse: 'asin',
     spellings: ['\\sin(x)', '\\sin x'],
     probes: [{ latex: '\\sin^{-1}(x)', expect: 'sp.asin(x)' }],
   },
@@ -247,8 +227,6 @@ export const NOTATION: Notation[] = [
     sympy: 'cos',
     inverse: 'acos',
     commands: ['cos'],
-    nerdamer: 'cos',
-    nerdamerInverse: 'acos',
     spellings: ['\\cos(x)', '\\cos x'],
   },
   {
@@ -257,8 +235,6 @@ export const NOTATION: Notation[] = [
     sympy: 'tan',
     inverse: 'atan',
     commands: ['tan'],
-    nerdamer: 'tan',
-    nerdamerInverse: 'atan',
     spellings: ['\\tan(x)', '\\tan x'],
   },
   {
@@ -267,8 +243,6 @@ export const NOTATION: Notation[] = [
     sympy: 'sec',
     inverse: 'asec',
     commands: ['sec'],
-    nerdamer: 'sec',
-    nerdamerInverse: 'asec',
     spellings: ['\\sec(x)', '\\sec x'],
   },
   {
@@ -277,8 +251,6 @@ export const NOTATION: Notation[] = [
     sympy: 'csc',
     inverse: 'acsc',
     commands: ['csc'],
-    nerdamer: 'csc',
-    nerdamerInverse: 'acsc',
     spellings: ['\\csc(x)', '\\csc x'],
   },
   {
@@ -287,8 +259,6 @@ export const NOTATION: Notation[] = [
     sympy: 'cot',
     inverse: 'acot',
     commands: ['cot'],
-    nerdamer: 'cot',
-    nerdamerInverse: 'acot',
     spellings: ['\\cot(x)', '\\cot x'],
   },
   {
@@ -297,8 +267,6 @@ export const NOTATION: Notation[] = [
     sympy: 'sinh',
     inverse: 'asinh',
     commands: ['sinh'],
-    nerdamer: 'sinh',
-    nerdamerInverse: 'asinh',
     spellings: ['\\sinh(x)', '\\sinh x'],
   },
   {
@@ -307,8 +275,6 @@ export const NOTATION: Notation[] = [
     sympy: 'cosh',
     inverse: 'acosh',
     commands: ['cosh'],
-    nerdamer: 'cosh',
-    nerdamerInverse: 'acosh',
     spellings: ['\\cosh(x)', '\\cosh x'],
   },
   {
@@ -317,8 +283,6 @@ export const NOTATION: Notation[] = [
     sympy: 'tanh',
     inverse: 'atanh',
     commands: ['tanh'],
-    nerdamer: 'tanh',
-    nerdamerInverse: 'atanh',
     spellings: ['\\tanh(x)', '\\tanh x'],
   },
   {
@@ -326,8 +290,6 @@ export const NOTATION: Notation[] = [
     heads: ['Coth'],
     sympy: 'coth',
     inverse: 'acoth',
-    nerdamer: 'coth',
-    nerdamerInverse: 'acoth',
     spellings: ['\\coth(x)', '\\coth x'],
   },
   {
@@ -335,8 +297,6 @@ export const NOTATION: Notation[] = [
     heads: ['Sech'],
     sympy: 'sech',
     inverse: 'asech',
-    nerdamer: 'sech',
-    nerdamerInverse: 'asech',
     spellings: ['\\sech(x)', '\\sech x'],
   },
   {
@@ -344,8 +304,6 @@ export const NOTATION: Notation[] = [
     heads: ['Csch'],
     sympy: 'csch',
     inverse: 'acsch',
-    nerdamer: 'csch',
-    nerdamerInverse: 'acsch',
     spellings: ['\\csch(x)', '\\csch x'],
   },
   {
@@ -353,7 +311,6 @@ export const NOTATION: Notation[] = [
     heads: ['Arcsin'],
     sympy: 'asin',
     commands: ['arcsin'],
-    nerdamer: 'asin',
     spellings: ['\\arcsin(x)', '\\arcsin x', '\\operatorname{asin}(x)'],
   },
   {
@@ -361,7 +318,6 @@ export const NOTATION: Notation[] = [
     heads: ['Arccos'],
     sympy: 'acos',
     commands: ['arccos'],
-    nerdamer: 'acos',
     spellings: ['\\arccos(x)', '\\arccos x', '\\operatorname{acos}(x)'],
   },
   {
@@ -369,32 +325,28 @@ export const NOTATION: Notation[] = [
     heads: ['Arctan'],
     sympy: 'atan',
     commands: ['arctan'],
-    nerdamer: 'atan',
     spellings: ['\\arctan(x)', '\\arctan x', '\\operatorname{atan}(x)'],
   },
-  { name: 'Arcsec', heads: ['Arcsec'], sympy: 'asec', nerdamer: 'asec' },
-  { name: 'Arccsc', heads: ['Arccsc'], sympy: 'acsc', nerdamer: 'acsc' },
-  { name: 'Arccot', heads: ['Arccot'], sympy: 'acot', nerdamer: 'acot' },
+  { name: 'Arcsec', heads: ['Arcsec'], sympy: 'asec' },
+  { name: 'Arccsc', heads: ['Arccsc'], sympy: 'acsc' },
+  { name: 'Arccot', heads: ['Arccot'], sympy: 'acot' },
   {
     name: 'Arcsinh',
     heads: ['Arcsinh'],
     sympy: 'asinh',
     callTier: true,
-    nerdamer: 'asinh',
   },
   {
     name: 'Arccosh',
     heads: ['Arccosh'],
     sympy: 'acosh',
     callTier: true,
-    nerdamer: 'acosh',
   },
   {
     name: 'Arctanh',
     heads: ['Arctanh'],
     sympy: 'atanh',
     callTier: true,
-    nerdamer: 'atanh',
   },
   {
     name: 'Arsinh',
@@ -412,7 +364,6 @@ export const NOTATION: Notation[] = [
     heads: ['Conjugate'],
     sympy: 'conjugate',
     callTier: true,
-    nerdamer: 'conjugate',
     probes: [{ latex: '\\overline{z}', expect: 'sp.conjugate(z)' }],
     note: '\\overline{z}',
   },
@@ -422,7 +373,6 @@ export const NOTATION: Notation[] = [
     sympy: 're',
     callTier: true,
     display: '\\Re',
-    nerdamer: 'realpart',
     spellings: [
       '\\operatorname{Re}(z)',
       '\\Re(z)',
@@ -436,7 +386,6 @@ export const NOTATION: Notation[] = [
     sympy: 'im',
     callTier: true,
     display: '\\Im',
-    nerdamer: 'imagpart',
     spellings: [
       '\\operatorname{Im}(z)',
       '\\Im(z)',
@@ -452,7 +401,6 @@ export const NOTATION: Notation[] = [
     heads: ['Arg', 'Argument'],
     sympy: 'arg',
     callTier: true,
-    nerdamer: 'arg',
     spellings: [
       '\\operatorname{Arg}(z)',
       '\\arg(z)',
@@ -499,37 +447,163 @@ export const NOTATION: Notation[] = [
     name: 'rank',
     matrixMethod: 'rank()',
     wordOps: ['rank'],
+    commands: ['rank'],
+    completion: {
+      name: 'rank',
+      hint: 'matrix rank',
+      preview: '\\mathrm{rank} A',
+    },
     spellings: ['\\mathrm{rank}(A)', '\\operatorname{rank}(A)', '\\text{rank}(A)'],
   },
   {
     name: 'eigenvals',
     matrixMethod: 'eigenvals()',
     wordOps: ['eigenvals'],
+    commands: ['eigenvals'],
+    completion: {
+      name: 'eigenvals',
+      hint: 'eigenvalues',
+      preview: '\\mathrm{eigenvals} A',
+    },
     spellings: ['\\mathrm{eigenvals}(A)', '\\operatorname{eigenvals}(A)'],
   },
   {
     name: 'eigenvects',
     matrixMethod: 'eigenvects()',
     wordOps: ['eigenvects'],
+    commands: ['eigenvects'],
+    completion: {
+      name: 'eigenvects',
+      hint: 'eigenvectors',
+      preview: '\\mathrm{eigenvects} A',
+    },
     spellings: ['\\mathrm{eigenvects}(A)', '\\operatorname{eigenvects}(A)'],
   },
   {
     name: 'inverse',
     matrixMethod: 'inv()',
     wordOps: ['inverse'],
+    commands: ['inverse'],
+    completion: {
+      name: 'inverse',
+      hint: 'matrix inverse',
+      preview: '\\mathrm{inverse} A',
+    },
     spellings: ['\\mathrm{inverse}(A)', '\\operatorname{inverse}(A)'],
   },
   {
     name: 'transpose',
     matrixMethod: 'T',
     wordOps: ['transpose'],
+    commands: ['transpose'],
+    completion: {
+      name: 'transpose',
+      hint: 'matrix transpose',
+      preview: '\\mathrm{transpose} A',
+    },
     spellings: ['\\mathrm{transpose}(A)', '\\operatorname{transpose}(A)'],
   },
   {
     name: 'norm',
     matrixMethod: 'norm()',
     wordOps: ['norm'],
+    commands: ['norm'],
+    completion: {
+      name: 'norm',
+      hint: 'matrix/vector norm',
+      preview: '\\mathrm{norm} A',
+    },
     spellings: ['\\mathrm{norm}(A)', '\\operatorname{norm}(A)'],
+  },
+  {
+    name: 'rref',
+    matrixMethod: 'rref()[0]',
+    wordOps: ['rref'],
+    commands: ['rref'],
+    completion: {
+      name: 'rref',
+      hint: 'reduced row echelon form',
+      preview: '\\mathrm{rref} A',
+    },
+    spellings: ['\\mathrm{rref}(A)', '\\operatorname{rref}(A)'],
+    probes: [
+      {
+        latex: '\\mathrm{rref}(\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix})',
+        expect: '.rref()[0]',
+      },
+    ],
+    note: '.rref() returns (Matrix, pivot-cols) — the [0] keeps the '
+      + 'reduced matrix.',
+  },
+  {
+    name: 'charpoly',
+    matrixMethod: 'charpoly().as_expr()',
+    wordOps: ['charpoly'],
+    commands: ['charpoly'],
+    completion: {
+      name: 'charpoly',
+      hint: 'characteristic polynomial',
+      preview: '\\mathrm{charpoly} A',
+    },
+    spellings: ['\\mathrm{charpoly}(A)', '\\operatorname{charpoly}(A)'],
+    note: '.charpoly() is a PurePoly; .as_expr() reads it as a '
+      + 'polynomial in lambda_.',
+  },
+  {
+    name: 'nullspace',
+    matrixMethod: 'nullspace()',
+    callNames: ['Kernel', 'ker'],
+    wordOps: ['nullspace', 'ker'],
+    commands: ['nullspace', 'ker'],
+    completion: {
+      name: 'nullspace',
+      hint: 'null space / kernel',
+      preview: '\\mathrm{nullspace} A',
+    },
+    spellings: [
+      '\\mathrm{nullspace}(A)',
+      '\\operatorname{nullspace}(A)',
+      '\\ker(A)',
+      '\\ker A',
+    ],
+    note: '\\ker is a real LaTeX command — CE files it as Kernel.',
+  },
+  {
+    name: 'columnspace',
+    matrixMethod: 'columnspace()',
+    wordOps: ['columnspace'],
+    commands: ['columnspace'],
+    completion: {
+      name: 'columnspace',
+      hint: 'column space',
+      preview: '\\mathrm{columnspace} A',
+    },
+    spellings: ['\\mathrm{columnspace}(A)', '\\operatorname{columnspace}(A)'],
+  },
+  {
+    name: 'diagonalize',
+    matrixMethod: 'diagonalize()',
+    wordOps: ['diagonalize'],
+    commands: ['diagonalize'],
+    completion: {
+      name: 'diagonalize',
+      hint: 'diagonalize (P, D)',
+      preview: '\\mathrm{diagonalize} A',
+    },
+    spellings: ['\\mathrm{diagonalize}(A)', '\\operatorname{diagonalize}(A)'],
+    note: 'returns the (P, D) pair.',
+  },
+  {
+    name: 'adjugate',
+    matrixMethod: 'adjugate()',
+    wordOps: ['adjugate'],
+    commands: ['adjugate'],
+    completion: {
+      name: 'adjugate',
+      hint: 'adjugate matrix',
+      preview: '\\mathrm{adjugate} A',
+    },
+    spellings: ['\\mathrm{adjugate}(A)', '\\operatorname{adjugate}(A)'],
   },
 
   // — constants and leaf sets —
@@ -540,24 +614,21 @@ export const NOTATION: Notation[] = [
     callTier: true,
     callSympy: 'primepi',
     commands: ['pi'],
-    nerdamer: 'pi',
     note: '\\pi(n) reads as the prime-counting function — the call maps '
       + 'to primepi while the leaf stays pi',
   },
-  { name: 'ExponentialE', constant: 'E', ceConstant: true, nerdamer: 'e' },
-  { name: 'ImaginaryUnit', constant: 'I', ceConstant: true, nerdamer: 'i' },
+  { name: 'ExponentialE', constant: 'E', ceConstant: true },
+  { name: 'ImaginaryUnit', constant: 'I', ceConstant: true },
   {
     name: 'PositiveInfinity',
     constant: 'oo',
     ceConstant: true,
     commands: ['infty'],
-    nerdamer: 'Infinity',
   },
   {
     name: 'NegativeInfinity',
     constant: '-oo',
     ceConstant: true,
-    nerdamer: '-Infinity',
   },
   { name: 'EulerGamma', constant: 'EulerGamma', ceConstant: true },
   { name: 'CatalansConstant', constant: 'Catalan', ceConstant: true },
@@ -737,6 +808,119 @@ export const NOTATION: Notation[] = [
       + 'atoms — there is no D command in the field',
   },
   {
+    name: 'TotalD',
+    heads: ['TotalD', 'D'],
+    commands: ['D'],
+    spellings: ['\\D f', '\\D(f)', '\\D_x f'],
+    probes: [
+      { latex: '\\D f', expect: 'sp.diff(f(x), x)' },
+      {
+        latex: '\\D(x*y)',
+        expect: 'sp.Matrix([x * y]).jacobian([x, y])',
+      },
+      { latex: '\\D_x f', expect: 'sp.diff(f(x), x)' },
+    ],
+    completion: {
+      name: 'D',
+      hint: 'total derivative',
+      preview: '\\D f',
+    },
+    note: '\\D is an insertion alias for \\text{D} — the bare mark is '
+      + 'the total derivative (the Jacobian, no variable); \\D_x f is '
+      + 'the partial in x; \\frac{\\D}{\\D} is not the notation',
+  },
+  {
+    name: 'Gradient',
+    heads: ['Gradient'],
+    commands: ['nabla', 'gradient'],
+    spellings: ['\\nabla f', '\\gradient f', '\\operatorname{grad} f'],
+    probes: [
+      {
+        latex: '\\nabla (x^2+y^2)',
+        expect: 'sp.Matrix([x**2 + y**2]).jacobian([x, y, z])',
+      },
+    ],
+    completion: {
+      name: 'gradient',
+      hint: 'gradient ∇',
+      preview: '\\nabla f',
+    },
+    note: '\\nabla/\\gradient lower to \\operatorname{grad} — '
+      + '\\nabla\\cdot reads as divergence through the cdot-dot '
+      + 'disguise; \\times/\\nabla^2 stay unsupported-command errors',
+  },
+  {
+    name: 'Dot',
+    heads: ['CircleMinus', 'Nabla'],
+    commands: ['bullet', 'dotproduct'],
+    spellings: ['u \\bullet v', 'u \\dotproduct v'],
+    probes: [
+      {
+        latex: '[1,2,3] \\bullet [4,5,6]',
+        expect: 'sp.Matrix([1, 2, 3]).dot(sp.Matrix([4, 5, 6]))',
+      },
+      { latex: '2 \\cdot 3', expect: '2 * 3' },
+    ],
+    completion: {
+      name: 'dotproduct',
+      hint: 'dot product •',
+      preview: 'u \\bullet v',
+    },
+    note: '\\bullet/\\dotproduct rewrite to \\ominus in latex.ts — the '
+      + 'CircleMinus head keeps the dot product distinct from '
+      + 'juxtaposition/\\cdot (always plain multiplication now). Codegen '
+      + 'is operand-typed: vectors -> .dot(), \\nabla\\bullet (and '
+      + '\\nabla\\cdot, pre-rewritten by nabla-div) -> divergence, '
+      + 'all-sets -> the Cartesian *, scalars -> multiplication.',
+  },
+  {
+    name: 'HadamardProduct',
+    heads: ['HadamardProduct'],
+    commands: ['odot'],
+    spellings: ['A \\odot B'],
+    probes: [
+      {
+        latex:
+          '\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix} \\odot ' +
+          '\\begin{pmatrix}5&6\\\\7&8\\end{pmatrix}',
+        expect: '.multiply_elementwise(',
+      },
+    ],
+    note: 'concrete matrices -> .multiply_elementwise(); MatrixExpr '
+      + '-> sp.HadamardProduct; scalars -> multiplication.',
+  },
+  {
+    name: 'KroneckerProduct',
+    heads: ['CircleTimes'],
+    commands: ['otimes'],
+    spellings: ['A \\otimes B'],
+    probes: [
+      {
+        latex: '[1,2,3] \\otimes [4,5,6]',
+        expect: 'sp.kronecker_product(sp.Matrix([1, 2, 3]), sp.Matrix([4, 5, 6]))',
+      },
+    ],
+    note: 'concrete -> sp.kronecker_product; MatrixExpr -> '
+      + 'sp.KroneckerProduct; scalars -> multiplication (a scalar '
+      + 'mixed into a kron wraps as Matrix([[s]])).',
+  },
+  {
+    name: 'DirectSum',
+    heads: ['CirclePlus'],
+    commands: ['oplus'],
+    spellings: ['A \\oplus B'],
+    probes: [
+      {
+        latex:
+          '\\begin{pmatrix}1\\\\2\\end{pmatrix} \\oplus ' +
+          '\\begin{pmatrix}3\\\\4\\end{pmatrix}',
+        expect: 'sp.diag(',
+      },
+    ],
+    note: 'matrices -> sp.diag (block diagonal); sets -> '
+      + 'sp.SymmetricDifference; anything else flags.',
+  },
+  {
     name: 'Def',
     heads: ['Def'],
     commands: ['def'],
@@ -747,11 +931,75 @@ export const NOTATION: Notation[] = [
       + 'marker',
   },
   {
+    name: 'Plot',
+    heads: ['Plot'],
+    commands: ['plot'],
+    note: '\\plot is an insertion alias for the \\text{plot} statement '
+      + 'marker — the calculator target samples and renders it',
+  },
+  {
+    name: 'Solve',
+    heads: ['Solve'],
+    commands: ['solve'],
+    probes: [
+      {
+        latex: '\\text{solve} x^2 = 1 \\text{ for } x > 0',
+        expect: 'sp.solveset(sp.Eq(x**2, 1), x, domain=sp.Interval.open(0, sp.oo))',
+      },
+    ],
+    note: '\\solve is an insertion alias for the \\text{solve} '
+      + 'statement marker',
+  },
+  {
+    name: 'DSolve',
+    heads: ['DSolve'],
+    commands: ['dsolve', 'ode'],
+    probes: [
+      {
+        latex: '\\text{dsolve} \\frac{dy}{dx} = y, y(0)=1',
+        expect: 'sp.dsolve(sp.Eq(sp.diff(y(x), x), y(x)), y(x), ics={y(0): 1})',
+      },
+    ],
+    note: '\\dsolve/\\ode are insertion aliases for the \\text{dsolve}/'
+      + '\\text{ode} statement markers',
+  },
+  {
+    name: 'PDESolve',
+    heads: ['PDESolve'],
+    commands: ['pdesolve', 'pde'],
+    probes: [
+      {
+        latex: '\\text{pdesolve} u_x + u_t = 0',
+        expect: 'sp.pdsolve(sp.Eq(sp.diff(u(x, t), x) + sp.diff(u(x, t), t), 0), u(x, t))',
+      },
+    ],
+    note: '\\pdesolve/\\pde are insertion aliases for the '
+      + '\\text{pdesolve}/\\text{pde} statement markers',
+  },
+  {
     name: 'Determinant',
     heads: ['Determinant'],
     commands: ['det'],
     spellings: ['\\det(A)', '\\det A'],
     probes: [{ latex: '\\det(A)', expect: 'sp.Determinant(A)' }],
+  },
+  {
+    name: 'Cross',
+    heads: ['CircledAst', 'Nabla'],
+    commands: ['times', 'cross', 'circledast'],
+    spellings: ['u \\times v'],
+    probes: [
+      {
+        latex: '[1,2,3] \\times [4,5,6]',
+        expect: 'sp.Matrix([1, 2, 3]).cross(sp.Matrix([4, 5, 6]))',
+      },
+      { latex: '2 \\times 3', expect: '2 * 3' },
+    ],
+    note: '\\times rewrites to \\circledast in latex.ts — the '
+      + 'CircledAst head keeps it distinct from \\cdot/juxtaposition '
+      + 'while literal \\otimes stays the Kronecker product. Codegen is '
+      + 'operand-typed: vectors -> .cross(), \\nabla\\times -> curl, '
+      + 'all-sets -> the Cartesian *, scalars -> multiplication.',
   },
   // `x'` parses to a distinct leaf symbol, not a Derivative head — the
   // spelling pair pins that both prime syntaxes mint the same leaf.
@@ -789,7 +1037,13 @@ export const NOTATION: Notation[] = [
   { name: 'Mean', callTier: true },
   { name: 'ForAll', callTier: true },
   { name: 'Exists', callTier: true },
-  { name: 'Comprehension', callTier: true },
+  {
+    name: 'Comprehension',
+    callTier: true,
+    commands: ['for'],
+    note: '\\for is an insertion alias for the \\text{for} '
+      + 'comprehension/domain keyword',
+  },
   { name: 'PseudoInverse', callTier: true },
   { name: 'Superminus', callTier: true },
   { name: 'Superplus', callTier: true },
@@ -823,9 +1077,10 @@ export const NOTATION: Notation[] = [
   { name: 'daleth', display: '\\daleth' },
   { name: 'aleph', display: '\\aleph' },
   { name: 'weierstrass', display: '\\wp' },
-  // \theta — a bare glyph with no emission metadata; carried so the
-  // smart-mode command list has a home.
+  // \theta / \phi — bare glyphs with no emission metadata; carried so
+  // the smart-mode command list has a home.
   { name: 'theta', commands: ['theta'] },
+  { name: 'phi', commands: ['phi'] },
 ];
 
 // `call` heads that are real SymPy functions — codegen keeps emitting
@@ -876,15 +1131,21 @@ const STRUCTURAL_HEADS = [
   'NotDivides', 'Implies', 'Equivalent', 'IdenticallyEqual', 'Degrees',
   'Interval', 'Open', 'IntegerRange',
   // set operators — codegen emits real SymPy when operands are
-  // set-like, and the same flagged Function stub as before otherwise
+  // set-like, and the same flagged Function stub as before otherwise.
+  // BigUnion/BigIntersection are the \bigcup/\bigcap bound forms — an
+  // index + bounds like Sum/Product, not binary ops.
   'Element', 'NotElement', 'Union', 'Intersection', 'SetMinus',
+  'BigUnion', 'BigIntersection',
   'Subset', 'SubsetEqual', 'Superset', 'SupersetEqual',
   'NotSubset', 'NotSubsetNotEqual', 'NotSuperset', 'NotSupersetNotEqual',
   'And', 'Or', 'Not', 'Which', 'Piecewise',
   // 'Condition' is a Set literal's predicate child
   'Condition', 'Complement', 'Difference',
-  // statement-level IR
+  // statement-level IR — 'DepVar' and 'IC' are the child shapes inside
+  // DSolve/PDESolve statements (unknowns-to-solve and initial
+  // conditions); they only ever appear as statement children.
   'Assign', 'Declare', 'Block', 'WhereBlock', 'Function',
+  'DepVar', 'IC',
   // verbatim \python{...} source — codegen emits it uninterpreted
   'PythonSource',
   // structural helpers — 'call' marks a node already escaped by the
@@ -1058,26 +1319,4 @@ export const CE_CONSTANTS = new Set(
   NOTATION.filter((n) => n.ceConstant).map((n) => n.name),
 );
 
-// — nerdamer-emit views (the interim engine's spellings) —
 
-export const NERDAMER_FUNCS: Record<string, string> = Object.fromEntries(
-  NOTATION.flatMap((n) =>
-    n.nerdamer === undefined
-      ? []
-      : headsOf(n).map((h) => [h, n.nerdamer as string] as const),
-  ),
-);
-export const NERDAMER_INVERSE_FUNCS: Record<string, string> =
-  Object.fromEntries(
-    NOTATION.flatMap((n) =>
-      n.nerdamerInverse === undefined
-        ? []
-        : headsOf(n).map((h) => [h, n.nerdamerInverse as string] as const),
-    ),
-  );
-export const NERDAMER_CONSTANTS: Record<string, string> =
-  Object.fromEntries(
-    NOTATION.filter(
-      (n) => n.constant !== undefined && n.nerdamer !== undefined,
-    ).map((n) => [n.name, n.nerdamer as string] as const),
-  );

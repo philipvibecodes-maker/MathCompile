@@ -1261,6 +1261,9 @@ var __assign = (this && this.__assign) || function () {
             var node = this;
             node.html();
             node.domFrag().insDirOf(dir, cursor.domFrag());
+            // MATHCOMPILE: a selection covering a root-filling grid's cells can
+            // leave the caret in a disowned subtree \u2014 anchor it before adopting.
+            cursor.reanchorIfStranded();
             cursor[dir] = node.adopt(cursor.parent, cursor[L], cursor[R]); // TODO - assuming not undefined, could be 0
             return node;
         };
@@ -2042,6 +2045,26 @@ var __assign = (this && this.__assign) || function () {
             selection.remove();
             this.selectionChanged();
             delete this.selection;
+            this.reanchorIfStranded();
+        };
+        // MATHCOMPILE: a selection covering a root-filling grid's cells
+        // (\displaylines) removes or disowns those cells under the caret's
+        // parent and leaves its links stale \u2014 an insert would write into a
+        // detached subtree (or trip prayWellFormed). Re-park at the root's
+        // left edge when the caret's parent element left the root's DOM or
+        // its links no longer line up.
+        Cursor.prototype.reanchorIfStranded = function () {
+            var parent = this.parent, leftward = this[L], rightward = this[R], rootEl = this.controller.root.domFrag().oneElement(), intact = parent &&
+                rootEl.contains(parent.domFrag().oneElement()) &&
+                (leftward
+                    ? leftward.parent === parent && leftward[R] === rightward
+                    : parent.getEnd(L) === rightward) &&
+                (rightward
+                    ? rightward.parent === parent && rightward[L] === leftward
+                    : parent.getEnd(R) === leftward);
+            if (!intact)
+                this.insAtLeftEnd(this.controller.root);
+            return this;
         };
         Cursor.prototype.replaceSelection = function () {
             var seln = this.selection;
@@ -2117,6 +2140,9 @@ var __assign = (this && this.__assign) || function () {
     }(Fragment));
     var ControllerBase = /** @class */ (function () {
         function ControllerBase(root, container, options) {
+            // MATHCOMPILE: >0 while a programmatic latex() (load/restore) is in
+            // flight \u2014 the undo history rebases instead of recording (undo.ts).
+            this.suspendHistory = 0;
             this.isMouseSelecting = false;
             this.textareaEventListeners = {};
             this.id = root.id;
@@ -2152,6 +2178,11 @@ var __assign = (this && this.__assign) || function () {
                 else
                     handler(mq);
             }
+            // MATHCOMPILE: 'edit' is the last handler the root reflow fires,
+            // after the mutation lands \u2014 the undo history's after-change
+            // signal (services/undo.ts).
+            if (name === 'edit')
+                this.noteEdited();
         };
         ControllerBase.onNotify = function (f) {
             ControllerBase.notifyees.push(f);
@@ -2262,6 +2293,9 @@ var __assign = (this && this.__assign) || function () {
         ControllerBase.prototype.scrollHoriz = function () { };
         ControllerBase.prototype.selectionChanged = function () { };
         ControllerBase.prototype.setOverflowClasses = function () { };
+        // MATHCOMPILE: overridden by the undo layer (services/undo.ts)
+        ControllerBase.prototype.noteEdited = function () { };
+        ControllerBase.prototype.rebaseHistory = function () { };
         ControllerBase.notifyees = [];
         return ControllerBase;
     }());
@@ -3291,11 +3325,65 @@ var __assign = (this && this.__assign) || function () {
             function onInput(e) {
                 everyTick.trigger(e);
             }
+            // MATHCOMPILE: a selection covering a whole \displaylines grid
+            // copies the wrapper verbatim; it's an editing artifact, not part
+            // of the expression, so the clipboard gets one text line per row
+            // (`a\\\nb`). Only top-level `\\` pairs are row separators \u2014 `\\`
+            // inside braced groups or a \begin{\u2026}\u2026\end{\u2026} environment stays
+            // on its row.
+            function unwrapDisplaylines(text) {
+                var prefix = '\\displaylines{';
+                if (!text.startsWith(prefix))
+                    return text;
+                var depth = 0;
+                for (var i = prefix.length - 1; i < text.length; i++) {
+                    var ch = text[i];
+                    if (ch === '{')
+                        depth++;
+                    else if (ch === '}') {
+                        depth--;
+                        if (depth === 0) {
+                            // only a wrapper covering the whole string unwraps
+                            if (i !== text.length - 1)
+                                return text;
+                            var inner = text.slice(prefix.length, i);
+                            var out = '';
+                            depth = 0;
+                            // \begin{env}\u2026\end{env} rows keep their inner \\ separators
+                            // on the row's own line.
+                            var envDepth = 0;
+                            for (var j = 0; j < inner.length; j++) {
+                                var c = inner[j];
+                                if (c === '\\') {
+                                    if (inner[j + 1] === '\\' && depth === 0 && envDepth === 0) {
+                                        out += '\\\\\n';
+                                        j++;
+                                        while (inner[j + 1] === ' ')
+                                            j++;
+                                        continue;
+                                    }
+                                    if (inner.startsWith('begin', j + 1))
+                                        envDepth++;
+                                    else if (inner.startsWith('end', j + 1))
+                                        envDepth--;
+                                }
+                                else if (c === '{')
+                                    depth++;
+                                else if (c === '}')
+                                    depth--;
+                                out += c;
+                            }
+                            return out;
+                        }
+                    }
+                }
+                return text;
+            }
             function updateClipboardData(e) {
                 if (e === null || e === void 0 ? void 0 : e.clipboardData) {
                     var selection = controller.exportLatexSelection().selection;
                     if (selection.startIndex !== selection.endIndex) {
-                        var text = selection.latex.slice(selection.startIndex, selection.endIndex);
+                        var text = unwrapDisplaylines(selection.latex.slice(selection.startIndex, selection.endIndex));
                         e.clipboardData.setData('text/plain', text);
                         e.clipboardData.setData('application/x-latex', text);
                         e.preventDefault();
@@ -3555,10 +3643,13 @@ var __assign = (this && this.__assign) || function () {
                 case 'Shift-Esc':
                     ctrlr.escapeDir(L, key, e);
                     return;
-                // End -> move to the end of the current block.
+                // End -> move to the end of the current visual line: the
+                // innermost grid cell (\displaylines row, matrix cell), or the
+                // root block in a single-line field.
                 case 'End':
-                    ctrlr.notify('move').cursor.insAtRightEnd(cursor.parent);
-                    ctrlr.aria.queue('end of').queue(cursor.parent, true);
+                    var endBlock = ctrlr.lineBlock();
+                    ctrlr.notify('move').cursor.insAtRightEnd(endBlock);
+                    ctrlr.aria.queue('end of').queue(endBlock, true);
                     break;
                 // Ctrl-End -> move all the way to the end of the root block.
                 case 'Ctrl-End':
@@ -3569,18 +3660,19 @@ var __assign = (this && this.__assign) || function () {
                         .queue(ctrlr.root)
                         .queue(ctrlr.ariaPostLabel);
                     break;
-                // Shift-End -> select to the end of the current block.
+                // Shift-End -> select to the end of the current line.
                 case 'Shift-End':
-                    ctrlr.selectToBlockEndInDir(R);
+                    ctrlr.selectToLineEndInDir(R);
                     break;
                 // Ctrl-Shift-End -> select all the way to the end of the root block.
                 case 'Ctrl-Shift-End':
                     ctrlr.selectToRootEndInDir(R);
                     break;
-                // Home -> move to the start of the current block.
+                // Home -> move to the start of the current visual line.
                 case 'Home':
-                    ctrlr.notify('move').cursor.insAtLeftEnd(cursor.parent);
-                    ctrlr.aria.queue('beginning of').queue(cursor.parent, true);
+                    var homeBlock = ctrlr.lineBlock();
+                    ctrlr.notify('move').cursor.insAtLeftEnd(homeBlock);
+                    ctrlr.aria.queue('beginning of').queue(homeBlock, true);
                     break;
                 // Ctrl-Home -> move all the way to the start of the root block.
                 case 'Ctrl-Home':
@@ -3591,9 +3683,9 @@ var __assign = (this && this.__assign) || function () {
                         .queue(ctrlr.root)
                         .queue(ctrlr.ariaPostLabel);
                     break;
-                // Shift-Home -> select to the start of the current block.
+                // Shift-Home -> select to the start of the current line.
                 case 'Shift-Home':
-                    ctrlr.selectToBlockEndInDir(L);
+                    ctrlr.selectToLineEndInDir(L);
                     break;
                 // Ctrl-Shift-Home -> select all the way to the start of the root block.
                 case 'Ctrl-Shift-Home':
@@ -3658,6 +3750,16 @@ var __assign = (this && this.__assign) || function () {
                 case 'Meta-A':
                 case 'Ctrl-A':
                     ctrlr.selectAll();
+                    break;
+                // MATHCOMPILE: undo/redo \u2014 snapshot history (services/undo.ts).
+                case 'Meta-Z':
+                case 'Ctrl-Z':
+                    ctrlr.undo();
+                    break;
+                case 'Meta-Shift-Z':
+                case 'Ctrl-Shift-Z':
+                case 'Ctrl-Y':
+                    ctrlr.redo();
                     break;
                 // These remaining hotkeys are only of benefit to people running screen readers.
                 case 'Ctrl-Alt-Up': // speak parent block that has focus
@@ -3767,17 +3869,47 @@ var __assign = (this && this.__assign) || function () {
         Controller_keystroke.prototype.escapeDir = function (dir, _key, e) {
             prayDirection(dir);
             var cursor = this.cursor;
+            // MATHCOMPILE: a caret in the dir-edge cell of a grid that fills
+            // the root (\displaylines) can't step out to the root edge \u2014
+            // Cursor::rootEdgeEnd snaps it back \u2014 so it counts as root-level
+            // for Tab/Shift-Tab: no preventDefault, and the browser default
+            // leaves the field exactly like a single-line cell.
+            var atFieldEdge = cursor.parent === this.root || this.atRootFillingCellEdge(dir);
             // only prevent default of Tab if not in the root editable
-            if (cursor.parent !== this.root)
+            if (!atFieldEdge)
                 e === null || e === void 0 ? void 0 : e.preventDefault();
             // want to be a noop if in the root editable (in fact, Tab has an unrelated
             // default browser action if so)
-            if (cursor.parent === this.root)
+            if (atFieldEdge)
                 return;
             cursor.clearSelection();
             cursor.parent.moveOutOf(dir, cursor);
             cursor.controller.aria.alert();
             return this.notify('move');
+        };
+        // MATHCOMPILE: the caret sits in the dir-edge cell of a grid that
+        // fills the whole root \u2014 that cell is the field edge this direction.
+        Controller_keystroke.prototype.atRootFillingCellEdge = function (dir) {
+            var edge = this.root.getEnd(L);
+            if (!edge ||
+                edge !== this.root.getEnd(R) ||
+                !edge.fillsRootEdge)
+                return false;
+            var parent = this.cursor.parent;
+            return parent.parent === edge && !parent[dir];
+        };
+        // MATHCOMPILE: the innermost ancestor block that frames a visual
+        // line \u2014 a grid cell (<td>, flagged lineCell) or, failing that, the
+        // root block. Home/End and Shift-Home/Shift-End target it so the
+        // keys mean "line start/end" at any nesting depth.
+        Controller_keystroke.prototype.lineBlock = function () {
+            var block = this.cursor.parent;
+            while (block.parent &&
+                !block.lineCell &&
+                block !== this.root) {
+                block = block.parent;
+            }
+            return block;
         };
         Controller_keystroke.prototype.moveDir = function (dir) {
             prayDirection(dir);
@@ -4061,19 +4193,33 @@ var __assign = (this && this.__assign) || function () {
             return this.selectDir(R);
         };
         Controller_keystroke.prototype.selectAll = function () {
+            var _this = this;
             this.notify('move');
             var cursor = this.cursor;
             cursor.insAtRightEnd(this.root);
             this.withIncrementalSelection(function (selectDir) {
-                while (cursor[L])
+                // MATHCOMPILE: stepping out of a root-filling grid
+                // (\displaylines) snaps the caret back into the edge cell, so
+                // march until the far edge and stop when a step makes no
+                // progress \u2014 otherwise select-all only covers the last line.
+                while (cursor[L] || cursor.parent !== _this.root) {
+                    var parent = cursor.parent, l = cursor[L], r = cursor[R];
                     selectDir(L);
+                    if (cursor.parent === parent && cursor[L] === l && cursor[R] === r)
+                        break;
+                }
             });
         };
-        Controller_keystroke.prototype.selectToBlockEndInDir = function (dir) {
+        Controller_keystroke.prototype.selectToLineEndInDir = function (dir) {
             var cursor = this.cursor;
+            var lineBlock = this.lineBlock();
             this.withIncrementalSelection(function (selectDir) {
-                while (cursor[dir])
+                while (cursor[dir] || cursor.parent !== lineBlock) {
+                    var parent = cursor.parent, l = cursor[L], r = cursor[R];
                     selectDir(dir);
+                    if (cursor.parent === parent && cursor[L] === l && cursor[R] === r)
+                        break;
+                }
             });
         };
         Controller_keystroke.prototype.selectToRootEndInDir = function (dir) {
@@ -4081,7 +4227,12 @@ var __assign = (this && this.__assign) || function () {
             var cursor = this.cursor;
             this.withIncrementalSelection(function (selectDir) {
                 while (cursor[dir] || cursor.parent !== _this.root) {
+                    var parent = cursor.parent, l = cursor[L], r = cursor[R];
                     selectDir(dir);
+                    // same root-filling-grid stall as selectAll \u2014 without this
+                    // Ctrl-Shift-Home/End loops forever inside the edge cell.
+                    if (cursor.parent === parent && cursor[L] === l && cursor[R] === r)
+                        break;
                 }
             });
         };
@@ -4584,15 +4735,24 @@ var __assign = (this && this.__assign) || function () {
         Controller_latex.prototype.renderLatexMath = function (latex) {
             var cursor = this.cursor;
             var root = this.root;
-            this.notify('replace');
-            cursor.clearSelection();
-            var oldLatex = this.exportLatex();
-            if (!root.getEnd(L) || !root.getEnd(R) || oldLatex !== latex) {
-                this.updateLatexMathEfficiently(latex, oldLatex) ||
-                    this.renderLatexMathFromScratch(latex);
-                this.updateMathspeak();
+            // MATHCOMPILE: programmatic latex() (load/hydrate/undo restore)
+            // rebases the undo history instead of recording a step (undo.ts).
+            this.suspendHistory++;
+            try {
+                this.notify('replace');
+                cursor.clearSelection();
+                var oldLatex = this.exportLatex();
+                if (!root.getEnd(L) || !root.getEnd(R) || oldLatex !== latex) {
+                    this.updateLatexMathEfficiently(latex, oldLatex) ||
+                        this.renderLatexMathFromScratch(latex);
+                    this.updateMathspeak();
+                }
+                cursor.insAtRightEnd(root);
             }
-            cursor.insAtRightEnd(root);
+            finally {
+                this.suspendHistory--;
+            }
+            this.rebaseHistory();
         };
         Controller_latex.prototype.renderLatexText = function (latex) {
             var _c;
@@ -4694,6 +4854,134 @@ var __assign = (this && this.__assign) || function () {
             uncleanEndIndex: uncleanEndIndex
         };
     }
+    // index of `node` among its parent's children (left-sibling count)
+    function childIndex(node) {
+        var i = 0;
+        for (var s = node.parent.getEnd(L); s && s !== node; s = s[R])
+            i++;
+        return i;
+    }
+    // [i0..ik, offset]: indices descending from the root to the caret's
+    // block, then the caret's left-sibling count within that block.
+    function caretPath(cursor) {
+        var offset = 0;
+        for (var n = cursor[L]; n; n = n[L])
+            offset++;
+        var path = [offset];
+        for (var node = cursor.parent; node.parent; node = node.parent) {
+            path.unshift(childIndex(node));
+        }
+        return path;
+    }
+    function nthChild(node, index) {
+        var child = node.getEnd(L);
+        for (var i = 0; i < index && child; i++)
+            child = child[R];
+        return child;
+    }
+    function restoreCaretPath(ctrlr, path) {
+        var cursor = ctrlr.cursor;
+        var block = ctrlr.root;
+        for (var i = 0; i < path.length - 1; i++) {
+            var child = nthChild(block, path[i]);
+            if (!child)
+                return cursor.insAtRightEnd(ctrlr.root);
+            block = child;
+        }
+        var at = nthChild(block, path[path.length - 1]);
+        if (at)
+            cursor.insLeftOf(at);
+        else
+            cursor.insAtRightEnd(block);
+    }
+    var Controller_undo = /** @class */ (function (_super) {
+        __extends(Controller_undo, _super);
+        function Controller_undo() {
+            var _this = _super !== null && _super.apply(this, arguments) || this;
+            _this.undoStack = [];
+            _this.redoStack = [];
+            _this.burstOpen = false;
+            _this.burstAt = 0;
+            return _this;
+        }
+        Controller_undo.prototype.undoSnapshot = function () {
+            return { latex: this.exportLatex(), caret: caretPath(this.cursor) };
+        };
+        // After-change signal (ControllerBase.handle('edit')). The stack
+        // keeps the state *before* each change: on the first edit of a burst
+        // the previous baseline is pushed; later edits in the burst only
+        // advance the baseline.
+        Controller_undo.prototype.noteEdited = function () {
+            if (this.suspendHistory)
+                return;
+            var cur = this.undoSnapshot();
+            var last = this.lastEdit;
+            if (!last || cur.latex === last.latex) {
+                this.lastEdit = cur;
+                return;
+            }
+            var now = Date.now();
+            if (!this.burstOpen || now - this.burstAt > 1000) {
+                this.undoStack.push(last);
+                this.redoStack.length = 0;
+            }
+            this.lastEdit = cur;
+            this.burstAt = now;
+            this.burstOpen = true;
+        };
+        // Programmatic latex() calls (load, hydration, undo/redo restore)
+        // rebase silently instead of pushing a step. renderLatexMath wraps
+        // itself in suspendHistory, so this runs after the render lands.
+        Controller_undo.prototype.rebaseHistory = function () {
+            this.lastEdit = this.undoSnapshot();
+            this.burstOpen = false;
+        };
+        Controller_undo.prototype.breakUndoBurst = function () {
+            this.burstOpen = false;
+        };
+        Controller_undo.prototype.undo = function () {
+            var entry = this.undoStack.pop();
+            if (!entry) {
+                this.aria.alert('nothing to undo');
+                return;
+            }
+            this.burstOpen = false;
+            if (this.lastEdit)
+                this.redoStack.push(this.lastEdit);
+            this.restoreHistoryEntry(entry);
+            this.aria.alert('undone');
+        };
+        Controller_undo.prototype.redo = function () {
+            var entry = this.redoStack.pop();
+            if (!entry) {
+                this.aria.alert('nothing to redo');
+                return;
+            }
+            this.burstOpen = false;
+            if (this.lastEdit)
+                this.undoStack.push(this.lastEdit);
+            this.restoreHistoryEntry(entry);
+            this.aria.alert('redone');
+        };
+        Controller_undo.prototype.restoreHistoryEntry = function (entry) {
+            this.suspendHistory++;
+            try {
+                this.renderLatexMath(entry.latex);
+            }
+            finally {
+                this.suspendHistory--;
+            }
+            this.lastEdit = entry;
+            restoreCaretPath(this.getControllerSelf(), entry.caret);
+            this.cursor.show();
+        };
+        return Controller_undo;
+    }(Controller_latex));
+    ControllerBase.onNotify(function (cursor, e) {
+        // A caret move or selection ends the edit-coalescing window.
+        if (e === 'move' || e === 'select' || e === 'upDown')
+            cursor.controller.breakUndoBurst();
+    });
     /********************************************************
      * Deals with mouse events for clicking, drag-to-select
      *******************************************************/
@@ -4855,7 +5143,7 @@ var __assign = (this && this.__assign) || function () {
             return this;
         };
         return Controller_mouse;
-    }(Controller_latex));
+    }(Controller_undo));
     function findControllerRoot(node) {
         while (node) {
             if (ControllerBase.isControllerRoot(node)) {
@@ -6468,6 +6756,15 @@ var __assign = (this && this.__assign) || function () {
         };
         Letter.prototype.createLeftOf = function (cursor) {
             _super.prototype.createLeftOf.call(this, cursor);
+            // MATHCOMPILE: a letter inside an \operatorname{...} block is part of
+            // the operator's name \u2014 render it upright and skip the autoCommands /
+            // autoParenthesize passes so \operatorname{pi} stays 'pi' (not \pi)
+            // and no substitution can split the name.
+            var gramp = this.parent && this.parent.parent;
+            if (gramp && gramp.ctrlSeq === '\\operatorname') {
+                this.italicize(false);
+                return;
+            }
             this.checkAutoCmds(cursor);
             this.autoParenthesize(cursor);
         };
@@ -6498,6 +6795,21 @@ var __assign = (this && this.__assign) || function () {
             this.autoUnItalicize(opts);
         };
         Letter.prototype.autoUnItalicize = function (opts) {
+            // MATHCOMPILE: inside an \operatorname{...} block the letter run IS
+            // the name \u2014 mark the whole run upright and don't scan it for
+            // built-in ops (\operatorname{argmin} mustn't re-split into
+            // \arg \min the way \mathrm{argmin} does).
+            var gramp = this.parent && this.parent.parent;
+            if (gramp && gramp.ctrlSeq === '\\operatorname') {
+                var runStart = this;
+                while (runStart instanceof Letter && runStart[L] instanceof Letter) {
+                    runStart = runStart[L];
+                }
+                for (var opLetter = runStart; opLetter instanceof Letter; opLetter = opLetter[R]) {
+                    opLetter.italicize(false);
+                }
+                return;
+            }
             var autoOps = opts.autoOperatorNames;
             if (autoOps._maxLength === 0)
                 return;
@@ -6765,22 +7077,37 @@ var __assign = (this && this.__assign) || function () {
         if (Options.prototype.autoOperatorNames.hasOwnProperty(fn)) {
             LatexCmds[fn] = OperatorName;
         }
+    // MATHCOMPILE: \operatorname{...} is a real one-block group, not the
+    // upstream parse-time flatten \u2014 upstream's createLeftOf was a noop, so
+    // a typed `\operatorname{` deleted the command input and the following
+    // `{` wrote a \{ \} pair. The block gets the \mathrm-style
+    // `mq-roman mq-font` wrapper, so the typed `{` is the arg's own braces
+    // (MathBlock.write swallows it at the left end of the empty block) and
+    // interior letters render upright. Letter.autoUnItalicize keeps the
+    // interior run whole \u2014 \operatorname{argmin} stays 'argmin' instead of
+    // splitting into \arg \min the way \mathrm{argmin} does.
     LatexCmds.operatorname = /** @class */ (function (_super) {
         __extends(class_2, _super);
         function class_2() {
-            return _super !== null && _super.apply(this, arguments) || this;
+            var _this = _super.call(this, '\\operatorname', new DOMView(1, function (blocks) {
+                return h.block('span', { class: 'mq-roman mq-font mq-operatorname' }, blocks[0]);
+            })) || this;
+            _this.starred = false;
+            return _this;
         }
-        class_2.prototype.createLeftOf = function () { };
         class_2.prototype.numBlocks = function () {
             return 1;
         };
         class_2.prototype.parser = function () {
-            // MATHCOMPILE: \operatorname* is the limits-form operator \u2014 consume the star so
-            // it doesn't surface as a stray literal '*' (previously
-            // \operatorname*{argmin} -> *\arg\min)
+            var self = this;
+            // \operatorname* is the limits-form operator \u2014 keep the star in the
+            // serialization (\operatorname*{argmin} round-trips intact).
             return Parser.optWhitespace
                 .then(Parser.string('*').or(Parser.succeed('')))
-                .then(latexMathParser.block)
+                .then(function (star) {
+                self.starred = !!star;
+                return latexMathParser.block;
+            })
                 .map(function (b) {
                 // Check for the special case of \operatorname{ans}, which has
                 // a special html representation
@@ -6799,9 +7126,35 @@ var __assign = (this && this.__assign) || function () {
                 if (isAllLetters && str === 'ans') {
                     return AnsBuilder();
                 }
-                // In cases other than `ans`, just return the children directly
-                return children;
-            });
+                self.blocks = [b];
+                b.adopt(self, 0, 0);
+                return self;
+            })
+                .or(
+            // MATHCOMPILE: same verbatim-leaf fallback as
+            // MathCommand.parser \u2014 a bare `\operatorname` (no braces)
+            // degrades to a visible leaf instead of failing the cell.
+            Parser.regex(/^(?=\S)/).then(function () {
+                return Parser.succeed(new VanillaSymbol(self.ctrlSeq + ' ', h.text(self.ctrlSeq || ''), self.ctrlSeq));
+            }));
+        };
+        class_2.prototype.latexRecursive = function (ctx) {
+            this.checkCursorContextOpen(ctx);
+            ctx.uncleanedLatex += this.ctrlSeq + (this.starred ? '*' : '') + '{';
+            var block = this.getEnd(L);
+            var beforeLength = ctx.uncleanedLatex.length;
+            block.latexRecursive(ctx);
+            if (ctx.uncleanedLatex.length === beforeLength) {
+                // nothing was written so we write a space
+                ctx.uncleanedLatex += ' ';
+            }
+            ctx.uncleanedLatex += '}';
+            this.checkCursorContextClose(ctx);
+        };
+        class_2.prototype.mathspeak = function (opts) {
+            return this.foldChildren('', function (speech, block) {
+                return speech + ' ' + block.mathspeak(opts);
+            }).trim();
         };
         return class_2;
     }(MathCommand));
@@ -7668,7 +8021,7 @@ var __assign = (this && this.__assign) || function () {
         }
         // Parser-only command: typing '\textcolor' in the command input
         // can't supply a color argument, so typed insertion is a no-op
-        // (same convention as \operatorname / \mathbb).
+        // (same convention as \operatorname).
         class_7.prototype.createLeftOf = function () { };
         class_7.prototype.numBlocks = function () {
             return 1;
@@ -7842,6 +8195,14 @@ var __assign = (this && this.__assign) || function () {
             return _super.prototype.createLeftOf.call(this, cursor);
         };
         SupSub.prototype.contactWeld = function (cursor) {
+            // MATHCOMPILE: a script on a union/intersection upgrades the symbol
+            // to its big n-ary form \u2014 `\cup_{i}` reads and writes `\bigcup_{i}`.
+            // The script's blocks become the operator's bounds (like \sum);
+            // a script whose bound is already filled welds as usual.
+            var setOp = this[L];
+            if ((setOp instanceof SetOperation || setOp instanceof BigSetOperation) &&
+                this.absorbIntoSetOperation(setOp, cursor))
+                return;
             // Look on either side for a SupSub, if one is found compare my
             // .sub, .sup with its .sub, .sup. If I have one that it doesn't,
             // then call .addBlock() on it with my block; if I have one that
@@ -7901,6 +8262,70 @@ var __assign = (this && this.__assign) || function () {
                     break;
                 }
             }
+        };
+        // MATHCOMPILE: move this script's blocks into the bounds of the set
+        // operator on the left, swapping \cup/\cap for \bigcup/\bigcap when
+        // needed. Returns false when a bound the script needs is already
+        // filled \u2014 the caller then welds the SupSub as an ordinary sibling.
+        SupSub.prototype.absorbIntoSetOperation = function (setOp, cursor) {
+            var upgrade = setOp instanceof SetOperation;
+            var big = upgrade
+                ? setOp.bigVersion()
+                : setOp;
+            if (upgrade) {
+                big.createBlocks();
+                // the bound blocks' <span>s exist only once the view renders \u2014
+                // the content move below inserts into them
+                big.html();
+            }
+            var boundOf = function (supsub) {
+                return (supsub === 'sub' ? big.getEnd(L) : big.getEnd(R));
+            };
+            if ((this.sub && !boundOf('sub').isEmpty()) ||
+                (this.sup && !boundOf('sup').isEmpty()))
+                return false;
+            for (var supsub = 'sub'; supsub; supsub = supsub === 'sub' ? 'sup' : false) {
+                var src = this[supsub];
+                if (!src)
+                    continue;
+                var dest = boundOf(supsub);
+                if (!src.isEmpty()) {
+                    src
+                        .domFrag()
+                        .children()
+                        .insAtDirEnd(L, dest.domFrag().oneElement());
+                    src.children().disown().adopt(dest, dest.getEnd(R), 0);
+                }
+                if (supsub === this.supsub) {
+                    this.placeCursor = (function (dest) { return function (cursor) {
+                        return cursor.insAtDirEnd(R, dest);
+                    }; })(dest);
+                }
+            }
+            if (upgrade) {
+                // swap the small op for the big one, in the DOM and the tree \u2014
+                // this SupSub's element is the anchor immediately right of it.
+                // Removing the small op first makes its neighbors adjacent, which
+                // Fragment#adopt requires.
+                big.domFrag().insertBefore(this.domFrag());
+                var parent = setOp.parent;
+                var before = setOp[L];
+                setOp.remove();
+                big.adopt(parent, before, this);
+                big.finalizeTree();
+            }
+            var caretBound = boundOf(this.supsub === 'sup' ? 'sup' : 'sub');
+            var srcBlocks = { sub: this.sub, sup: this.sup };
+            this.remove();
+            if (cursor) {
+                if (cursor[L] === this)
+                    cursor.insRightOf(big);
+                else if (cursor[R] === this ||
+                    cursor.parent === srcBlocks.sub ||
+                    cursor.parent === srcBlocks.sup)
+                    cursor.insAtDirEnd(L, caretBound);
+            }
+            return true;
         };
         SupSub.prototype.finalizeTree = function () {
             if (this.supsub === 'sub') {
@@ -9172,7 +9597,10 @@ var __assign = (this && this.__assign) || function () {
             var _this = _super !== null && _super.apply(this, arguments) || this;
             _this.ctrlSeq = '\\binom';
             _this.domView = new DOMView(2, function (blocks) {
-                return h('span', { class: 'mq-non-leaf mq-bracket-container' }, [
+                // MATHCOMPILE: mq-binomial distinguishes \binom from real Brackets
+                // for \operatorname spacing in math.less (flat letter-runs drop
+                // their trailing space only before `instanceof Bracket`)
+                return h('span', { class: 'mq-non-leaf mq-bracket-container mq-binomial' }, [
                     h('span', {
                         style: 'width:' + leftBinomialSymbol.width,
                         class: 'mq-paren mq-bracket-l mq-scaled'
@@ -9390,8 +9818,25 @@ var __assign = (this && this.__assign) || function () {
     //======================================================================
     //  Fonts (\mathcal \mathfrak \boldsymbol \mathbfit \u2026)
     //======================================================================
+    // MATHCOMPILE: typed \mathcal opens the pending `\mathcal{arg}` input
+    // like \mathbb \u2014 before, it rendered an invisible-boundary Style block
+    // and `}` just hopped out, so the typed command looked nothing like its
+    // latex. Parse/serialize still land on the plain Style node; the
+    // script shapes come from the KaTeX_Caligraphic webfont in math.less.
     LatexCmds.mathcal = function () {
-        return new Style('\\mathcal', 'span', { class: 'mq-caligraphic mq-font' }, 'Calligraphic Font');
+        return new (/** @class */ (function (_super) {
+            __extends(class_15, _super);
+            function class_15() {
+                return _super.call(this, '\\mathcal', 'span', { class: 'mq-caligraphic mq-font' }, 'Calligraphic Font') || this;
+            }
+            class_15.prototype.createLeftOf = function (cursor) {
+                var input = new FontArgInput('mathcal');
+                if (this.replacedFragment)
+                    input.replaces(this.replacedFragment);
+                input.createLeftOf(cursor);
+            };
+            return class_15;
+        }(Style)))();
     };
     LatexCmds.mathscr = function () {
         return new Style('\\mathscr', 'span', { class: 'mq-caligraphic mq-font' }, 'Script Font');
@@ -9429,8 +9874,8 @@ var __assign = (this && this.__assign) || function () {
     // \colorbox{color}{math} \u2014 a filled box around content; the color arg is
     // raw text like \textcolor's, emitted back verbatim.
     LatexCmds.colorbox = /** @class */ (function (_super) {
-        __extends(class_15, _super);
-        function class_15() {
+        __extends(class_16, _super);
+        function class_16() {
             var _this = _super !== null && _super.apply(this, arguments) || this;
             _this.color = '';
             _this.model = '';
@@ -9439,11 +9884,11 @@ var __assign = (this && this.__assign) || function () {
         // Parser-only command: typing '\colorbox' in the command input can't
         // supply a color argument, so typed insertion is a no-op (same
         // convention as \textcolor).
-        class_15.prototype.createLeftOf = function () { };
-        class_15.prototype.numBlocks = function () {
+        class_16.prototype.createLeftOf = function () { };
+        class_16.prototype.numBlocks = function () {
             return 1;
         };
-        class_15.prototype.parser = function () {
+        class_16.prototype.parser = function () {
             var _this = this;
             var self = this;
             return Parser.optWhitespace
@@ -9463,7 +9908,7 @@ var __assign = (this && this.__assign) || function () {
                 return _super.prototype.parser.call(_this);
             });
         };
-        class_15.prototype.latexRecursive = function (ctx) {
+        class_16.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
             ctx.uncleanedLatex +=
                 '\\colorbox' +
@@ -9475,15 +9920,15 @@ var __assign = (this && this.__assign) || function () {
             ctx.uncleanedLatex += '}';
             this.checkCursorContextClose(ctx);
         };
-        class_15.prototype.isStyleBlock = function () {
+        class_16.prototype.isStyleBlock = function () {
             return true;
         };
-        return class_15;
+        return class_16;
     }(MathCommand));
     // \fcolorbox{frame}{bg}{math} \u2014 framed + filled box; two raw color args.
     LatexCmds.fcolorbox = /** @class */ (function (_super) {
-        __extends(class_16, _super);
-        function class_16() {
+        __extends(class_17, _super);
+        function class_17() {
             var _this = _super !== null && _super.apply(this, arguments) || this;
             _this.frameColor = '';
             _this.bgColor = '';
@@ -9493,11 +9938,11 @@ var __assign = (this && this.__assign) || function () {
         // Parser-only command: typing '\fcolorbox' in the command input can't
         // supply color arguments, so typed insertion is a no-op (same
         // convention as \textcolor).
-        class_16.prototype.createLeftOf = function () { };
-        class_16.prototype.numBlocks = function () {
+        class_17.prototype.createLeftOf = function () { };
+        class_17.prototype.numBlocks = function () {
             return 1;
         };
-        class_16.prototype.parser = function () {
+        class_17.prototype.parser = function () {
             var _this = this;
             var self = this;
             var colorGroup = Parser.string('{')
@@ -9528,7 +9973,7 @@ var __assign = (this && this.__assign) || function () {
                 return _super.prototype.parser.call(_this);
             });
         };
-        class_16.prototype.latexRecursive = function (ctx) {
+        class_17.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
             ctx.uncleanedLatex +=
                 '\\fcolorbox' +
@@ -9542,15 +9987,15 @@ var __assign = (this && this.__assign) || function () {
             ctx.uncleanedLatex += '}';
             this.checkCursorContextClose(ctx);
         };
-        class_16.prototype.isStyleBlock = function () {
+        class_17.prototype.isStyleBlock = function () {
             return true;
         };
-        return class_16;
+        return class_17;
     }(MathCommand));
     // \href{url}{math} \u2014 link wrapper; the url arg is raw text.
     LatexCmds.href = /** @class */ (function (_super) {
-        __extends(class_17, _super);
-        function class_17() {
+        __extends(class_18, _super);
+        function class_18() {
             var _this = _super !== null && _super.apply(this, arguments) || this;
             _this.url = '';
             return _this;
@@ -9558,11 +10003,11 @@ var __assign = (this && this.__assign) || function () {
         // Parser-only command: typing '\href' in the command input can't
         // supply a url argument, so typed insertion is a no-op (same
         // convention as \textcolor).
-        class_17.prototype.createLeftOf = function () { };
-        class_17.prototype.numBlocks = function () {
+        class_18.prototype.createLeftOf = function () { };
+        class_18.prototype.numBlocks = function () {
             return 1;
         };
-        class_17.prototype.parser = function () {
+        class_18.prototype.parser = function () {
             var _this = this;
             var self = this;
             return Parser.optWhitespace
@@ -9577,14 +10022,14 @@ var __assign = (this && this.__assign) || function () {
                 return _super.prototype.parser.call(_this);
             });
         };
-        class_17.prototype.latexRecursive = function (ctx) {
+        class_18.prototype.latexRecursive = function (ctx) {
             this.checkCursorContextOpen(ctx);
             ctx.uncleanedLatex += '\\href{' + this.url + '}{';
             this.blocks[0].latexRecursive(ctx);
             ctx.uncleanedLatex += '}';
             this.checkCursorContextClose(ctx);
         };
-        return class_17;
+        return class_18;
     }(MathCommand));
     // \fbox/\framebox \u2014 boxed frames; \nicefrac canonicalizes to \frac.
     LatexCmds.fbox = function () {
@@ -9596,8 +10041,8 @@ var __assign = (this && this.__assign) || function () {
     // SOURCES_BASIC too, so the mathquill-basic bundle can use it)
     function bindOptBracketCmd(ctrlSeq, maxOpt, speak) {
         return /** @class */ (function (_super) {
-            __extends(class_18, _super);
-            function class_18() {
+            __extends(class_19, _super);
+            function class_19() {
                 var _this = _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
                     return h('span', { class: 'mq-non-leaf' }, [
                         h.block('span', {}, blocks[0])
@@ -9606,7 +10051,7 @@ var __assign = (this && this.__assign) || function () {
                 _this.optText = '';
                 return _this;
             }
-            class_18.prototype.parser = function () {
+            class_19.prototype.parser = function () {
                 var self = this;
                 return Parser.regex(new RegExp('^(?:\\[[^\\]]*\\]){0,' + maxOpt + '}'))
                     .then(function (opt) {
@@ -9619,14 +10064,14 @@ var __assign = (this && this.__assign) || function () {
                     return self;
                 });
             };
-            class_18.prototype.latexRecursive = function (ctx) {
+            class_19.prototype.latexRecursive = function (ctx) {
                 this.checkCursorContextOpen(ctx);
                 ctx.uncleanedLatex += this.ctrlSeq + this.optText + '{';
                 this.blocks[0].latexRecursive(ctx);
                 ctx.uncleanedLatex += '}';
                 this.checkCursorContextClose(ctx);
             };
-            return class_18;
+            return class_19;
         }(MathCommand));
     }
     // \framebox keeps optional [width][pos] args like \makebox.
@@ -9646,8 +10091,8 @@ var __assign = (this && this.__assign) || function () {
     // \overset{label}{base} stacks a small label above; \underset below;
     // \stackrel is the plain-TeX name for \overset
     LatexCmds.overset = /** @class */ (function (_super) {
-        __extends(class_19, _super);
-        function class_19() {
+        __extends(class_20, _super);
+        function class_20() {
             var _this = _super !== null && _super.apply(this, arguments) || this;
             _this.ctrlSeq = '\\overset';
             _this.domView = new DOMView(2, function (blocks) {
@@ -9658,12 +10103,12 @@ var __assign = (this && this.__assign) || function () {
             });
             return _this;
         }
-        return class_19;
+        return class_20;
     }(MathCommand));
     LatexCmds.stackrel = LatexCmds.overset;
     LatexCmds.underset = /** @class */ (function (_super) {
-        __extends(class_20, _super);
-        function class_20() {
+        __extends(class_21, _super);
+        function class_21() {
             var _this = _super !== null && _super.apply(this, arguments) || this;
             _this.ctrlSeq = '\\underset';
             _this.domView = new DOMView(2, function (blocks) {
@@ -9674,7 +10119,7 @@ var __assign = (this && this.__assign) || function () {
             });
             return _this;
         }
-        return class_20;
+        return class_21;
     }(MathCommand));
     //======================================================================
     //  Modular arithmetic (\pmod \pod \bmod \mod)
@@ -9725,7 +10170,10 @@ var __assign = (this && this.__assign) || function () {
     }(MQSymbol));
     var boundlessIntegral = function (ctrlSeq, glyph, speak) {
         return function () {
-            return new BoundlessIntegral(ctrlSeq, h('span', { class: 'mq-int' }, [
+            return new BoundlessIntegral(ctrlSeq, 
+            // MATHCOMPILE: mq-boundless-int distinguishes these from \int
+            // (a SummationNotation) for \operatorname spacing in math.less
+            h('span', { class: 'mq-int mq-boundless-int' }, [
                 h('big', {}, [h.entityText(glyph)])
             ]), undefined, speak);
         };
@@ -9925,8 +10373,8 @@ var __assign = (this && this.__assign) || function () {
     function bindArrowLabelCmd(ctrlSeq, arrow) {
         return function () {
             return new (/** @class */ (function (_super) {
-                __extends(class_21, _super);
-                function class_21() {
+                __extends(class_22, _super);
+                function class_22() {
                     return _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
                         return h('span', { class: 'mq-non-leaf mq-overunderset' }, [
                             h.block('span', { class: 'mq-overscript' }, blocks[0]),
@@ -9934,7 +10382,7 @@ var __assign = (this && this.__assign) || function () {
                         ]);
                     })) || this;
                 }
-                class_21.prototype.parser = function () {
+                class_22.prototype.parser = function () {
                     var self = this;
                     return latexMathParser.optBlock
                         .then(function (optBlock) {
@@ -9949,7 +10397,7 @@ var __assign = (this && this.__assign) || function () {
                         .or(_super.prototype.parser.call(this))
                         .or(Parser.succeed(new VanillaSymbol(ctrlSeq + ' ', h.text(arrow), ctrlSeq.slice(1))));
                 };
-                return class_21;
+                return class_22;
             }(MathCommand)))();
         };
     }
@@ -10275,8 +10723,8 @@ var __assign = (this && this.__assign) || function () {
     function bindOverlapCmd(ctrlSeq, cls, optRegex) {
         return function () {
             return new (/** @class */ (function (_super) {
-                __extends(class_22, _super);
-                function class_22() {
+                __extends(class_23, _super);
+                function class_23() {
                     var _this = _super.call(this, ctrlSeq, new DOMView(1, function (blocks) {
                         return h('span', { class: 'mq-non-leaf ' + cls }, [
                             h.block('span', {}, blocks[0])
@@ -10287,7 +10735,7 @@ var __assign = (this && this.__assign) || function () {
                 }
                 // An overlap command with no following block degrades to a bare
                 // \name leaf instead of failing the parse.
-                class_22.prototype.parser = function () {
+                class_23.prototype.parser = function () {
                     var self = this;
                     return (optRegex
                         ? Parser.regex(new RegExp('^' + optRegex))
@@ -10304,14 +10752,14 @@ var __assign = (this && this.__assign) || function () {
                     })
                         .or(Parser.succeed(new VanillaSymbol(ctrlSeq + ' ', h.text(ctrlSeq), ctrlSeq.replace(/\\/g, ''))));
                 };
-                class_22.prototype.latexRecursive = function (ctx) {
+                class_23.prototype.latexRecursive = function (ctx) {
                     this.checkCursorContextOpen(ctx);
                     ctx.uncleanedLatex += this.ctrlSeq + this.optText + '{';
                     this.blocks[0].latexRecursive(ctx);
                     ctx.uncleanedLatex += '}';
                     this.checkCursorContextClose(ctx);
                 };
-                return class_22;
+                return class_23;
             }(MathCommand)))();
         };
     }
@@ -10336,6 +10784,57 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.varprojlim = function () {
         return new SummationNotation('\\varprojlim ', 'lim&#8592;', 'inverse limit');
     };
+    //======================================================================
+    //  Set operations (\cup \cap \union \intersect \bigcup \bigcap)
+    //======================================================================
+    // MATHCOMPILE: \cup/\cap render as ordinary binary operators until a
+    // script attaches \u2014 SupSub.contactWeld (commands.ts) then swaps in the
+    // big n-ary form, so `\cup_{i=1}^{n}` displays and serializes as
+    // `\bigcup_{i=1}^{n}`. The registrations moved out of advancedSymbols.ts
+    // (the cut sites are tagged there) because they need the classes below \u2014
+    // which live here rather than commands.ts since only extraCommands uses
+    // them and every symbol they touch (BinaryOperator in math.ts,
+    // SummationNotation in commands.ts) is in SOURCES_BASIC.
+    var SetOperation = /** @class */ (function (_super) {
+        __extends(SetOperation, _super);
+        function SetOperation(ctrlSeq, htmlEntity, makeBig, mathspeak) {
+            var _this = _super.call(this, ctrlSeq, h.entityText(htmlEntity), undefined, mathspeak) || this;
+            _this.makeBig = makeBig;
+            return _this;
+        }
+        SetOperation.prototype.bigVersion = function () {
+            return this.makeBig();
+        };
+        return SetOperation;
+    }(BinaryOperator));
+    // The scripted form \u2014 a \sum-style n-ary operator whose over/under
+    // bounds serialize verbatim as `_{ }^{ }`.
+    var BigSetOperation = /** @class */ (function (_super) {
+        __extends(BigSetOperation, _super);
+        function BigSetOperation() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        return BigSetOperation;
+    }(SummationNotation));
+    var bigUnionOp = function () {
+        return new BigSetOperation('\\bigcup ', '&#8899;', 'big union');
+    };
+    var bigIntersectionOp = function () {
+        return new BigSetOperation('\\bigcap ', '&#8898;', 'big intersection');
+    };
+    LatexCmds['\u222a'] =
+        LatexCmds.cup =
+            LatexCmds.union =
+                function () { return new SetOperation('\\cup ', '&cup;', bigUnionOp, 'union'); };
+    LatexCmds['\u2229'] =
+        LatexCmds.cap =
+            LatexCmds.intersect =
+                LatexCmds.intersection =
+                    function () {
+                        return new SetOperation('\\cap ', '&cap;', bigIntersectionOp, 'intersection');
+                    };
+    LatexCmds.bigcup = bigUnionOp;
+    LatexCmds.bigcap = bigIntersectionOp;
     //======================================================================
     //  Displaystyle \lim \u2014 bound under the operator (desmosinc/mathquill#252)
     //======================================================================
@@ -10459,6 +10958,80 @@ var __assign = (this && this.__assign) || function () {
         return new DefAlias('\\text{def}', h('span', { class: 'mq-text-mode' }, [h.text('def')]), 'def', 'def');
     };
     //======================================================================
+    //  \solve / \dsolve / \pdesolve \u2014 insertion aliases for the
+    //  \text{\u2026} solver statement markers
+    //======================================================================
+    // Each expands to its real \text{\u2026} marker plus a trailing space \u2014 the
+    // statement prefix the compiler reads for equation solving (\text{solve}
+    // -> sp.solve/sp.solveset), ODEs (\text{dsolve} -> sp.dsolve), and PDEs
+    // (\text{pdesolve} -> sp.pdsolve) \u2014 the same insertion-time expansion
+    // \def uses. Pasted latex serializes as \text{\u2026} on the next save.
+    var SolveAlias = /** @class */ (function (_super) {
+        __extends(SolveAlias, _super);
+        function SolveAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        SolveAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{solve}\\ ');
+        };
+        return SolveAlias;
+    }(MQSymbol));
+    LatexCmds.solve = function () {
+        return new SolveAlias('\\text{solve}', h('span', { class: 'mq-text-mode' }, [h.text('solve')]), 'solve', 'solve equations');
+    };
+    var DSolveAlias = /** @class */ (function (_super) {
+        __extends(DSolveAlias, _super);
+        function DSolveAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        DSolveAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{dsolve}\\ ');
+        };
+        return DSolveAlias;
+    }(MQSymbol));
+    LatexCmds.dsolve = function () {
+        return new DSolveAlias('\\text{dsolve}', h('span', { class: 'mq-text-mode' }, [h.text('dsolve')]), 'dsolve', 'solve an ODE');
+    };
+    var OdeAlias = /** @class */ (function (_super) {
+        __extends(OdeAlias, _super);
+        function OdeAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        OdeAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{ode}\\ ');
+        };
+        return OdeAlias;
+    }(MQSymbol));
+    LatexCmds.ode = function () {
+        return new OdeAlias('\\text{ode}', h('span', { class: 'mq-text-mode' }, [h.text('ode')]), 'ode', 'solve an ODE');
+    };
+    var PDSolveAlias = /** @class */ (function (_super) {
+        __extends(PDSolveAlias, _super);
+        function PDSolveAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        PDSolveAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{pdesolve}\\ ');
+        };
+        return PDSolveAlias;
+    }(MQSymbol));
+    LatexCmds.pdesolve = function () {
+        return new PDSolveAlias('\\text{pdesolve}', h('span', { class: 'mq-text-mode' }, [h.text('pdesolve')]), 'pdesolve', 'solve a PDE');
+    };
+    var PdeAlias = /** @class */ (function (_super) {
+        __extends(PdeAlias, _super);
+        function PdeAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        PdeAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{pde}\\ ');
+        };
+        return PdeAlias;
+    }(MQSymbol));
+    LatexCmds.pde = function () {
+        return new PdeAlias('\\text{pde}', h('span', { class: 'mq-text-mode' }, [h.text('pde')]), 'pde', 'solve a PDE');
+    };
+    //======================================================================
     //  \tr \u2014 insertion alias for \mathrm{tr}
     //======================================================================
     // Typing `\tr` expands to \mathrm{tr} \u2014 the word-op form the compiler
@@ -10480,6 +11053,148 @@ var __assign = (this && this.__assign) || function () {
     LatexCmds.tr = function () {
         return new TrAlias('\\mathrm{tr}', h('span', { class: 'mq-roman' }, [h.text('tr')]), 'tr', 'tr');
     };
+    //======================================================================
+    //  \D \u2014 insertion alias for \text{D} (total derivative)
+    //======================================================================
+    // Typing `\D` expands to a \text{D} TextBlock \u2014 an upright "D" the
+    // compiler reads as the total-derivative operator (\frac{\D f}{\D x},
+    // \D_x f); a plain italic D stays an ordinary symbol. `\D` isn't a real
+    // LaTeX command, so pasted latex canonicalizes to \text{D} on the next
+    // save \u2014 the same insertion-time expansion \def and \tr use.
+    var TotalDAlias = /** @class */ (function (_super) {
+        __extends(TotalDAlias, _super);
+        function TotalDAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        TotalDAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{D}');
+        };
+        return TotalDAlias;
+    }(MQSymbol));
+    LatexCmds.D = function () {
+        return new TotalDAlias('\\text{D}', h('span', { class: 'mq-text-mode' }, [h.text('D')]), 'D', 'total derivative');
+    };
+    //======================================================================
+    //  \gradient \u2014 insertion alias for \nabla
+    //======================================================================
+    // Typing `\gradient` expands to the \nabla sign the compiler lowers to
+    // a gradient (\nabla f) \u2014 a pasted `\gradient` renders the same \u2207 glyph
+    // and serializes as \nabla.
+    var GradientAlias = /** @class */ (function (_super) {
+        __extends(GradientAlias, _super);
+        function GradientAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        GradientAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\nabla ');
+        };
+        return GradientAlias;
+    }(MQSymbol));
+    LatexCmds.gradient = function () {
+        return new GradientAlias('\\nabla ', h('span', {}, [h.entityText('&nabla;')]), '\u2207', 'gradient');
+    };
+    //======================================================================
+    //  \plot \u2014 insertion alias for \text{plot}
+    //======================================================================
+    // Typing `\plot` expands to a real \text{plot} TextBlock plus a trailing
+    // space \u2014 the statement marker the compiler reads as a plot request,
+    // with the caret after the space ready for the expression \u2014 the same
+    // insertion-time expansion \def uses. A `\plot` in pasted latex renders
+    // the same "plot" text and serializes as \text{plot}, so stored latex
+    // canonicalizes on the next save.
+    var PlotAlias = /** @class */ (function (_super) {
+        __extends(PlotAlias, _super);
+        function PlotAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        PlotAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{plot}\\ ');
+        };
+        return PlotAlias;
+    }(MQSymbol));
+    LatexCmds.plot = function () {
+        return new PlotAlias('\\text{plot}', h('span', { class: 'mq-text-mode' }, [h.text('plot')]), 'plot', 'plot');
+    };
+    //======================================================================
+    //  \for \u2014 insertion alias for \text{for}
+    //======================================================================
+    // Typing `\for` (or `for` under autoCommands) expands to a real
+    // \text{for} TextBlock plus a trailing space \u2014 the marker the compiler
+    // reads as the comprehension/domain keyword (\text{plot} f \text{for}
+    // x \u2208 (a,b)) \u2014 with the caret after the space ready for the
+    // condition \u2014 the same insertion-time expansion \def and \plot use. A
+    // `\for` in pasted latex renders the same "for" text and serializes as
+    // \text{for}, so stored latex canonicalizes on the next save.
+    var ForAlias = /** @class */ (function (_super) {
+        __extends(ForAlias, _super);
+        function ForAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        ForAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\text{for}\\ ');
+        };
+        return ForAlias;
+    }(MQSymbol));
+    LatexCmds.for = function () {
+        return new ForAlias('\\text{for}', h('span', { class: 'mq-text-mode' }, [h.text('for')]), 'for', 'for');
+    };
+    //======================================================================
+    //  \dotproduct \u2014 insertion alias for \bullet
+    //======================================================================
+    // Typing `\dotproduct` expands to the \bullet sign the compiler reads
+    // as the dot product (`u \bullet v` -> u\u00b7v); a pasted `\dotproduct`
+    // renders the same \u2022 glyph and serializes as \bullet \u2014 the same
+    // insertion-time expansion \gradient uses.
+    var DotProductAlias = /** @class */ (function (_super) {
+        __extends(DotProductAlias, _super);
+        function DotProductAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        DotProductAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\bullet ');
+        };
+        return DotProductAlias;
+    }(MQSymbol));
+    LatexCmds.dotproduct = function () {
+        return new DotProductAlias('\\bullet ', h('span', { class: 'mq-binary-operator' }, [
+            h.entityText('&bull;')
+        ]), '\u2022', 'dot product');
+    };
+    //======================================================================
+    //  Matrix word-op aliases \u2014 \rank, \eigenvals, \eigenvects, \inverse,
+    //  \transpose, \norm, \rref, \charpoly, \nullspace, \columnspace,
+    //  \diagonalize, \adjugate
+    //======================================================================
+    // Each expands to its `\mathrm{<word>}` form \u2014 the word-op spelling the
+    // compiler reads for the matrix method (`\mathrm{rank} A` /
+    // `\mathrm{rank}(A)` -> `(A).rank()`), the same insertion-time
+    // expansion \tr uses. None is a real LaTeX command, so stored latex
+    // canonicalizes to \mathrm{\u2026} on the next save. No trailing space (see
+    // \tr): it would put a space node between the name and the parens.
+    function mathrmWordAlias(name, speak) {
+        return /** @class */ (function (_super) {
+            __extends(class_24, _super);
+            function class_24() {
+                return _super.call(this, '\\mathrm{' + name + '}', h('span', { class: 'mq-roman' }, [h.text(name)]), name, speak) || this;
+            }
+            class_24.prototype.createLeftOf = function (cursor) {
+                cursor.parent.writeLatex(cursor, '\\mathrm{' + name + '}');
+            };
+            return class_24;
+        }(MQSymbol));
+    }
+    LatexCmds.rank = mathrmWordAlias('rank', 'rank');
+    LatexCmds.eigenvals = mathrmWordAlias('eigenvals', 'eigenvalues');
+    LatexCmds.eigenvects = mathrmWordAlias('eigenvects', 'eigenvectors');
+    LatexCmds.inverse = mathrmWordAlias('inverse', 'inverse');
+    LatexCmds.transpose = mathrmWordAlias('transpose', 'transpose');
+    LatexCmds.norm = mathrmWordAlias('norm', 'norm');
+    LatexCmds.rref = mathrmWordAlias('rref', 'reduced row echelon form');
+    LatexCmds.charpoly = mathrmWordAlias('charpoly', 'characteristic polynomial');
+    LatexCmds.nullspace = mathrmWordAlias('nullspace', 'null space');
+    LatexCmds.columnspace = mathrmWordAlias('columnspace', 'column space');
+    LatexCmds.diagonalize = mathrmWordAlias('diagonalize', 'diagonalize');
+    LatexCmds.adjugate = mathrmWordAlias('adjugate', 'adjugate');
     // For backwards compatibility, set up the global MathQuill object as an instance of API interface v1
     if (window.jQuery) {
         MQ1 = getInterface(1);

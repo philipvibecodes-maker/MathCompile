@@ -98,6 +98,20 @@ body {
   display: block;
 }
 
+/* Dev/e2e-only git branch chip — only rendered when vite bakes a
+   non-empty __APP_BRANCH__ (never in production builds). */
+.branch-badge {
+  margin-left: 12px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
+  color: var(--accent-text);
+  background: var(--selected-bg);
+  border: 1px solid var(--dashed-border);
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
 .main {
   flex: 1;
   display: flex;
@@ -369,6 +383,109 @@ body {
   pointer-events: none;
 }
 
+/* ── Python source cell ───────────────────────────────────
+   A plain textarea whose text is transparent over a highlight-only
+   <pre> underlay — the highlightPython tokens paint the glyphs, the
+   textarea owns caret/selection. Both share font/padding metrics so
+   the layers stay pixel-aligned. */
+.expr-row .py-field {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  transition: border-color 0.12s ease;
+}
+
+.expr-row:hover .py-field:not(:focus-within) {
+  border-color: var(--faint);
+}
+
+.expr-row:focus-within .py-field {
+  border-color: var(--accent);
+}
+
+/* Kind chip in the corner — the textarea's right padding leaves it room. */
+.py-tag {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  user-select: none;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.expr-row:focus-within .py-tag {
+  color: var(--accent-text);
+}
+
+.py-stack {
+  position: relative;
+}
+
+.py-highlight,
+.py-input {
+  margin: 0;
+  /* Extra right padding clears the corner 'py' chip. */
+  padding: 10px 34px 10px 12px;
+  font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  tab-size: 4;
+  /* wrap="off" on the textarea — the underlay must not wrap either. */
+  white-space: pre;
+  border: 0;
+}
+
+.py-highlight {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: var(--text);
+  pointer-events: none;
+}
+
+.py-input {
+  position: relative;
+  display: block;
+  width: 100%;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  /* Glyphs come from the underlay; only caret + selection paint here. */
+  color: transparent;
+  caret-color: var(--text);
+  outline: none;
+}
+
+.py-input::placeholder {
+  color: var(--faint);
+  /* The underlay already paints nothing behind a placeholder. */
+  font-style: italic;
+}
+
+.py-input::selection {
+  background: var(--selected-bg);
+  color: transparent;
+}
+
+/* Empty-field hint mirrors the math cell's ghost text. */
+.py-field.empty::after {
+  content: 'python — def f(x): … is callable as \\mathrm{f}(x) below';
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  font-size: 12px;
+  color: var(--faint);
+  pointer-events: none;
+}
+
 /* Autocomplete dropdown anchored under the caret/command input. */
 .mc-ac {
   position: absolute;
@@ -528,6 +645,71 @@ body {
   white-space: nowrap;
 }
 
+/* Matrix dimensions menu, anchored under the caret on a typed
+   matrix-family command — rows/columns numeric inputs. */
+.mc-mat {
+  position: absolute;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px var(--shadow);
+  font-size: 13px;
+  color: var(--text);
+  padding: 5px 8px;
+}
+
+/* display:flex beats the UA [hidden] rule — keep it in sync. */
+.mc-mat[hidden] {
+  display: none;
+}
+
+.mc-mat-dims {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Live preview of the grid the menu will insert; big dimensions clip
+   rather than growing the popover past the field. */
+.mc-mat-prev {
+  display: flex;
+  justify-content: center;
+  max-height: 140px;
+  overflow: hidden;
+  padding: 0 4px;
+}
+
+.mc-mat-dim {
+  width: 3ch;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 4px;
+  text-align: center;
+  outline: none;
+}
+
+.mc-mat-dim:focus {
+  border-color: var(--accent);
+}
+
+.mc-mat-sep {
+  color: var(--muted);
+}
+
+.mc-mat-hint {
+  color: var(--faint);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 /* Output stacked under its input cell — unframed like a notebook
    output; the field above is what carries the cell's border. */
 .cell-output {
@@ -606,6 +788,41 @@ body {
   color: var(--muted);
   cursor: default;
   flex: 0 0 auto;
+}
+
+/* Selectable issue message + its copy button (error rows, issue
+   panels, input-column chips). */
+.issue-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.issue-text {
+  min-width: 0;
+  font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
+  font-size: 11.5px;
+  user-select: text;
+  cursor: text;
+  overflow-wrap: break-word;
+}
+
+.issue-copy {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  font-family: inherit;
+  color: var(--accent-text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.issue-copy:hover {
+  border-color: var(--accent);
 }
 
 /* Generated code in the per-cell output column (target = python). */
@@ -794,6 +1011,159 @@ body {
   text-align: right;
 }
 
+/* Worksheet switcher — a settings-menu-style popover under the header
+   button that shows the active sheet's name. */
+.worksheets {
+  position: relative;
+  display: flex;
+  margin-left: 16px;
+}
+
+.worksheets-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.worksheets-btn:hover {
+  border-color: var(--faint);
+}
+
+.worksheets-current {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worksheets-caret {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.worksheets-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 30;
+  margin-top: 4px;
+  width: 230px;
+  padding: 4px 0;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 6px 16px var(--shadow);
+}
+
+.worksheets-list {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.ws-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px 0 0;
+}
+
+.ws-row .ws-name {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 4px 6px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  color: var(--text);
+  background: none;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-row:hover {
+  background: var(--selected-bg);
+}
+
+.ws-row.active .ws-name {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.ws-icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--faint);
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.ws-icon:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.ws-delete.confirming {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.ws-rename {
+  flex: 1;
+  margin: 4px 8px;
+  padding: 4px 6px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+}
+
+.ws-actions {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.ws-action {
+  padding: 6px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  color: var(--text);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.ws-action:hover {
+  background: var(--selected-bg);
+}
+
+.ws-file {
+  display: none;
+}
+
 .issue-error {
   color: var(--danger);
 }
@@ -907,6 +1277,8 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  user-select: text;
+  cursor: text;
 }
 
 .calc-issues-inline li:hover .chip-text {
@@ -941,7 +1313,7 @@ body {
   color: var(--faint);
 }
 
-/* Tag under dimmed interim rows: the shown answer is a nerdamer
+/* Tag under dimmed interim rows: the shown answer is a Compute Engine
    estimate, not the SymPy result that replaces it. */
 .calc-interim {
   font-size: 11px;
@@ -1020,23 +1392,28 @@ body {
 }
 
 .calc-code .tok-kw,
-.cell-python .tok-kw {
+.cell-python .tok-kw,
+.py-highlight .tok-kw {
   color: #a626a4;
 }
 .calc-code .tok-str,
-.cell-python .tok-str {
+.cell-python .tok-str,
+.py-highlight .tok-str {
   color: #50a14f;
 }
 .calc-code .tok-comment,
-.cell-python .tok-comment {
+.cell-python .tok-comment,
+.py-highlight .tok-comment {
   color: var(--faint);
 }
 .calc-code .tok-num,
-.cell-python .tok-num {
+.cell-python .tok-num,
+.py-highlight .tok-num {
   color: #986801;
 }
 .calc-code .tok-call,
-.cell-python .tok-call {
+.cell-python .tok-call,
+.py-highlight .tok-call {
   color: #4078f2;
 }
 
@@ -1128,19 +1505,23 @@ body {
 }
 
 :root[data-theme='dark'] .calc-code .tok-kw,
-:root[data-theme='dark'] .cell-python .tok-kw {
+:root[data-theme='dark'] .cell-python .tok-kw,
+:root[data-theme='dark'] .py-highlight .tok-kw {
   color: #c678dd;
 }
 :root[data-theme='dark'] .calc-code .tok-str,
-:root[data-theme='dark'] .cell-python .tok-str {
+:root[data-theme='dark'] .cell-python .tok-str,
+:root[data-theme='dark'] .py-highlight .tok-str {
   color: #98c379;
 }
 :root[data-theme='dark'] .calc-code .tok-num,
-:root[data-theme='dark'] .cell-python .tok-num {
+:root[data-theme='dark'] .cell-python .tok-num,
+:root[data-theme='dark'] .py-highlight .tok-num {
   color: #d19a66;
 }
 :root[data-theme='dark'] .calc-code .tok-call,
-:root[data-theme='dark'] .cell-python .tok-call {
+:root[data-theme='dark'] .cell-python .tok-call,
+:root[data-theme='dark'] .py-highlight .tok-call {
   color: #61afef;
 }
 
@@ -1180,8 +1561,17 @@ body {
   color: var(--danger);
 }
 
-.add-expr {
+/* The add buttons sit in one row. `.add-expr` stays on the
+ * expression button as the e2e hook — the python button shares the
+ * look through .add-row without carrying the class (strict-mode
+ * locators resolve `.add-expr` to exactly one element). */
+.add-row {
+  display: flex;
+  gap: 8px;
   margin: 8px 0 0 32px;
+}
+
+.add-row button {
   padding: 8px 14px;
   font-size: 13px;
   color: var(--accent-text);
@@ -1191,7 +1581,7 @@ body {
   cursor: pointer;
 }
 
-.add-expr:hover {
+.add-row button:hover {
   background: var(--selected-bg);
 }
 
@@ -1503,8 +1893,12 @@ body {
 
 .howto-list {
   display: grid;
-  grid-template-columns: max-content 1fr;
+  grid-template-columns: max-content 1fr max-content;
   gap: 4px 16px;
+  /* fit-content keeps the row actions near the text instead of pinned
+     to the far edge of a full-width list. */
+  width: fit-content;
+  max-width: 100%;
   margin: 8px 0 0;
   padding: 10px 12px;
   background: var(--panel-bg);
@@ -1512,16 +1906,52 @@ body {
   border-radius: 6px;
 }
 
-.howto-pdf {
-  display: inline-block;
-  margin-top: 6px;
-  padding: 0 12px 8px;
-  font-size: 13px;
-  color: var(--muted);
+/* The footer zone keeps a constant line height whether it holds the
+   search hint, the restore link, or nothing — swapping content can't
+   shift the list above it. */
+.howto-foot {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
 }
 
-.howto-pdf:hover {
+.howto-hint {
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.howto-restore {
+  padding: 0;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.howto-restore:hover {
   color: var(--accent-text);
+  text-decoration: underline;
+}
+
+/* Entry point into the centered help-search overlay — the section's
+   own list only holds pinned topics. */
+.howto-find {
+  margin-left: auto;
+  padding: 0;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--faint);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.howto-find:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
 }
 
 .howto-item {
@@ -1544,6 +1974,207 @@ body {
   font-size: 14px;
 }
 
+/* Matched query runs in a result row — accent text, not the default
+   yellow marker. */
+.howto-item mark,
+.help-item mark {
+  background: none;
+  color: var(--accent-text);
+  font-weight: 700;
+}
+
+.howto-item.hidden-topic dt,
+.howto-item.hidden-topic > dd,
+.help-item.hidden-topic .help-goal,
+.help-item.hidden-topic .help-how {
+  opacity: 0.55;
+}
+
+.howto-hidden-tag {
+  margin-left: 8px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.howto-empty dt {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.howto-acts {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.howto-acts button {
+  padding: 0 6px;
+  font-size: 11px;
+  font-family: inherit;
+  line-height: 1.6;
+  color: var(--faint);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.howto-acts button:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.howto-pin.on {
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+.howto-hide {
+  font-size: 14px;
+}
+
+.howto-hide:hover {
+  color: var(--danger);
+}
+
+/* ── Help search overlay ────────────────────────────── */
+/* Permanently mounted like the palette: opening is a visibility flip +
+   focus(), not a mount. Sits in the center of the screen (with a slight
+   upward bias so long result lists stay above the fold). */
+.help-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding-bottom: 10vh;
+  background: var(--backdrop);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.help-backdrop.open {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.help-panel {
+  width: min(640px, 92vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px var(--shadow);
+  overflow: hidden;
+  contain: layout style paint;
+}
+
+.help-input {
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--panel-bg);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  outline: none;
+}
+
+.help-list {
+  padding: 6px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.help-item {
+  display: grid;
+  grid-template-columns: max-content 1fr max-content;
+  gap: 4px 14px;
+  align-items: baseline;
+  padding: 6px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.help-item.selected {
+  background: var(--selected-bg);
+}
+
+.help-goal {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.help-how {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'SF Mono', 'Cascadia Code', Consolas, Menlo, monospace;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.help-empty {
+  padding: 18px 10px;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.help-foot {
+  padding: 7px 12px;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+}
+
+/* Header help controls — a plain guide link plus a ? button that opens
+   the how-to search. Sits left of the Commands button. */
+.guide-link {
+  margin-left: 16px;
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.guide-link:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.help-search-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-left: 8px;
+  padding: 0;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.help-search-btn:hover {
+  color: var(--text);
+  border-color: var(--faint);
+}
+
 /* ── Dark mode: vendored MathQuill overrides ────────── */
 
 /* mathquill.css hardcodes `border-color: black` on every math element
@@ -1555,14 +2186,15 @@ body {
 /* Slot box while the caret is inside a block — always for an empty
    block, and for a non-empty one only when the command hides its input
    boundary (font/text wrappers: .mq-font/.mq-bf/.mq-text-mode).
+   \python is exempt — its delimiters already mark the editable region.
    Mirrors the MATHCOMPILE rule in mathquill's math.less. */
-:root[data-theme='dark'] .mq-math-mode .mq-empty,
+:root[data-theme='dark'] .mq-math-mode .mq-empty:not(.mq-python),
 :root[data-theme='dark']
   .mq-math-mode
-  .mq-hasCursor:has(> .mq-cursor:only-child):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input),
+  .mq-hasCursor:has(> .mq-cursor:only-child):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):not(.mq-python),
 :root[data-theme='dark']
   .mq-math-mode
-  .mq-hasCursor:has(> .mq-cursor):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):is(.mq-font, .mq-bf, .mq-text-mode) {
+  .mq-hasCursor:has(> .mq-cursor):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):is(.mq-font, .mq-bf, .mq-text-mode):not(.mq-python) {
   background: rgba(255, 255, 255, 0.22);
 }
 
@@ -1576,7 +2208,7 @@ body {
   border-color: var(--border);
 }
 
-:root[data-theme='dark'] .mq-math-mode .mq-text-mode.mq-hasCursor {
+:root[data-theme='dark'] .mq-math-mode .mq-text-mode.mq-hasCursor:not(.mq-python) {
   box-shadow: inset #888 0 0.1em 0.2em;
 }
 

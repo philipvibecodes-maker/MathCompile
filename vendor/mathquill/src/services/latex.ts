@@ -586,15 +586,23 @@ class Controller_latex extends Controller_keystroke {
   renderLatexMath(latex: unknown) {
     var cursor = this.cursor;
     var root = this.root;
-    this.notify('replace');
-    cursor.clearSelection();
-    var oldLatex = this.exportLatex();
-    if (!root.getEnd(L) || !root.getEnd(R) || oldLatex !== latex) {
-      this.updateLatexMathEfficiently(latex, oldLatex) ||
-        this.renderLatexMathFromScratch(latex);
-      this.updateMathspeak();
+    // MATHCOMPILE: programmatic latex() (load/hydrate/undo restore)
+    // rebases the undo history instead of recording a step (undo.ts).
+    this.suspendHistory++;
+    try {
+      this.notify('replace');
+      cursor.clearSelection();
+      var oldLatex = this.exportLatex();
+      if (!root.getEnd(L) || !root.getEnd(R) || oldLatex !== latex) {
+        this.updateLatexMathEfficiently(latex, oldLatex) ||
+          this.renderLatexMathFromScratch(latex);
+        this.updateMathspeak();
+      }
+      cursor.insAtRightEnd(root);
+    } finally {
+      this.suspendHistory--;
     }
-    cursor.insAtRightEnd(root);
+    this.rebaseHistory();
   }
   renderLatexText(latex: string) {
     var root = this.root,

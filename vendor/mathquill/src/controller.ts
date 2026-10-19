@@ -25,6 +25,9 @@ class ControllerBase {
   readonly cursor: Cursor;
   editable: boolean | undefined;
   _ariaAlertTimeout: number;
+  // MATHCOMPILE: >0 while a programmatic latex() (load/restore) is in
+  // flight — the undo history rebases instead of recording (undo.ts).
+  suspendHistory = 0;
   KIND_OF_MQ: KIND_OF_MQ;
   isMouseSelecting: boolean = false;
 
@@ -89,6 +92,10 @@ class ControllerBase {
         (handler as HandlerWithDirectionFunction)(dir, mq);
       else (handler as HandlerWithoutDirectionFunction)(mq);
     }
+    // MATHCOMPILE: 'edit' is the last handler the root reflow fires,
+    // after the mutation lands — the undo history's after-change
+    // signal (services/undo.ts).
+    if (name === 'edit') this.noteEdited();
   }
 
   static notifyees: ((cursor: Cursor, e: ControllerEvent) => void)[] = [];
@@ -202,4 +209,7 @@ class ControllerBase {
   scrollHoriz() {}
   selectionChanged() {}
   setOverflowClasses() {}
+  // MATHCOMPILE: overridden by the undo layer (services/undo.ts)
+  noteEdited() {}
+  rebaseHistory() {}
 }

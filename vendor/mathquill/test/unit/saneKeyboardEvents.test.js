@@ -571,5 +571,49 @@ suite('saneKeyboardEvents', function () {
 
       trigger.copy(el[0]);
     });
+
+    function copyWithSelection(latex) {
+      var clipboardData = new DataTransfer();
+      saneKeyboardEvents(
+        el[0],
+        mockController({
+          exportLatexSelection: function () {
+            return {
+              selection: {
+                latex: latex,
+                startIndex: 0,
+                endIndex: latex.length
+              }
+            };
+          }
+        })
+      );
+      el[0].dispatchEvent(new ClipboardEvent('copy', { clipboardData }));
+      return clipboardData.getData('text/plain');
+    }
+
+    test('unwraps a copied whole-\\displaylines selection to lines', function () {
+      assert.equal(
+        copyWithSelection('\\displaylines{a\\\\ b^{2}}'),
+        'a\\\\\nb^{2}'
+      );
+    });
+
+    test('keeps \\ inside braced groups on the same line', function () {
+      assert.equal(
+        copyWithSelection(
+          '\\displaylines{\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}\\\\ y}'
+        ),
+        '\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}\\\\\ny'
+      );
+    });
+
+    test('leaves a partial-\\displaylines or unwrapped selection alone', function () {
+      assert.equal(
+        copyWithSelection('\\displaylines{x} + y'),
+        '\\displaylines{x} + y'
+      );
+      assert.equal(copyWithSelection('x+1'), 'x+1');
+    });
   });
 });

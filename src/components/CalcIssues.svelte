@@ -2,6 +2,7 @@
   import { fade } from 'svelte/transition';
   import { cellIssues } from '../calc/calculator.svelte.ts';
   import { appStore, type Cell } from '../state/store.svelte';
+  import CopyButton from './CopyButton.svelte';
 
   // This cell's issue messages in the input column: once typing has
   // paused for debounceMs, each message mounts as a chip pinned
@@ -102,7 +103,8 @@
                 <span class="chip-msg" title={iss.message}
                   >{#if iss.severity === 'error'}<span
                       class="parse-error-icon">!</span
-                    >{/if}<span class="chip-text">{iss.message}</span></span
+                    >{/if}<span class="chip-text">{iss.message}</span
+                  ><CopyButton text={iss.message} class="chip-copy" /></span
                 >
               {/each}
             </div>
@@ -120,7 +122,9 @@
             {#if iss.severity === 'error'}<span
                 class="parse-error-icon"
                 title={iss.message}>!</span
-              >{/if}{iss.message}
+              >{/if}<code class="issue-text">{iss.message}</code><CopyButton
+              text={iss.message}
+            />
           </li>
         {/each}
       </ul>

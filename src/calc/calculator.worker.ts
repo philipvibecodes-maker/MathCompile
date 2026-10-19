@@ -6,27 +6,33 @@
 // The LaTeX -> SymPy translation happens on the main thread by
 // compileCellForCalc (the shared codegen pipeline), so the worker only
 // exec/evals emitted Python — no latex parser (parse_latex/antlr) needed.
-// The runtime it execs lives in mc_runtime.py — shared with the desktop
-// shell's PythonSafeEval backend (desktop/calc_backend.py).
 //
 // Built as a classic (iife) worker — importScripts pulls the pyodide
 // loader; package assets stream from the same pinned CDN base.
+// The runtime it execs lives in mc_runtime.py — shared with the desktop
+// shell's sandboxed backend, which runs the identical source.
 
 import MC_RUNTIME from './mc_runtime.py?raw';
 
 declare function importScripts(...urls: string[]): void;
 declare function loadPyodide(opts: {
   indexURL: string;
+  _loadSnapshot?: ArrayBuffer;
 }): Promise<PyodideLike>;
 
 interface PyodideLike {
   loadPackage(pkgs: string | string[]): Promise<void>;
   runPythonAsync(code: string): Promise<unknown>;
+  FS: { writeFile(path: string, data: Uint8Array): void };
 }
 
 interface CalcStatementMsg {
   code: string;
   display?: string;
+  /** Exec-only statements (defs-only python source) — the code execs
+   * for its bindings and the row is a marker the client drops, so
+   * nothing displays. */
+  silent?: boolean;
   /** Statements that failed to emit keep their error — the row reports
    * it in place instead of vanishing. */
   error?: string;
@@ -43,10 +49,19 @@ interface EvalCellMsg {
 
 interface EvalRequest {
   id: number;
+  type?: never;
   // The worksheet prefix ending at the requesting cell: shared prelude
   // plus every cell's program in order. The reply's `rows` are the last
   // cell's results.
   program: { prelude: string[]; cells: EvalCellMsg[] };
+}
+
+// First message the main thread sends — the page knows BASE_URL (the
+// base public assets are served under); a classic worker can't read
+// import.meta.env itself.
+interface InitRequest {
+  type: 'init';
+  snapshotBase: string;
 }
 
 type WorkerMessage =
@@ -57,18 +72,117 @@ type WorkerMessage =
 
 const scope = self as unknown as {
   postMessage(msg: WorkerMessage): void;
-  onmessage: ((e: MessageEvent<EvalRequest>) => void) | null;
+  onmessage:
+    | ((e: MessageEvent<InitRequest | EvalRequest>) => void)
+    | null;
 };
 
 const PYODIDE_BASE = 'https://cdn.jsdelivr.net/pyodide/v0.29.0/full/';
+// The vendored wheel the snapshot boot repopulates plotly's files
+// from — pinned to the same version scripts/fetch-pyodide-deps.mjs
+// stages into public/wheels/.
+const PLOTLY_WHEEL = 'plotly-7.1.0-py3-none-any.whl';
+
+// The python runtime the interpreter boots with (see mc_runtime.py —
+// mc_run + the plot-helper source strings the shown program quotes).
+const SETUP_PY = MC_RUNTIME;
 
 let boot: Promise<PyodideLike> | undefined;
 
+// engine.snapshot(.gz) in public/ is a frozen post-import memory image
+// (scripts/make-pyodide-snapshot.cjs) with sympy already loaded —
+// restoring it skips the multi-second imports; numpy and plotly are
+// repopulated on top of it at boot (numpy via loadPackage, plotly by
+// unzipping the vendored wheel), so no micropip/PyPI install runs.
+// The base public assets are served under — set by the 'init' message.
+// Undefined means no init arrived (shouldn't happen: the main thread
+// posts init right after construction) — the snapshot fetch is skipped
+// and boot falls back to the cold path rather than guessing a URL.
+let snapshotBase: string | undefined;
+
+async function fetchSnapshot(): Promise<ArrayBuffer | undefined> {
+  if (snapshotBase === undefined) return undefined;
+  for (const file of ['engine.snapshot.gz', 'engine.snapshot']) {
+    const resp = await fetch(`${snapshotBase}${file}`).catch(
+      () => undefined,
+    );
+    if (!resp?.ok) continue;
+    let buf: ArrayBuffer;
+    try {
+      buf = await resp.arrayBuffer();
+      // Some dev servers tag .gz assets with Content-Encoding: gzip and
+      // fetch has then already decoded for us; sniff the bytes instead
+      // of trusting the filename or headers — gzip starts 1f 8b, a
+      // snapshot starts with its own magic.
+      if (
+        buf.byteLength > 2 &&
+        new DataView(buf).getUint16(0, true) === 0x8b1f &&
+        typeof DecompressionStream !== 'undefined'
+      )
+        buf = await new Response(
+          new Blob([buf])
+            .stream()
+            .pipeThrough(new DecompressionStream('gzip')),
+        ).arrayBuffer();
+    } catch (err) {
+      console.warn(`[calc] snapshot ${file} unusable:`, err);
+      continue;
+    }
+    // Check the snapshot magic before handing bytes to _loadSnapshot:
+    // servers that fall back to index.html answer 200 with HTML, and
+    // feeding that to _loadSnapshot hangs the boot instead of throwing.
+    const SNAPSHOT_MAGIC = 1886286592;
+    if (
+      buf.byteLength > 48 &&
+      new Uint32Array(buf, 0, 4)[0] === SNAPSHOT_MAGIC
+    )
+      return buf;
+  }
+  return undefined;
+}
+
 async function bootEngine(): Promise<PyodideLike> {
   importScripts(`${PYODIDE_BASE}pyodide.js`);
+  const snap = await fetchSnapshot();
+  if (snap) {
+    try {
+      const py = await loadPyodide({
+        indexURL: PYODIDE_BASE,
+        _loadSnapshot: snap,
+      });
+      // Package files never survive a snapshot — the EMFS tree lives
+      // outside the wasm heap — so the built-ins must be repopulated
+      // for lazy imports. plotly is not a built-in, so its files are
+      // repopulated by unzipping the vendored wheel the same way
+      // loadPackage would (numpy stays out of the image on purpose —
+      // its .so modules would be dead pointers after the restore).
+      await py.loadPackage(['sympy', 'numpy', 'narwhals', 'packaging']);
+      const wheelResp = await fetch(
+        `${snapshotBase}wheels/${PLOTLY_WHEEL}`,
+      );
+      if (wheelResp.ok) {
+        py.FS.writeFile(
+          `/tmp/${PLOTLY_WHEEL}`,
+          new Uint8Array(await wheelResp.arrayBuffer()),
+        );
+        await py.runPythonAsync(
+          `import sysconfig, zipfile\nzipfile.ZipFile('/tmp/${PLOTLY_WHEEL}').extractall(sysconfig.get_paths()['purelib'])`,
+        );
+      }
+      await py.runPythonAsync(SETUP_PY);
+      return py;
+    } catch (err) {
+      console.warn('[calc] snapshot restore failed, cold-booting:', err);
+    }
+  }
   const py = await loadPyodide({ indexURL: PYODIDE_BASE });
-  await py.loadPackage(['sympy']);
-  await py.runPythonAsync(MC_RUNTIME);
+  // plotly is a pure-Python PyPI package, not a Pyodide built-in, so it
+  // has to come in through micropip rather than loadPackage.
+  await py.loadPackage(['sympy', 'numpy', 'micropip']);
+  await py.runPythonAsync(
+    'import micropip\nawait micropip.install("plotly")',
+  );
+  await py.runPythonAsync(SETUP_PY);
   return py;
 }
 
@@ -92,12 +206,17 @@ function ensureEngine(): Promise<PyodideLike> {
   return boot;
 }
 
-// Boot on spawn so prewarm() — which only creates the worker — already
-// overlaps the wasm download with the user's menu interaction.
-void ensureEngine();
-
 scope.onmessage = (e) => {
-  const { id, program } = e.data;
+  const msg = e.data as InitRequest | EvalRequest;
+  if (msg.type === 'init') {
+    snapshotBase = msg.snapshotBase;
+    // The main thread posts init right after construction, so boot
+    // still overlaps the wasm download with the user's menu
+    // interaction the same way an unconditional boot on spawn did.
+    void ensureEngine();
+    return;
+  }
+  const { id, program } = msg;
   void ensureEngine()
     .then(async (py) => {
       // The program travels inside the python source as a quoted literal —

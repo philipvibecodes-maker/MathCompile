@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { clearFirstCell } from './helpers';
+import { clearFirstCell, sharedPage, resetApp } from './helpers';
 
 // The palette stays mounted (`.open` toggles visibility), so the closed
 // assertion is not.toBeVisible(), not toHaveCount(0). Focus inside a
@@ -21,17 +21,22 @@ const cellValue = (page: Page, i = 0): Promise<string> =>
     .nth(i)
     .evaluate((el) => (el as unknown as { value: string }).value);
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
+let page: Page;
+test.beforeAll(async ({ browser }, testInfo) => {
+  page = await sharedPage(browser, testInfo);
+});
+
+test.beforeEach(async () => {
+  await resetApp(page);
   const mf = page.locator('math-field').first();
   await mf.click();
   await mf.focus();
   await clearFirstCell(page);
 });
 
-test('Ctrl+K opens the palette and Esc refocuses the cell', async ({
-  page,
-}) => {
+test('Ctrl+K opens the palette and Esc refocuses the cell',
+  { tag: '@smoke' },
+  async () => {
   await page.keyboard.press('Control+k');
   await expect(page.locator('.palette')).toBeVisible();
   await expect(page.locator('.palette-input')).toBeFocused();
@@ -40,9 +45,7 @@ test('Ctrl+K opens the palette and Esc refocuses the cell', async ({
   await cellFocused(page);
 });
 
-test('running a command by fuzzy match changes the target', async ({
-  page,
-}) => {
+test('running a command by fuzzy match changes the target', async () => {
   await page.keyboard.press('Control+k');
   await page.locator('.palette-input').pressSequentially('target calculator');
   await page.keyboard.press('Enter');
@@ -52,7 +55,7 @@ test('running a command by fuzzy match changes the target', async ({
   );
 });
 
-test('insert expression below adds a focused cell', async ({ page }) => {
+test('insert expression below adds a focused cell', async () => {
   await page.keyboard.press('Control+k');
   await page.locator('.palette-input').pressSequentially('insert below');
   await page.keyboard.press('Enter');
@@ -60,7 +63,7 @@ test('insert expression below adds a focused cell', async ({ page }) => {
   await cellFocused(page, 1);
 });
 
-test('arrow keys navigate and smart mode toggles', async ({ page }) => {
+test('arrow keys navigate and smart mode toggles', async () => {
   const checkbox = page.locator('.option-checkbox input');
   await expect(checkbox).toBeChecked();
   await page.keyboard.press('Control+k');
@@ -69,13 +72,13 @@ test('arrow keys navigate and smart mode toggles', async ({ page }) => {
   await expect(checkbox).not.toBeChecked();
 });
 
-test('header button opens the palette', async ({ page }) => {
+test('header button opens the palette', async () => {
   await page.locator('.palette-button').click();
   await expect(page.locator('.palette')).toBeVisible();
   await expect(page.locator('.palette-input')).toBeFocused();
 });
 
-test('Ctrl+K closes an open palette', async ({ page }) => {
+test('Ctrl+K closes an open palette', async () => {
   await page.keyboard.press('Control+k');
   await expect(page.locator('.palette')).toBeVisible();
   await page.keyboard.press('Control+k');
@@ -83,21 +86,21 @@ test('Ctrl+K closes an open palette', async ({ page }) => {
   await cellFocused(page);
 });
 
-test('clicking the backdrop closes the palette', async ({ page }) => {
+test('clicking the backdrop closes the palette', async () => {
   await page.keyboard.press('Control+k');
   await expect(page.locator('.palette')).toBeVisible();
   await page.locator('.palette-backdrop').click({ position: { x: 10, y: 10 } });
   await expect(page.locator('.palette')).not.toBeVisible();
 });
 
-test('empty query lists every command', async ({ page }) => {
+test('empty query lists every command', async () => {
   await page.keyboard.press('Control+k');
-  // 6 fixed commands + 3 enabled targets + 1 goto per cell (single cell
-  // here).
-  await expect(page.locator('.cmd-item')).toHaveCount(10);
+  // 15 fixed commands + 3 enabled targets + 1 worksheet switch + 1 goto
+  // per cell (single cell, single worksheet here).
+  await expect(page.locator('.cmd-item')).toHaveCount(20);
 });
 
-test('a query matching nothing shows the empty state', async ({ page }) => {
+test('a query matching nothing shows the empty state', async () => {
   await page.keyboard.press('Control+k');
   await page.locator('.palette-input').pressSequentially('zzzzqqqq');
   await expect(page.locator('.cmd-item')).toHaveCount(0);
@@ -106,7 +109,7 @@ test('a query matching nothing shows the empty state', async ({ page }) => {
   await expect(page.locator('.palette')).toBeVisible();
 });
 
-test('fuzzy ordering ranks the documented examples first', async ({ page }) => {
+test('fuzzy ordering ranks the documented examples first', async () => {
   await page.keyboard.press('Control+k');
   await page.locator('.palette-input').pressSequentially('target c');
   await expect(page.locator('.cmd-item .cmd-title').first()).toHaveText(
@@ -119,9 +122,7 @@ test('fuzzy ordering ranks the documented examples first', async ({ page }) => {
   );
 });
 
-test('arrow keys move the selection and Enter runs the highlighted command', async ({
-  page,
-}) => {
+test('arrow keys move the selection and Enter runs the highlighted command', async () => {
   await page.keyboard.press('Control+k');
   await page.locator('.palette-input').pressSequentially('target');
   // 'target' scores identically per command; the shorter-text tiebreak
@@ -135,7 +136,7 @@ test('arrow keys move the selection and Enter runs the highlighted command', asy
   await expect(page.locator('.target-select select')).toHaveValue('python');
 });
 
-test('hovering selects an item and clicking runs it', async ({ page }) => {
+test('hovering selects an item and clicking runs it', async () => {
   await page.keyboard.press('Control+k');
   await page.locator('.palette-input').pressSequentially('target c');
   const item = page.locator('.cmd-item', { hasText: 'Target: Calculator' });
@@ -148,7 +149,7 @@ test('hovering selects an item and clicking runs it', async ({ page }) => {
   );
 });
 
-test('the active option is marked current', async ({ page }) => {
+test('the active option is marked current', async () => {
   await page.keyboard.press('Control+k');
   await page.locator('.palette-input').pressSequentially('target latex');
   await expect(
@@ -163,7 +164,7 @@ test('the active option is marked current', async ({ page }) => {
   ).toHaveCount(0);
 });
 
-test('go-to-expression focuses that cell', async ({ page }) => {
+test('go-to-expression focuses that cell', async () => {
   const mf = page.locator('math-field').first();
   await mf.pressSequentially('a', { delay: 40 });
   await page.locator('.add-expr').click();
@@ -177,7 +178,7 @@ test('go-to-expression focuses that cell', async ({ page }) => {
   await cellFocused(page, 1);
 });
 
-test('duplicate copies the focused cell below it', async ({ page }) => {
+test('duplicate copies the focused cell below it', async () => {
   const mf = page.locator('math-field').first();
   await mf.pressSequentially('x+1', { delay: 40 });
   await page.keyboard.press('Control+k');
@@ -187,9 +188,7 @@ test('duplicate copies the focused cell below it', async ({ page }) => {
   for (const i of [0, 1]) expect(await cellValue(page, i)).toBe('x+1');
 });
 
-test('delete current expression removes it and focuses a neighbor', async ({
-  page,
-}) => {
+test('delete current expression removes it and focuses a neighbor', async () => {
   const mf = page.locator('math-field').first();
   await mf.pressSequentially('a', { delay: 40 });
   await page.locator('.add-expr').click();
@@ -203,9 +202,7 @@ test('delete current expression removes it and focuses a neighbor', async ({
   await cellFocused(page);
 });
 
-test('clear all expressions leaves a single empty focused cell', async ({
-  page,
-}) => {
+test('clear all expressions leaves a single empty focused cell', async () => {
   const mf = page.locator('math-field').first();
   await mf.pressSequentially('a', { delay: 40 });
   await page.locator('.add-expr').click();
@@ -217,9 +214,7 @@ test('clear all expressions leaves a single empty focused cell', async ({
   await cellFocused(page);
 });
 
-test('palette input keeps focus after opening right after an edit', async ({
-  page,
-}) => {
+test('palette input keeps focus after opening right after an edit', async () => {
   // No deferred refocus exists under MathQuill, but the guarded re-assert
   // must still keep the input focused and never steal it back later.
   const mf = page.locator('math-field').first();
@@ -231,10 +226,43 @@ test('palette input keeps focus after opening right after an edit', async ({
   await expect(page.locator('.palette-input')).toBeFocused();
 });
 
-test('exposes dialog/listbox semantics for assistive tech', async ({ page }) => {
+test('rename worksheet prompts for a name and commits on Enter', async () => {
   await page.keyboard.press('Control+k');
-  await expect(page.locator('[role="dialog"]')).toBeVisible();
-  await expect(page.locator('[role="combobox"]')).toBeVisible();
-  await expect(page.locator('[role="listbox"]')).toBeVisible();
-  await expect(page.locator('[role="option"]').first()).toBeVisible();
+  await page.locator('.palette-input').pressSequentially('rename worksheet');
+  await page.keyboard.press('Enter');
+  // Prompt mode: input prefilled with the current name, list hidden.
+  await expect(page.locator('.palette')).toBeVisible();
+  await expect(page.locator('.palette-input')).toHaveValue('Worksheet 1');
+  await expect(page.locator('.cmd-item')).toHaveCount(0);
+  await page.locator('.palette-input').fill('derivations');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.palette')).not.toBeVisible();
+  await expect(page.locator('.worksheets-current')).toHaveText('derivations');
+});
+
+test('Escape in the rename prompt backs out to the command list', async () => {
+  await page.keyboard.press('Control+k');
+  await page.locator('.palette-input').pressSequentially('rename worksheet');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.cmd-item')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.palette')).toBeVisible();
+  await expect(page.locator('.palette-input')).toHaveValue('');
+  await expect(page.locator('.cmd-item').first()).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.palette')).not.toBeVisible();
+  // No rename happened.
+  await expect(page.locator('.worksheets-current')).toHaveText('Worksheet 1');
+});
+
+test('exposes dialog/listbox semantics for assistive tech', async () => {
+  await page.keyboard.press('Control+k');
+  // Scoped to .palette — the always-mounted help-search overlay is a
+  // second dialog/listbox in the DOM while closed.
+  await expect(page.locator('.palette[role="dialog"]')).toBeVisible();
+  await expect(page.locator('.palette-input[role="combobox"]')).toBeVisible();
+  await expect(page.locator('.palette-list[role="listbox"]')).toBeVisible();
+  await expect(
+    page.locator('.palette-list [role="option"]').first(),
+  ).toBeVisible();
 });
