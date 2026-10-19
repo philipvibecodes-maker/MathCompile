@@ -85,6 +85,124 @@ interface WorkerReply {
   error?: string;
 }
 
+// Desktop shell (desktop/main.py): pywebview exposes its js_api as
+// window.pywebview.api — prewarm/engine_status/calc_eval mirror the
+// worker's spawn/status/postMessage contract, with calc_eval taking the
+// whole {prelude, cells} program as a JSON string and resolving to the
+// rows the worker would have posted (same mc_run on the backend). The
+// global is injected only inside the webview; in a plain browser it's
+// absent and the Pyodide worker stays the engine.
+interface DesktopCalcApi {
+  prewarm(): Promise<unknown>;
+  engine_status(): Promise<{ status: EngineStatus; error: string }>;
+  calc_eval(programJson: string): Promise<CalcRow[]>;
+}
+
+// The desktop shell pins its origin to port 42001 (main.py's
+// private_mode + http_server): a deterministic pre-bridge signal so an
+// evaluate() that beats the js_api injection still waits for the local
+// backend instead of guessing.
+export const DESKTOP_ORIGIN =
+  typeof location !== 'undefined' && location.port === '42001';
+
+// Desktop-only opt-in (App.svelte's host-eval toggle + disclaimer):
+// when enabled, the emitted program runs on the host through the
+// CalcBackend js_api (PythonSafeEval / nsjail docker sandbox) instead
+// of the Pyodide wasm worker. Off by default — enabling requires
+// accepting the disclaimer; the choice persists in localStorage.
+const HOST_EVAL_KEY = 'mathcompile-desktop-host-eval';
+
+export const hostEval = $state({
+  enabled:
+    typeof localStorage !== 'undefined' &&
+    localStorage.getItem(HOST_EVAL_KEY) === '1',
+});
+
+// Called only after the disclaimer dialog's accept — App.svelte owns
+// the asking. `on` switches engines live: the wasm worker is freed and
+// the sandbox boot (first time: a docker image build) starts now.
+export function setHostEval(on: boolean) {
+  hostEval.enabled = on;
+  if (typeof localStorage !== 'undefined')
+    localStorage.setItem(HOST_EVAL_KEY, on ? '1' : '0');
+  if (on) {
+    worker?.terminate();
+    worker = undefined;
+    calcEngine.status = 'idle';
+    void desktopApi().then((api) => {
+      if (api) {
+        void api.prewarm().then(() => trackDesktopStatus(api));
+        trackDesktopStatus(api);
+      } else {
+        calcEngine.status = 'error';
+        calcEngine.error = 'the desktop engine bridge failed to initialize';
+      }
+    });
+  } else {
+    calcEngine.status = 'idle';
+  }
+}
+
+let desktopApiP: Promise<DesktopCalcApi | undefined> | undefined;
+
+function desktopApi(): Promise<DesktopCalcApi | undefined> {
+  const w = globalThis as { pywebview?: { api?: DesktopCalcApi } };
+  if (w.pywebview?.api) return Promise.resolve(w.pywebview.api);
+  if (!w.pywebview && !DESKTOP_ORIGIN) return Promise.resolve(undefined);
+  // js_api binds on 'pywebviewready' — an eval that somehow beats it
+  // waits for the bind rather than picking the wasm engine.
+  return (desktopApiP ??= new Promise((resolve) => {
+    const done = () => resolve(w.pywebview?.api);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('pywebviewready', done, { once: true });
+    }
+    // Give up waiting for the bind: resolve, but don't cache it — the
+    // api may still land later and a cached undefined would strand the
+    // desktop shell on the wasm worker forever.
+    setTimeout(() => {
+      desktopApiP = undefined;
+      done();
+    }, 15000);
+  }));
+}
+
+// Mirrors the worker's ready/init-error messages off the backend's
+// engine_status, driving the same calcEngine rune the UI reads.
+let statusPoll: ReturnType<typeof setTimeout> | undefined;
+
+function trackDesktopStatus(api: DesktopCalcApi) {
+  if (statusPoll !== undefined) return;
+  const tick = () => {
+    void api
+      .engine_status()
+      .then((s) => {
+        calcEngine.status = s.status;
+        calcEngine.error = s.error ?? '';
+        if (s.status === 'error') {
+          failAll(s.error || 'the SymPy engine failed to start');
+          statusPoll = undefined;
+          return;
+        }
+        // Keep polling while the sandbox boots (first boot builds the
+        // docker image — minutes) or an eval is still in flight.
+        statusPoll =
+          s.status === 'loading' || pending.size > 0
+            ? setTimeout(tick, 500)
+            : undefined;
+      })
+      .catch(() => {
+        // A dropped status call shouldn't kill the poll.
+        statusPoll = setTimeout(tick, 1000);
+      });
+  };
+  tick();
+}
+
+// Both transports post-process rows the same way — the backend runs the
+// identical mc_runtime.py, so the arcTrigNames safety net applies too.
+const fixTrig = (rows: CalcRow[]) =>
+  rows.map((r) => (r.ok && r.latex ? { ...r, latex: arcTrigNames(r.latex) } : r));
+
 let worker: Worker | undefined;
 let nextId = 1;
 const pending = new Map<
@@ -137,11 +255,7 @@ function ensureWorker(): Worker {
       // — anything still emitting \operatorname{atan}-style a- names
       // (user-defined functions, sympy paths outside _mc_row) renders
       // as "a tan" in MathQuill without it.
-      p.resolve(
-        (m.rows ?? []).map((r) =>
-          r.ok && r.latex ? { ...r, latex: arcTrigNames(r.latex) } : r,
-        ),
-      );
+      p.resolve(fixTrig(m.rows ?? []));
     } else {
       console.log('[calc] error:', m.error ?? 'evaluation failed');
       p.reject(new Error(m.error ?? 'evaluation failed'));
@@ -204,8 +318,19 @@ export function evaluate(
   // A multi-statement cell keeps its good rows when a sibling statement
   // is broken — and issue rows interleave at their own input line, not
   // at the bottom of the output.
-  const w = ensureWorker();
   const id = nextId++;
+  // Same {prelude, cells} payload either way — the worker reads it off
+  // postMessage, the desktop api off a JSON argument.
+  const program = {
+    prelude: prog.prelude,
+    cells: prog.cells.map((c) => ({
+      // Content key for the worker's snapshot chain — the first
+      // cell whose program differs is where eval rewinds to.
+      key: JSON.stringify({ defs: c.defs, statements: c.statements }),
+      defs: c.defs,
+      statements: c.statements,
+    })),
+  };
   return new Promise<CalcResult>((resolve, reject) => {
     pending.set(id, {
       resolve: (r) => {
@@ -239,11 +364,13 @@ export function evaluate(
     });
     // A hung SymPy call (pathological simplify/integrate) would block
     // every cell's results forever — the worker is single-threaded.
-    // Past the deadline, kill it; the next eval reboots (~4s).
+    // Past the deadline, kill it; the next eval reboots (~4s). On the
+    // desktop path there's no worker to kill — the nsjail time_limit
+    // bounds the sandboxed run instead.
     const armWatchdog = () =>
       setTimeout(() => {
         if (!pending.has(id)) return;
-        // A still-booting worker hasn't started this eval — killing it
+        // A still-booting engine hasn't started this eval — killing it
         // mid-download would just restart the boot on the next eval, so
         // on a slow connection the engine never finishes loading.
         // Re-check instead; the deadline effectively counts from ready.
@@ -251,29 +378,55 @@ export function evaluate(
           timer = armWatchdog();
           return;
         }
-        w.terminate();
+        worker?.terminate();
         worker = undefined;
         calcEngine.status = 'idle';
         failAll('calculation timed out — the SymPy engine is restarting');
       }, 30000);
     let timer = armWatchdog();
-    w.postMessage({
-      id,
-      program: {
-        prelude: prog.prelude,
-        cells: prog.cells.map((c) => ({
-          // Content key for the worker's snapshot chain — the first
-          // cell whose program differs is where eval rewinds to.
-          key: JSON.stringify({
-            defs: c.defs,
-            statements: c.statements,
-          }),
-          defs: c.defs,
-          statements: c.statements,
-        })),
-      },
+    if (!hostEval.enabled) {
+      ensureWorker().postMessage({ id, program });
+      return;
+    }
+    void desktopApi().then((api) => {
+      if (api) {
+        // Desktop: the backend evals the program in its nsjail sandbox.
+        // The promise still goes through `pending` so failAll/watchdog
+        // treat both transports uniformly.
+        trackDesktopStatus(api);
+        api.calc_eval(JSON.stringify(program)).then(
+          (rows) => settle(id, fixTrig(rows)),
+          (e: unknown) =>
+            settle(id, e instanceof Error ? e : new Error(String(e))),
+        );
+      } else {
+        // Opted into host eval but the bridge never bound — surface
+        // it instead of silently falling back to the wasm engine.
+        settle(
+          id,
+          new Error('the desktop engine bridge failed to initialize'),
+        );
+      }
     });
   });
+}
+
+
+// Resolves an engine request through `pending` — the desktop transport's
+// equivalent of the worker's onmessage branch.
+function settle(id: number, result: CalcRow[] | Error) {
+  const p = pending.get(id);
+  if (!p) return;
+  pending.delete(id);
+  if (result instanceof Error) {
+    console.log('[calc] error:', result.message);
+    p.reject(result);
+  } else {
+    for (const r of result) {
+      if (!r.ok) console.log('[calc] error:', r.error);
+    }
+    p.resolve(result);
+  }
 }
 
 // The emitted program as one block — prelude, then each cell's decls
@@ -332,12 +485,28 @@ export function shownPrograms(
   return { code, displayCode };
 }
 
-// Kicks the engine boot (~4s cold) before an expression is actually
-// evaluated. App.svelte calls it on mount so boot overlaps first paint
-// instead of waiting for the Output menu. The worker boots on spawn, so
-// just creating it is enough.
+// Kicks the engine boot before an expression is actually evaluated —
+// App.svelte calls it on mount so boot overlaps first paint. The worker
+// starts booting on spawn (and the sandbox backend on prewarm), so just
+// reaching the engine is enough.
 export function prewarm(): void {
-  ensureWorker();
+  if (!hostEval.enabled) {
+    // The wasm worker is the default engine — vendored, so prewarming
+    // it is free of network and safe on the desktop origin too.
+    ensureWorker();
+    return;
+  }
+  void desktopApi().then((api) => {
+    if (api) {
+      // Await the call so the backend's status is already 'loading'
+      // when the poll starts ticking.
+      void api.prewarm().then(() => trackDesktopStatus(api));
+      trackDesktopStatus(api);
+    } else {
+      calcEngine.status = 'error';
+      calcEngine.error = 'the desktop engine bridge failed to initialize';
+    }
+  });
 }
 
 const isArr = (v: MathJson | undefined): v is MathJson[] => Array.isArray(v);

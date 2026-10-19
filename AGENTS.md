@@ -165,6 +165,16 @@ and empty blocks serialize as `{ }`.
   Cells share one namespace in order (a `def g` or `a = 5` above is in
   scope below). Assignments/defs carry a `display` expression
   (`a = 5` -> `Eq(a, 5)`).
+- Two engines run the same program through the same `mc_run` runtime
+  (`src/calc/mc_runtime.py`, worker-loads it via `?raw`): the Pyodide
+  worker (default everywhere, including the desktop shell), or
+  `desktop/calc_backend.py`'s PythonSafeEval (nsjail/docker) sandbox
+  under the pywebview shell — host evaluation is opt-in only: the
+  header's `engine` select (desktop origin only) opens a disclaimer
+  dialog, and accepting flips the `hostEval` rune in
+  `calculator.svelte.ts` (persisted in localStorage), which routes
+  `evaluate()`/`prewarm()` through `window.pywebview.api` instead of
+  the worker.
 - See CALCULATOR-ENGINES.md for the engine protocol, interim coverage,
   and earned gotchas.
 

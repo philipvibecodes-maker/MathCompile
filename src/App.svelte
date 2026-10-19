@@ -15,7 +15,13 @@
   import { appStore, THEME_STORAGE_KEY } from './state/store.svelte';
   import { savePrefs } from './state/persistence';
   import { copyableLatex, displayLatex } from './compile/latex';
-  import { calcEngine, prewarm } from './calc/calculator.svelte.ts';
+  import {
+    calcEngine,
+    DESKTOP_ORIGIN,
+    hostEval,
+    prewarm,
+    setHostEval,
+  } from './calc/calculator.svelte.ts';
   import { buildCommands } from './commands';
   import { installGlobalKeymap } from './editor/keymap';
   import { compileWorksheet } from './compile/codegen';
@@ -29,6 +35,10 @@
   // menu applies to every output target; fadeMs is also exported as
   // --fade-ms for CSS mount animations.
   let settingsOpen = $state(false);
+
+  // Desktop-only: the host-eval opt-in shows a disclaimer dialog before
+  // flipping engines (calculator.svelte.ts setHostEval does the switch).
+  let hostEvalAsk = $state(false);
 
   // Output column width (% of the row's flex width) — only the python
   // target's two-column layout uses it; its .col-resize divider drags it.
@@ -563,6 +573,25 @@
               {/each}
             </select>
           </label>
+          {#if DESKTOP_ORIGIN}
+            <label class="target-select host-eval-toggle">
+              engine
+              <select
+                value={hostEval.enabled ? 'host' : 'pyodide'}
+                onchange={(e) => {
+                  if (e.currentTarget.value === 'host') {
+                    hostEvalAsk = true;
+                    e.currentTarget.value = 'pyodide';
+                  } else {
+                    setHostEval(false);
+                  }
+                }}
+              >
+                <option value="pyodide">Pyodide (in-app)</option>
+                <option value="host">Host sandbox</option>
+              </select>
+            </label>
+          {/if}
         </div>
         <span class="col-delete"></span>
       </div>
@@ -723,4 +752,54 @@
   </div>
   <CommandPalette {commands} />
   <HelpSearch />
+  {#if hostEvalAsk}
+    <div class="host-eval-backdrop">
+      <div
+        class="host-eval-dialog"
+        role="alertdialog"
+        aria-labelledby="host-eval-title"
+      >
+        <h2 id="host-eval-title">Enable host evaluation?</h2>
+        <p>
+          Worksheet code will run on this computer inside a sandboxed
+          Docker container (PythonSafeEval/nsjail) instead of the
+          built-in Pyodide engine.
+        </p>
+        <ul>
+          <li>
+            Requires <code>docker</code> and <code>git</code> — the
+            first run builds the sandbox image, which can take several
+            minutes.
+          </li>
+          <li>
+            Sandboxing reduces but does not eliminate risk: generated
+            Python still executes on your machine.
+          </li>
+          <li>
+            Results may differ slightly from the in-app engine
+            (different SymPy version; no plotting).
+          </li>
+        </ul>
+        <div class="host-eval-actions">
+          <button
+            type="button"
+            class="host-eval-cancel"
+            onclick={() => (hostEvalAsk = false)}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="host-eval-accept"
+            onclick={() => {
+              hostEvalAsk = false;
+              setHostEval(true);
+            }}
+          >
+            Enable host evaluation
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>

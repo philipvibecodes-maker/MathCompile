@@ -10,7 +10,22 @@ no `code` field — the per-cell generating-code block stays SymPy-only.
 ## Layout
 
 - `src/calc/calculator.worker.ts` — classic (`iife`) worker running
-  Pyodide + SymPy; owns `mc_run`.
+  Pyodide + SymPy; execs `mc_run`.
+- `src/calc/mc_runtime.py` — the shared engine runtime (`mc_run` and the
+  `_mc_*` harness): the worker `?raw`-imports it, and
+  `desktop/calc_backend.py` appends a `print(mc_run(prog))` call to run
+  the identical source inside its PythonSafeEval docker sandbox
+  (`desktop/main.py` exposes it as `window.pywebview.api`). Each sandbox
+  eval is a fresh interpreter — the whole worksheet prefix re-runs (no
+  cross-call `_snaps`) and nsjail enforces the time limit. Host
+  evaluation is **opt-in**: the desktop shell defaults to the same
+  vendored Pyodide worker as the browser; the header's `engine` select
+  (rendered only on the desktop origin) opens a disclaimer dialog, and
+  accepting it sets `hostEval.enabled` (persisted in localStorage),
+  which routes `evaluate()`/`prewarm()` through
+  `window.pywebview.api`. The backend's js_api is always attached, but
+  `main.py` never prewarms it — the docker image build only runs after
+  the user opts in.
 - `src/calc/calculator.svelte.ts` — `evaluate()` (real engine),
   `interimEvaluate()` (Compute Engine), `prewarm()`, `calcEngine`
   status rune.

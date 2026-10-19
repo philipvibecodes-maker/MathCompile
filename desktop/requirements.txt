@@ -3,3 +3,8 @@
 # needs a GUI backend — qt6 pulls PyQt6-WebEngine via pip, or install
 # system WebKitGTK and drop the extra.
 pywebview[qt6]>=6.0
+# Optional calculator engine: runs the emitted SymPy program in an
+# nsjail'd docker sandbox instead of Pyodide (opt-in in the app, after a
+# disclaimer). Also needs `docker` and `git` on PATH (non-pip
+# requirements — see README).
+PythonSafeEval>=0.0.1

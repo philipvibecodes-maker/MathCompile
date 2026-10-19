@@ -2231,3 +2231,65 @@ body {
   color: var(--text);
   border-color: var(--text);
 }
+
+/* Host-eval disclaimer dialog (desktop only — App.svelte renders it
+   behind DESKTOP_ORIGIN when the engine select picks "Host sandbox"). */
+.host-eval-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--backdrop);
+}
+
+.host-eval-dialog {
+  max-width: 420px;
+  margin: 0 16px;
+  padding: 16px 20px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 16px var(--shadow);
+  font-size: 13px;
+}
+
+.host-eval-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.host-eval-dialog ul {
+  margin: 8px 0;
+  padding-left: 18px;
+}
+
+.host-eval-dialog li {
+  margin: 4px 0;
+}
+
+.host-eval-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.host-eval-actions button {
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.host-eval-cancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.host-eval-accept {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: var(--accent-text, #fff);
+}
