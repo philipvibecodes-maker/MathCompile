@@ -3,21 +3,36 @@
 // apply — inside the grid (row/column editing), just left of it
 // (determinant/trace), or just right (transpose/adjoint/pseudoinverse).
 // A caret at or after a `\text{plot}` marker shows the for-domain
-// spellings instead.
+// spellings instead; the other statement markers (\text{def},
+// \text{solve} family) show their signature forms the same way.
+// Carets inside \sum-style bounds, a \frac, or an open \-command input
+// get their own navigational hints.
 export type HelpContext =
   | 'inside-matrix'
   | 'left-of-matrix'
   | 'right-of-matrix'
-  | 'in-plot';
+  | 'in-plot'
+  | 'in-def'
+  | 'in-solve'
+  | 'in-bounds'
+  | 'in-frac'
+  | 'command-input';
 
 const isMatrix = (el: Element | null | undefined): boolean =>
   !!el && el.classList.contains('mq-matrix');
 
-// `\text{plot}` renders as a .mq-text-mode span whose text is 'plot'.
+// `\text{plot}` renders as a .mq-text-mode span whose text is 'plot';
+// the other statement markers render identically.
+const textOf = (el: Element | null | undefined): string =>
+  el && el.classList.contains('mq-text-mode')
+    ? ((el.textContent ?? '').trim())
+    : '';
 const isPlotMarker = (el: Element | null | undefined): boolean =>
-  !!el &&
-  el.classList.contains('mq-text-mode') &&
-  (el.textContent ?? '').trim() === 'plot';
+  textOf(el) === 'plot';
+const isDefMarker = (el: Element | null | undefined): boolean =>
+  textOf(el) === 'def';
+const isSolveMarker = (el: Element | null | undefined): boolean =>
+  ['solve', 'dsolve', 'ode', 'pdesolve', 'pde'].includes(textOf(el));
 
 // Accepting a typed `\pmatrix`/`\begin{...}`/autocomplete command leaves
 // an empty, invisible latex-command-input wrapper as a sibling of the
@@ -36,6 +51,17 @@ const atomBefore = (el: Element): Element | null => {
   return sib;
 };
 
+// A statement marker anywhere earlier on the same line marks the whole
+// line — the nearest previous marker wins (a `\text{def}` later in the
+// line still scopes to the line's leading statement, which the marker
+// scan reaches first going backwards).
+const statementContext = (el: Element | null | undefined): HelpContext | null => {
+  if (isPlotMarker(el)) return 'in-plot';
+  if (isDefMarker(el)) return 'in-def';
+  if (isSolveMarker(el)) return 'in-solve';
+  return null;
+};
+
 // Read the context off the rendered MathQuill DOM. Presence of
 // .mq-cursor implies the field is focused; a selection removes it.
 export function readHelpContext(field: HTMLElement): HelpContext | null {
@@ -43,8 +69,9 @@ export function readHelpContext(field: HTMLElement): HelpContext | null {
   if (!cursor) return null;
 
   if (cursor.closest('.mq-matrix')) return 'inside-matrix';
-  const insideText = cursor.closest('.mq-text-mode');
-  if (isPlotMarker(insideText)) return 'in-plot';
+  if (cursor.closest('.mq-latex-command-input')) return 'command-input';
+  const direct = statementContext(cursor.closest('.mq-text-mode'));
+  if (direct) return direct;
 
   // Adjacency: at each ancestor level the element's siblings are the
   // baseline atoms, so the walk covers both a caret sitting directly
@@ -57,20 +84,28 @@ export function readHelpContext(field: HTMLElement): HelpContext | null {
   ) {
     if (isMatrix(atomAfter(el))) return 'left-of-matrix';
     if (isMatrix(atomBefore(el))) return 'right-of-matrix';
-    // The `\text{plot}` marker can sit anywhere earlier in the
+    // The statement marker can sit anywhere earlier in the
     // statement — scan every earlier sibling at this level (the level
-    // stops at the displaylines row, so a plot marker on a previous
+    // stops at the displaylines row, so a marker on a previous
     // line doesn't bleed through: tr/td row elements aren't
-    // .mq-text-mode).
+    // .mq-text-mode). Statement contexts are line-scoped: they win
+    // inside nested blocks (a \frac or \sum bound in the domain) too.
     for (
       let sib = el.previousElementSibling;
       sib;
       sib = sib.previousElementSibling
     ) {
       if (isInputResidue(sib)) continue;
-      if (isPlotMarker(sib)) return 'in-plot';
+      const ctx = statementContext(sib);
+      if (ctx) return ctx;
     }
   }
+
+  // \sum/\prod/\lim/\int bound blocks render as .mq-from (lower),
+  // .mq-to (upper), or .mq-approaches (\lim's arrow bound).
+  if (cursor.closest('.mq-from, .mq-to, .mq-approaches'))
+    return 'in-bounds';
+  if (cursor.closest('.mq-fraction')) return 'in-frac';
   return null;
 }
 
@@ -82,9 +117,12 @@ export const HELP_ENTRIES: Record<HelpContext, { key: string; does: string }[]> 
   {
     'inside-matrix': [
       { key: 'Enter', does: 'add row below' },
+      { key: 'Ctrl+Enter', does: 'add row above' },
       { key: 'Shift+Space', does: 'add column right' },
+      { key: 'Ctrl+Shift+Space', does: 'add column left' },
       { key: 'Ctrl+Shift+Backspace', does: 'delete row' },
       { key: 'Ctrl+Shift+Delete', does: 'delete column' },
+      { key: 'Ctrl+V', does: 'paste TSV/CSV into the grid' },
     ],
     'left-of-matrix': [
       { key: 'det', does: 'determinant' },
@@ -104,5 +142,27 @@ export const HELP_ENTRIES: Record<HelpContext, { key: string; does: string }[]> 
         key: '\\text{for} u \\in I \\land v \\in J',
         does: '2-variable domain',
       },
+    ],
+    // `\text{def}` marks a function definition: signature then body.
+    'in-def': [
+      { key: 'g(x) = 2x', does: 'defines g' },
+      { key: 'g(x,y) = x + y', does: 'several args' },
+    ],
+    // `\text{solve}` family: equation + trailing symbols name the
+    // variables; `\text{for}` bounds it; dsolve takes ics.
+    'in-solve': [
+      { key: 'x^2 = 1, x', does: 'solve for x' },
+      { key: 'y(0) = 1', does: 'initial condition (dsolve)' },
+      { key: '\\text{for} x > a', does: 'domain (solveset)' },
+    ],
+    'in-bounds': [
+      { key: 'Tab', does: 'other bound' },
+      { key: '↑ / ↓', does: 'switch bounds' },
+      { key: '→', does: 'leave the operator' },
+    ],
+    'in-frac': [{ key: 'Tab', does: 'numerator ⇄ denominator' }],
+    'command-input': [
+      { key: 'Enter', does: 'accept the suggestion' },
+      { key: 'Esc', does: 'dismiss suggestions' },
     ],
   };

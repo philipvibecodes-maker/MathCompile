@@ -10,6 +10,65 @@
 
 var Environments: { [name: string]: () => CellGrid } = {};
 
+// MATHCOMPILE: recognize pasted tabular data (spreadsheet TSV/CSV).
+// Tab-separated always qualifies; comma/semicolon need 2+ lines where
+// every line carries the delimiter (a single 'a,b' stays literal);
+// a multi-line paste without a delimiter is a single column (only
+// fills inside an existing grid — outside one it stays plain text so
+// pasted multi-line LaTeX isn't clobbered). Text that already looks
+// like LaTeX markup never parses as a table.
+function parseTableText(text: string): string[][] | null {
+  if (/[\\{}&]/.test(text)) return null;
+  var rows = text
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .filter(function (r) {
+      return r.trim() !== '';
+    });
+  if (!rows.length) return null;
+
+  var delim: string | null = null;
+  if (
+    rows.some(function (r) {
+      return r.indexOf('\t') > -1;
+    })
+  )
+    delim = '\t';
+  else if (rows.length > 1) {
+    if (
+      rows.every(function (r) {
+        return r.indexOf(',') > -1;
+      })
+    )
+      delim = ',';
+    else if (
+      rows.every(function (r) {
+        return r.indexOf(';') > -1;
+      })
+    )
+      delim = ';';
+  }
+  if (!delim) {
+    return rows.length > 1
+      ? rows.map(function (r) {
+          return [r.trim()];
+        })
+      : null;
+  }
+  var table = rows.map(function (r) {
+    return r.split(delim as string).map(function (c) {
+      return c.trim();
+    });
+  });
+  var cols = Math.max.apply(
+    Math,
+    table.map(function (r) {
+      return r.length;
+    })
+  );
+  return cols > 1 || rows.length > 1 ? table : null;
+}
+
 LatexCmds.begin = class extends MathCommand {
   ctrlSeq = '\\begin';
   domView = new DOMView(1, (blocks) =>
@@ -607,25 +666,28 @@ class CellGrid extends MathCommand {
     return focus || blocks[0];
   }
 
-  addRow(afterCell: MatrixCell) {
+  // MATHCOMPILE: `before` inserts the new row above the caret's row
+  // (Ctrl+Enter) instead of below it (Enter).
+  addRow(afterCell: MatrixCell, before = false) {
     var previous: MatrixCell[] = [],
       newCells: MatrixCell[] = [],
       next: MatrixCell[] = [];
     var row = afterCell.row,
+      target = before ? row : row + 1,
       columns = 0,
       column = 0;
 
     this.eachChild(function (child) {
       const cell = child as MatrixCell;
       // Cache previous rows
-      if (cell.row <= row) previous.push(cell);
+      if (cell.row < target) previous.push(cell);
       // Work out how many columns
       if (cell.row === row) {
         if (cell === afterCell) column = columns;
         columns += 1;
       }
       // Cache cells after the new row
-      if (cell.row > row) {
+      if (cell.row >= target) {
         cell.row += 1;
         next.push(cell);
       }
@@ -635,20 +697,23 @@ class CellGrid extends MathCommand {
     // Add new cells, one for each column
     const tds: HTMLElement[] = [];
     for (var i = 0; i < columns; i += 1) {
-      var block = new MatrixCell(row + 1, this);
+      var block = new MatrixCell(target, this);
       newCells.push(block);
       tds.push(this.renderCell(block));
     }
 
-    // Insert the new <tr> after the current row's
+    // Insert the new <tr> in the row's slot
     const trs = this.tableRows();
-    trs[row]?.after(h('tr', {}, tds));
+    if (before) trs[target]?.before(h('tr', {}, tds));
+    else trs[row]?.after(h('tr', {}, tds));
 
     this.blocks = previous.concat(newCells, next);
     return newCells[column];
   }
 
-  addColumn(afterCell: MatrixCell) {
+  // MATHCOMPILE: `before` inserts the new column left of the caret's
+  // column (Ctrl+Shift+Space) instead of right of it (Shift+Space).
+  addColumn(afterCell: MatrixCell, before = false) {
     var rows: MatrixCell[][] = [],
       newCells: MatrixCell[] = [];
     var column = 0;
@@ -658,7 +723,8 @@ class CellGrid extends MathCommand {
       const cell = child as MatrixCell;
       rows[cell.row] = rows[cell.row] || [];
       rows[cell.row].push(cell);
-      if (cell === afterCell) column = rows[cell.row].length;
+      if (cell === afterCell)
+        column = rows[cell.row].length - (before ? 1 : 0);
       return undefined;
     });
 
@@ -686,15 +752,82 @@ class CellGrid extends MathCommand {
   insert(
     method: 'addRow' | 'addColumn',
     afterCell: MatrixCell,
-    ctrlr: Controller
+    ctrlr: Controller,
+    before = false
   ) {
-    var cellToFocus = this[method](afterCell);
+    var cellToFocus = this[method](afterCell, before);
     this.finalizeTree();
     this.bubble(function (node) {
       node.reflow();
       return undefined;
     });
     ctrlr.cursor.insAtRightEnd(cellToFocus);
+  }
+
+  // MATHCOMPILE: fill a parsed TSV/CSV table into the grid starting at
+  // startCell — grows right/down as needed and lands the caret on the
+  // last written cell. Returns false if startCell isn't in this grid.
+  pasteCells(
+    startCell: MatrixCell,
+    table: string[][],
+    ctrlr: Controller
+  ): boolean {
+    var rows = this.cellRows(),
+      startCol = -1,
+      startRow = startCell.row;
+    for (var i = 0; i < rows.length; i += 1) {
+      var at = rows[i].indexOf(startCell);
+      if (at > -1) {
+        startRow = i;
+        startCol = at;
+      }
+    }
+    if (startCol === -1) return false;
+
+    var needRows = startRow + table.length,
+      needCols =
+        startCol +
+        Math.max.apply(
+          Math,
+          table.map(function (r) {
+            return r.length;
+          })
+        );
+
+    // Grow right, then down. insert() relinks the sibling chain after
+    // each op — bare addRow/addColumn would leave eachChild iterating
+    // stale pointers, corrupting the row-major blocks order.
+    while (true) {
+      rows = this.cellRows();
+      var cols = 0;
+      for (i = 0; i < rows.length; i += 1)
+        cols = Math.max(cols, rows[i].length);
+      if (cols >= needCols) break;
+      this.insert('addColumn', rows[0][rows[0].length - 1], ctrlr);
+    }
+    while (rows.length < needRows) {
+      this.insert('addRow', rows[rows.length - 1][0], ctrlr);
+      rows = this.cellRows();
+    }
+
+    var cursor = ctrlr.cursor;
+    for (var r = 0; r < table.length; r += 1) {
+      for (var c = 0; c < table[r].length; c += 1) {
+        var target = rows[startRow + r] && rows[startRow + r][startCol + c];
+        if (!target || table[r][c] === '') continue;
+        // Spreadsheet semantics: the pasted value replaces the cell's
+        // contents.
+        target.children().remove();
+        cursor.insAtRightEnd(target);
+        cursor.parent.writeLatex(cursor, table[r][c]);
+      }
+    }
+    this.finalizeTree();
+    this.bubble(function (node) {
+      node.reflow();
+      return undefined;
+    });
+    return true;
   }
 
   deleteRowOrColumn(
@@ -800,6 +933,27 @@ class MatrixCell extends MathBlock {
         if (this.parent instanceof DisplayLines) return;
         e?.preventDefault();
         return (this.parent as CellGrid).insert('addColumn', this, ctrlr);
+      case 'Ctrl-Shift-Spacebar':
+        // MATHCOMPILE: add a column LEFT of the caret (Shift+Space's
+        // mirror). Same matrices-only scoping.
+        if (this.parent instanceof DisplayLines) return;
+        e?.preventDefault();
+        return (this.parent as CellGrid).insert(
+          'addColumn',
+          this,
+          ctrlr,
+          true
+        );
+      case 'Ctrl-Enter':
+        // MATHCOMPILE: add a row ABOVE the caret (Enter's mirror).
+        if (this.parent instanceof DisplayLines) return;
+        e?.preventDefault();
+        return (this.parent as CellGrid).insert(
+          'addRow',
+          this,
+          ctrlr,
+          true
+        );
       case 'Ctrl-Shift-Backspace':
         // Word-delete's key, rebound inside matrices: delete the
         // current row outright, content and all. In \displaylines and

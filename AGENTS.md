@@ -259,12 +259,19 @@ and empty blocks serialize as `{ }`.
   (`src/editor/matrix-menu.ts` via the vendored `matrixDimensionsMenu`
   option — Enter inserts the grid, Escape cancels); `\cases` and the
   non-matrix grids skip it. Inside a matrix cell, Enter adds a row and
-  Shift+Space adds a column; Ctrl+Shift+Backspace deletes the current
+  Shift+Space adds a column (Ctrl+Enter adds a row ABOVE the caret,
+  Ctrl+Shift+Spacebar a column left of it); Ctrl+Shift+Backspace deletes
+  the current
   row and Ctrl+Shift+Delete deletes the current column (each a no-op
   once only one remains) — those keys keep their usual word-delete
   everywhere else, including \displaylines cells;
   arrows move cell-to-cell without leaving
-  the field. `I_n` (capital I, whole-number subscript) compiles to
+  the field. Pasting tabular text into a grid fills cells from the caret
+  (growing the grid when needed) — tab-separated always counts as a
+  table; comma/semicolon need ≥2 lines containing the delimiter; a
+  bare multi-line paste fills down inside a grid. Text containing
+  `\`, `{`, `}` or `&` stays a LaTeX paste, and a multi-column table
+  pasted outside a grid becomes `\pmatrix`. `I_n` (capital I, whole-number subscript) compiles to
   `sp.eye(n)` and takes matrix-op paths like a literal; an explicit
   `I_n = …` binding wins.
 - Serializations to pin in tests: empty blocks are `{ }` (with a space);

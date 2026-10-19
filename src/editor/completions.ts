@@ -1,8 +1,10 @@
 // Curated autocomplete candidates for the math field. Every `name` is a
 // real LatexCmds entry in the vendored MathQuill build — inserting
 // `\${name}` via mq.cmd() or the latex command input always resolves.
-// Order is the ranking order: structure and common operators first.
+// Order is the fallback ranking order: structure and common operators
+// first.
 import { NOTATION } from '../compile/notation';
+import { fuzzyScore, fuzzyTextScore } from '../fuzzy';
 
 export interface CompletionItem {
   /** Command name without the backslash — what gets typed and inserted. */
@@ -250,14 +252,54 @@ export const COMPLETIONS: CompletionItem[] = [
   { name: 'qquad', hint: 'wider space' },
 ];
 
-// Prefix match in catalog order — the list itself is the ranking (most
-// common commands first), so 'i' leads with int, not the shortest name.
+// Words a user plausibly types that aren't command-name prefixes —
+// the hint text usually covers this, but a few key commands have no
+// useful text hint to match ('integral' → int).
+const SYNONYMS: Record<string, string[]> = {
+  integral: ['int', 'iint', 'iiint', 'antid'],
+  antiderivative: ['antid'],
+  piecewise: ['cases'],
+  element: ['in', 'notin'],
+  member: ['in', 'notin'],
+  arrow: ['to', 'rightarrow', 'mapsto', 'leftarrow'],
+  over: ['frac'],
+  divide: ['frac', 'div'],
+  division: ['frac', 'div'],
+  binomial: ['binom'],
+  floor: ['lfloor', 'rfloor'],
+  ceil: ['lceil', 'rceil'],
+  ceiling: ['lceil', 'rceil'],
+  emptyset: ['emptyset', 'varnothing'],
+};
+
+// Scored match, stable in catalog order within a tier. Tiers:
+// exact name > name prefix > name substring > declared synonym >
+// fuzzy subsequence on the name > word-level match on the hint.
+// `usage` (accept counts) shifts items within a tier only — a
+// frequently used lower-tier hit can never outrank a name match.
 export function matchCompletions(
   prefix: string,
   limit = 8,
+  usage: Record<string, number> = {},
 ): CompletionItem[] {
   const p = prefix.toLowerCase();
-  return COMPLETIONS.filter((c) =>
-    c.name.toLowerCase().startsWith(p),
-  ).slice(0, limit);
+  if (!p) return COMPLETIONS.slice(0, limit);
+  const scored: { c: CompletionItem; i: number; s: number }[] = [];
+  for (let i = 0; i < COMPLETIONS.length; i += 1) {
+    const c = COMPLETIONS[i];
+    const name = c.name.toLowerCase();
+    let s: number | null;
+    if (name === p) s = 10000;
+    else if (name.startsWith(p)) s = 8000;
+    else if (name.includes(p)) s = 6000;
+    else if (SYNONYMS[p]?.includes(c.name)) s = 4000;
+    else if (fuzzyScore(p, name) !== null) s = 3000;
+    else if (c.hint && fuzzyTextScore(p, c.hint, false) !== null) s = 2000;
+    else continue;
+    // ≤200, below every tier gap; catalog order breaks the remaining ties.
+    s += Math.min(usage[c.name] ?? 0, 10) * 20;
+    scored.push({ c, i, s });
+  }
+  scored.sort((a, b) => b.s - a.s || a.i - b.i);
+  return scored.slice(0, limit).map((x) => x.c);
 }

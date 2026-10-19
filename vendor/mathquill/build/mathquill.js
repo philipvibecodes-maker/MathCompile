@@ -5490,6 +5490,42 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     text = '\\text{' + text + '}';
                 }
             }
+            // MATHCOMPILE: tabular paste \u2014 inside a real matrix it fills cells
+            // from the caret, growing the grid; outside one, a multi-column
+            // table becomes a \pmatrix. Anything else (single lines, bare
+            // multi-line text outside a grid, latex-looking text) falls
+            // through to the normal latex write.
+            var table = parseTableText(text);
+            if (table) {
+                var cell = this.cursor.parent;
+                while (cell && !(cell instanceof MatrixCell))
+                    cell = cell.parent;
+                var grid = cell && !(cell.parent instanceof DisplayLines)
+                    ? cell.parent
+                    : null;
+                if (cell && grid && grid.pasteCells(cell, table, this)) {
+                    this.notify('edit');
+                    this.cursor.show();
+                    this.scrollHoriz();
+                    if (this.options && this.options.onPaste) {
+                        this.options.onPaste();
+                    }
+                    return;
+                }
+                if (!cell &&
+                    Math.max.apply(Math, table.map(function (r) {
+                        return r.length;
+                    })) > 1) {
+                    text =
+                        '\\pmatrix{' +
+                            table
+                                .map(function (r) {
+                                return r.join('&');
+                            })
+                                .join('\\\\') +
+                            '}';
+                }
+            }
             // FIXME: this always inserts math or a TextBlock, even in a RootTextBlock
             this.writeLatex(text).cursor.show();
             this.scrollHoriz();
@@ -14144,6 +14180,56 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
      * base) to the jQuery-free TypeScript internals used here.
      *************************************************/
     var Environments = {};
+    // MATHCOMPILE: recognize pasted tabular data (spreadsheet TSV/CSV).
+    // Tab-separated always qualifies; comma/semicolon need 2+ lines where
+    // every line carries the delimiter (a single 'a,b' stays literal);
+    // a multi-line paste without a delimiter is a single column (only
+    // fills inside an existing grid \u2014 outside one it stays plain text so
+    // pasted multi-line LaTeX isn't clobbered). Text that already looks
+    // like LaTeX markup never parses as a table.
+    function parseTableText(text) {
+        if (/[\\{}&]/.test(text))
+            return null;
+        var rows = text
+            .replace(/\r\n?/g, '\n')
+            .split('\n')
+            .filter(function (r) {
+            return r.trim() !== '';
+        });
+        if (!rows.length)
+            return null;
+        var delim = null;
+        if (rows.some(function (r) {
+            return r.indexOf('\t') > -1;
+        }))
+            delim = '\t';
+        else if (rows.length > 1) {
+            if (rows.every(function (r) {
+                return r.indexOf(',') > -1;
+            }))
+                delim = ',';
+            else if (rows.every(function (r) {
+                return r.indexOf(';') > -1;
+            }))
+                delim = ';';
+        }
+        if (!delim) {
+            return rows.length > 1
+                ? rows.map(function (r) {
+                    return [r.trim()];
+                })
+                : null;
+        }
+        var table = rows.map(function (r) {
+            return r.split(delim).map(function (c) {
+                return c.trim();
+            });
+        });
+        var cols = Math.max.apply(Math, table.map(function (r) {
+            return r.length;
+        }));
+        return cols > 1 || rows.length > 1 ? table : null;
+    }
     LatexCmds.begin = /** @class */ (function (_super) {
         __extends(class_35, _super);
         function class_35() {
@@ -14680,14 +14766,17 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             }
             return focus || blocks[0];
         };
-        CellGrid.prototype.addRow = function (afterCell) {
-            var _c;
+        // MATHCOMPILE: `before` inserts the new row above the caret's row
+        // (Ctrl+Enter) instead of below it (Enter).
+        CellGrid.prototype.addRow = function (afterCell, before) {
+            var _c, _d;
+            if (before === void 0) { before = false; }
             var previous = [], newCells = [], next = [];
-            var row = afterCell.row, columns = 0, column = 0;
+            var row = afterCell.row, target = before ? row : row + 1, columns = 0, column = 0;
             this.eachChild(function (child) {
                 var cell = child;
                 // Cache previous rows
-                if (cell.row <= row)
+                if (cell.row < target)
                     previous.push(cell);
                 // Work out how many columns
                 if (cell.row === row) {
@@ -14696,7 +14785,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     columns += 1;
                 }
                 // Cache cells after the new row
-                if (cell.row > row) {
+                if (cell.row >= target) {
                     cell.row += 1;
                     next.push(cell);
                 }
@@ -14705,17 +14794,23 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             // Add new cells, one for each column
             var tds = [];
             for (var i = 0; i < columns; i += 1) {
-                var block = new MatrixCell(row + 1, this);
+                var block = new MatrixCell(target, this);
                 newCells.push(block);
                 tds.push(this.renderCell(block));
             }
-            // Insert the new <tr> after the current row's
+            // Insert the new <tr> in the row's slot
             var trs = this.tableRows();
-            (_c = trs[row]) === null || _c === void 0 ? void 0 : _c.after(h('tr', {}, tds));
+            if (before)
+                (_c = trs[target]) === null || _c === void 0 ? void 0 : _c.before(h('tr', {}, tds));
+            else
+                (_d = trs[row]) === null || _d === void 0 ? void 0 : _d.after(h('tr', {}, tds));
             this.blocks = previous.concat(newCells, next);
             return newCells[column];
         };
-        CellGrid.prototype.addColumn = function (afterCell) {
+        // MATHCOMPILE: `before` inserts the new column left of the caret's
+        // column (Ctrl+Shift+Space) instead of right of it (Shift+Space).
+        CellGrid.prototype.addColumn = function (afterCell, before) {
+            if (before === void 0) { before = false; }
             var rows = [], newCells = [];
             var column = 0;
             // Build the rows array and find the new column index
@@ -14724,7 +14819,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 rows[cell.row] = rows[cell.row] || [];
                 rows[cell.row].push(cell);
                 if (cell === afterCell)
-                    column = rows[cell.row].length;
+                    column = rows[cell.row].length - (before ? 1 : 0);
                 return undefined;
             });
             // Add new cells, one for each row
@@ -14737,9 +14832,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             var trs = this.tableRows();
             for (i = 0; i < trs.length && i < rows.length; i += 1) {
                 var td = this.renderCell(newCells[i]);
-                var before = trs[i].children[column];
-                if (before)
-                    trs[i].insertBefore(td, before);
+                var before_1 = trs[i].children[column];
+                if (before_1)
+                    trs[i].insertBefore(td, before_1);
                 else
                     trs[i].appendChild(td);
             }
@@ -14747,14 +14842,69 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             this.blocks = [].concat.apply([], rows);
             return newCells[afterCell.row];
         };
-        CellGrid.prototype.insert = function (method, afterCell, ctrlr) {
-            var cellToFocus = this[method](afterCell);
+        CellGrid.prototype.insert = function (method, afterCell, ctrlr, before) {
+            if (before === void 0) { before = false; }
+            var cellToFocus = this[method](afterCell, before);
             this.finalizeTree();
             this.bubble(function (node) {
                 node.reflow();
                 return undefined;
             });
             ctrlr.cursor.insAtRightEnd(cellToFocus);
+        };
+        // MATHCOMPILE: fill a parsed TSV/CSV table into the grid starting at
+        // startCell \u2014 grows right/down as needed and lands the caret on the
+        // last written cell. Returns false if startCell isn't in this grid.
+        CellGrid.prototype.pasteCells = function (startCell, table, ctrlr) {
+            var rows = this.cellRows(), startCol = -1, startRow = startCell.row;
+            for (var i = 0; i < rows.length; i += 1) {
+                var at = rows[i].indexOf(startCell);
+                if (at > -1) {
+                    startRow = i;
+                    startCol = at;
+                }
+            }
+            if (startCol === -1)
+                return false;
+            var needRows = startRow + table.length, needCols = startCol +
+                Math.max.apply(Math, table.map(function (r) {
+                    return r.length;
+                }));
+            // Grow right, then down. insert() relinks the sibling chain after
+            // each op \u2014 bare addRow/addColumn would leave eachChild iterating
+            // stale pointers, corrupting the row-major blocks order.
+            while (true) {
+                rows = this.cellRows();
+                var cols = 0;
+                for (i = 0; i < rows.length; i += 1)
+                    cols = Math.max(cols, rows[i].length);
+                if (cols >= needCols)
+                    break;
+                this.insert('addColumn', rows[0][rows[0].length - 1], ctrlr);
+            }
+            while (rows.length < needRows) {
+                this.insert('addRow', rows[rows.length - 1][0], ctrlr);
+                rows = this.cellRows();
+            }
+            var cursor = ctrlr.cursor;
+            for (var r = 0; r < table.length; r += 1) {
+                for (var c = 0; c < table[r].length; c += 1) {
+                    var target = rows[startRow + r] && rows[startRow + r][startCol + c];
+                    if (!target || table[r][c] === '')
+                        continue;
+                    // Spreadsheet semantics: the pasted value replaces the cell's
+                    // contents.
+                    target.children().remove();
+                    cursor.insAtRightEnd(target);
+                    cursor.parent.writeLatex(cursor, table[r][c]);
+                }
+            }
+            this.finalizeTree();
+            this.bubble(function (node) {
+                node.reflow();
+                return undefined;
+            });
+            return true;
         };
         CellGrid.prototype.deleteRowOrColumn = function (method, cell, ctrlr) {
             var cursor = ctrlr.cursor;
@@ -14849,6 +14999,19 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                         return;
                     e === null || e === void 0 ? void 0 : e.preventDefault();
                     return this.parent.insert('addColumn', this, ctrlr);
+                case 'Ctrl-Shift-Spacebar':
+                    // MATHCOMPILE: add a column LEFT of the caret (Shift+Space's
+                    // mirror). Same matrices-only scoping.
+                    if (this.parent instanceof DisplayLines)
+                        return;
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    return this.parent.insert('addColumn', this, ctrlr, true);
+                case 'Ctrl-Enter':
+                    // MATHCOMPILE: add a row ABOVE the caret (Enter's mirror).
+                    if (this.parent instanceof DisplayLines)
+                        return;
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    return this.parent.insert('addRow', this, ctrlr, true);
                 case 'Ctrl-Shift-Backspace':
                     // Word-delete's key, rebound inside matrices: delete the
                     // current row outright, content and all. In \displaylines and
