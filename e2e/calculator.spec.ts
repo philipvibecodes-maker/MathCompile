@@ -1,15 +1,14 @@
 import { expect, test, type Page } from '@playwright/test';
 import { resetApp, sharedPage } from './helpers';
 
-// The calculator target evaluates each cell through SymPy on Pyodide
-// (loaded from the CDN on first use). First engine boot pulls the wasm
-// runtime + sympy wheels, so specs get a long timeout.
+// (vendored under public/pyodide/ — engine boot loads the wasm
+// runtime + wheels from disk, so specs get a long timeout).
 //
 // Shared page: the file runs serial on ONE page — each test used to
-// `goto('/')` fresh and pay a full Pyodide boot (~4s warm-CDN, up to
-// ~45s cold), ~12 boots per run. Now the boot happens once in
-// beforeAll; tests reset worksheet state without a reload (a reload
-// would kill the worker) via the shared resetApp helper.
+// `goto('/')` fresh and pay a full Pyodide boot (~4s, vendored),
+// ~12 boots per run. Now the boot happens once in beforeAll; tests
+// reset worksheet state without a reload (a reload would kill the
+// worker) via the shared resetApp helper.
 //
 // Ordering matters: the two cold-boot UX tests exploit the shared
 // page's lifecycle — the banner test runs first on the pristine load
@@ -114,6 +113,38 @@ test('calculator evaluates a typed expression through SymPy', async () => {
   await expect(
     page.locator('.calc-row .calc-math').first(),
   ).toContainText('4');
+});
+
+test('calculator evaluates fully offline — no requests leave the origin', async () => {
+  test.setTimeout(120_000);
+  // The engine assets are vendored under /pyodide/, so booting the
+  // calculator must not fetch anything off-origin. Aborting all foreign
+  // requests makes a CDN regression fail loudly instead of silently
+  // downloading. The shared page's worker is already warm, so reload
+  // (killing it) to force a fresh boot through the aborted routes.
+  await page.route('**/*', (route) => {
+    const host = new URL(route.request().url()).hostname;
+    return ['localhost', '127.0.0.1'].includes(host)
+      ? route.continue()
+      : route.abort();
+  });
+  await page.reload();
+
+  await setTarget('calculator');
+  const mf = cell(0);
+  await mf.click();
+  await mf.pressSequentially('2+2', { delay: 40 });
+
+  // .pending clears only when the real SymPy eval lands — a Compute
+  // Engine interim row alone would leave this waiting forever.
+  const rows = page.locator('.calc-rows').first();
+  await expect(rows).toBeAttached();
+  await expect(rows).not.toHaveClass(/pending/, { timeout: 90_000 });
+  await expect(page.locator('.calc-row .calc-math').first()).toContainText(
+    '4',
+  );
+
+  await page.unroute('**/*');
 });
 
 test('calculator renders an approximate value for irrationals', async () => {

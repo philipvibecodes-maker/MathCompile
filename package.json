@@ -14,7 +14,11 @@
     "test:e2e:smoke": "playwright test --grep @smoke",
     "test:perf": "playwright test -c playwright.perf.config.ts",
     "docs:pdf": "node scripts/build-reference-pdf.mjs",
-    "pyodide:snapshot": "node scripts/fetch-pyodide-deps.mjs && node -e \"require('./scripts/make-pyodide-snapshot.cjs')\""
+    "pyodide:fetch": "node scripts/fetch-pyodide-deps.mjs",
+    "pyodide:snapshot": "npm run pyodide:fetch && node -e \"require('./scripts/make-pyodide-snapshot.cjs')\"",
+    "predev": "npm run pyodide:fetch",
+    "prebuild": "npm run pyodide:fetch",
+    "desktop": "npm run build && npm run pyodide:snapshot && python desktop/main.py"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

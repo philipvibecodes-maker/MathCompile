@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { compileCellForCalc, compileCellsForCalc } from '../compile/codegen';
 import { parseCellLatex } from '../compile/ir';
 import {
+  evaluate,
+  hostEval,
   interimEvaluate,
   shownPrograms,
   type CalcRow,
@@ -1903,5 +1905,98 @@ describe('calculator import-* mode (from sympy import *)', () => {
     expect(prog.cells[1].statements).toEqual([
       { code: F('a + 1'), display: undefined },
     ]);
+  });
+});
+
+describe('evaluate() over the desktop (pywebview) transport', () => {
+  // The host-eval opt-in swaps the Pyodide worker for the
+  // PythonSafeEval backend — the compiled {prelude, cells} program and
+  // the row shape stay identical. The bridge alone doesn't switch
+  // engines; the hostEval flag (disclaimer-gated in the UI) does.
+  const withApi = async (
+    api: {
+      calc_eval: (p: string) => Promise<{ ok: boolean; latex?: string }[]>;
+    },
+    run: () => Promise<void>,
+  ) => {
+    const g = globalThis as { pywebview?: unknown };
+    g.pywebview = {
+      api: {
+        engine_status: () =>
+          Promise.resolve({ status: 'ready', error: '' }),
+        prewarm: () => Promise.resolve(),
+        ...api,
+      },
+    };
+    hostEval.enabled = true;
+    try {
+      await run();
+    } finally {
+      hostEval.enabled = false;
+      delete g.pywebview;
+    }
+  };
+
+  it('sends the compiled program to api.calc_eval and returns rows', async () => {
+    const captured: string[] = [];
+    await withApi(
+      {
+        calc_eval: (p) => {
+          captured.push(p);
+          return Promise.resolve([{ ok: true, latex: '2' }]);
+        },
+      },
+      async () => {
+        const res = await evaluate([
+          { latex: '1+1', json: parseCellLatex('1+1') },
+        ]);
+        expect(res.rows).toEqual([{ ok: true, latex: '2' }]);
+        expect(res.code).toContain('clean_and_simplify(1 + 1)');
+      },
+    );
+    expect(captured).toHaveLength(1);
+    const program = JSON.parse(captured[0]);
+    expect(program.prelude[0]).toBe('from sympy import *');
+    expect(program.cells).toHaveLength(1);
+    expect(program.cells[0].statements[0].code).toBe(
+      'clean_and_simplify(1 + 1)',
+    );
+  });
+
+  it('rejects the eval when the backend call fails', async () => {
+    await withApi(
+      { calc_eval: () => Promise.reject(new Error('sandbox down')) },
+      async () => {
+        await expect(
+          evaluate([{ latex: '1+1', json: parseCellLatex('1+1') }]),
+        ).rejects.toThrow('sandbox down');
+      },
+    );
+  });
+
+  it('ignores the bridge while host eval is disabled', async () => {
+    // The api is injected but hostEval is off: evaluate() must post the
+    // program to the wasm worker, never touch api.calc_eval.
+    const calls: string[] = [];
+    const g = globalThis as { pywebview?: unknown };
+    g.pywebview = {
+      api: {
+        engine_status: () =>
+          Promise.resolve({ status: 'ready', error: '' }),
+        prewarm: () => Promise.resolve(),
+        calc_eval: (p: string) => {
+          calls.push(p);
+          return Promise.resolve([{ ok: true }]);
+        },
+      },
+    };
+    try {
+      await expect(
+        evaluate([{ latex: '1+1', json: parseCellLatex('1+1') }]),
+      ).rejects.toThrow();
+      expect(calls).toHaveLength(0);
+    } finally {
+      delete g.pywebview;
+    }
   });
 });

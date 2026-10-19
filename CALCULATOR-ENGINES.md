@@ -10,7 +10,22 @@ no `code` field — the per-cell generating-code block stays SymPy-only.
 ## Layout
 
 - `src/calc/calculator.worker.ts` — classic (`iife`) worker running
-  Pyodide + SymPy; owns `mc_run`.
+  Pyodide + SymPy; execs `mc_run`.
+- `src/calc/mc_runtime.py` — the shared engine runtime (`mc_run` and the
+  `_mc_*` harness): the worker `?raw`-imports it, and
+  `desktop/calc_backend.py` appends a `print(mc_run(prog))` call to run
+  the identical source inside its PythonSafeEval docker sandbox
+  (`desktop/main.py` exposes it as `window.pywebview.api`). Each sandbox
+  eval is a fresh interpreter — the whole worksheet prefix re-runs (no
+  cross-call `_snaps`) and nsjail enforces the time limit. Host
+  evaluation is **opt-in**: the desktop shell defaults to the same
+  vendored Pyodide worker as the browser; the header's `engine` select
+  (rendered only on the desktop origin) opens a disclaimer dialog, and
+  accepting it sets `hostEval.enabled` (persisted in localStorage),
+  which routes `evaluate()`/`prewarm()` through
+  `window.pywebview.api`. The backend's js_api is always attached, but
+  `main.py` never prewarms it — the docker image build only runs after
+  the user opts in.
 - `src/calc/calculator.svelte.ts` — `evaluate()` (real engine),
   `interimEvaluate()` (Compute Engine), `prewarm()`, `calcEngine`
   status rune.
@@ -25,7 +40,9 @@ no `code` field — the per-cell generating-code block stays SymPy-only.
   LaTeX → IR → SymPy pipeline over the whole worksheet prefix (cells
   share one scope, so names bound above stay bound below);
   `compileCellForCalc()` is the standalone one-cell equivalent.
-- `public/pyodide-sw.js` — cache-first service worker for the CDN assets.
+- `public/pyodide/` — vendored Pyodide runtime + sympy/mpmath wheels
+  (gitignored; `scripts/fetch-pyodide.mjs` downloads them, wired into
+  predev/prebuild).
 
 ## Input → SymPy: the codegen path (not parse_latex)
 
@@ -38,8 +55,12 @@ SymPy emitter) now does the input→SymPy translation in TypeScript, so:
 
 - **No antlr wheel, no parse_latex** — the worker only exec/evals the
   emitted Python. Boot is `importScripts` pyodide → wasm+stdlib →
-  `loadPackage(['sympy'])` → `mc_run` def; runtime network is jsDelivr
-  only.
+  `loadPackage(['sympy'])` → `mc_run` def, all off the vendored
+  `public/pyodide/` directory — zero runtime network. When
+  `pyodide/engine.snapshot` is present (desktop builds only, see
+  `scripts/make-pyodide-snapshot.cjs`) the worker instead restores that
+  frozen post-`import sympy` memory image via `_loadSnapshot`; a missing
+  or stale snapshot falls back to the normal boot.
 - `compileCellsForCalc(cells)` returns `{ prelude, cells }`: `prelude` =
   `import sympy as sp` + the `mc_*` runtime block; each cell program is
   `{ defs, statements, issues, errorLine?, statementLines }` where
@@ -100,11 +121,20 @@ SymPy emitter) now does the input→SymPy translation in TypeScript, so:
 
 ## Pyodide/SymPy — what it costs
 
-Measured boot (M-series laptop, warm network): ~4.5s cold → ~3.5s with
-the SW cache, and a touch less now that the antlr wheel install is gone.
-The ~3s CPU floor (SymPy import) is irreducible — hence `prewarm()` on
-the Output dropdown's pointerdown/focus (the worker self-boots on spawn)
-and the Compute Engine interim below.
+Measured boot (M-series laptop): ~3.5s now that everything is vendored
+and the antlr wheel install is gone. The ~3s CPU floor (SymPy import)
+has two escapes: `prewarm()` on app mount (the worker self-boots on
+spawn) plus the Compute Engine interim below, and
+`npm run pyodide:snapshot` freezes a post-import interpreter into
+`public/engine.snapshot.gz` that the worker restores (`_loadSnapshot`),
+cutting boot to ~1s. Two snapshot gotchas the implementation earns:
+`loadPackage` pollutes a reserved hiwire slot that
+`makeMemorySnapshot()` refuses to serialize, so the generator unzips
+the wheels via `zipfile` instead; and the EMFS directory tree lives
+outside the WASM heap, so package files never survive a restore — the
+worker re-runs `loadPackage` post-restore to repopulate them for lazy
+imports (`sympy.physics`, …), and unzips the committed plotly wheel for
+the same reason.
 
 ## Compute Engine interim — how it works
 

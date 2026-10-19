@@ -5,8 +5,10 @@
 // itself from PyPI — it is a pure-Python package, not a pyodide
 // built-in, so it is absent from pyodide-lock.json.
 //
-// Idempotent: files already on disk are skipped. Nothing here is
-// served — this directory only feeds the snapshot generator.
+// Idempotent: files already on disk are skipped. The same files are
+// also staged into public/pyodide/ (gitignored): the worker's indexURL
+// points there so the whole runtime + built-in wheels load same-origin —
+// no CDN at runtime, which is what makes the desktop shell offline.
 // Usage: node scripts/fetch-pyodide-deps.mjs
 
 import { createWriteStream } from 'node:fs';
@@ -30,7 +32,10 @@ const DEST = join(
 );
 
 const CORE = [
-  'pyodide.js',
+  // pyodide.mjs is the ES-module entry — the worker is a module worker
+  // (its mc_runtime.py?raw import needs it), so it dynamic-imports
+  // this instead of importScripts'ing pyodide.js.
+  'pyodide.mjs',
   'pyodide.asm.js',
   'pyodide.asm.wasm',
   'python_stdlib.zip',
@@ -69,6 +74,31 @@ const download = async (url, name) => {
 };
 
 for (const file of files) await download(`${CDN}${file}`, file);
+
+// Serve the runtime core + the built-in wheels under public/pyodide/ —
+// the worker's indexURL. loadPackage() resolves package files through
+// pyodide-lock.json, which has to sit beside them. Stale files from a
+// version bump are swept so the dir only carries this version's set.
+const PYODIDE_OUT = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../public/pyodide',
+);
+await mkdir(PYODIDE_OUT, { recursive: true });
+const { copyFile, readdir, rm } = await import('node:fs/promises');
+const serveSet = new Set(files);
+for (const existing of await readdir(PYODIDE_OUT)) {
+  if (!serveSet.has(existing)) {
+    await rm(join(PYODIDE_OUT, existing));
+    console.log(`sweep public/pyodide/${existing}`);
+  }
+}
+for (const file of files) {
+  const served = join(PYODIDE_OUT, file);
+  if (!(await stat(served).catch(() => null))) {
+    await copyFile(join(DEST, file), served);
+    console.log(`stage public/pyodide/${file}`);
+  }
+}
 
 // Resolve the pinned plotly release's wheel URL from PyPI.
 const meta = await (

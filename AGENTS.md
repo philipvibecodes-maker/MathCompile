@@ -31,7 +31,7 @@ through a MathJSON IR to LaTeX or SymPy-flavored Python (`src/compile/`).
   matrices, limits, palette/focus ownership, codegen targets,
   persistence, worksheets, python cells, the branch badge. Deliberately
   excludes `calculator.spec.ts` (real Pyodide/SymPy — one shared boot
-  serves the whole file, but the CDN pull still costs ~30s up front)
+  serves the whole file)
   and `vendor.spec.ts` (whole mocha suite); run the full suite before
   merging or after touching `vendor/`/`src/calc/`.
 - `npm run test:perf` — framework-agnostic perf battery (`perf/`); builds and
@@ -39,6 +39,16 @@ through a MathJSON IR to LaTeX or SymPy-flavored Python (`src/compile/`).
   its prod build and run `PERF_BASE_URL=<url> PERF_LABEL=<name> npm run
   test:perf`; `node perf/compare.mjs <labelA> <labelB>` diffs runs in
   `perf-results/`.
+- `npm run desktop` — build + generate `public/engine.snapshot.gz`
+  (frozen post-`import sympy` interpreter the worker restores, cutting
+  the ~4s cold boot to ~1s; `scripts/make-pyodide-snapshot.cjs`) +
+  launch the pywebview desktop shell (`desktop/`, needs
+  `pip install -r desktop/requirements.txt`; serves `dist/` over a
+  fixed localhost origin so localStorage persists;
+  `desktop/test_main.py` is pytest). The pyodide runtime + built-in
+  wheels are vendored into `public/pyodide/` by
+  `scripts/fetch-pyodide-deps.mjs` (predev/prebuild), so the engine
+  loads fully same-origin — no CDN, desktop or browser.
 
 ## Architecture
 
@@ -155,6 +165,16 @@ and empty blocks serialize as `{ }`.
   Cells share one namespace in order (a `def g` or `a = 5` above is in
   scope below). Assignments/defs carry a `display` expression
   (`a = 5` -> `Eq(a, 5)`).
+- Two engines run the same program through the same `mc_run` runtime
+  (`src/calc/mc_runtime.py`, worker-loads it via `?raw`): the Pyodide
+  worker (default everywhere, including the desktop shell), or
+  `desktop/calc_backend.py`'s PythonSafeEval (nsjail/docker) sandbox
+  under the pywebview shell — host evaluation is opt-in only: the
+  header's `engine` select (desktop origin only) opens a disclaimer
+  dialog, and accepting flips the `hostEval` rune in
+  `calculator.svelte.ts` (persisted in localStorage), which routes
+  `evaluate()`/`prewarm()` through `window.pywebview.api` instead of
+  the worker.
 - See CALCULATOR-ENGINES.md for the engine protocol, interim coverage,
   and earned gotchas.
 
