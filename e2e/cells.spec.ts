@@ -219,6 +219,22 @@ test('focusing a cell makes it the target for subsequent commands', async () => 
   expect(await cellValue(cell(page, 2))).toBe('b');
 });
 
+test('copying a multi-line cell puts bare rows on the clipboard', async () => {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await cell(page, 0).click();
+  await cell(page, 0).pressSequentially('x+1', { delay: 40 });
+  await page.keyboard.press('Enter');
+  await cell(page, 0).pressSequentially('y', { delay: 40 });
+  expect(await cellValue(cell(page, 0))).toBe('\\displaylines{x+1\\\\ y}');
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.press('ControlOrMeta+c');
+  // The \displaylines wrapper is an editing artifact — the clipboard
+  // holds the row latex.
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    'x+1\\\\ y',
+  );
+});
+
 test('clicking another cell transfers focus', async () => {
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('a', { delay: 40 });

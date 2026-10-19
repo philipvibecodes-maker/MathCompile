@@ -3334,11 +3334,34 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             function onInput(e) {
                 everyTick.trigger(e);
             }
+            // MATHCOMPILE: a selection covering a whole \displaylines grid
+            // copies the wrapper verbatim; it's an editing artifact, not part
+            // of the expression, so the clipboard gets the bare row latex
+            // (`a\\ b`) \u2014 which pastes back as a hard line break.
+            function unwrapDisplaylines(text) {
+                var prefix = '\\displaylines{';
+                if (!text.startsWith(prefix))
+                    return text;
+                var depth = 0;
+                for (var i = prefix.length - 1; i < text.length; i++) {
+                    var ch = text[i];
+                    if (ch === '{')
+                        depth++;
+                    else if (ch === '}') {
+                        depth--;
+                        // only a wrapper covering the whole string unwraps
+                        if (depth === 0) {
+                            return i === text.length - 1 ? text.slice(prefix.length, i) : text;
+                        }
+                    }
+                }
+                return text;
+            }
             function updateClipboardData(e) {
                 if (e === null || e === void 0 ? void 0 : e.clipboardData) {
                     var selection = controller.exportLatexSelection().selection;
                     if (selection.startIndex !== selection.endIndex) {
-                        var text = selection.latex.slice(selection.startIndex, selection.endIndex);
+                        var text = unwrapDisplaylines(selection.latex.slice(selection.startIndex, selection.endIndex));
                         e.clipboardData.setData('text/plain', text);
                         e.clipboardData.setData('application/x-latex', text);
                         e.preventDefault();

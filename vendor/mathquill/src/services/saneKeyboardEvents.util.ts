@@ -366,13 +366,34 @@ var saneKeyboardEvents = (function () {
       everyTick.trigger(e);
     }
 
+    // MATHCOMPILE: a selection covering a whole \displaylines grid
+    // copies the wrapper verbatim; it's an editing artifact, not part
+    // of the expression, so the clipboard gets the bare row latex
+    // (`a\\ b`) — which pastes back as a hard line break.
+    function unwrapDisplaylines(text: string): string {
+      const prefix = '\\displaylines{';
+      if (!text.startsWith(prefix)) return text;
+      let depth = 0;
+      for (let i = prefix.length - 1; i < text.length; i++) {
+        const ch = text[i];
+        if (ch === '{') depth++;
+        else if (ch === '}') {
+          depth--;
+          // only a wrapper covering the whole string unwraps
+          if (depth === 0) {
+            return i === text.length - 1 ? text.slice(prefix.length, i) : text;
+          }
+        }
+      }
+      return text;
+    }
+
     function updateClipboardData(e: ClipboardEvent | undefined) {
       if (e?.clipboardData) {
         const selection = controller.exportLatexSelection().selection;
         if (selection.startIndex !== selection.endIndex) {
-          const text = selection.latex.slice(
-            selection.startIndex,
-            selection.endIndex
+          const text = unwrapDisplaylines(
+            selection.latex.slice(selection.startIndex, selection.endIndex)
           );
           e.clipboardData.setData('text/plain', text);
           e.clipboardData.setData('application/x-latex', text);
