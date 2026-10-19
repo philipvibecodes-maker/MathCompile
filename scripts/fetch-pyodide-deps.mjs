@@ -32,7 +32,10 @@ const DEST = join(
 );
 
 const CORE = [
-  'pyodide.js',
+  // pyodide.mjs is the ES-module entry — the worker is a module worker
+  // (its mc_runtime.py?raw import needs it), so it dynamic-imports
+  // this instead of importScripts'ing pyodide.js.
+  'pyodide.mjs',
   'pyodide.asm.js',
   'pyodide.asm.wasm',
   'python_stdlib.zip',

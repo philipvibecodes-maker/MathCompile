@@ -220,11 +220,12 @@ function ensureWorker(): Worker {
   calcEngine.status = 'loading';
   calcEngine.error = '';
   const w = new Worker(new URL('./calculator.worker.ts', import.meta.url), {
-    type: 'classic',
+    // Module worker — the worker ?raw-imports mc_runtime.py, which a
+    // classic script can't parse.
+    type: 'module',
   });
   // Worker messages are FIFO — the init lands before any eval post.
-  // The worker can't read import.meta.env (classic worker), so the base
-  // public assets are served under comes from the page — the vendored
+  // The base public assets are served under comes from the page — the vendored
   // runtime lives at <assetBase>pyodide/, the snapshot and wheels beside it.
   w.postMessage({ type: 'init', assetBase: import.meta.env.BASE_URL });
   w.onmessage = (e: MessageEvent<WorkerReply>) => {

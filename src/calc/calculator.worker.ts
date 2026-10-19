@@ -8,14 +8,18 @@
 // compileCellForCalc (the shared codegen pipeline), so the worker only
 // exec/evals emitted Python — no latex parser (parse_latex/antlr) needed.
 //
-// Built as a classic (iife) worker — importScripts pulls the pyodide
-// loader; package assets stream from the same vendored indexURL.
+// Built as a module worker (the mc_runtime.py?raw import requires it)
+// — the pyodide.mjs ESM entry replaces importScripts, and package
+// assets stream from the same vendored indexURL.
 // The runtime it execs lives in mc_runtime.py — shared with the desktop
 // shell's sandboxed backend, which runs the identical source.
 
 import MC_RUNTIME from './mc_runtime.py?raw';
 
-declare function importScripts(...urls: string[]): void;
+// Module worker (the ?raw import above forces it), so pyodide.js's
+// importScripts path is out — pyodide.mjs is the ESM entry and is
+// dynamic-imported at boot. @vite-ignore: the URL is runtime-computed
+// (assetBase), not a bundle-time specifier.
 declare function loadPyodide(opts: {
   indexURL: string;
   _loadSnapshot?: ArrayBuffer;
@@ -58,8 +62,7 @@ interface EvalRequest {
 }
 
 // First message the main thread sends — the page knows BASE_URL (the
-// base public assets are served under); a classic worker can't read
-// import.meta.env itself.
+// base public assets are served under).
 interface InitRequest {
   type: 'init';
   assetBase: string;
@@ -85,7 +88,6 @@ const PLOTLY_WHEEL = 'plotly-7.1.0-py3-none-any.whl';
 
 // The python runtime the interpreter boots with (see mc_runtime.py —
 // mc_run + the plot-helper source strings the shown program quotes).
-const SETUP_PY = MC_RUNTIME;
 
 let boot: Promise<PyodideLike> | undefined;
 
@@ -165,11 +167,13 @@ async function installPlotly(py: PyodideLike): Promise<void> {
 async function bootEngine(): Promise<PyodideLike> {
   if (assetBase === undefined) throw new Error('engine init missing');
   const indexURL = `${assetBase}pyodide/`;
-  importScripts(`${indexURL}pyodide.js`);
+  const { loadPyodide: load } = (await import(
+    /* @vite-ignore */ `${indexURL}pyodide.mjs`
+  )) as { loadPyodide: typeof loadPyodide };
   const snap = await fetchSnapshot();
   if (snap) {
     try {
-      const py = await loadPyodide({
+      const py = await load({
         indexURL,
         _loadSnapshot: snap,
       });
@@ -179,16 +183,16 @@ async function bootEngine(): Promise<PyodideLike> {
       // its .so modules would be dead pointers after the restore).
       await py.loadPackage(['sympy', 'numpy', 'narwhals', 'packaging']);
       await installPlotly(py);
-      await py.runPythonAsync(SETUP_PY);
+      await py.runPythonAsync(MC_RUNTIME);
       return py;
     } catch (err) {
       console.warn('[calc] snapshot restore failed, cold-booting:', err);
     }
   }
-  const py = await loadPyodide({ indexURL });
+  const py = await load({ indexURL });
   await py.loadPackage(['sympy', 'numpy', 'narwhals', 'packaging']);
   await installPlotly(py);
-  await py.runPythonAsync(SETUP_PY);
+  await py.runPythonAsync(MC_RUNTIME);
   return py;
 }
 
