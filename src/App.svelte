@@ -777,7 +777,7 @@
           </li>
           <li>
             Results may differ slightly from the in-app engine
-            (different SymPy version; no plotting).
+            (different SymPy/plotly versions).
           </li>
         </ul>
         <div class="host-eval-actions">

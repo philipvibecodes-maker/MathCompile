@@ -122,7 +122,10 @@ class CalcBackend:
         # The template's ubuntu:18.04 image installs python3.8 alongside
         # its stock python3 (the eval interpreter); sympy lands via pip.
         return PythonSafeEval.SafeEval(
-            version='3.8', modules=['sympy'], tmp_dir=str(JAIL_DIR)
+            version='3.8',
+            # numpy: the _mc_plot samplers linspace/meshgrid through it.
+            modules=['sympy', 'numpy', 'plotly'],
+            tmp_dir=str(JAIL_DIR),
         )
 
 
