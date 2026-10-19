@@ -38,7 +38,14 @@ New files:
   spec-taking envs (`\array`, `\subarray`, `\tabular`, `\alignat`,
   `\alignedat` — and typed `\begin{<spec-env>}`) go through a pending
   `\begin{name}{arg}` input (`EnvSpecInput`) that applies the arg on
-  `}`/Enter/Tab.
+  `}`/Enter/Tab. Typed matrix-family inserts (`\pmatrix`,
+  `\begin{bmatrix}`, `\array{cc}`, …) can defer to an app-supplied
+  dimensions menu: with `config({matrixDimensionsMenu: true})`,
+  `Matrix.createLeftOf` dispatches `mq:matrix-request` on the
+  controller's container instead of dropping a default 2x2 grid — the
+  app's `detail.insert(rows, cols)` writes the grid (or nothing on
+  cancel). `\cases` and the non-matrix grids (`aligned`, `gathered`,
+  `displaylines`) never defer.
 - `src/commands/math/extraCommands.ts` (in `SOURCES_FULL` and
   `SOURCES_BASIC`) — the additions that used to be
   inline in `commands.ts`: `LatexCmds`/`CharCmds` and their helper
@@ -57,7 +64,10 @@ New files:
   One override also lives here: `LatexCmds.def` (extracted from
   `advancedSymbols.ts`, tagged at the cut site) — an insertion alias
   that expands to a real `\text{def}` TextBlock, which is the
-  function-definition marker the app's compiler reads.
+  function-definition marker the app's compiler reads. Its siblings
+  `\solve`/`\dsolve`/`\pdesolve`/`\ode`/`\pde`/`\plot`/`\for` expand to
+  the other `\text{…}` statement markers the same way (the solver, plot,
+  and domain/comprehension markers).
   Because these commands previously shipped inside `commands.ts` — part
   of `mathquill-basic` — `extraCommands.ts` is in `SOURCES_BASIC` too:
   anything added there may only reference symbols from `BASE_SOURCES` +
@@ -85,6 +95,13 @@ New files:
   `extractPythonBlocks` in `src/compile/ir.ts` mirrors); the
   serializer emits raw code when balanced, else braces/backslashes
   escaped.
+- `src/services/undo.ts` (in `BASE_SOURCES` between `latex.ts` and
+  `mouse.ts`) — Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y (and Cmd variants) undo
+  history for editable fields: a snapshot stack of `{latex, caret
+  path}` fed by the `'edit'` reflow signal (see controller.ts), with
+  ~1s typing coalescing, burst-break on caret moves/selections, and
+  suspend-and-rebase around programmatic `latex()` calls — loads and
+  restores never become undo steps.
 
 Inline `// MATHCOMPILE:` edits, by file:
 
@@ -103,7 +120,17 @@ Inline `// MATHCOMPILE:` edits, by file:
   strings — needed for the smartMode toggle); a letter run inside
   `\operatorname{…}`/`\mathrm{…}` is kept whole instead of re-scanned
   for built-in names, and `sign` serializes as `\operatorname{sign}`
-  for SymPy; `\operatorname*` consumes the star (limits form);
+  for SymPy; `\operatorname{…}` is a real one-block editable group —
+  upstream's `createLeftOf` no-op made a typed `\operatorname{` delete
+  the command input, and parse now keeps the group (with the
+  `\operatorname*` limits-form star) instead of flattening to bare
+  letters; the interior letter run renders upright and stays whole —
+  no autoCommands substitution and no auto-op re-split
+  (`\operatorname{argmin}` doesn't become `\arg \min`); the group wears
+  `mq-operatorname` and gets LaTeX `\mathop` spacing via CSS in
+  `math.less` (thin space each side, dropped at block edges, next to
+  binary/summation operators and real brackets, carried by a following
+  SupSub — the same rules flat letter-runs get via mq-first/mq-last);
   `\<char>` escape commands (`\,` `\:` `\;` `\!` `\{` `\}` `\|`) and
   other escaped specials (`\_` …) register on backslash-prefixed keys.
 - `src/commands/math/commands.ts` — `\textcolor[model]{color}{…}` takes
@@ -111,7 +138,9 @@ Inline `// MATHCOMPILE:` edits, by file:
   `\right` and friends are parser-only (`createLeftOf` no-op) so typed
   insertion can't produce them; `h.entityText` renders `\sum`-style
   entity glyphs (upstream `h.text` printed the entity literally);
-  `\limits`/`\nolimits` between an operator and its bounds is kept on
+  `\binom`'s container wears `mq-binomial` so `\operatorname` spacing
+  can tell it from a real Bracket (the flat form's `instanceof Bracket`
+  check); `\limits`/`\nolimits` between an operator and its bounds is kept on
   the node and round-trips (`\sum\limits_{i}`); the typed `a\over b`
   numerator scan stops at a boundless integral like at `\sum`, and at
   `\lim` — `lim` is a real command now, not an operator name; a pasted
@@ -122,7 +151,20 @@ Inline `// MATHCOMPILE:` edits, by file:
   `Binomial`'s strict two-block parser is invoked directly in the
   `\choose` path.
 - `src/commands/math/advancedSymbols.ts` — `\mathbb` gets a glyph table
-  for the double-struck capitals plus `\Bbb`/`mathds` spellings;
+  for the double-struck capitals plus `\Bbb`/`mathds` spellings; typed
+  `\mathbb` opens a pending `\mathbb{arg}` input (`FontArgInput`, the
+  arg-entry twin of `EnvSpecInput`) that resolves via `writeLatex` on
+  `}`/Enter/Tab — before this its no-op `createLeftOf` deleted the typed
+  command on the next key; `\mathcal` opens the same pending input so
+  the typed command shows its literal `\mathcal{arg}` text like
+  `\mathbb` (its builder returns a `Style` subclass whose `createLeftOf`
+  opens the input; parse still lands the plain `Style`);
+- `src/css/font.less` + `src/fonts/KaTeX_Caligraphic-Regular.woff2` —
+  bundles the OFL-licensed KaTeX caligraphic face (maps A-Z to script
+  shapes) and `@font-face`s it; `math.less`'s `.mq-caligraphic` uses it
+  first in the stack and suppresses synthetic italic, since the old
+  Lucida Calligraphy/Apple Chancery stack isn't installed anywhere and
+  `\mathcal{P}` rendered as a plain italic P;
   invisible style switches `\displaystyle` `\textstyle` `\scriptstyle`
   `\scriptscriptstyle` `\limits` `\nolimits` serialize their command
   verbatim; `\not<rel>` produces the negated relation glyph (`\not\in`
@@ -143,23 +185,30 @@ Inline `// MATHCOMPILE:` edits, by file:
   non-letter resolves `\<char>` escapes (`\;` `\{` `\|` …) to their
   atoms instead of writing the raw character; the `{` that opens a
   `\python` block is swallowed since it's the block's visible
-  delimiter, not source text.
+  delimiter, not source text; a `{` typed while a matrix is deferred
+  to the dimensions menu is swallowed the same way, so it can't leave
+  a stray brace beside the grid the menu inserts.
 - `src/commands/math/basicSymbols.ts` — also: `lim` removed from the
   default `autoOperatorNames` list — `\lim` is a real command (see
   extraCommands.ts), so typed `lim` resolves through `autoCommands`.
 - `src/publicapi.ts` + `src/mathquill.d.ts` —
   `EditableField.insertLineBreak()` Enter semantics (matrix row inside
   a matrix cell, `\displaylines` row split, or wrap top-level content
-  in `\displaylines`) and `dIsDerivative`/`limStartsWithArrow` on
-  `v1.Config` typings.
+  in `\displaylines`) and `dIsDerivative`/`limStartsWithArrow`/
+  `matrixDimensionsMenu` on `v1.Config` typings.
 - `src/css/math.less` — styles for the additions: `.mq-matrix`/
-  `.mq-displaylines` (with zero horizontal indent so line 1 doesn't
-  shift when a second line is added), display-mode comma spacing
+  `.mq-displaylines` (with zero horizontal indent, plus negative
+  `margin-top` and a `padding-top: 0` first row canceling
+  border-spacing's top pad so line 1 doesn't shift at all when a
+  second line is added), display-mode comma spacing
   (`.mq-comma` thin space after), script fonts, boxes/braces/cancels/
   extensible arrows/delimiters, `\bra`/`\ket`, the
   boundless-integral sibling supsub rules, and `.mq-limit` (the
   underscript stacks below "lim" via the `\sum`-style
-  float-right/width:100% baseline trick). Also: the block holding the
+  float-right/width:100% baseline trick). `.mq-dot-recurring` hugs the
+  stem like KaTeX's `\dot` — a `0.3em` line box (ink overflows upward
+  into `margin-top` headroom) plus `margin-bottom: -0.6em` pulling the
+  stem up under the dot. Also: the block holding the
   caret keeps the empty-slot box — always while it's empty
   (`.mq-hasCursor:has(> .mq-cursor:only-child)`, upstream strips
   `.mq-empty` on focus so `\mathrm{ }` collapsed to zero width and
@@ -174,18 +223,68 @@ Inline `// MATHCOMPILE:` edits, by file:
   the field edges: `insDirOf`/`insAtDirEnd` re-descend to the first
   line's start / last line's end instead of leaving the caret beside
   the vertically-centered block (`Cursor::rootEdgeEnd`, keyed off
-  `DisplayLines.fillsRootEdge`).
+  `DisplayLines.fillsRootEdge`). `Cursor::reanchorIfStranded`
+  re-parks the caret at the root's left edge when its parent is
+  detached or its links no longer line up — deleting a selection that
+  covers a root-filling grid's cells used to strand the caret inside
+  the disowned subtree (typing wrote nowhere); `deleteSelection`
+  calls it directly.
+- `src/tree.ts` — `createDir` calls `cursor.reanchorIfStranded()`
+  before `adopt` so the same stranded-caret case can't trip
+  `prayWellFormed` on inserts that replaced the selection via
+  `replaceSelection`/`disown` instead of `deleteSelection`.
 - `src/commands/math/advancedSymbols.ts` — also: `\mapsto` is a
   `bindBinaryOperator` (relation spacing like `\to`), not a
-  `VanillaSymbol`.
+  `VanillaSymbol`. `\cup`/`\cap`/`\bigcup`/`\bigcap` and the `∪`/`∩`
+  char commands are removed here — they live in extraCommands.ts as
+  set operations (below).
 - `src/commands/math/extraCommands.ts` — also: typed `:` is a
   `BinaryOperator` relation (`f : X → Y`), with `.mq-comma` styling
-  covered in `math.less`.
+  covered in `math.less`. Set operations: `SetOperation` (a
+  `BinaryOperator` holding a `bigVersion()` factory) backs `\cup`/`\cap`
+  plus the `\union`/`\intersect`/`\intersection` aliases and the `∪`/`∩`
+  chars; `BigSetOperation` (a `SummationNotation` — bounds stack
+  over/under like `\sum`) backs `\bigcup`/`\bigcap`. Boundless integral
+  signs (`\iint`, `\antid`, …) wear `mq-boundless-int` alongside
+  `mq-int` so `\operatorname` spacing can tell them from `\int` — the
+  flat letter-run rule only drops the space before a real
+  `SummationNotation`.
+- `src/commands/math/commands.ts` — `SupSub.contactWeld` hands a SupSub
+  typed/written/parsed right of a `SetOperation` or `BigSetOperation`
+  to `SupSub::absorbIntoSetOperation`, which upgrades `\cup`/`\cap` in
+  place to `\bigcup`/`\bigcap` (or keeps an existing big op) and moves
+  the script blocks into the big op's bounds — so `A \cup_i^{n} B`
+  serializes as `\bigcup_{i}^{n}`, not `\cup_{i}^{n}`. Covered by
+  `test/unit/setOps.test.js`.
 - `src/commands/math/environments.ts` — `insertLineBreakAtCursor`
   inside a `\python` block inserts a `\n` into the source instead of
   splitting a `\displaylines` row (covers programmatic
   `typedText('\n')`/`insertLineBreak()`; real keypresses are swallowed
-  by the block's own `keystroke`).
+  by the block's own `keystroke`). Also: `MatrixCell` carries a
+  `lineCell` flag marking grid cells as visual line containers for
+  Home/End.
+- `src/services/keystroke.ts` — "standard textbook" keys on multi-line
+  cells: Home/End (and Shift-) go to the visual line edges — the
+  innermost grid cell (`lineCell`) or the root block — instead of the
+  innermost syntax block; Tab/Shift-Tab in the far-edge cell of a
+  root-filling grid (`\displaylines`) falls through to the browser
+  default like the root case, so the keys leave the field instead of
+  trapping in the snap-back loop; `selectAll`/`selectToRootEndInDir`
+  break their selectOutOf march when a step makes no progress — the
+  root-edge snap used to make Ctrl+A cover only the last line and
+  Ctrl-Shift-Home/End loop forever; Ctrl-Z/Ctrl-Shift-Z/Ctrl-Y (and
+  Meta-) dispatch undo/redo to `services/undo.ts`.
+- `src/controller.ts` — `handle('edit')` routes to
+  `Controller::noteEdited` (the undo history's after-change signal);
+  `suspendHistory` flag plus `noteEdited`/`rebaseHistory` no-op hooks
+  on `ControllerBase`, overridden by the undo layer.
+- `src/services/latex.ts` — `renderLatexMath` wraps itself in
+  `suspendHistory` and calls `rebaseHistory()` afterward so every
+  programmatic latex load (hydration, `mq.latex()`, undo/redo restore)
+  silently rebases the history instead of recording a step.
+- `src/services/mouse.ts` — `Controller_mouse extends Controller_undo`
+  (the undo layer slots between `latex` and `mouse` in the service
+  chain).
 - `src/services/mouse.ts` + `src/cursor.ts` — `Controller_mouse.seek`
   stashes the click's clientY on the cursor (`cursor.seekClientY`) so
   seek implementations that hit-test rendered lines (`PythonBlock`'s
@@ -193,8 +292,9 @@ Inline `// MATHCOMPILE:` edits, by file:
 - `Makefile` — `extraCommands.ts` + `environments.ts` added to
   `SOURCES_FULL` (in that order: environments calls
   `boundlessIntegral()` from extraCommands), `pythonBlock.ts` between
-  them (environments' line-break path references it), and
-  `extraCommands.ts` to `SOURCES_BASIC`.
+  them (environments' line-break path references it),
+  `extraCommands.ts` to `SOURCES_BASIC`, and `services/undo.ts` to
+  `BASE_SOURCES` between `latex.ts` and `mouse.ts`.
 
 Boundless-integral note: `LatexCmds.iint`/`∬` and `LatexCmds.antid`
 produce a leaf `MQSymbol` (bare ∫ glyph) instead of the
@@ -205,8 +305,9 @@ SupSub on demand (or from parsing `\iint_{a}^{b}`), and `.mq-int`
 sibling-supsub rules keep the bound styling. `\antid` is an insertion
 alias: the app maps it to `\int` at compile time (CE has no `\antid`).
 
-Coverage: `test/unit/environments.test.js` (mocha; run `make test` then
-open `test/unit.html`, or run `npx playwright test e2e/vendor.spec.ts`
+Coverage: `test/unit/environments.test.js`, `test/unit/undo.test.js`
+and `test/unit/setOps.test.js` (mocha; run `make test` then open
+`test/unit.html`, or run `npx playwright test e2e/vendor.spec.ts`
 at the repo root to run the whole vendor suite headlessly).
 
 ### Rebuilding

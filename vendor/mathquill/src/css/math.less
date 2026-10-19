@@ -110,7 +110,7 @@
   }
 
   // TODO: what's the difference between these?
-  .mq-empty {
+  .mq-empty:not(.mq-python) {
     background: rgba(0, 0, 0, 0.2);
     &.mq-root-block {
       background: transparent;
@@ -129,9 +129,11 @@
   // scripts, fraction slots and roots already show their structure.
   // The root block and quiet delimiters show everything, the command
   // input has a border, and <td> blocks are grid cells (a
-  // \displaylines row would paint the whole line).
-  .mq-hasCursor:has(> .mq-cursor:only-child):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input),
-  .mq-hasCursor:has(> .mq-cursor):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):is(.mq-font, .mq-bf, .mq-text-mode) {
+  // \displaylines row would paint the whole line). \python is exempt —
+  // its \python{ } delimiters already mark the editable region, so the
+  // slot box (and the inset text-mode shadow below) would just be gloss.
+  .mq-hasCursor:has(> .mq-cursor:only-child):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):not(.mq-python),
+  .mq-hasCursor:has(> .mq-cursor):not(td):not(.mq-root-block):not(.mq-quiet-delimiter):not(.mq-latex-command-input):is(.mq-font, .mq-bf, .mq-text-mode):not(.mq-python) {
     background: rgba(0, 0, 0, 0.2);
   }
 
@@ -144,7 +146,7 @@
     white-space: pre;
   }
 
-  .mq-text-mode.mq-hasCursor {
+  .mq-text-mode.mq-hasCursor:not(.mq-python) {
     box-shadow: inset darkgray 0 0.1em 0.2em;
     padding: 0 0.1em;
     margin: 0 -0.1em;
@@ -214,17 +216,18 @@
   .mq-int {
     > big {
       display: inline-block;
+      font-size: 330%;
       .transform(scaleX(0.7));
       vertical-align: -0.16em;
     }
 
     > .mq-supsub {
       font-size: 80%;
-      vertical-align: -1.1em;
+      vertical-align: -1.5em;
       padding-right: 0.2em;
 
       > .mq-sup > .mq-sup-inner {
-        vertical-align: 1.3em;
+        vertical-align: 2.1em;
       }
 
       > .mq-sub {
@@ -238,19 +241,21 @@
     + .mq-supsub,
     + .mq-cursor + .mq-supsub {
       font-size: 80%;
-      vertical-align: -1.1em;
+      vertical-align: -1.5em;
       padding-right: 0.2em;
 
       // A sign carrying only an upper bound still sets that bound above
       // itself; the generic `.mq-supsub.mq-sup-only` rule below would
       // float it as an ordinary exponent.
       &.mq-sup-only {
-        vertical-align: -1.1em;
+        vertical-align: -1.5em;
 
         // Lift the lone bound to the definite-bound height (same top as
-        // the .mq-sup-inner bound of the large-operator template).
+        // the .mq-sup-inner bound of the large-operator template) — the
+        // boundless sign's own box is just the baseline band, so measure
+        // against the 330% glyph's ink, not the element box.
         > .mq-sup {
-          vertical-align: 1.9em;
+          vertical-align: 3.25em;
         }
       }
 
@@ -259,12 +264,12 @@
       // bound is display:block so vertical-align does not apply — shift
       // it visually to the definite-bound height instead.
       > .mq-sup {
-        margin-bottom: 0.4em;
+        margin-bottom: 0.55em;
       }
 
       &:not(.mq-sup-only) > .mq-sup {
         position: relative;
-        top: -0.45em;
+        top: -2.1em;
       }
 
       > .mq-sub {
@@ -285,10 +290,18 @@
     font-family: monospace, Symbola, serif;
   }
 
-  // MATHCOMPILE: \mathcal/\mathscr/\mathfrak
+  // MATHCOMPILE: \mathcal/\mathscr/\mathfrak. KaTeX_Caligraphic (bundled
+  // woff2) maps A-Z to script shapes; chars it lacks (lowercase, digits)
+  // fall through to the body fonts like LaTeX's \mathcal. The glyphs
+  // are already script-slanted, so italic is suppressed to avoid
+  // synthetic oblique (lowercase shows upright rather than italic).
   .mq-caligraphic {
-    font-family: 'Lucida Calligraphy', 'Apple Chancery', cursive, Symbola,
-      serif;
+    font-family: 'KaTeX_Caligraphic', Symbola, serif;
+    font-style: normal;
+    var,
+    i {
+      font-style: normal;
+    }
   }
 
   .mq-fraktur {
@@ -437,7 +450,7 @@
     vertical-align: -0.65em;
 
     &.mq-sup-only {
-      vertical-align: 0.65em;
+      vertical-align: 0.5em;
 
       & > .mq-sup {
         display: inline-block;
@@ -447,7 +460,12 @@
 
     .mq-sup {
       display: block;
-      // spread the pair: lift the sup off the sub
+    }
+
+    // spread the pair: lift the sup off the sub. The sup is nested
+    // inside .mq-sub in pair DOM (a descendant, not a child), and lone
+    // sups must keep stock geometry — so exclude only sup-only roots.
+    &:not(.mq-sup-only) .mq-sup {
       margin-bottom: 0.15em;
     }
 
@@ -558,6 +576,14 @@
 
     > table {
       border-spacing: 0 3px;
+      // border-spacing pads above the first row as well — pull the
+      // table back up (and drop the first row's top padding) so line 1
+      // doesn't shift down when a single-line cell goes multi-line.
+      margin-top: -3px;
+    }
+
+    > table > tr:first-child > td {
+      padding-top: 0;
     }
 
     > table > tr > td {
@@ -589,6 +615,10 @@
       display: inline-block;
       vertical-align: top;
       overflow: visible;
+      // straddle the container's top edge like LaTeX scripts: the sup's
+      // center sits at the edge, not its top inside it
+      position: relative;
+      top: -0.4em;
     }
     &:not(.mq-sup-only) > .mq-sup {
       width: 0;
@@ -597,7 +627,23 @@
       display: inline-block;
       float: none;
       vertical-align: bottom;
+      // matching small overshoot below the container's bottom edge
+      position: relative;
+      top: 0.13em;
     }
+  }
+
+  // Edge-straddling scripts poke ~0.4em above / ~0.2em below the line box;
+  // grow the clip region only on root blocks containing them — universal
+  // padding pushed every calc output row into overflow. Negative margins
+  // keep the box's layout metrics unchanged.
+  .mq-root-block:has(.mq-matrix ~ .mq-supsub),
+  .mq-root-block:has(.mq-displaylines ~ .mq-supsub),
+  .mq-root-block:has(.mq-bracket-container ~ .mq-supsub) {
+    padding-top: 0.5em;
+    padding-bottom: 0.4em;
+    margin-top: -0.5em;
+    margin-bottom: -0.4em;
   }
 
   .mq-array > span {
@@ -618,6 +664,74 @@
   var.mq-operator-name.mq-last,
   .mq-supsub.mq-after-operator-name {
     padding-right: 0.2em;
+  }
+
+  // MATHCOMPILE: \operatorname{...} is a one-block node, so the thin
+  // space a flat letter-run gets via mq-first/mq-last lives on the
+  // node itself — sibling selectors cover every tree shape no matter
+  // how it got there (typing, parsing, serialization). Same drop rules
+  // as Letter.shouldOmitPadding + the mq-last/mq-after-operator-name
+  // checks: no pad at the block edges, next to binary operators and
+  // SummationNotation-family signs (.mq-large-operator plus \int's
+  // .mq-int — boundless \iint-style signs are .mq-boundless-int, not
+  // SummationNotations, and keep the space), or before a real bracket
+  // (\binom is .mq-binomial so it doesn't count, matching the flat
+  // form's `instanceof Bracket` check); a following SupSub carries the
+  // padding itself, like mq-after-operator-name. The caret can sit
+  // between the node and a neighbor, so each rule has a .mq-cursor-gap
+  // twin — except at the block edges, where the caret is the "next
+  // atom": the space stays put so the caret sits in the gap it will
+  // occupy, rather than the gap popping in on the next keystroke.
+  // '.' shares .mq-digit with real digits so it can't be told
+  // apart — keeping the space matches TeX's Op-Pun spacing anyway.
+  .mq-operatorname {
+    padding-left: @operator-padding;
+    padding-right: @operator-padding;
+  }
+  .mq-operatorname:first-child {
+    padding-left: 0;
+  }
+  .mq-operatorname:last-child {
+    padding-right: 0;
+  }
+  .mq-binary-operator + .mq-operatorname,
+  .mq-binary-operator + .mq-cursor + .mq-operatorname,
+  .mq-large-operator + .mq-operatorname,
+  .mq-large-operator + .mq-cursor + .mq-operatorname,
+  .mq-int:not(.mq-boundless-int) + .mq-operatorname,
+  .mq-int:not(.mq-boundless-int) + .mq-cursor + .mq-operatorname {
+    padding-left: 0;
+  }
+  .mq-operatorname:has(+ .mq-binary-operator),
+  .mq-operatorname:has(+ .mq-cursor + .mq-binary-operator),
+  .mq-operatorname:has(+ .mq-large-operator),
+  .mq-operatorname:has(+ .mq-cursor + .mq-large-operator),
+  .mq-operatorname:has(+ .mq-int:not(.mq-boundless-int)),
+  .mq-operatorname:has(+ .mq-cursor + .mq-int:not(.mq-boundless-int)),
+  .mq-operatorname:has(+ .mq-bracket-container:not(.mq-binomial)),
+  .mq-operatorname:has(
+      + .mq-cursor + .mq-bracket-container:not(.mq-binomial)
+    ) {
+    padding-right: 0;
+  }
+  .mq-operatorname:has(+ .mq-supsub),
+  .mq-operatorname:has(+ .mq-cursor + .mq-supsub) {
+    padding-right: 0;
+  }
+  .mq-operatorname
+    + .mq-supsub:not(
+      :has(+ .mq-bracket-container:not(.mq-binomial))
+    ):not(
+      :has(+ .mq-cursor + .mq-bracket-container:not(.mq-binomial))
+    ),
+  .mq-operatorname
+    + .mq-cursor
+    + .mq-supsub:not(
+      :has(+ .mq-bracket-container:not(.mq-binomial))
+    ):not(
+      :has(+ .mq-cursor + .mq-bracket-container:not(.mq-binomial))
+    ) {
+    padding-right: @operator-padding;
   }
 
   ////
@@ -668,7 +782,13 @@
 
   .mq-dot-recurring {
     text-align: center;
-    height: 0.3em;
+    // MATHCOMPILE: hug the stem like KaTeX's \dot — the glyph's ink
+    // overflows its short line box upward (margin-top keeps it inside
+    // the field's overflow clip), and the negative margin pulls the
+    // stem up under the dot instead of a full line away.
+    line-height: 0.3em;
+    margin-top: 0.1em;
+    margin-bottom: -0.6em;
   }
 
   ////

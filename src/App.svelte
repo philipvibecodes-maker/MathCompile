@@ -2,12 +2,16 @@
   import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
   import MathField from './components/MathField.svelte';
+  import PythonField from './components/PythonField.svelte';
   import CalcOutput from './components/CalcOutput.svelte';
   import CalcIssues from './components/CalcIssues.svelte';
+  import CopyButton from './components/CopyButton.svelte';
   import { TARGETS } from './compile/targets';
   import type { TargetId } from './compile/targets';
   import CommandPalette from './components/CommandPalette.svelte';
+  import HelpSearch from './components/HelpSearch.svelte';
   import HowToGuide from './components/HowToGuide.svelte';
+  import WorksheetMenu from './components/WorksheetMenu.svelte';
   import { appStore, THEME_STORAGE_KEY } from './state/store.svelte';
   import { savePrefs } from './state/persistence';
   import { copyableLatex, displayLatex } from './compile/latex';
@@ -18,6 +22,7 @@
   import { highlightPython } from './calc/python-highlight';
 
   const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent);
+  const userGuidePdf = `${import.meta.env.BASE_URL}user-guide.pdf`;
   let commands = $derived(buildCommands(appStore));
 
   // Animation knobs live on the store (persisted prefs) so the settings
@@ -61,6 +66,7 @@
     appStore.target === 'python'
       ? compileWorksheet(appStore.cells, appStore.target, {
           importAll: appStore.importAll,
+          pairTuple: appStore.pairTuple,
         })
       : null,
   );
@@ -71,16 +77,24 @@
   let issuesVisible = $state<Record<number, boolean>>({});
   const issueTimers: Record<number, ReturnType<typeof setTimeout>> = {};
   const prevLatex: Record<number, string> = {};
+  // prevIssues tracks issue presence, not count — the debounce only
+  // needs re-arming on a keystroke or a cross-cell appear/disappear.
+  const prevIssues: Record<number, boolean> = {};
   // pre-effect: hides the overlay before the render that a keystroke
   // triggers — a normal $effect runs post-render and the panel would
   // mount for a frame, fade out, then re-fade in after the debounce.
   // Once shown it stays latched until the cell has no issues left.
   $effect.pre(() => {
     appStore.cells.forEach((c, i) => {
-      if (prevLatex[c.id] === c.latex) return;
-      prevLatex[c.id] = c.latex;
-      clearTimeout(issueTimers[c.id]);
       const hasIssues = (compiled?.cellIssues[i]?.length ?? 0) > 0;
+      // A latex change re-arms the debounce; so does an issue flipping
+      // without one — cross-cell notes (a python cell below flagging a
+      // caller's ordering) produce issues with no keystroke here.
+      if (prevLatex[c.id] === c.latex && prevIssues[c.id] === hasIssues)
+        return;
+      prevLatex[c.id] = c.latex;
+      prevIssues[c.id] = hasIssues;
+      clearTimeout(issueTimers[c.id]);
       if (hasIssues && !issuesVisible[c.id]) {
         const id = c.id;
         issueTimers[id] = setTimeout(
@@ -156,6 +170,7 @@
     prewarm();
     return installGlobalKeymap({
       onPaletteToggle: () => appStore.togglePalette(),
+      onHelpSearch: () => appStore.toggleHelpSearch(),
     });
   });
 
@@ -172,8 +187,11 @@
       smartMode: appStore.smartMode,
       target: appStore.target,
       guideOpen: appStore.guideOpen,
+      pinnedHelp: appStore.pinnedHelp,
+      hiddenHelp: appStore.hiddenHelp,
       showPlumbing: appStore.showPlumbing,
       importAll: appStore.importAll,
+      pairTuple: appStore.pairTuple,
       fadeMs: appStore.fadeMs,
       debounceMs: appStore.debounceMs,
       fadeInMs: appStore.fadeInMs,
@@ -201,6 +219,12 @@
         /></svg
       ><span class="stack-name">mathquill</span>
     </span>
+    {#if __APP_BRANCH__}
+      <span class="branch-badge" title="Dev build — branch under test"
+        >{__APP_BRANCH__}</span
+      >
+    {/if}
+    <WorksheetMenu />
     <div class="output-options">
       <button
         class="theme-toggle"
@@ -239,6 +263,18 @@
         {/if}
       </button>
     </div>
+    <a
+      class="guide-link"
+      href={userGuidePdf}
+      target="_blank"
+      rel="noreferrer">User guide</a
+    >
+    <button
+      class="help-search-btn"
+      title="Search help (Ctrl+/)"
+      aria-label="Search help"
+      onclick={() => appStore.openHelpSearch()}>?</button
+    >
     <button class="palette-button" onclick={() => appStore.openPalette()}>
       Commands
       <kbd>{isMac ? '⌘' : 'Ctrl'} K</kbd>
@@ -299,8 +335,8 @@
               {#if calcEngine.status === 'loading'}
                 <span class="engine-spinner" aria-hidden="true"></span>
                 <span class="engine-chip-text"
-                  >SymPy engine loading — interim results use nerdamer, a
-                  faster but less accurate engine</span
+                  >SymPy engine loading — interim results use Compute
+                  Engine, a faster but less accurate engine</span
                 >
               {:else if calcEngine.status === 'error'}
                 <span class="engine-chip-text">SymPy failed to load</span>
@@ -331,15 +367,15 @@
                     Answers come from SymPy, a full computer-algebra
                     system running as WebAssembly (Pyodide), which takes
                     a while to download and boot. Until it's ready,
-                    results come from nerdamer — a lightweight JavaScript
-                    engine that's faster but less accurate — and are
-                    marked "estimate".
+                    results come from Compute Engine — the same
+                    JavaScript math engine that parses LaTeX for the
+                    compiler — and are marked "estimate".
                   {/if}
                 </span>
               </button>
             </span>
           {/if}
-          {#if compiled && appStore.target === 'python'}
+          {#if appStore.target === 'python' || appStore.target === 'calculator'}
             <label class="option-checkbox output-import-all">
               <input
                 type="checkbox"
@@ -349,6 +385,8 @@
               />
               import *
             </label>
+          {/if}
+          {#if compiled && appStore.target === 'python'}
             <button
               class="cell-copy"
               title="Copy the entire output as one script"
@@ -415,13 +453,54 @@
                           aria-hidden="true"
                         >
                           Extra code MathCompile adds to capture each
-                          statement's value for rendering (the "e = …"
+                          expression's value for rendering (the "e = …"
                           lines). Not part of the calculation — hidden
                           by default.
                         </span>
                       </button>
                     </div>
                   {/if}
+                  <div class="settings-row">
+                    <label class="target-select">
+                      (a,b)
+                      <select
+                        value={appStore.pairTuple}
+                        onchange={(e) =>
+                          (appStore.pairTuple = e.currentTarget
+                            .value as 'interval' | 'matrix')}
+                      >
+                        <option value="interval">open interval</option>
+                        <option value="matrix">1×2 matrix</option>
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      class="info-icon"
+                      aria-label="About the (a,b) setting"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        aria-hidden="true"
+                      >
+                        <circle cx="12" cy="12" r="9" />
+                        <line x1="12" y1="11" x2="12" y2="16.5" />
+                        <circle cx="12" cy="7.5" r="0.75" fill="currentColor" />
+                      </svg>
+                      <span
+                        class="info-tip"
+                        role="tooltip"
+                        aria-hidden="true"
+                      >
+                        What a two-element tuple in parentheses compiles
+                        to: an open interval or a 1×2 row matrix. Three
+                        or more elements always make a 1×n matrix.
+                      </span>
+                    </button>
+                  </div>
                   <label class="fade-slider" title="Code-line fade duration">
                     fade
                     <input
@@ -505,13 +584,24 @@
               <div
                 class="cell-input"
                 onpointerdown={(e) => {
-                  if (!(e.target as HTMLElement).closest('math-field')) {
+                  // The issue chips and the python textarea need native
+                  // pointer behavior: preventDefault here would kill
+                  // text selection and the copy button's click.
+                  if (
+                    !(e.target as HTMLElement).closest(
+                      'math-field, .calc-issues, .py-field',
+                    )
+                  ) {
                     e.preventDefault();
                     appStore.focusCell(cell.id);
                   }
                 }}
               >
-                <MathField {cell} />
+                {#if cell.kind === 'python'}
+                  <PythonField {cell} />
+                {:else}
+                  <MathField {cell} />
+                {/if}
                 {#if appStore.target === 'calculator'}
                   <CalcIssues {cell} />
                 {/if}
@@ -531,14 +621,25 @@
             {/if}
             {#if appStore.target === 'latex'}
               <div class="cell-output">
-                <code class="cell-latex">{displayLatex(cell.latex)}</code>
-                <button
-                  class="cell-copy"
-                  title="Copy LaTeX"
-                  disabled={cell.latex.trim() === ''}
-                  onclick={() => copyLatex(cell)}
-                  >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
-                >
+                {#if cell.kind === 'python'}
+                  <div class="cell-code-body">
+                    <code class="cell-python"
+                      >{#each highlightPython(cell.latex) as tok, j (j)}<span
+                          class={tok.cls ? `tok-${tok.cls}` : undefined}
+                          >{tok.text}</span
+                        >{/each}</code
+                    >
+                  </div>
+                {:else}
+                  <code class="cell-latex">{displayLatex(cell.latex)}</code>
+                  <button
+                    class="cell-copy"
+                    title="Copy LaTeX"
+                    disabled={cell.latex.trim() === ''}
+                    onclick={() => copyLatex(cell)}
+                    >{copiedId === cell.id ? 'Copied' : 'Copy'}</button
+                  >
+                {/if}
               </div>
             {:else if appStore.target === 'python'}
               <div class="cell-output cell-code">
@@ -579,7 +680,8 @@
                               ? UNPARSEABLE_MSG
                               : iss.message}>!</span
                           >
-                        {/if}{iss.message}
+                        {/if}<code class="issue-text">{iss.message}</code
+                        ><CopyButton text={iss.message} />
                       </li>
                     {/each}
                     {#if hasParseError(i) && shownIssues(i).length === 0}
@@ -587,7 +689,8 @@
                         <span
                           class="parse-error-icon"
                           title={UNPARSEABLE_MSG}>!</span
-                        >
+                        ><code class="issue-text">{UNPARSEABLE_MSG}</code
+                        ><CopyButton text={UNPARSEABLE_MSG} />
                       </li>
                     {/if}
                   </ul>
@@ -603,11 +706,21 @@
           </li>
         {/each}
       </ol>
-      <button class="add-expr" onclick={() => appStore.addCell()}>
-        + Add expression
-      </button>
+      <div class="add-row">
+        <button class="add-expr" onclick={() => appStore.addCell()}>
+          + Add expression
+        </button>
+        <button
+          class="add-python"
+          title={'Python source cell — def f(x): … defines a function math cells can call as \\mathrm{f}(x); annotate a def with # @latex <latex> to name its call form'}
+          onclick={() => appStore.addPythonCell()}
+        >
+          + Python cell
+        </button>
+      </div>
       <HowToGuide />
     </section>
   </div>
   <CommandPalette {commands} />
+  <HelpSearch />
 </div>

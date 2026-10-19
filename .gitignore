@@ -27,8 +27,9 @@ test-results-perf/
 playwright-report/
 .playwright-mcp/
 perf-results/
+.pyodide-build/
 
-# Vendored Pyodide runtime (scripts/fetch-pyodide.mjs -> predev/prebuild)
+# Vendored Pyodide runtime (scripts/fetch-pyodide-deps.mjs -> predev/prebuild)
 public/pyodide/
 
 # Python (desktop/ shell)

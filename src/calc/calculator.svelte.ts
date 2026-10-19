@@ -1,23 +1,39 @@
-import { collectDeclared, compileCellsForCalc } from '../compile/codegen';
+import { ComputeEngine, compile } from '@cortex-js/compute-engine';
 import {
-  latexToStatementStrings,
+  collectDeclared,
+  compileCellsForCalc,
+  firstFreeCapital,
+  freeNames,
+  plotComponents,
+  plotDomainBounds,
+  type CalcWorksheetProgram,
+  type CompileOptions,
+} from '../compile/codegen';
+import {
+  isDiffMark,
   normalizeIR,
   parseCellLatex,
   type Issue,
   type MathJson,
+  type NormalizeOptions,
 } from '../compile/ir';
-import {
-  interimConstNames,
-  irToNerdamer,
-  leaf,
-} from './nerdamer-emit';
 import { arcTrigNames } from './result-latex';
+import type { PlotData } from '../plot/types';
 
 export interface CalcRowOk {
   ok: true;
   latex?: string;
   text?: string;
   approx?: string;
+  /** A `\text{plot}` statement's sampled payload — the row renders an
+   * interactive figure instead of a math result. */
+  plot?: PlotData;
+  /** The literal program a plot row ran — the generating-code block
+   * shows it in place of the opaque `_mc_plot` statement. */
+  code?: string;
+  /** Marker row for an exec-only statement (defs-only python source) —
+   * keeps rows aligned with statementLines; filtered before display. */
+  silent?: boolean;
 }
 export interface CalcRowErr {
   ok: false;
@@ -36,17 +52,14 @@ export interface CalcResult {
   rows: CalcRow[];
   // The emitted program for the whole cell (prelude + statement code)
   // — shown by the per-cell code block. displayCode is the same program
-  // with the `e = ...` display-plumbing capture lines inlined.
+  // with the `e = ...` display-plumbing capture lines inlined for
+  // expression statements (a definition's display just echoes the
+  // statement, so it never gets a capture line).
   code?: string;
   displayCode?: string;
 }
 
 export type EngineStatus = 'idle' | 'loading' | 'ready' | 'error';
-
-// Load-time experiment: the SymPy engine (Pyodide worker + its vendored
-// payload) is fully disconnected — the worker is never spawned and
-// evaluations resolve empty instead of booting WASM.
-const ENGINE_DISCONNECTED = false;
 
 // Engine status is shared UI state (the CalcOutput components read it for
 // their loading labels), so it lives in a rune like the app store.
@@ -92,13 +105,10 @@ function ensureWorker(): Worker {
     type: 'classic',
   });
   // Worker messages are FIFO — the init lands before any eval post.
-  // indexURL is built here because the worker's own location can't name
-  // the vendored dir: it lives under src/ in dev, assets/ in prod.
-  w.postMessage({
-    type: 'init',
-    pyodideBase: new URL('pyodide/', location.origin + import.meta.env.BASE_URL)
-      .href,
-  });
+  // The worker can't read import.meta.env (classic worker), so the base
+  // public assets are served under comes from the page — the vendored
+  // runtime lives at <assetBase>pyodide/, the snapshot and wheels beside it.
+  w.postMessage({ type: 'init', assetBase: import.meta.env.BASE_URL });
   w.onmessage = (e: MessageEvent<WorkerReply>) => {
     const m = e.data;
     if (m.type === 'ready') {
@@ -156,10 +166,11 @@ function ensureWorker(): Worker {
 // rejects surface as error rows without a worker round-trip.
 export function evaluate(
   cells: { latex: string; json?: MathJson }[],
+  opts: CompileOptions = {},
 ): Promise<CalcResult> {
   let prog: ReturnType<typeof compileCellsForCalc>;
   try {
-    prog = compileCellsForCalc(cells);
+    prog = compileCellsForCalc(cells, opts);
   } catch (e) {
     // The compiler reports issues instead of throwing — a hard throw
     // must still not leave the cell stuck on '…' forever.
@@ -190,48 +201,25 @@ export function evaluate(
     // Uncompileable cells show their issues; a cell with none at all
     // (empty, or only notes) shows nothing.
     return Promise.resolve({ rows: issueRows });
-  // The emitted program as one block — prelude, then each cell's decls
-  // and statements in worksheet order (# cell markers only when the
-  // result ran in real context). The plumbing variant swaps expression
-  // statements for their `e = ...` capture lines and adds
-  // `e = <display>` after assignments/defs, mirroring the worker's
-  // exec/eval split.
-  const okStmts = (c: (typeof prog.cells)[number]) =>
-    c.statements.filter((s) => s.error === undefined && s.code !== '');
-  const marker = (i: number) => (prog.cells.length > 1 ? [`# cell ${i + 1}`] : []);
-  const code = [
-    ...prog.prelude,
-    ...prog.cells.flatMap((c, i) => [
-      ...marker(i),
-      ...c.defs,
-      ...okStmts(c).map((s) => s.code),
-    ]),
-  ].join('\n');
-  const displayCode = [
-    ...prog.prelude,
-    ...prog.cells.flatMap((c, i) => [
-      ...marker(i),
-      ...c.defs,
-      ...okStmts(c).flatMap((s) =>
-        s.display === undefined
-          ? [`e = ${s.code}`]
-          : [s.code, `e = ${s.display}`],
-      ),
-    ]),
-  ].join('\n');
   // A multi-statement cell keeps its good rows when a sibling statement
   // is broken — and issue rows interleave at their own input line, not
   // at the bottom of the output.
-  if (ENGINE_DISCONNECTED)
-    return Promise.resolve({ rows: issueRows, code, displayCode });
   const w = ensureWorker();
   const id = nextId++;
   return new Promise<CalcResult>((resolve, reject) => {
     pending.set(id, {
       resolve: (r) => {
         clearTimeout(timer);
+        // Rows align with the last cell's statements — a plot row's
+        // `code` replaces the opaque _mc_plot statement in the shown
+        // program with the literal code that built the figure.
+        const rowCode = r.map((row) => (row.ok ? row.code : undefined));
+        const { code, displayCode } = shownPrograms(prog, rowCode);
         const merged = [
-          ...r.map((row, i) => ({ row, line: last.statementLines[i] })),
+          ...r
+            .map((row, i) => ({ row, line: last.statementLines[i] }))
+            // Exec-only statements (defs) leave marker rows behind.
+            .filter(({ row }) => !(row.ok && row.silent)),
           ...issueRows.map((row) => ({ row, line: row.line })),
         ]
           .sort(
@@ -276,7 +264,10 @@ export function evaluate(
         cells: prog.cells.map((c) => ({
           // Content key for the worker's snapshot chain — the first
           // cell whose program differs is where eval rewinds to.
-          key: JSON.stringify({ defs: c.defs, statements: c.statements }),
+          key: JSON.stringify({
+            defs: c.defs,
+            statements: c.statements,
+          }),
           defs: c.defs,
           statements: c.statements,
         })),
@@ -285,79 +276,768 @@ export function evaluate(
   });
 }
 
+// The emitted program as one block — prelude, then each cell's decls
+// and statements in worksheet order (# cell markers only when more
+// than one cell contributed). The plumbing variant swaps expression
+// statements for their `e = ...` capture lines, mirroring the worker's
+// exec/eval split; a definition's display echoes the statement itself,
+// so its capture line is dropped even in the plumbing view.
+export function shownPrograms(
+  prog: CalcWorksheetProgram,
+  rowCode?: (string | undefined)[],
+): {
+  code: string;
+  displayCode: string;
+} {
+  const lastIdx = prog.cells.length - 1;
+  // Statement lines for one cell: the worker's literal code wins when
+  // a row supplies it (plot statements), else the emitted text. The
+  // display variant wraps expression statements in `e = ...` capture
+  // lines; a definition's display echoes the statement itself, so its
+  // capture line is dropped even in the plumbing view.
+  const stmtLines = (
+    c: CalcWorksheetProgram['cells'][number],
+    i: number,
+    display: boolean,
+  ): string[] =>
+    c.statements.flatMap((s, si) => {
+      if (s.error !== undefined || s.code === '') return [];
+      const over = i === lastIdx ? rowCode?.[si] : undefined;
+      if (over !== undefined) return [over];
+      if (!display) return [s.code];
+      if (s.silent) return [s.code];
+      return s.display === undefined || s.defines
+        ? s.display === undefined
+          ? [`e = ${s.code}`]
+          : [s.code]
+        : [s.code, `e = ${s.display}`];
+    });
+  const marker = (i: number) => (prog.cells.length > 1 ? [`# cell ${i + 1}`] : []);
+  const code = [
+    ...prog.prelude,
+    ...prog.cells.flatMap((c, i) => [
+      ...marker(i),
+      ...c.defs,
+      ...stmtLines(c, i, false),
+    ]),
+  ].join('\n');
+  const displayCode = [
+    ...prog.prelude,
+    ...prog.cells.flatMap((c, i) => [
+      ...marker(i),
+      ...c.defs,
+      ...stmtLines(c, i, true),
+    ]),
+  ].join('\n');
+  return { code, displayCode };
+}
+
 // Kicks the engine boot (~4s cold) before an expression is actually
 // evaluated. App.svelte calls it on mount so boot overlaps first paint
 // instead of waiting for the Output menu. The worker boots on spawn, so
 // just creating it is enough.
 export function prewarm(): void {
-  if (ENGINE_DISCONNECTED) return;
   ensureWorker();
 }
 
-let nerdamerP: Promise<typeof import('nerdamer/all')> | undefined;
+const isArr = (v: MathJson | undefined): v is MathJson[] => Array.isArray(v);
+const headOf = (v: MathJson | undefined): string | undefined =>
+  isArr(v) && typeof v[0] === 'string' ? v[0] : undefined;
 
-// Instant best-effort results while the SymPy engine boots: nerdamer
-// evaluates the translated expression in ~ms, so dimmed answers show
-// immediately — including calculus (integrate/defint/diff/sum/product/
-// limit emitted by nerdamer-emit off the same normalized IR the real
-// engine reads). One interim row per \\ row, matching the real engine's
-// row-per-statement shape. Statements the IR emitter doesn't cover fall
-// back to nerdamer's own latex reader (`leaf`); a statement that can't
-// produce a real value produces no row. Dynamically imported so
-// nerdamer's ~440KB never enters the main bundle.
+// Heads the interim can't evaluate honestly — boxing them produces
+// \mathrm{<head>}(…) junk latex. Per the silent-empty convention they
+// stay dimmed until SymPy lands, like unreadable statements did before.
+const SKIP_HEADS = new Set([
+  'Error',
+  'call',
+  'Apply',
+  'Declare',
+  'Def',
+  'IntegerRange',
+  // \min_{x}/\max_{x} bound-extrema heads — CE can't evaluate them and
+  // would echo a \mathrm{Minimum}(body, var) guess.
+  'Minimum',
+  'Maximum',
+  // \D total derivative / \nabla gradient — no interim beats a wrong
+  // one; the SymPy result lands when the worker is ready.
+  'TotalD',
+  'Gradient',
+  // \python{...} cells parse to PythonSource — boxing it echoes
+  // PythonSource(...) junk.
+  'PythonSource',
+  // \text{plot} statements are engine-side sampling, not evaluation —
+  // boxing them would echo Plot(...) junk.
+  'Plot',
+]);
+const hasHead = (n: MathJson): boolean =>
+  isArr(n) && (SKIP_HEADS.has(headOf(n) ?? '') || n.slice(1).some(hasHead));
+// \text{def} markers surface as the quoted 'def' string in the raw IR.
+const hasDef = (n: MathJson): boolean =>
+  n === "'def'" || (isArr(n) && n.some(hasDef));
+
+// An Error node anywhere in the result (e.g. \det applied to a
+// scalar-bound name) serializes to \mathtip{\error{…}} — no row is
+// better than an error blob MathQuill can't read; the SymPy row lands
+// with the real diagnostic.
+const hasError = (n: MathJson): boolean =>
+  isArr(n) && (headOf(n) === 'Error' || n.slice(1).some(hasError));
+
+// CE evaluates a Matrix to a bare List of row Lists, and its serializer
+// writes lists as \bigl\lbrack…\bigr\rbrack — vendored MathQuill has no
+// \lbrack sized-delimiter glyph and prints "lbrack" literally. Reboxing
+// a List-of-flat-Lists as Matrix restores the \begin{pmatrix} latex.
+// Flat rows only: a List inside a row is a deeper nest (3-tensor), not
+// a matrix.
+const restoreMatrices = (n: MathJson): MathJson => {
+  if (!isArr(n)) return n;
+  // A Matrix head's List arg is structural — don't descend or rewrap it.
+  if (headOf(n) === 'Matrix') return n;
+  const kids = n.slice(1).map(restoreMatrices);
+  const node = [n[0], ...kids] as MathJson;
+  if (
+    headOf(node) === 'List' &&
+    kids.length > 0 &&
+    kids.every(
+      (k) =>
+        isArr(k) &&
+        headOf(k) === 'List' &&
+        !k.slice(1).some((g) => isArr(g) && headOf(g) === 'List'),
+    )
+  )
+    return ['Matrix', node];
+  return node;
+};
+
+// Serialize an evaluated json for a row: rebox so restored Matrix nodes
+// emit \begin{pmatrix}, then map CE-only names MathQuill can't read.
+const resultLatex = (ce: ComputeEngine, json: MathJson): string =>
+  cleanLatex(ce.box(restoreMatrices(json) as never).latex);
+
+// CE's serializer emits names MathQuill doesn't know (they'd render as
+// italic letters or literal command-name text) — map them to the plain
+// forms. \lbrack/\rbrack/\lbrace/\rbrace land here for flat lists and
+// sets once list-of-lists is restored to Matrix.
+const cleanLatex = (s: string): string =>
+  s
+    .replaceAll('\\exponentialE', 'e')
+    .replaceAll('\\imaginaryI', 'i')
+    .replaceAll('\\lparen', '(')
+    .replaceAll('\\rparen', ')')
+    .replaceAll('\\lbrack', '[')
+    .replaceAll('\\rbrack', ']')
+    .replaceAll('\\lbrace', '\\{')
+    .replaceAll('\\rbrace', '\\}')
+    .replaceAll('\\lvert', '|')
+    .replaceAll('\\rvert', '|')
+    .replaceAll('\\vert', '|')
+    .replaceAll('\\lVert', '\\|')
+    .replaceAll('\\rVert', '\\|')
+    .replaceAll('\\Vert', '\\|');
+
+// Constant-of-integration naming, mirroring codegen's nextConstName:
+// first capital absent from the used-name set — C, else D, E, … — via
+// codegen's shared firstFreeCapital. `used` is seeded by the caller with
+// the names bound above the cell plus every name token inside it (the
+// same reservation codegen's constNames seeding makes), so a `C = …`
+// elsewhere can't collide. The allocation order across cells is still
+// cell-local — an estimate edge.
+const takeConstFrom = (used: Set<string>): (() => string) =>
+  () => firstFreeCapital(used);
+
+// Wrap every boundless Integrate in Add(…, letter) so the interim shows
+// the same constants codegen emits. Raw shape ['Integrate', body, 'v']
+// is indefinite (a Limits var slot marks the definite form), and nesting
+// handles iterated integrals like codegen's per-level +C
+// (∬x dxdy → x²y/2 + C·y + D, not … + C).
+const addConstants = (n: MathJson, next: () => string): MathJson => {
+  if (!isArr(n)) return n;
+  const kids = n.slice(1).map((k) => addConstants(k, next));
+  if (
+    headOf(n) === 'Integrate' &&
+    kids.length === 2 &&
+    typeof kids[1] === 'string'
+  )
+    return ['Add', [n[0], ...kids], next()];
+  return [n[0], ...kids];
+};
+
+// `\int x^2\text{d}x` — CE leaves an upright `\text{d}` differential
+// as a `d·x` factor pair inside the integrand instead of marking the
+// var slot: flat (`Multiply(x², d, x)`) or nested in the last factor's
+// args (`x\sin x\,dx` → `Sin(Multiply(x, d, x))`). Peel pairs wherever
+// they sit — the same peel codegen's integral emitter does before
+// emitting sp.integrate — and let the names fill the var slot.
+const peelDiffs = (node: MathJson): { node: MathJson; names: string[] } => {
+  const stripTail = (
+    factors: MathJson[],
+  ): { factors: MathJson[]; names: string[] } => {
+    const out = [...factors];
+    const names: string[] = [];
+    while (
+      out.length >= 2 &&
+      isDiffMark(out[out.length - 2]) &&
+      typeof out[out.length - 1] === 'string'
+    ) {
+      names.unshift(out.pop() as string);
+      out.pop();
+    }
+    return { factors: out, names };
+  };
+  const walk = (n: MathJson): { node: MathJson; names: string[] } => {
+    if (isArr(n) && (headOf(n) === 'Multiply' || headOf(n) === 'InvisibleOperator')) {
+      const r = stripTail(n.slice(1));
+      if (r.names.length > 0)
+        return r.factors.length === 1
+          ? { node: r.factors[0], names: r.names }
+          : r.factors.length > 1
+            ? { node: ['Multiply', ...r.factors] as MathJson, names: r.names }
+            : { node: n, names: [] };
+      const last = r.factors[r.factors.length - 1];
+      const inner = walk(last);
+      if (inner.names.length > 0) {
+        const factors = [...r.factors];
+        factors[factors.length - 1] = inner.node;
+        return { node: ['Multiply', ...factors] as MathJson, names: inner.names };
+      }
+      return { node: n, names: [] };
+    }
+    if (isArr(n) && n.length >= 2)
+      for (let i = n.length - 1; i >= 1; i--) {
+        const inner = walk(n[i]);
+        if (inner.names.length > 0) {
+          const out = [...n];
+          out[i] = inner.node;
+          return { node: out as MathJson, names: inner.names };
+        }
+      }
+    return { node: n, names: [] };
+  };
+  return walk(node);
+};
+
+// Normalized bounds shape: ['Limits', v, lo, hi] with 'Nothing' slots.
+// 'Nothing' in the var slot means no differential was written — infer
+// the var from the peeled differentials first, then from the body's
+// single free name (codegen's freeNames, which skips constants like Pi).
+// Both bounds 'Nothing' = indefinite; a lone 'Nothing' bound is a real
+// error on the engine, so the interim poisons (null propagates up).
+// Extra peeled names are iterated-integral variables — codegen emits
+// sp.integrate(body, v, y, …), mirrored here as nested Integrates.
+const repairBounds = (n: MathJson): MathJson | null => {
+  if (!isArr(n)) return n;
+  const h = headOf(n);
+  if ((h === 'Integrate' || h === 'Sum' || h === 'Product') && n.length === 3) {
+    let body = repairBounds(n[1]);
+    if (body === null) return null;
+    const spec = n[2];
+    const peeled = peelDiffs(body);
+    // A `dv` pair under a sum/product is a real-engine error
+    // ("did you mean \int") — poison instead of guessing.
+    if (h !== 'Integrate' && peeled.names.length > 0) return null;
+    body = peeled.node;
+    const infer = (): MathJson | null => {
+      const free = freeNames(body);
+      return free.length === 1 ? free[0] : null;
+    };
+    // vars in innermost-first order → nested op nodes
+    const nest = (vars: MathJson[], slot: (v: MathJson) => MathJson) => {
+      let cur: MathJson = [h, body, slot(vars[0])];
+      for (const e of vars.slice(1)) cur = [h, cur, slot(e)];
+      return cur;
+    };
+    if (spec === 'Nothing') {
+      const names = [...peeled.names];
+      const v = names.shift() ?? infer();
+      return v === null ? null : nest([v, ...names], (x) => x);
+    }
+    if (isArr(spec) && (headOf(spec) === 'Limits' || headOf(spec) === 'Tuple')) {
+      const [, sv, lo, hi] = spec;
+      const loN = lo === 'Nothing';
+      const hiN = hi === 'Nothing';
+      if (loN !== hiN) return null;
+      const names =
+        sv === 'Nothing' ? [...peeled.names] : peeled.names.filter((nm) => nm !== sv);
+      const v = sv === 'Nothing' ? (names.shift() ?? infer()) : sv;
+      if (typeof v !== 'string') return null;
+      const slot = (x: MathJson): MathJson => (loN ? x : ['Limits', x, lo, hi]);
+      return nest([v, ...names], slot);
+    }
+    return [h, body, spec];
+  }
+  const kids = n.slice(1).map(repairBounds);
+  return kids.includes(null) ? null : [n[0], ...(kids as MathJson[])];
+};
+
+// The relation heads cellBody recognizes inside a `\text{where}` block —
+// a condition run followed by the body.
+const RELATION_HEADS = new Set([
+  'Equal',
+  'NotEqual',
+  'Less',
+  'LessEqual',
+  'Greater',
+  'GreaterEqual',
+  'NotLess',
+  'NotGreater',
+  'NotLessEqual',
+  'NotGreaterEqual',
+  'Element',
+  'NotElement',
+  'Subset',
+  'SubsetEqual',
+  'Superset',
+  'SupersetEqual',
+  'IdenticallyEqual',
+  'Congruent',
+]);
+const isRelation = (n: MathJson): boolean => RELATION_HEADS.has(headOf(n) ?? '');
+
+const evalStatement = (
+  stmt: MathJson,
+  ce: ComputeEngine,
+  nextConst: () => string,
+): CalcRow | null => {
+  if (hasDef(stmt) || hasHead(stmt)) return null;
+  const repaired = repairBounds(stmt);
+  if (repaired === null) return null;
+  const h = headOf(repaired);
+  // `name = rhs` binds in this worksheet — evaluate the Assign so the
+  // name resolves in the rows below, and show `name = value` like the
+  // real engine's Eq display. Non-name lhs (x+1 = 2, (x,y) = …) falls
+  // through to plain evaluation.
+  if (
+    isArr(repaired) &&
+    (h === 'Assign' || h === 'Equal') &&
+    repaired.length === 3 &&
+    typeof repaired[1] === 'string'
+  ) {
+    const val = ce
+      .box(['Assign', repaired[1], addConstants(repaired[2], nextConst)] as never)
+      .evaluate()
+      .evaluate();
+    const valJson = val.json as MathJson;
+    if (hasError(valJson)) return null;
+    const latex = `${repaired[1]}=${resultLatex(ce, valJson)}`;
+    return latex === `${repaired[1]}=` ? null : { ok: true as const, latex };
+  }
+  // A second evaluate() resolves integrals nested inside an outer one —
+  // CE's first pass only evaluates the outermost sign.
+  const json = ce
+    .box(addConstants(repaired, nextConst) as never)
+    .evaluate()
+    .evaluate().json as MathJson;
+  if (hasError(json)) return null;
+  const latex = resultLatex(ce, json);
+  return latex === '' || /Nothing|Error/.test(latex)
+    ? null
+    : { ok: true as const, latex };
+};
+
+// Sampling constants mirror the worker's _MC_PLOT_* grid so the interim
+// plot covers the same domain the SymPy figure will.
+const PLOT_R1: [number, number] = [-10, 10];
+const PLOT_N1 = 600;
+const PLOT_R2: [number, number] = [-3, 3];
+const PLOT_N2 = 80;
+const PLOT_NF = 9;
+const PLOT_ACCENT = '#3b82f6';
+
+const linspace = (lo: number, hi: number, n: number): number[] => {
+  const out = new Array<number>(n);
+  const step = (hi - lo) / (n - 1);
+  for (let i = 0; i < n; i++) out[i] = lo + step * i;
+  return out;
+};
+
+// A compiled run() result: finite numbers keep their value; complex
+// results with im === 0 unwrap to .re; everything else (non-finite,
+// complex, boolean, string, array, thrown) is a gap.
+const sampleNum = (run: (vars: Record<string, number>) => unknown, vars: Record<string, number>): number => {
+  let v: unknown;
+  try {
+    v = run(vars);
+  } catch {
+    return NaN;
+  }
+  if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+  if (v !== null && typeof v === 'object' && 're' in v && 'im' in v) {
+    const c = v as { re: number; im: number };
+    return c.im === 0 && Number.isFinite(c.re) ? c.re : NaN;
+  }
+  return NaN;
+};
+
+// ℝ²→ℝ² interim: CE-sampled traces for the field (quiver) view — the
+// same `quiver` trace shape the worker's 'field' trace carries so
+// PlotView/ECharts draw it unchanged (the converter synthesizes arrow
+// segments from x/y/u/v). The image-of-grid mode is a
+// worker-figure-only extra; the interim previews the default view.
+// Returns null when the field can't be honestly sampled (no finite
+// nonzero magnitude — the all-gaps convention keeps the row empty
+// until SymPy lands).
+function interimFieldTraces(
+  runners: ((vars: Record<string, number>) => unknown)[],
+  vars: string[],
+  ru: [number, number],
+  rv: [number, number],
+): Record<string, unknown>[] | null {
+  const us = linspace(ru[0], ru[1], PLOT_NF);
+  const vs = linspace(rv[0], rv[1], PLOT_NF);
+  const x: number[] = [];
+  const y: number[] = [];
+  const u: number[] = [];
+  const v: number[] = [];
+  let mmax = 0;
+  for (const vy of vs) {
+    for (const ux of us) {
+      const du = sampleNum(runners[0], {
+        [vars[0]]: ux,
+        [vars[1]]: vy,
+      });
+      const dv = sampleNum(runners[1], {
+        [vars[0]]: ux,
+        [vars[1]]: vy,
+      });
+      // Non-finite grid points drop out — a missing arrow is the
+      // honest draw for a pole, same as the worker's quiver.
+      if (!Number.isFinite(du) || !Number.isFinite(dv)) continue;
+      x.push(ux);
+      y.push(vy);
+      u.push(du);
+      v.push(dv);
+      const m = Math.hypot(du, dv);
+      if (m > mmax) mmax = m;
+    }
+  }
+  if (!(mmax > 0)) return null;
+  return [
+    {
+      type: 'quiver',
+      x,
+      y,
+      u,
+      v,
+      name: 'field',
+      anchor: 'center',
+      lengthmode: 'scaled',
+      lengthfactor: 1.5,
+      marker: { color: PLOT_ACCENT },
+    },
+  ];
+}
+
+// A `\text{for}` domain bound's numeric end: compile + evaluate the
+// endpoint; one that can't compile or isn't a finite number (it
+// references an unknowable name) keeps the signature default, same as
+// the worker's _mc_rng.
+const domainEnd = (
+  node: MathJson,
+  ce: ComputeEngine,
+): number | undefined => {
+  try {
+    const res = compile(ce.box(node as never));
+    if (res.calling !== 'expression' || typeof res.run !== 'function')
+      return undefined;
+    const v = sampleNum(
+      res.run as (vars: Record<string, number>) => unknown,
+      {},
+    );
+    return Number.isFinite(v) ? v : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+// A `\text{plot}` statement's interim row: the expression is compiled
+// to JS by CE's `compile` and sampled on the worker's grid, producing a
+// real PlotData payload — CalcOutput renders it through the same
+// PlotView, and the real row replaces it wholesale when SymPy lands.
+// Returns null (no interim row) for signatures the interim can't see:
+// vars bound by cells above, unplottable heads, unknown functions, or
+// dimension/component counts the worker itself would reject.
+function interimPlotRow(
+  expr: MathJson,
+  ce: ComputeEngine,
+  priorDeclared: Set<string>,
+  domain?: MathJson,
+): CalcRow | null {
+  const h = headOf(expr);
+  // The worker rejects sets/intervals with a "cannot be plotted"
+  // error — the interim stays silent until that row lands.
+  if (h === 'Interval' || h === 'Set') return null;
+  // A lambda carries its own parameters — vars come from the signature
+  // rather than the body's free symbols.
+  const lambda = h === 'Function' && isArr(expr) ? expr : undefined;
+  const compNodes =
+    plotComponents(lambda ? lambda[1] : expr) ?? undefined;
+  if (compNodes === undefined) return null;
+  const params = lambda
+    ? lambda.slice(2).filter((p): p is string => typeof p === 'string')
+    : undefined;
+
+  // Compile each component once — assigned values fold in, so a
+  // same-cell `a = 2 \\ plot a*x` samples the bound a.
+  const runners: ((vars: Record<string, number>) => unknown)[] = [];
+  const free = new Set<string>();
+  for (const comp of compNodes) {
+    let res;
+    try {
+      res = compile(ce.box(comp as never));
+    } catch {
+      return null;
+    }
+    const run = res.run;
+    if (typeof run !== 'function') return null;
+    // 'lambda' calls take positional args — a component compiled that
+    // way is unusual enough to decline rather than guess the order.
+    if (res.calling !== 'expression') return null;
+    for (const s of res.freeSymbols ?? []) free.add(s);
+    runners.push(run as (vars: Record<string, number>) => unknown);
+  }
+  let vars: string[];
+  if (params !== undefined) {
+    vars = [...params].sort();
+    // Body symbols beyond the params are unknowable — can't sample.
+    for (const s of free) if (!params.includes(s)) return null;
+  } else {
+    vars = [...free].sort();
+  }
+  // A name bound by a cell above isn't in scope for the interim (prior
+  // assigns aren't evaluated — only declared), so its value is
+  // unknowable; skip rather than flash a wrong-kind plot.
+  if (vars.some((v) => priorDeclared.has(v))) return null;
+  const d = vars.length;
+  const c = compNodes.length;
+  // Same constraints the worker reports as errors — the interim leaves
+  // the row empty and the real diagnostic lands with SymPy.
+  // d === 2 accepts c = 1 (surface), 2 (quiver field), 3 (parametric
+  // surface) — everything beyond the dim/component bounds.
+  if (d < 1 || d > 2 || c < 1 || c > 3)
+    return null;
+
+  // A `\text{for}` domain's readable ends override each variable's
+  // signature default — mirrored by the worker's _mc_rng.
+  const domRanges = new Map<string, [number?, number?]>();
+  if (domain !== undefined)
+    for (const { v, lo, hi } of plotDomainBounds(domain))
+      domRanges.set(v, [
+        lo === undefined ? undefined : domainEnd(lo, ce),
+        hi === undefined ? undefined : domainEnd(hi, ce),
+      ]);
+  const rng = (v: string, dflt: [number, number]): [number, number] => {
+    const r = domRanges.get(v);
+    if (!r) return dflt;
+    const lo = r[0] ?? dflt[0];
+    const hi = r[1] ?? dflt[1];
+    return lo < hi ? [lo, hi] : dflt;
+  };
+
+  const data: Record<string, unknown>[] = [];
+  const layout: Record<string, unknown> = {
+    margin: { l: 40, r: 10, t: 30, b: 40 },
+    showlegend: false,
+  };
+  const allGaps = (v: number[]): boolean =>
+    v.every((x) => !Number.isFinite(x));
+
+  if (d === 1) {
+    const r1 = rng(vars[0], PLOT_R1);
+    const ts = linspace(r1[0], r1[1], PLOT_N1);
+    const vals = runners.map((run) =>
+      ts.map((t) => sampleNum(run, { [vars[0]]: t })),
+    );
+    if (vals.some(allGaps)) return null;
+    if (c === 1) {
+      data.push({
+        type: 'scatter',
+        x: ts,
+        y: vals[0],
+        mode: 'lines',
+        line: { color: PLOT_ACCENT, width: 2 },
+      });
+      layout['xaxis'] = { zeroline: true };
+      layout['yaxis'] = { zeroline: true };
+    } else if (c === 2) {
+      data.push({
+        type: 'scatter',
+        x: vals[0],
+        y: vals[1],
+        mode: 'lines',
+        line: { color: PLOT_ACCENT, width: 2 },
+      });
+      layout['xaxis'] = { zeroline: true };
+      layout['yaxis'] = {
+        zeroline: true,
+        scaleanchor: 'x',
+        scaleratio: 1,
+      };
+    } else {
+      data.push({
+        type: 'scatter3d',
+        x: vals[0],
+        y: vals[1],
+        z: vals[2],
+        mode: 'lines',
+        line: { color: PLOT_ACCENT, width: 4 },
+        name: 'curve',
+      });
+    }
+  } else if (c === 2) {
+    // d === 2, c === 2 — ℝ²→ℝ²: the interim previews the field view
+    // only; the real figure adds the grid-image mode behind the menu.
+    const tr = interimFieldTraces(
+      runners,
+      vars,
+      rng(vars[0], PLOT_R2),
+      rng(vars[1], PLOT_R2),
+    );
+    if (tr === null) return null;
+    data.push(...tr);
+    layout['xaxis'] = { zeroline: true };
+    layout['yaxis'] = {
+      zeroline: true,
+      scaleanchor: 'x',
+      scaleratio: 1,
+    };
+  } else if (c === 3) {
+    // ℝ²→ℝ³ parametrization — the surface is the image of the domain,
+    // so x/y/z are per-component 2-D grids rather than axis vectors
+    // plus a heightfield.
+    const ru = rng(vars[0], PLOT_R2);
+    const rv = rng(vars[1], PLOT_R2);
+    const us = linspace(ru[0], ru[1], PLOT_N2);
+    const vs = linspace(rv[0], rv[1], PLOT_N2);
+    const grids = runners.map((run) =>
+      vs.map((v) =>
+        us.map((u) => sampleNum(run, { [vars[0]]: u, [vars[1]]: v })),
+      ),
+    );
+    if (grids.some((g) => g.every(allGaps))) return null;
+    data.push({
+      type: 'surface',
+      x: grids[0],
+      y: grids[1],
+      z: grids[2],
+      name: 'surf',
+    });
+  } else {
+    // d === 2, c === 1 — ℝ²→ℝ: a surface plus the hidden heatmap trace
+    // (the same shape the worker emits, minus the Desmos scene decor).
+    const ru = rng(vars[0], PLOT_R2);
+    const rv = rng(vars[1], PLOT_R2);
+    const us = linspace(ru[0], ru[1], PLOT_N2);
+    const vs = linspace(rv[0], rv[1], PLOT_N2);
+    const grid: number[][] = vs.map((v) =>
+      us.map((u) => sampleNum(runners[0], { [vars[0]]: u, [vars[1]]: v })),
+    );
+    if (grid.every(allGaps)) return null;
+    data.push(
+      { type: 'surface', x: us, y: vs, z: grid, name: 'surf' },
+      {
+        type: 'heatmap',
+        x: us,
+        y: vs,
+        z: grid,
+        colorscale: 'Viridis',
+        showscale: false,
+        visible: false,
+        name: 'heatmap',
+      },
+    );
+  }
+
+  let label = '';
+  try {
+    label = cleanLatex(ce.box(expr as never).latex);
+  } catch {
+    label = '';
+  }
+  return {
+    ok: true,
+    plot: {
+      kind: `${d}x${c}` as PlotData['kind'],
+      vars,
+      label,
+      figure: { data, layout },
+      interim: true,
+    },
+  };
+}
+
+// Instant best-effort results while the SymPy engine boots: the same
+// parse + normalize the compiler feeds on (`parseCellLatex` →
+// `normalizeIR` — chained Equal flattens, `name = rhs` becomes Assign,
+// \text{def} becomes a Def head), evaluated in a pushed scope — one
+// interim row per statement row the real engine emits, matching its
+// row-per-statement shape. ~ms per cell and no lazy chunk — CE is
+// already in the main bundle for the compiler.
 export async function interimEvaluate(
   latex: string,
   priorLatex: string[] = [],
+  opts: NormalizeOptions = {},
 ): Promise<CalcRow[]> {
   try {
-    const nerdamer = (await (nerdamerP ??= import('nerdamer/all'))).default;
-    // latexToStatementStrings tracks environment depth — a plain
-    // /\\\\/ split would break every interim row for a cell holding a
-    // matrix (its \\ row separators look like statement breaks).
-    const stmts = latexToStatementStrings(latex);
-    const norm = normalizeIR(parseCellLatex(latex));
+    const ir = normalizeIR(parseCellLatex(latex), undefined, opts).ir;
+    if (ir === undefined) return [];
+    const block = isArr(ir) && headOf(ir) === 'Block' ? ir.slice(1) : [ir];
+    // Expand statement groups the way cellBody does: a `\text{where}`
+    // block arrives condition-first — emit the body row before its
+    // conditions; a nested Block (chain-assign x := y := 5) lists its
+    // statements in order.
+    const statements = block.flatMap((n): MathJson[] => {
+      if (!isArr(n)) return [n];
+      const h = headOf(n);
+      if (h === 'Block') return n.slice(1);
+      if (h !== 'WhereBlock') return [n];
+      const kids = n.slice(1);
+      return kids.length > 1 &&
+        kids.slice(0, -1).every(isRelation) &&
+        !isRelation(kids[kids.length - 1])
+        ? [kids[kids.length - 1], ...kids.slice(0, -1)]
+        : kids;
+    });
     // The real engine shares one namespace down the worksheet, so a
     // `C = …` above reserves the letter for constants of integration —
-    // interim picks letters off the same declared-name set.
-    const reserved = new Set<string>();
-    const scratch = new Set<string>();
+    // seed from the same declared-name set, plus every name token in
+    // this cell (heads included — the reservation allNames makes for
+    // codegen) so `+ C` never collides.
+    const used = new Set<string>();
+    const declaredFns = new Set<string>();
     for (const l of priorLatex) {
-      const n = normalizeIR(parseCellLatex(l));
-      if (n.ir !== undefined) collectDeclared(n.ir, reserved, scratch);
+      const n = normalizeIR(parseCellLatex(l), undefined, opts);
+      if (n.ir !== undefined) collectDeclared(n.ir, used, declaredFns);
     }
-    const nodes =
-      norm.ir === undefined
-        ? []
-        : Array.isArray(norm.ir) && norm.ir[0] === 'Block'
-          ? norm.ir.slice(1)
-          : [norm.ir];
-    // An error the normalizer already flagged poisons that row — the
-    // real engine drops the statement, so a guessed interim would
-    // mislead.
-    const poisoned = new Set(
-      norm.issues
-        .filter((i) => i.severity === 'error')
-        .map((i) => i.line ?? 0),
-    );
-    const takeConst = interimConstNames(norm.ir, reserved);
-    return nodes
-      .map((node, i): CalcRow | null => {
-        if (poisoned.has(i)) return null;
+    // Names bound by the cells above — a plot statement sampling one of
+    // them can't know the value, so the interim row stays empty.
+    // (Snapshot before reserve() folds this cell's own names in — a
+    // same-cell `a = 2` IS bound in the engine below and must not
+    // count as prior-declared.)
+    const priorDeclared = new Set(used);
+    const reserve = (n: MathJson | undefined): void => {
+      if (typeof n === 'string') used.add(n);
+      else if (isArr(n)) for (const c of n) reserve(c);
+    };
+    reserve(ir);
+    // Fresh engine per call — CE `Assign` bindings survive popScope on
+    // a shared engine (verified: pushScope → Assign → popScope still
+    // evaluates the name), so a reused singleton would leak `name = rhs`
+    // rows into every other cell's interim.
+    const engine = new ComputeEngine();
+    const nextConst = takeConstFrom(used);
+    // `name = rhs` binds inside the per-call engine — a row below sees
+    // it (a = 5 \\ a+1 → 6) and nothing leaks into other cells or
+    // later evals.
+    return statements
+      .map((s): CalcRow | null => {
         try {
-          const input = irToNerdamer(node, takeConst) ?? leaf(stmts[i] ?? '', nerdamer);
-          if (input === '') return null;
-          const tex = arcTrigNames(
-            // MathQuill doesn't need \limits — bounds render under/over
-            // anyway. nerdamer writes inverse trig as \mathrm{atan},
-            // which MathQuill renders "a tan"; arcTrigNames maps to arc-.
-            nerdamer(input)
-              .toTeX()
-              .replaceAll('\\limits', ''),
-          );
-          return tex === '' ? null : ({ ok: true as const, latex: tex });
+          // `\text{plot}` statements sample through the JS compiler —
+          // evalStatement's SKIP_HEADS would leave them empty until
+          // SymPy lands.
+          if (isArr(s) && headOf(s) === 'Plot' && (s.length === 2 || s.length === 3))
+            return interimPlotRow(s[1], engine, priorDeclared, s[2]);
+          return evalStatement(s, engine, nextConst);
         } catch {
-          // A statement nerdamer can't read (an environment, a CE-only
-          // command) shouldn't sink the other rows' interim results.
+          // A statement CE can't read shouldn't sink the other rows.
           return null;
         }
       })

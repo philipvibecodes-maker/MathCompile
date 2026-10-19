@@ -11,6 +11,8 @@
   import { mountStaticMath } from '../editor/static-math';
   import { highlightPython } from '../calc/python-highlight';
   import { appStore, type Cell } from '../state/store.svelte';
+  import PlotView from '../plot/PlotView.svelte';
+  import CopyButton from './CopyButton.svelte';
 
   // Per-cell SymPy output for the calculator target. Edits are debounced,
   // then the cell evaluates through the codegen pipeline in the context
@@ -21,15 +23,16 @@
 
   let rows = $state<CalcRow[]>([]);
   let pending = $state(false);
-  // True while the shown rows came from the nerdamer interim engine —
+  // True while the shown rows came from the interim engine —
   // they're estimates, so the UI marks them until SymPy rows land.
   let interim = $state(false);
   let failed = $state('');
   // Per-cell opt-in to the generated-code block at the end of the cell.
   let showCode = $state(false);
   // The emitted program for this cell; displayCode is the same program
-  // with the `e = ...` display-plumbing capture lines inlined (the
-  // settings menu's plumbing toggle picks between them).
+  // with the `e = ...` display-plumbing capture lines inlined for
+  // expression statements (the settings menu's plumbing toggle picks
+  // between them).
   let cellCode = $state('');
   let cellDisplayCode = $state('');
   // Folded body of the clean_and_simplify helper block in the code block.
@@ -46,9 +49,10 @@
   }
 
   // Issue reporting is split like the python overlay's marker/panel:
-  // the failing row keeps just its ! / i severity marker here, while
-  // the messages go to cellIssues — the input column's CalcIssues
-  // mounts the panel under the field once typing has paused.
+  // the failing row keeps its ! / i severity marker plus a selectable
+  // copyable message here, while the same messages go to cellIssues —
+  // the input column's CalcIssues mounts the panel under the field
+  // once typing has paused.
   $effect(() => {
     const issues: Issue[] =
       failed !== ''
@@ -81,10 +85,23 @@
     // subscription covers the whole prefix's latex, not just ours.
     const prefixLatex = appStore.cells
       .slice(0, index + 1)
-      .map((c) => c.latex);
-    const latex = prefixLatex[prefixLatex.length - 1] ?? '';
+      // Python cells contribute nothing parseable to the interim
+      // engine's context — their source isn't latex.
+      .map((c) => (c.kind === 'python' ? '' : c.latex));
+    // The empty check reads the cell's own text, not the masked prefix —
+    // a python cell's source is what it evaluates.
+    const latex = cell.latex;
+    // Read here so toggling the (a,b) pref re-triggers the eval below.
+    const pairTuple = appStore.pairTuple;
+    // Same for the import-* pref: it rewrites the emitted program's
+    // import line + qualifiers, so the eval must re-run with it.
+    const importAll = appStore.importAll;
     const mine = ++seq;
-    if (latexToStatementStrings(latex).length === 0) {
+    if (
+      cell.kind === 'python'
+        ? latex.trim() === ''
+        : latexToStatementStrings(latex).length === 0
+    ) {
       rows = [];
       pending = false;
       interim = false;
@@ -98,19 +115,27 @@
     failed = '';
     const timer = setTimeout(() => {
       if (mine !== seq) return;
-      // While the engine boots, show nerdamer's instant best-effort
+      // While the engine boots, show CE's instant best-effort
       // result — rendered dimmed since the real eval is still pending.
       // The `pending` guard keeps a late interim from overwriting real
       // rows that already landed.
-      if (calcEngine.status !== 'ready') {
-        interimEvaluate(latex, prefixLatex.slice(0, -1)).then((r) => {
+      if (calcEngine.status !== 'ready' && cell.kind === 'math') {
+        interimEvaluate(latex, prefixLatex.slice(0, -1), {
+          pairTuple,
+        }).then((r) => {
           if (mine === seq && pending && r.length > 0) {
             rows = r;
             interim = true;
           }
         });
       }
-      evaluate(appStore.cells.slice(0, index + 1)).then(
+      evaluate(appStore.cells.slice(0, index + 1), {
+        pairTuple,
+        importAll,
+        // The registry spans the whole worksheet so a def below the
+        // call still resolves (with the ordering note).
+        worksheetCells: appStore.cells,
+      }).then(
         (r) => {
           if (mine !== seq) return;
           rows = r.rows;
@@ -133,10 +158,10 @@
     return () => clearTimeout(timer);
   });
 
-  // Split shown code around the emitted `def clean_and_simplify`
-  // block: head is everything before the signature line, sig is the
-  // `def` line itself, body is its indented suite, rest is the
-  // remainder of the program.
+  // Split shown code around the emitted helper definitions
+  // (clean_and_simplify, _mc_plot): head is everything before the
+  // first `def`, sig is the def line itself, body is the indented
+  // suites, rest is the remainder of the program.
   function splitHelperBlock(
     code: string,
   ): { head: string; sig: string; body: string; rest: string } | null {
@@ -146,8 +171,14 @@
     );
     if (i < 0) return null;
     let j = i + 1;
-    while (j < lines.length && (lines[j] === '' || lines[j].startsWith(' ')))
+    // Swallow the helper suite plus any further top-level `def _mc_*`
+    // helpers that follow it (the fold covers the whole prelude).
+    while (j < lines.length) {
+      while (j < lines.length && (lines[j] === '' || lines[j].startsWith(' ')))
+        j++;
+      if (!lines[j]?.startsWith('def _mc_')) break;
       j++;
+    }
     return {
       head: lines.slice(0, i).join('\n'),
       sig: lines[i],
@@ -239,33 +270,52 @@
     </div>
   {/if}
   {#if failed !== ''}
-    <span class="parse-error-icon" title={failed}>!</span>
+    <div class="issue-line issue-error">
+      <span class="parse-error-icon">!</span>
+      <code class="issue-text">{failed}</code>
+      <CopyButton text={failed} />
+    </div>
   {:else if rows.length > 0}
     <div class="calc-rows" class:pending={pending}>
       {#each rows as row, i (i)}
         <div class="calc-row">
           {#if row.ok}
-            <div class="calc-result">
-              {#if row.latex !== undefined && row.latex !== ''}
-                <span class="calc-math" use:staticMath={row.latex ?? ''}></span>
-              {:else}
-                <code class="calc-text">{row.text ?? ''}</code>
-              {/if}
-              {#if row.approx !== undefined}
-                <span class="calc-approx">≈ {row.approx}</span>
-              {/if}
-            </div>
-          {:else if (row.severity ?? 'error') === 'error'}
-            <span class="parse-error-icon" title={row.error}>!</span>
+            {#if row.plot !== undefined}
+              <PlotView plot={row.plot} />
+            {:else}
+              <div class="calc-result">
+                {#if row.latex !== undefined && row.latex !== ''}
+                  <span class="calc-math" use:staticMath={row.latex ?? ''}
+                  ></span>
+                {:else}
+                  <code class="calc-text">{row.text ?? ''}</code>
+                {/if}
+                {#if row.approx !== undefined}
+                  <span class="calc-approx">≈ {row.approx}</span>
+                {/if}
+              </div>
+            {/if}
           {:else}
-            <span class="note-icon" title={row.error}>i</span>
+            <div
+              class="issue-line issue-{(row.severity ?? 'error') === 'error'
+                ? 'error'
+                : 'note'}"
+            >
+              {#if (row.severity ?? 'error') === 'error'}
+                <span class="parse-error-icon">!</span>
+              {:else}
+                <span class="note-icon">i</span>
+              {/if}
+              <code class="issue-text">{row.error}</code>
+              <CopyButton text={row.error} />
+            </div>
           {/if}
         </div>
       {/each}
       {#if interim}
         <span
           class="calc-interim"
-          title="Estimate from the interim engine (nerdamer) — replaced by the SymPy result once the engine finishes loading."
+          title="Estimate from the interim engine (Compute Engine) — replaced by the SymPy result once the engine finishes loading."
           >estimate · SymPy still loading</span
         >
       {/if}

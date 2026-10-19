@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { clearFirstCell } from './helpers';
+import { clearFirstCell, sharedPage, resetApp } from './helpers';
 
 // Autocomplete: the dropdown (`.mc-ac`) tracks the typed `\`-command
 // prefix or a 2+ letter word-run; the symbol picker (`.mc-pick`) opens
@@ -19,22 +19,24 @@ const picker = (page: Page) => page.locator('.mc-pick');
 const cardNames = (page: Page) =>
   page.locator('.mc-pick-card .mc-pick-name').allTextContents();
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.waitForSelector('math-field');
+let page: Page;
+test.beforeAll(async ({ browser }, testInfo) => {
+  page = await sharedPage(browser, testInfo);
+});
+
+test.beforeEach(async () => {
+  await resetApp(page);
   await clearFirstCell(page);
 });
 
-test('typing a \\ prefix shows matching commands', async ({ page }) => {
+test('typing a \\ prefix shows matching commands', { tag: '@smoke' }, async () => {
   await cell(page, 0).focus();
   await page.keyboard.type('\\sq');
   await expect(menu(page)).toBeVisible();
   expect(await menuNames(page)).toContain('sqrt');
 });
 
-test('\\mathrm completes from the menu and appears in the picker', async ({
-  page,
-}) => {
+test('\\mathrm completes from the menu and appears in the picker', async () => {
   await cell(page, 0).focus();
   await page.keyboard.type('\\mathr');
   await expect(menu(page)).toBeVisible();
@@ -49,7 +51,7 @@ test('\\mathrm completes from the menu and appears in the picker', async ({
   await page.keyboard.press('Escape');
 });
 
-test('arrows + Enter accept a command completion', async ({ page }) => {
+test('arrows + Enter accept a command completion', async () => {
   await cell(page, 0).focus();
   await page.keyboard.type('\\sq');
   await expect(menu(page)).toBeVisible();
@@ -58,9 +60,7 @@ test('arrows + Enter accept a command completion', async ({ page }) => {
   await expect(menu(page)).not.toBeVisible();
 });
 
-test('Escape dismisses the menu until the next keystroke', async ({
-  page,
-}) => {
+test('Escape dismisses the menu until the next keystroke', async () => {
   await cell(page, 0).focus();
   await page.keyboard.type('\\sq');
   await expect(menu(page)).toBeVisible();
@@ -72,9 +72,7 @@ test('Escape dismisses the menu until the next keystroke', async ({
   ).toHaveClass(/mq-focused/);
 });
 
-test('environment names complete and accept opens the grid', async ({
-  page,
-}) => {
+test('environment names complete and accept opens the grid', async () => {
   await cell(page, 0).focus();
   await page.keyboard.type('\\ali');
   await expect(menu(page)).toBeVisible();
@@ -90,7 +88,7 @@ test('environment names complete and accept opens the grid', async ({
     .toContain('\\begin{aligned}');
 });
 
-test('a plain letter-run offers word completions', async ({ page }) => {
+test('a plain letter-run offers word completions', async () => {
   await cell(page, 0).focus();
   await page.keyboard.type('sq');
   await expect(menu(page)).toBeVisible();
@@ -99,9 +97,7 @@ test('a plain letter-run offers word completions', async ({ page }) => {
   await expect.poll(() => cellValue(cell(page, 0))).toContain('\\sqrt');
 });
 
-test('Ctrl+Space opens the picker; typing filters and Enter inserts', async ({
-  page,
-}) => {
+test('Ctrl+Space opens the picker; typing filters and Enter inserts', async () => {
   await cell(page, 0).focus();
   await page.keyboard.press('Control+Space');
   await expect(picker(page)).toBeVisible();
@@ -112,9 +108,7 @@ test('Ctrl+Space opens the picker; typing filters and Enter inserts', async ({
   await expect.poll(() => cellValue(cell(page, 0))).toContain('\\omega');
 });
 
-test('Escape on the picker closes it and refocuses the field', async ({
-  page,
-}) => {
+test('Escape on the picker closes it and refocuses the field', async () => {
   await cell(page, 0).focus();
   await page.keyboard.press('Control+Space');
   await expect(picker(page)).toBeVisible();
@@ -125,9 +119,7 @@ test('Escape on the picker closes it and refocuses the field', async ({
   ).toHaveClass(/mq-focused/);
 });
 
-test('clicking the picker\'s padding keeps focus in its search', async ({
-  page,
-}) => {
+test('clicking the picker\'s padding keeps focus in its search', async () => {
   await cell(page, 0).focus();
   await page.keyboard.press('Control+Space');
   await expect(picker(page)).toBeVisible();
@@ -139,9 +131,7 @@ test('clicking the picker\'s padding keeps focus in its search', async ({
   await expect(picker(page).locator('.mc-pick-q')).toBeFocused();
 });
 
-test('opening the picker while the menu is up leaves the picker usable', async ({
-  page,
-}) => {
+test('opening the picker while the menu is up leaves the picker usable', async () => {
   await cell(page, 0).focus();
   await page.keyboard.type('\\in');
   await expect(menu(page)).toBeVisible();
@@ -157,21 +147,19 @@ test('opening the picker while the menu is up leaves the picker usable', async (
 // Vimium's insert-mode Escape calls activeElement.blur() and swallows
 // the keydown (window-capture + stopImmediatePropagation) — the only
 // signal the page sees is a pointer-less blur to nowhere.
-test('a programmatic blur refocuses the cell (Vimium Escape)', async ({
-  page,
-}) => {
+test('a programmatic blur refocuses the cell (Vimium Escape)', async () => {
   await cell(page, 0).focus();
+  // .mc-mat-prev (the matrix-menu preview) mounts a second, hidden MQ
+  // instance inside math-field — scope to the editable field's textarea.
   await cell(page, 0)
-    .locator('.mq-textarea textarea')
+    .locator('.mq-editable-field > .mq-textarea textarea')
     .evaluate((el: HTMLElement) => el.blur());
   await expect(
     cell(page, 0).locator('.mq-editable-field'),
   ).toHaveClass(/mq-focused/);
 });
 
-test('a programmatic blur on the picker search closes and refocuses', async ({
-  page,
-}) => {
+test('a programmatic blur on the picker search closes and refocuses', async () => {
   await cell(page, 0).focus();
   await page.keyboard.press('Control+Space');
   await expect(picker(page)).toBeVisible();
@@ -184,9 +172,7 @@ test('a programmatic blur on the picker search closes and refocuses', async ({
   ).toHaveClass(/mq-focused/);
 });
 
-test('Backspace in the picker search does not delete an empty cell', async ({
-  page,
-}) => {
+test('Backspace in the picker search does not delete an empty cell', async () => {
   await cell(page, 0).focus();
   await page.keyboard.press('Control+Space');
   await expect(picker(page)).toBeVisible();

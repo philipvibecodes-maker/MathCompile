@@ -540,12 +540,14 @@ suite('latex', function () {
     assertParsesLatex('x\\smash', 'x\\smash ');
   });
 
-  test('\\operatorname* consumes the star', function () {
-    assertParsesLatex('\\operatorname{tr}(A)', 'tr(A)');
+  test('\\operatorname keeps its braces (and the star)', function () {
+    assertParsesLatex('\\operatorname{tr}(A)', '\\operatorname{tr}(A)');
+    assertParsesLatex('\\operatorname{foo}(x)', '\\operatorname{foo}(x)');
     assertParsesLatex(
       '\\operatorname*{argmin}_{x}',
-      '\\arg \\min _{x}'
+      '\\operatorname*{argmin}_{x}'
     );
+    assertParsesLatex('\\operatorname{ans}', '\\operatorname{ans}');
   });
 
   test('\\text', function () {
@@ -1654,8 +1656,8 @@ suite('latex', function () {
     assertParsesLatex('\\mathchoice{a}{b}{c}{d}', '\\mathchoice{a}{b}{c}{d}');
     assertParsesLatex('\\includegraphics[width=1cm]{x}', '\\includegraphics[width=1cm]{x}');
     assertParsesLatex('\\path{x}', '\\path{x}');
-    // \matrix{...} emits the \begin{matrix} env form like \pmatrix
-    assertParsesLatex('\\matrix{a&b}', '\\begin{matrix}a&b\\end{matrix}');
+    // \matrix{...} displays as \pmatrix and emits the pmatrix env form
+    assertParsesLatex('\\matrix{a&b}', '\\begin{pmatrix}a&b\\end{pmatrix}');
     // TeX boxes keep 'to <dim>'; siunitx + skip commands stay verbatim
     assertParsesLatex('\\hbox to 3em{x}', '\\hbox to 3em{x}');
     assertParsesLatex('\\hbox{x}', '\\hbox {x}');

@@ -31,6 +31,14 @@ export function pointerRecentlyDown(): boolean {
   return Date.now() - lastPointerDownAt < 300;
 }
 
+// e2e reset: shared-page tests run back-to-back, so a click from the
+// PREVIOUS test can still be inside the 300ms window when the next
+// test's blur() runs — aging the clock out keeps each test's blurs
+// looking pointer-less, like a fresh page load would.
+export function resetLastPointerDown(): void {
+  lastPointerDownAt = -Infinity;
+}
+
 export interface MoveOutDetail {
   direction: MoveDirection;
   /** true when the out-of-field move came from a selection extension. */
@@ -107,6 +115,9 @@ export class MathFieldElement extends HTMLElement {
     const userHandlers = opts.handlers;
     this._mq = mq3.MathField(this.host, {
       ...opts,
+      // Typed matrix commands defer to the rows/columns menu
+      // (matrix-menu.ts) instead of inserting a default 2x2 grid.
+      matrixDimensionsMenu: true,
       handlers: {
         ...userHandlers,
         edit: (mq) => {

@@ -1,6 +1,7 @@
+import { execSync } from 'node:child_process';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { clearFirstCell } from './helpers';
+import { clearFirstCell, sharedPage, resetApp } from './helpers';
 
 // The toolbar above the cell list holds the smart mode toggle and the
 // target select. With the latex target (the default), each cell stacks
@@ -16,13 +17,17 @@ const smartModeOn = (page: Page, i = 0): Promise<boolean> =>
         .autoCommands ?? '') !== '',
   );
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.waitForSelector('math-field');
+let page: Page;
+test.beforeAll(async ({ browser }, testInfo) => {
+  page = await sharedPage(browser, testInfo);
+});
+
+test.beforeEach(async () => {
+  await resetApp(page);
   await clearFirstCell(page);
 });
 
-test('latex target hides the python import controls', async ({ page }) => {
+test('latex target hides the python import controls', async () => {
   await expect(page.locator('.output-import-all')).toHaveCount(0);
 });
 
@@ -34,9 +39,7 @@ const setTarget = (page: Page, value: string) =>
     s.dispatchEvent(new Event('change', { bubbles: true }));
   }, value);
 
-test('header shows the commands button, smart mode sits above the input column', async ({
-  page,
-}) => {
+test('header shows the commands button, smart mode sits above the input column', async () => {
   const header = page.locator('.app-header');
   await expect(header.locator('.option-checkbox input')).toHaveCount(0);
   await expect(header.locator('.palette-button')).toBeVisible();
@@ -45,9 +48,22 @@ test('header shows the commands button, smart mode sits above the input column',
   await expect(colField).toContainText('Smart mode');
 });
 
-test('output select sits at the right end of the output column', async ({
-  page,
-}) => {
+test(
+  'dev header shows the git branch badge',
+  { tag: '@smoke' },
+  async () => {
+    // e2e runs against `vite dev`, which bakes the checked-out branch
+    // into __APP_BRANCH__; production builds compile it out entirely.
+    const badge = page.locator('.app-header .branch-badge');
+    await expect(badge).toBeVisible();
+    const branch = execSync('git rev-parse --abbrev-ref HEAD')
+      .toString()
+      .trim();
+    if (branch !== 'HEAD') await expect(badge).toHaveText(branch);
+  },
+);
+
+test('output select sits at the right end of the output column', async () => {
   const colHead = page.locator('.col-output-head');
   const select = colHead.locator('.target-select');
   await expect(select.locator('select')).toBeVisible();
@@ -60,9 +76,7 @@ test('output select sits at the right end of the output column', async ({
   expect(sel!.x + sel!.width).toBeGreaterThan(head!.x + head!.width - 12);
 });
 
-test('target select offers all codegen targets, calc+python enabled', async ({
-  page,
-}) => {
+test('target select offers all codegen targets, calc+python enabled', async () => {
   await expect(page.locator('.target-select option')).toHaveText([
     'LaTeX',
     'Calculator',
@@ -87,9 +101,7 @@ test('target select offers all codegen targets, calc+python enabled', async ({
   ]);
 });
 
-test('smart mode checkbox drives the math-field autoCommands option', async ({
-  page,
-}) => {
+test('smart mode checkbox drives the math-field autoCommands option', async () => {
   const box = page.locator('.option-checkbox input');
   await expect(box).toBeChecked();
   expect(await smartModeOn(page)).toBe(true);
@@ -100,9 +112,8 @@ test('smart mode checkbox drives the math-field autoCommands option', async ({
   expect(await smartModeOn(page)).toBe(true);
 });
 
-test('calculator output stacks beneath its input; latex and python keep two columns', async ({
-  page,
-}) => {
+test('calculator output stacks beneath its input; latex and python keep two columns', async () => {
+  test.setTimeout(120_000); // cold engine boot on this page
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('x+1', { delay: 40 });
   await expect(page.locator('.cell-latex').first()).toHaveText('x+1');
@@ -145,11 +156,10 @@ test('calculator output stacks beneath its input; latex and python keep two colu
   await expect(page.locator('.col-resize')).toHaveCount(0);
 });
 
-test('latex target shows per-cell output with a copy button', async ({
-  page,
-  context,
-}) => {
-  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+test('latex target shows per-cell output with a copy button',
+  { tag: '@smoke' },
+  async () => {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   const output = page.locator('.cell-output').first();
   const copy = page.locator('.cell-copy').first();
   await expect(output).toBeVisible();
@@ -170,11 +180,8 @@ test('latex target shows per-cell output with a copy button', async ({
   await expect(page.locator('.cell-python').first()).toContainText('x + 1');
 });
 
-test('python target shows standalone per-cell scripts', async ({
-  page,
-  context,
-}) => {
-  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+test('python target shows standalone per-cell scripts', { tag: '@smoke' }, async () => {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('a=x+1', { delay: 40 });
   await setTarget(page, 'python');
@@ -201,11 +208,8 @@ test('python target shows standalone per-cell scripts', async ({
   await expect(page.locator('.output-import-all')).toHaveCount(0);
 });
 
-test('import-all checkbox switches between import * and sp. qualifiers', async ({
-  page,
-  context,
-}) => {
-  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+test('import-all checkbox switches between import * and sp. qualifiers', async () => {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await cell(page, 0).click();
   await cell(page, 0).pressSequentially('a=x+1', { delay: 40 });
   await setTarget(page, 'python');
@@ -230,9 +234,7 @@ test('import-all checkbox switches between import * and sp. qualifiers', async (
 // output view (and its copy) shows the canonical \int, which is also what
 // a pasted-elsewhere LaTeX doc needs. \iint is a real boundless ∬ sign,
 // not an alias — it round-trips verbatim.
-test('latex output shows \\antid as \\int, keeps \\iint verbatim', async ({
-  page,
-}) => {
+test('latex output shows \\antid as \\int, keeps \\iint verbatim', async () => {
   const mf = cell(page, 0);
   await mf.click();
   await mf.pressSequentially('antid', { delay: 60 });
@@ -253,7 +255,7 @@ test('latex output shows \\antid as \\int, keeps \\iint verbatim', async ({
 
 // \left.…\right| evaluation bars use the invisible null delimiter — the
 // field must parse them (not wipe) and keep the bar's latex verbatim.
-test('latex output round-trips \\left. evaluation bars', async ({ page }) => {
+test('latex output round-trips \\left. evaluation bars', async () => {
   const mf = cell(page, 0);
   await mf.evaluate(
     (el) =>
@@ -277,7 +279,7 @@ test('latex output round-trips \\left. evaluation bars', async ({ page }) => {
 
 // \begin{cases} is a real environment — the field must parse it (not
 // wipe) and the output column keeps the latex verbatim.
-test('latex output round-trips \\begin{cases}', async ({ page }) => {
+test('latex output round-trips \\begin{cases}', async () => {
   const mf = cell(page, 0);
   await mf.evaluate(
     (el) =>
@@ -291,7 +293,7 @@ test('latex output round-trips \\begin{cases}', async ({ page }) => {
 
 // `\,` `\;` `\:` `\!` spacing commands parse (previously `\,` degraded
 // to a literal comma and the rest wiped the field).
-test('latex output round-trips \\, \\; \\: \\! spacing', async ({ page }) => {
+test('latex output round-trips \\, \\; \\: \\! spacing', async () => {
   const mf = cell(page, 0);
   await mf.evaluate(
     (el) => ((el as { value: string }).value = '\\int_{a}^{b}x\\,dx'),
@@ -303,9 +305,7 @@ test('latex output round-trips \\, \\; \\: \\! spacing', async ({ page }) => {
 
 // Escaped delimiters and standalone angle/norm delimiters parse
 // (previously each wiped the whole field to a blank cell).
-test('latex output round-trips escaped delimiters and set literals', async ({
-  page,
-}) => {
+test('latex output round-trips escaped delimiters and set literals', async () => {
   const mf = cell(page, 0);
   await mf.evaluate(
     (el) =>
@@ -319,9 +319,7 @@ test('latex output round-trips escaped delimiters and set literals', async ({
 
 // Common latex constructs that previously blanked the field now
 // round-trip: fonts/accents, negated relations, mod, boxed, overset.
-test('latex output round-trips fonts, negations, mod, boxed, overset', async ({
-  page,
-}) => {
+test('latex output round-trips fonts, negations, mod, boxed, overset', async () => {
   const cases: [string, string][] = [
     ['\\mathcal{F}x', '\\mathcal{F}x'],
     ['x\\not\\in A', 'x\\notin A'],
@@ -348,9 +346,7 @@ test('latex output round-trips fonts, negations, mod, boxed, overset', async ({
   }
 });
 
-test('latex output shows multi-line cells as separate lines', async ({
-  page,
-}) => {
+test('latex output shows multi-line cells as separate lines', async () => {
   const mf = cell(page, 0);
   await mf.click();
   await mf.pressSequentially('x', { delay: 40 });

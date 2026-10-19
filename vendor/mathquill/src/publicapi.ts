@@ -137,6 +137,10 @@ class Options {
     | boolean
     | { except: { [name in string]?: true } };
   interpretTildeAsSim: boolean;
+  // MATHCOMPILE: typed matrix commands defer insertion to the app's
+  // rows/columns menu ('mq:matrix-request' on the container) instead of
+  // dropping a default 2x2 grid.
+  matrixDimensionsMenu?: boolean;
   handlers?: {
     fns: HandlerOptions;
     APIClasses: APIClasses;

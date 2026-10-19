@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { clearFirstCell } from './helpers';
+import { clearFirstCell, sharedPage, resetApp } from './helpers';
 
 // MathQuill's focus() strips .mq-empty from the block holding the caret,
 // so a one-block style like \mathrm rendered an invisible slot. The
@@ -24,17 +24,20 @@ const TRANSPARENT = 'rgba(0, 0, 0, 0)';
 const mathrm = (mf: Locator): Locator =>
   mf.locator('.mq-editable-field > .mq-root-block .mq-roman.mq-font');
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
+let page: Page;
+test.beforeAll(async ({ browser }, testInfo) => {
+  page = await sharedPage(browser, testInfo);
+});
+
+test.beforeEach(async () => {
+  await resetApp(page);
   const mf = cell(page);
   await mf.click();
   await mf.focus();
   await clearFirstCell(page);
 });
 
-test('empty \\mathrm block shows a slot while the caret is inside', async ({
-  page,
-}) => {
+test('empty \\mathrm block shows a slot while the caret is inside', async () => {
   const mf = cell(page);
   await mf.pressSequentially('\\mathrm{');
   const rm = mathrm(mf);
@@ -45,9 +48,7 @@ test('empty \\mathrm block shows a slot while the caret is inside', async ({
   expect(await bg(rm)).toBe(SLOT_BG);
 });
 
-test('the slot box stays while the caret is inside, clears when it leaves', async ({
-  page,
-}) => {
+test('the slot box stays while the caret is inside, clears when it leaves', async () => {
   const mf = cell(page);
   await mf.pressSequentially('\\mathrm{');
   const rm = mathrm(mf);
@@ -62,7 +63,7 @@ test('the slot box stays while the caret is inside, clears when it leaves', asyn
   expect(await bg(rm)).toBe(TRANSPARENT);
 });
 
-test('empty \\mathbf block shows a slot too', async ({ page }) => {
+test('empty \\mathbf block shows a slot too', async () => {
   const mf = cell(page);
   await mf.pressSequentially('\\mathbf{');
   const bf = mf.locator('.mq-editable-field > .mq-root-block b.mq-font');
@@ -70,7 +71,7 @@ test('empty \\mathbf block shows a slot too', async ({ page }) => {
   expect(await bg(bf)).toBe(SLOT_BG);
 });
 
-test('a non-empty \\text block keeps the slot box', async ({ page }) => {
+test('a non-empty \\text block keeps the slot box', async () => {
   const mf = cell(page);
   await mf.pressSequentially('\\text{');
   const tm = mf.locator('.mq-editable-field > .mq-root-block .mq-text-mode');
@@ -80,7 +81,7 @@ test('a non-empty \\text block keeps the slot box', async ({ page }) => {
   expect(await bg(tm)).toBe(SLOT_BG);
 });
 
-test('a non-empty script block is not boxed', async ({ page }) => {
+test('a non-empty script block is not boxed', async () => {
   const mf = cell(page);
   await page.keyboard.type('x_');
   const sub = mf.locator('.mq-editable-field > .mq-root-block .mq-sub');
@@ -93,9 +94,7 @@ test('a non-empty script block is not boxed', async ({ page }) => {
   expect(await bg(sub)).toBe(TRANSPARENT);
 });
 
-test('a \\displaylines row holding the caret is not boxed', async ({
-  page,
-}) => {
+test('a \\displaylines row holding the caret is not boxed', async () => {
   const mf = cell(page);
   await page.keyboard.type('x');
   await page.keyboard.press('Enter');
@@ -106,21 +105,21 @@ test('a \\displaylines row holding the caret is not boxed', async ({
   expect(await bg(row)).toBe(TRANSPARENT);
 });
 
-test('a completely empty field keeps the root block transparent', async ({
-  page,
-}) => {
+test('a completely empty field keeps the root block transparent', async () => {
   const mf = cell(page);
   const root = mf.locator('.mq-editable-field > .mq-root-block');
   await expect(root).toHaveClass(/mq-hasCursor/);
   expect(await bg(root)).toBe(TRANSPARENT);
 });
 
-test('dark theme: the slot box reads as a light gray', async ({ page }) => {
-  await page.addInitScript(() => {
+test('dark theme: the slot box reads as a light gray', async () => {
+  // One-shot seed (the shared page keeps addInitScript armed for every
+  // later navigation — it must not leak into other tests).
+  await page.evaluate(() => {
     localStorage.setItem('mathcompile-theme', 'dark');
-    localStorage.removeItem('mathcompile-cells');
+    localStorage.removeItem('mathcompile-worksheets');
   });
-  await page.goto('/');
+  await page.reload();
   const mf = cell(page);
   await mf.click();
   await mf.focus();

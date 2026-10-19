@@ -21,13 +21,27 @@
 //  Fonts (\mathcal \mathfrak \boldsymbol \mathbfit …)
 //======================================================================
 
+// MATHCOMPILE: typed \mathcal opens the pending `\mathcal{arg}` input
+// like \mathbb — before, it rendered an invisible-boundary Style block
+// and `}` just hopped out, so the typed command looked nothing like its
+// latex. Parse/serialize still land on the plain Style node; the
+// script shapes come from the KaTeX_Caligraphic webfont in math.less.
 LatexCmds.mathcal = () =>
-  new Style(
-    '\\mathcal',
-    'span',
-    { class: 'mq-caligraphic mq-font' },
-    'Calligraphic Font'
-  );
+  new (class extends Style {
+    constructor() {
+      super(
+        '\\mathcal',
+        'span',
+        { class: 'mq-caligraphic mq-font' },
+        'Calligraphic Font'
+      );
+    }
+    createLeftOf(cursor: Cursor) {
+      var input = new FontArgInput('mathcal');
+      if (this.replacedFragment) input.replaces(this.replacedFragment);
+      input.createLeftOf(cursor);
+    }
+  })();
 LatexCmds.mathscr = () =>
   new Style(
     '\\mathscr',
@@ -387,7 +401,9 @@ const boundlessIntegral = (ctrlSeq: string, glyph: string, speak: string) => {
   return () =>
     new BoundlessIntegral(
       ctrlSeq,
-      h('span', { class: 'mq-int' }, [
+      // MATHCOMPILE: mq-boundless-int distinguishes these from \int
+      // (a SummationNotation) for \operatorname spacing in math.less
+      h('span', { class: 'mq-int mq-boundless-int' }, [
         h('big', {}, [h.entityText(glyph)])
       ]) as HTMLElement,
       undefined,
@@ -1103,6 +1119,56 @@ LatexCmds.varprojlim = () =>
   new SummationNotation('\\varprojlim ', 'lim&#8592;', 'inverse limit');
 
 //======================================================================
+//  Set operations (\cup \cap \union \intersect \bigcup \bigcap)
+//======================================================================
+
+// MATHCOMPILE: \cup/\cap render as ordinary binary operators until a
+// script attaches — SupSub.contactWeld (commands.ts) then swaps in the
+// big n-ary form, so `\cup_{i=1}^{n}` displays and serializes as
+// `\bigcup_{i=1}^{n}`. The registrations moved out of advancedSymbols.ts
+// (the cut sites are tagged there) because they need the classes below —
+// which live here rather than commands.ts since only extraCommands uses
+// them and every symbol they touch (BinaryOperator in math.ts,
+// SummationNotation in commands.ts) is in SOURCES_BASIC.
+class SetOperation extends BinaryOperator {
+  constructor(
+    ctrlSeq: string,
+    htmlEntity: string,
+    private makeBig: () => BigSetOperation,
+    mathspeak?: string
+  ) {
+    super(ctrlSeq, h.entityText(htmlEntity), undefined, mathspeak);
+  }
+  bigVersion() {
+    return this.makeBig();
+  }
+}
+
+// The scripted form — a \sum-style n-ary operator whose over/under
+// bounds serialize verbatim as `_{ }^{ }`.
+class BigSetOperation extends SummationNotation {}
+
+const bigUnionOp = () =>
+  new BigSetOperation('\\bigcup ', '&#8899;', 'big union');
+const bigIntersectionOp = () =>
+  new BigSetOperation('\\bigcap ', '&#8898;', 'big intersection');
+
+LatexCmds['∪'] =
+  LatexCmds.cup =
+  LatexCmds.union =
+    () => new SetOperation('\\cup ', '&cup;', bigUnionOp, 'union');
+
+LatexCmds['∩'] =
+  LatexCmds.cap =
+  LatexCmds.intersect =
+  LatexCmds.intersection =
+    () =>
+      new SetOperation('\\cap ', '&cap;', bigIntersectionOp, 'intersection');
+
+LatexCmds.bigcup = bigUnionOp;
+LatexCmds.bigcap = bigIntersectionOp;
+
+//======================================================================
 //  Displaystyle \lim — bound under the operator (desmosinc/mathquill#252)
 //======================================================================
 
@@ -1236,6 +1302,77 @@ LatexCmds.def = () =>
   );
 
 //======================================================================
+//  \solve / \dsolve / \pdesolve — insertion aliases for the
+//  \text{…} solver statement markers
+//======================================================================
+
+// Each expands to its real \text{…} marker plus a trailing space — the
+// statement prefix the compiler reads for equation solving (\text{solve}
+// -> sp.solve/sp.solveset), ODEs (\text{dsolve} -> sp.dsolve), and PDEs
+// (\text{pdesolve} -> sp.pdsolve) — the same insertion-time expansion
+// \def uses. Pasted latex serializes as \text{…} on the next save.
+class SolveAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{solve}\\ ');
+  }
+}
+LatexCmds.solve = () =>
+  new SolveAlias(
+    '\\text{solve}',
+    h('span', { class: 'mq-text-mode' }, [h.text('solve')]) as HTMLElement,
+    'solve',
+    'solve equations'
+  );
+class DSolveAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{dsolve}\\ ');
+  }
+}
+LatexCmds.dsolve = () =>
+  new DSolveAlias(
+    '\\text{dsolve}',
+    h('span', { class: 'mq-text-mode' }, [h.text('dsolve')]) as HTMLElement,
+    'dsolve',
+    'solve an ODE'
+  );
+class OdeAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{ode}\\ ');
+  }
+}
+LatexCmds.ode = () =>
+  new OdeAlias(
+    '\\text{ode}',
+    h('span', { class: 'mq-text-mode' }, [h.text('ode')]) as HTMLElement,
+    'ode',
+    'solve an ODE'
+  );
+class PDSolveAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{pdesolve}\\ ');
+  }
+}
+LatexCmds.pdesolve = () =>
+  new PDSolveAlias(
+    '\\text{pdesolve}',
+    h('span', { class: 'mq-text-mode' }, [h.text('pdesolve')]) as HTMLElement,
+    'pdesolve',
+    'solve a PDE'
+  );
+class PdeAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{pde}\\ ');
+  }
+}
+LatexCmds.pde = () =>
+  new PdeAlias(
+    '\\text{pde}',
+    h('span', { class: 'mq-text-mode' }, [h.text('pde')]) as HTMLElement,
+    'pde',
+    'solve a PDE'
+  );
+
+//======================================================================
 //  \tr — insertion alias for \mathrm{tr}
 //======================================================================
 
@@ -1257,3 +1394,155 @@ LatexCmds.tr = () =>
     'tr',
     'tr'
   );
+
+//======================================================================
+//  \D — insertion alias for \text{D} (total derivative)
+//======================================================================
+
+// Typing `\D` expands to a \text{D} TextBlock — an upright "D" the
+// compiler reads as the total-derivative operator (\frac{\D f}{\D x},
+// \D_x f); a plain italic D stays an ordinary symbol. `\D` isn't a real
+// LaTeX command, so pasted latex canonicalizes to \text{D} on the next
+// save — the same insertion-time expansion \def and \tr use.
+class TotalDAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{D}');
+  }
+}
+LatexCmds.D = () =>
+  new TotalDAlias(
+    '\\text{D}',
+    h('span', { class: 'mq-text-mode' }, [h.text('D')]) as HTMLElement,
+    'D',
+    'total derivative'
+  );
+
+//======================================================================
+//  \gradient — insertion alias for \nabla
+//======================================================================
+
+// Typing `\gradient` expands to the \nabla sign the compiler lowers to
+// a gradient (\nabla f) — a pasted `\gradient` renders the same ∇ glyph
+// and serializes as \nabla.
+class GradientAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\nabla ');
+  }
+}
+LatexCmds.gradient = () =>
+  new GradientAlias(
+    '\\nabla ',
+    h('span', {}, [h.entityText('&nabla;')]) as HTMLElement,
+    '∇',
+    'gradient'
+  );
+
+//======================================================================
+//  \plot — insertion alias for \text{plot}
+//======================================================================
+
+// Typing `\plot` expands to a real \text{plot} TextBlock plus a trailing
+// space — the statement marker the compiler reads as a plot request,
+// with the caret after the space ready for the expression — the same
+// insertion-time expansion \def uses. A `\plot` in pasted latex renders
+// the same "plot" text and serializes as \text{plot}, so stored latex
+// canonicalizes on the next save.
+class PlotAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{plot}\\ ');
+  }
+}
+LatexCmds.plot = () =>
+  new PlotAlias(
+    '\\text{plot}',
+    h('span', { class: 'mq-text-mode' }, [h.text('plot')]) as HTMLElement,
+    'plot',
+    'plot'
+  );
+
+//======================================================================
+//  \for — insertion alias for \text{for}
+//======================================================================
+
+// Typing `\for` (or `for` under autoCommands) expands to a real
+// \text{for} TextBlock plus a trailing space — the marker the compiler
+// reads as the comprehension/domain keyword (\text{plot} f \text{for}
+// x ∈ (a,b)) — with the caret after the space ready for the
+// condition — the same insertion-time expansion \def and \plot use. A
+// `\for` in pasted latex renders the same "for" text and serializes as
+// \text{for}, so stored latex canonicalizes on the next save.
+class ForAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\text{for}\\ ');
+  }
+}
+LatexCmds.for = () =>
+  new ForAlias(
+    '\\text{for}',
+    h('span', { class: 'mq-text-mode' }, [h.text('for')]) as HTMLElement,
+    'for',
+    'for'
+  );
+
+//======================================================================
+//  \dotproduct — insertion alias for \bullet
+//======================================================================
+
+// Typing `\dotproduct` expands to the \bullet sign the compiler reads
+// as the dot product (`u \bullet v` -> u·v); a pasted `\dotproduct`
+// renders the same • glyph and serializes as \bullet — the same
+// insertion-time expansion \gradient uses.
+class DotProductAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\bullet ');
+  }
+}
+LatexCmds.dotproduct = () =>
+  new DotProductAlias(
+    '\\bullet ',
+    h('span', { class: 'mq-binary-operator' }, [
+      h.entityText('&bull;')
+    ]) as HTMLElement,
+    '•',
+    'dot product'
+  );
+
+//======================================================================
+//  Matrix word-op aliases — \rank, \eigenvals, \eigenvects, \inverse,
+//  \transpose, \norm, \rref, \charpoly, \nullspace, \columnspace,
+//  \diagonalize, \adjugate
+//======================================================================
+
+// Each expands to its `\mathrm{<word>}` form — the word-op spelling the
+// compiler reads for the matrix method (`\mathrm{rank} A` /
+// `\mathrm{rank}(A)` -> `(A).rank()`), the same insertion-time
+// expansion \tr uses. None is a real LaTeX command, so stored latex
+// canonicalizes to \mathrm{…} on the next save. No trailing space (see
+// \tr): it would put a space node between the name and the parens.
+function mathrmWordAlias(name: string, speak: string) {
+  return class extends MQSymbol {
+    createLeftOf(cursor: Cursor) {
+      cursor.parent.writeLatex(cursor, '\\mathrm{' + name + '}');
+    }
+    constructor() {
+      super(
+        '\\mathrm{' + name + '}',
+        h('span', { class: 'mq-roman' }, [h.text(name)]) as HTMLElement,
+        name,
+        speak
+      );
+    }
+  };
+}
+LatexCmds.rank = mathrmWordAlias('rank', 'rank');
+LatexCmds.eigenvals = mathrmWordAlias('eigenvals', 'eigenvalues');
+LatexCmds.eigenvects = mathrmWordAlias('eigenvects', 'eigenvectors');
+LatexCmds.inverse = mathrmWordAlias('inverse', 'inverse');
+LatexCmds.transpose = mathrmWordAlias('transpose', 'transpose');
+LatexCmds.norm = mathrmWordAlias('norm', 'norm');
+LatexCmds.rref = mathrmWordAlias('rref', 'reduced row echelon form');
+LatexCmds.charpoly = mathrmWordAlias('charpoly', 'characteristic polynomial');
+LatexCmds.nullspace = mathrmWordAlias('nullspace', 'null space');
+LatexCmds.columnspace = mathrmWordAlias('columnspace', 'column space');
+LatexCmds.diagonalize = mathrmWordAlias('diagonalize', 'diagonalize');
+LatexCmds.adjugate = mathrmWordAlias('adjugate', 'adjugate');

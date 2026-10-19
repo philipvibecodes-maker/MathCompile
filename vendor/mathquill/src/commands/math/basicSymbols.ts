@@ -506,6 +506,16 @@ class Letter extends Variable {
   createLeftOf(cursor: Cursor) {
     super.createLeftOf(cursor);
 
+    // MATHCOMPILE: a letter inside an \operatorname{...} block is part of
+    // the operator's name — render it upright and skip the autoCommands /
+    // autoParenthesize passes so \operatorname{pi} stays 'pi' (not \pi)
+    // and no substitution can split the name.
+    var gramp = this.parent && this.parent.parent;
+    if (gramp && gramp.ctrlSeq === '\\operatorname') {
+      this.italicize(false);
+      return;
+    }
+
     this.checkAutoCmds(cursor);
     this.autoParenthesize(cursor);
   }
@@ -537,6 +547,26 @@ class Letter extends Variable {
   }
 
   autoUnItalicize(opts: CursorOptions) {
+    // MATHCOMPILE: inside an \operatorname{...} block the letter run IS
+    // the name — mark the whole run upright and don't scan it for
+    // built-in ops (\operatorname{argmin} mustn't re-split into
+    // \arg \min the way \mathrm{argmin} does).
+    var gramp = this.parent && this.parent.parent;
+    if (gramp && gramp.ctrlSeq === '\\operatorname') {
+      var runStart: NodeRef = this;
+      while (runStart instanceof Letter && runStart[L] instanceof Letter) {
+        runStart = runStart[L];
+      }
+      for (
+        var opLetter: NodeRef = runStart;
+        opLetter instanceof Letter;
+        opLetter = opLetter[R]
+      ) {
+        opLetter.italicize(false);
+      }
+      return;
+    }
+
     var autoOps = opts.autoOperatorNames;
     if (autoOps._maxLength === 0) return;
 
@@ -841,19 +871,43 @@ for (var fn in Options.prototype.autoOperatorNames)
     (LatexCmds as LatexCmdsAny)[fn as string] = OperatorName;
   }
 
+// MATHCOMPILE: \operatorname{...} is a real one-block group, not the
+// upstream parse-time flatten — upstream's createLeftOf was a noop, so
+// a typed `\operatorname{` deleted the command input and the following
+// `{` wrote a \{ \} pair. The block gets the \mathrm-style
+// `mq-roman mq-font` wrapper, so the typed `{` is the arg's own braces
+// (MathBlock.write swallows it at the left end of the empty block) and
+// interior letters render upright. Letter.autoUnItalicize keeps the
+// interior run whole — \operatorname{argmin} stays 'argmin' instead of
+// splitting into \arg \min the way \mathrm{argmin} does.
 LatexCmds.operatorname = class extends MathCommand {
-  createLeftOf() {}
+  starred = false;
+  constructor() {
+    super(
+      '\\operatorname',
+      new DOMView(1, (blocks) =>
+        h.block(
+          'span',
+          { class: 'mq-roman mq-font mq-operatorname' },
+          blocks[0]
+        )
+      )
+    );
+  }
   numBlocks() {
     return 1 as const;
   }
   parser() {
-    // MATHCOMPILE: \operatorname* is the limits-form operator — consume the star so
-    // it doesn't surface as a stray literal '*' (previously
-    // \operatorname*{argmin} -> *\arg\min)
+    var self = this;
+    // \operatorname* is the limits-form operator — keep the star in the
+    // serialization (\operatorname*{argmin} round-trips intact).
     return Parser.optWhitespace
       .then(Parser.string('*').or(Parser.succeed('')))
-      .then(latexMathParser.block)
-      .map(function (b) {
+      .then(function (star: string) {
+        self.starred = !!star;
+        return latexMathParser.block;
+      })
+      .map(function (b: MathBlock) {
         // Check for the special case of \operatorname{ans}, which has
         // a special html representation
         var isAllLetters = true;
@@ -870,9 +924,42 @@ LatexCmds.operatorname = class extends MathCommand {
         if (isAllLetters && str === 'ans') {
           return AnsBuilder();
         }
-        // In cases other than `ans`, just return the children directly
-        return children;
-      });
+        self.blocks = [b];
+        b.adopt(self, 0, 0);
+        return self;
+      })
+        .or(
+          // MATHCOMPILE: same verbatim-leaf fallback as
+          // MathCommand.parser — a bare `\operatorname` (no braces)
+          // degrades to a visible leaf instead of failing the cell.
+          Parser.regex(/^(?=\S)/).then(() =>
+            Parser.succeed(
+              new VanillaSymbol(
+                self.ctrlSeq + ' ',
+                h.text(self.ctrlSeq || ''),
+                self.ctrlSeq
+              ) as MQNode | Fragment
+            )
+          )
+        );
+  }
+  latexRecursive(ctx: LatexContext) {
+    this.checkCursorContextOpen(ctx);
+    ctx.uncleanedLatex += this.ctrlSeq + (this.starred ? '*' : '') + '{';
+    var block = this.getEnd(L) as MQNode;
+    var beforeLength = ctx.uncleanedLatex.length;
+    block.latexRecursive(ctx);
+    if (ctx.uncleanedLatex.length === beforeLength) {
+      // nothing was written so we write a space
+      ctx.uncleanedLatex += ' ';
+    }
+    ctx.uncleanedLatex += '}';
+    this.checkCursorContextClose(ctx);
+  }
+  mathspeak(opts?: MathspeakOptions) {
+    return this.foldChildren('', function (speech, block) {
+      return speech + ' ' + block.mathspeak(opts);
+    }).trim();
   }
 };
 

@@ -97,6 +97,10 @@ const INT_ALIASES = /(?<!\\)((?:\\\\)*)\\antid(?![a-zA-Z])/g;
 const canonicalInt = (s: string): string =>
   s.replace(INT_ALIASES, '$1\\int');
 
+// Same backslash-parity guard as INT_ALIASES: the op's own \ must sit
+// at an odd position in a run, or `\\` + the letters is literal text.
+const BIG_SET_OPS = /(?<!\\)((?:\\\\)*)\\big(cup|cap)(?![a-zA-Z])/g;
+
 export const LATEX_RULES: LatexRule[] = [
   {
     name: 'over-under',
@@ -234,6 +238,153 @@ export const LATEX_RULES: LatexRule[] = [
       ['\\partial_x y', '\\frac{\\partial}{\\partial x} y'],
     ],
   },
+  {
+    name: 'big-set-ops',
+    why: 'CE has no \\bigcup/\\bigcap — rewrite each to an `mc-*` \\text '
+      + 'marker beside a \\sum/\\prod so the parse tree carries the op; '
+      + 'ir.ts\'s bigSetOps() folds marker+op into BigUnion/'
+      + 'BigIntersection, which codegen emits as a comprehension '
+      + 'Union/Intersection.',
+    applies: /\\(?:bigcup|bigcap)(?![a-zA-Z])/,
+    rewrite: (s) =>
+      s.replace(
+        BIG_SET_OPS,
+        (_m, bs: string, kind: string) =>
+          `${bs}\\text{mc-big${
+            kind === 'cup' ? 'union' : 'intersect'
+          }}\\${kind === 'cup' ? 'sum' : 'prod'}`,
+      ),
+    tests: [
+      [
+        '\\bigcup_{i=1}^{n} A_i',
+        '\\text{mc-bigunion}\\sum_{i=1}^{n} A_i',
+      ],
+      [
+        '\\bigcap_{i=1}^{n} A_i',
+        '\\text{mc-bigintersect}\\prod_{i=1}^{n} A_i',
+      ],
+      ['x\\\\bigcup y', 'x\\\\bigcup y'],
+      ['x\\\\\\bigcup y', 'x\\\\\\text{mc-bigunion}\\sum y'],
+    ],
+  },
+  {
+    name: 'd-total-alias',
+    why: '\\D is the insertion alias for the total-derivative operator — '
+      + 'in the field it expands to \\text{D} atoms, so this rewrite only '
+      + 'covers a \\D that reaches the parser anyway (pasted latex, '
+      + 'stored cells from before the alias). A plain D stays a symbol.',
+    applies: /\\D(?![a-zA-Z])/,
+    rewrite: (s) =>
+      s.replace(/(?<!\\)((?:\\\\)*)\\D(?![a-zA-Z])/g, '$1\\text{D}'),
+    tests: [
+      ['\\frac{\\D f}{\\D x}', '\\frac{\\text{D} f}{\\text{D} x}'],
+      ['\\D_x f', '\\text{D}_x f'],
+      ['\\Delta', '\\Delta'],
+      // backslash-run parity: an even count means the slashes are row
+      // separators and "D" is literal text.
+      ['x\\\\D y', 'x\\\\D y'],
+      ['x\\\\\\D y', 'x\\\\\\text{D} y'],
+    ],
+  },
+  {
+    name: 'nabla-gradient',
+    why: '\\nabla/\\gradient spell the gradient operator — CE has no '
+      + 'latex for it, so they rewrite to \\operatorname{grad} which the '
+      + 'normalizer folds to a Gradient node. \\nabla\\cdot/\\bullet/'
+      + '\\times (div/curl), \\nabla^2 (laplacian) and \\nabla_v stay '
+      + 'unsupported-command errors — only the gradient reading exists.',
+    applies: /\\(?:nabla|gradient)(?![a-zA-Z])/,
+    rewrite: (s) =>
+      s.replace(
+        /(?<!\\)((?:\\\\)*)\\(?:nabla|gradient)(?![a-zA-Z])(?!\s*(?:\\cdot|\\times|\\bullet|\\dotproduct|\^|_))/g,
+        '$1\\operatorname{grad}',
+      ),
+    tests: [
+      ['\\nabla f', '\\operatorname{grad} f'],
+      ['\\gradient f', '\\operatorname{grad} f'],
+      ['\\nabla \\cdot F', '\\nabla \\cdot F'],
+      ['\\nabla \\bullet F', '\\nabla \\bullet F'],
+      ['\\nabla^2 f', '\\nabla^2 f'],
+      ['\\nablas', '\\nablas'],
+      ['x\\\\nabla y', 'x\\\\nabla y'],
+      ['x\\\\\\nabla y', 'x\\\\\\operatorname{grad} y'],
+    ],
+  },
+  {
+    name: 'times-cross',
+    why: '\\times is the cross product — CE folds it into Multiply '
+      + 'with \\cdot and juxtaposition, so it masquerades as \\circledast: '
+      + 'a real but effectively-unused CE infix that mints the '
+      + 'CircledAst head, which codegen lowers operand-typed: vectors '
+      + 'to .cross(), all-set operands to the Cartesian *, scalar '
+      + '\\times to multiplication. Literal \\otimes stays free for the '
+      + 'Kronecker product; literal \\circledast reads as \\times. '
+      + 'An even backslash count before it is a row separator + '
+      + 'literal text, not the command.',
+    applies: /\\times(?![a-zA-Z])/,
+    rewrite: (s) =>
+      s.replace(
+        /(?<!\\)((?:\\\\)*)\\times(?![a-zA-Z])/g,
+        '$1\\circledast',
+      ),
+    tests: [
+      ['u \\times v', 'u \\circledast v'],
+      ['2 \\times 3', '2 \\circledast 3'],
+      ['\\mathbb{R}^{m\\times n}', '\\mathbb{R}^{m\\circledast n}'],
+      ['\\timestwo', '\\timestwo'],
+      ['x\\\\times y', 'x\\\\times y'],
+      ['x\\\\\\times y', 'x\\\\\\circledast y'],
+    ],
+  },
+  {
+    // Must run after nabla-gradient (its lookahead leaves \nabla\cdot
+    // alone) and before bullet-dot: a `\nabla \cdot` pair is the
+    // divergence — the \cdot is rewritten to \bullet so it joins the
+    // CircleMinus/Nabla path while every other \cdot is ordinary
+    // multiplication now.
+    name: 'nabla-div',
+    why: '\\nabla\\cdot F is the divergence spelling — \\cdot itself '
+      + 'is plain multiplication, so the pair rewrites to '
+      + '\\nabla\\bullet and bullet-dot carries it to the '
+      + 'CircleMinus/Nabla divergence codegen.',
+    applies: /\\(?:nabla|gradient)(?![a-zA-Z])\s*\\cdot(?![a-zA-Z])/,
+    rewrite: (s) =>
+      s.replace(
+        /(?<!\\)((?:\\\\)*)\\(nabla|gradient)(?![a-zA-Z])(\s*)\\cdot(?![a-zA-Z])/g,
+        '$1\\$2$3\\bullet',
+      ),
+    tests: [
+      ['\\nabla \\cdot F', '\\nabla \\bullet F'],
+      ['\\gradient\\cdot F', '\\gradient\\bullet F'],
+      ['a \\cdot b', 'a \\cdot b'],
+      ['x\\\\nabla\\cdot y', 'x\\\\nabla\\cdot y'],
+    ],
+  },
+  {
+    name: 'bullet-dot',
+    why: '\\bullet (and the \\dotproduct insertion alias) is the dot '
+      + 'product — CE folds it into Multiply with juxtaposition, so it '
+      + 'masquerades as \\ominus: a real but effectively-unused CE '
+      + 'infix that mints the CircleMinus head, which codegen lowers '
+      + 'operand-typed: vectors to .dot(), \\nabla\\bullet to '
+      + 'divergence, all-set operands to the Cartesian *, scalar '
+      + '\\bullet to multiplication. Literal \\ominus reads as '
+      + '\\bullet. An even backslash count before it is a row '
+      + 'separator + literal text, not the command.',
+    applies: /\\(?:bullet|dotproduct)(?![a-zA-Z])/,
+    rewrite: (s) =>
+      s.replace(
+        /(?<!\\)((?:\\\\)*)\\(?:bullet|dotproduct)(?![a-zA-Z])/g,
+        '$1\\ominus',
+      ),
+    tests: [
+      ['u \\bullet v', 'u \\ominus v'],
+      ['u \\dotproduct v', 'u \\ominus v'],
+      ['2 \\cdot 3', '2 \\cdot 3'],
+      ['x\\\\bullet y', 'x\\\\bullet y'],
+      ['x\\\\\\bullet y', 'x\\\\\\ominus y'],
+    ],
+  },
 ];
 
 const ruleByName = new Map(LATEX_RULES.map((r) => [r.name, r]));
@@ -288,6 +439,12 @@ export const PRE_PARSE_RULES = [
   'limits-hints',
   'thin-space',
   'partial-subscript',
+  'big-set-ops',
+  'd-total-alias',
+  'nabla-gradient',
+  'nabla-div',
+  'times-cross',
+  'bullet-dot',
 ];
 
 // Display form for the output column: unwrapped like outputLatex, with

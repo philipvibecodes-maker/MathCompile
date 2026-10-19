@@ -366,13 +366,58 @@ var saneKeyboardEvents = (function () {
       everyTick.trigger(e);
     }
 
+    // MATHCOMPILE: a selection covering a whole \displaylines grid
+    // copies the wrapper verbatim; it's an editing artifact, not part
+    // of the expression, so the clipboard gets one text line per row
+    // (`a\\\nb`). Only top-level `\\` pairs are row separators — `\\`
+    // inside braced groups or a \begin{…}…\end{…} environment stays
+    // on its row.
+    function unwrapDisplaylines(text: string): string {
+      const prefix = '\\displaylines{';
+      if (!text.startsWith(prefix)) return text;
+      let depth = 0;
+      for (let i = prefix.length - 1; i < text.length; i++) {
+        const ch = text[i];
+        if (ch === '{') depth++;
+        else if (ch === '}') {
+          depth--;
+          if (depth === 0) {
+            // only a wrapper covering the whole string unwraps
+            if (i !== text.length - 1) return text;
+            const inner = text.slice(prefix.length, i);
+            let out = '';
+            depth = 0;
+            // \begin{env}…\end{env} rows keep their inner \\ separators
+            // on the row's own line.
+            let envDepth = 0;
+            for (let j = 0; j < inner.length; j++) {
+              const c = inner[j];
+              if (c === '\\') {
+                if (inner[j + 1] === '\\' && depth === 0 && envDepth === 0) {
+                  out += '\\\\\n';
+                  j++;
+                  while (inner[j + 1] === ' ') j++;
+                  continue;
+                }
+                if (inner.startsWith('begin', j + 1)) envDepth++;
+                else if (inner.startsWith('end', j + 1)) envDepth--;
+              } else if (c === '{') depth++;
+              else if (c === '}') depth--;
+              out += c;
+            }
+            return out;
+          }
+        }
+      }
+      return text;
+    }
+
     function updateClipboardData(e: ClipboardEvent | undefined) {
       if (e?.clipboardData) {
         const selection = controller.exportLatexSelection().selection;
         if (selection.startIndex !== selection.endIndex) {
-          const text = selection.latex.slice(
-            selection.startIndex,
-            selection.endIndex
+          const text = unwrapDisplaylines(
+            selection.latex.slice(selection.startIndex, selection.endIndex)
           );
           e.clipboardData.setData('text/plain', text);
           e.clipboardData.setData('application/x-latex', text);

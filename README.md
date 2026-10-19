@@ -54,7 +54,8 @@ src/
     ir.ts                 ce.parse + normalizeIR (MathJSON)
     codegen.ts            IR -> SymPy Python (compileWorksheet)
     targets.ts            output-target registry
-e2e/                    Playwright specs + the spike.html/spike.ts harness
+e2e/                    Playwright specs (browser-only coverage; MQ API
+                        checks live in src/editor/mq-*.test.ts)
 perf/                   perf battery (contract.ts pins the DOM contract)
 vendor/mathquill/       vendored MathQuill + local patches (see its README)
 ```

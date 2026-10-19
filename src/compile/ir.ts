@@ -155,6 +155,170 @@ const foldDQuotient = (args: MathJson[]): MathJson[] | null => {
   return null;
 };
 
+// `\text{D}` marks — the quoted 'D' literal the `\D` insertion alias
+// (and the 'd-total-alias' latex rewrite) produces. They must be read
+// on RAW children: norming unquotes 'D' to a plain D symbol.
+const isTotalDMark = (v: MathJson | undefined): boolean => v === "'D'";
+
+// A `\text{D}`-power: `\text{D}`, `\text{D}^2` — total-derivative order.
+const totalDPower = (
+  v: MathJson | undefined,
+): { is: boolean; order: MathJson | undefined } => {
+  if (isTotalDMark(v)) return { is: true, order: undefined };
+  if (
+    isArray(v) &&
+    head(v) === 'Power' &&
+    v.length === 3 &&
+    isTotalDMark(v[1])
+  )
+    return { is: true, order: v[2] };
+  return { is: false, order: undefined };
+};
+
+// `\frac{\D f}{\D x}` on raw children — the same quotient shapes as
+// dQuotient keyed on the 'D' literal, folding to TotalD slots.
+const tdQuotient = (
+  num: MathJson,
+  den: MathJson,
+):
+  | { body?: MathJson; x: MathJson; order: MathJson | undefined }
+  | null => {
+  if (
+    !isArray(den) ||
+    (head(den) !== 'Multiply' && head(den) !== 'InvisibleOperator') ||
+    den.length !== 3
+  )
+    return null;
+  const dp = totalDPower(den[1]);
+  if (!dp.is) return null;
+  let order = dp.order;
+  let x: MathJson;
+  if (isArray(den[2]) && head(den[2]) === 'Power' && den[2].length === 3) {
+    x = den[2][1];
+    if (
+      order !== undefined &&
+      JSON.stringify(order) !== JSON.stringify(den[2][2])
+    )
+      return null;
+    order = den[2][2];
+  } else {
+    x = den[2];
+    if (order !== undefined) return null; // \D^2 / (\D x) — not a clean
+    // nth-order quotient; leave it a fraction.
+  }
+  const np = totalDPower(num);
+  if (np.is) {
+    if (
+      np.order !== undefined &&
+      order !== undefined &&
+      JSON.stringify(np.order) !== JSON.stringify(order)
+    )
+      return null;
+    return { x, order: order ?? np.order };
+  }
+  if (
+    isArray(num) &&
+    (head(num) === 'Multiply' || head(num) === 'InvisibleOperator')
+  ) {
+    const nq = totalDPower(num[1]);
+    if (!nq.is) return null;
+    if (
+      nq.order !== undefined &&
+      order !== undefined &&
+      JSON.stringify(nq.order) !== JSON.stringify(order)
+    )
+      return null;
+    const tail = num.slice(2);
+    return {
+      body: tail.length === 1 ? tail[0] : ['Multiply', ...tail],
+      x,
+      order: order ?? nq.order,
+    };
+  }
+  return null;
+};
+
+// True when a 'D' literal appears anywhere inside a node — a mark that
+// must fold before norming unquotes it to a plain D symbol.
+const hasTotalDMark = (v: MathJson): boolean =>
+  isTotalDMark(v) || (isArray(v) && v.some((c) => hasTotalDMark(c)));
+
+// Fold the `\D` (`\text{D}`) operator inside a juxtaposition — runs on
+// the RAW factor list since norming would unquote the mark. The
+// notation is asymmetric: bare `\D f` / `\D(f)` is the TOTAL
+// derivative — the Jacobian, which takes no variable — while `\D_x f`
+// is a PARTIAL in x and folds to the ordinary D head. `\frac{\D}{\D}`
+// is not the notation: it still folds to TotalD with a variable so
+// codegen can flag it.
+const foldTotalD = (
+  rawArgs: MathJson[],
+  ctx: NormalizeCtx,
+): MathJson | null => {
+  const normVar = (v: MathJson): MathJson => ctx.norm(v, false, false, true);
+  const bodyOf = (parts: MathJson[]): MathJson =>
+    parts.length === 1
+      ? ctx.norm(parts[0])
+      : (['Multiply', ...parts.map((n) => ctx.norm(n))] as MathJson);
+  const first = rawArgs[0];
+  // `\D_x f` / `\D_x^2 f` — a PARTIAL in x: the ordinary D head, so
+  // other symbols stay constants.
+  const sub =
+    isArray(first) &&
+    head(first) === 'Subscript' &&
+    first.length === 3 &&
+    isTotalDMark(first[1])
+      ? { x: first[2], order: undefined as MathJson | undefined }
+      : isArray(first) &&
+          head(first) === 'Power' &&
+          first.length === 3 &&
+          isArray(first[1]) &&
+          head(first[1]) === 'Subscript' &&
+          first[1].length === 3 &&
+          isTotalDMark(first[1][1])
+        ? { x: first[1][2], order: first[2] as MathJson | undefined }
+        : null;
+  if (sub !== null && rawArgs.length > 1)
+    return sub.order !== undefined
+      ? ['D', bodyOf(rawArgs.slice(1)), normVar(sub.x), ctx.norm(sub.order)]
+      : ['D', bodyOf(rawArgs.slice(1)), normVar(sub.x)];
+  // `\D f` / `\D^2 f` — a bare mark: the TOTAL derivative (Jacobian),
+  // no variable. 'Nothing' holds the var slot so a following slot can
+  // carry the order without colliding with the fraction form's var.
+  const dp = totalDPower(first);
+  if (dp.is && rawArgs.length > 1)
+    return dp.order !== undefined
+      ? ['TotalD', bodyOf(rawArgs.slice(1)), 'Nothing', ctx.norm(dp.order)]
+      : ['TotalD', bodyOf(rawArgs.slice(1))];
+  // A `\frac{\D f}{\D x}` factor — the same two placements as the
+  // d-quotient fold.
+  for (let i = 0; i < rawArgs.length; i++) {
+    const a = rawArgs[i];
+    if (!isArray(a) || head(a) !== 'Divide' || a.length !== 3) continue;
+    const q = tdQuotient(a[1], a[2]);
+    if (!q) continue;
+    const x = normVar(q.x);
+    if (q.body !== undefined) {
+      // `\frac{\D f}{\D x} g` — g stays a factor outside the derivative.
+      const d: MathJson =
+        q.order !== undefined
+          ? ['TotalD', ctx.norm(q.body), x, ctx.norm(q.order)]
+          : ['TotalD', ctx.norm(q.body), x];
+      const factors = [
+        ...rawArgs.slice(0, i).map((n) => ctx.norm(n)),
+        d,
+        ...rawArgs.slice(i + 1).map((n) => ctx.norm(n)),
+      ];
+      return factors.length === 1 ? factors[0] : ['Multiply', ...factors];
+    }
+    const rest = rawArgs.filter((_, j) => j !== i);
+    if (rest.length === 0) return null; // `\frac{\D}{\D x}` alone — leave it.
+    return q.order !== undefined
+      ? ['TotalD', bodyOf(rest), x, ctx.norm(q.order)]
+      : ['TotalD', bodyOf(rest), x];
+  }
+  return null;
+};
+
 // `\python{ ... }` bodies are raw source, not math latex: braces, `\` and
 // `\\` inside them are code, and a literal newline is content. They're
 // extracted to opaque `\mcpsnippet{i}` markers here — before outputLatex
@@ -162,6 +326,18 @@ const foldDQuotient = (args: MathJson[]): MathJson[] | null => {
 // restores them as PythonSource nodes. Escape rules mirror the vendored
 // serializer: `\{`, `\}` and `\\` inside the body are the literal chars.
 const PYTHON_SNIPPET_MARK = /^\\mcpsnippet\{(\d+)\}$/;
+
+// `\text{solve}` / `\text{dsolve}` / `\text{pdesolve}` statement markers
+// (with the `\text{ode}` / `\text{pde}` shorthands). The word is stripped
+// from the statement string before CE sees it — the marker isn't
+// recoverable from the parse anyway (a text literal before a `\dot` or
+// `\frac` makes CE's raw parse silently drop the tail of the statement:
+// `\text{dsolve} \dot{x}+x=0` arrives as Sequence('dsolve', D(x,t)) and
+// `+x=0` is gone). The stripped remainder parses normally and wraps in a
+// ['SolveMark', kind, node] that normalize() lowers into the
+// Solve/DSolve/PDESolve heads.
+const SOLVE_STMT_MARK =
+  /^\s*\\text\s*\{\s*(solve|dsolve|pdesolve|ode|pde)\s*\}\s*/;
 export function extractPythonBlocks(latex: string): {
   latex: string;
   snippets: string[];
@@ -308,6 +484,42 @@ const intervalBind = (s: string, j: MathJson): MathJson => {
   return [head(j), j[1], ['Interval', lo, hi]] as MathJson;
 };
 
+// `\bigcup`/`\bigcap` reach CE as the `\text{mc-*}` marker the
+// 'big-set-ops' latex rule plants beside a \sum/\prod — fold the pair
+// into a BigUnion/BigIntersection node so operator-bounds and codegen
+// see the real op.
+const bigSetOps = (node: MathJson): MathJson => {
+  if (!isArray(node)) return node;
+  const h = head(node);
+  const args = node.slice(1).map(bigSetOps) as MathJson[];
+  if (h !== 'InvisibleOperator' && h !== 'Multiply' && h !== 'CircleTimes')
+    return [h, ...args] as MathJson;
+  const markerAt = args.findIndex(
+    (a) => a === "'mc-bigunion'" || a === "'mc-bigintersect'",
+  );
+  if (markerAt < 0) return [h, ...args];
+  const union = args[markerAt] === "'mc-bigunion'";
+  const opHead = union ? 'Sum' : 'Product';
+  const opAt = args.findIndex((a) => isArray(a) && head(a) === opHead);
+  const big: MathJson | undefined =
+    opAt >= 0
+      ? ([
+          union ? 'BigUnion' : 'BigIntersection',
+          ...(args[opAt] as MathJson[]).slice(1),
+        ] as MathJson)
+      : undefined;
+  const out: MathJson[] = [];
+  args.forEach((a, i) => {
+    if (i === markerAt) {
+      if (big) out.push(big);
+      return;
+    }
+    if (i === opAt) return;
+    out.push(a);
+  });
+  return out.length === 1 ? (out[0] as MathJson) : ([h, ...out] as MathJson);
+};
+
 // Parse a cell's LaTeX into raw MathJSON. Multiple statements become a
 // `["Block", ...]` node so downstream code sees one tree per cell. Parse
 // failures degrade to an Error node — the pipeline reports, never throws.
@@ -315,6 +527,26 @@ export function parseCellLatex(latex: string): MathJson | undefined {
   const { latex: stripped, snippets } = extractPythonBlocks(latex);
   const statements = latexToStatementStrings(stripped);
   if (statements.length === 0) return undefined;
+  // One statement string -> its raw MathJSON node, with the post-parse
+  // rewrites the latex known only here applies.
+  const parseStatement = (s: string): MathJson => {
+    let j: MathJson;
+    try {
+      // `form: 'raw'` skips CE canonicalization so the user's term order
+      // survives to codegen (a * 2 stays Multiply(a, 2), not sorted).
+      // \antid (MathQuill's boundless insertion alias for \int)
+      // already reads as \int here — outputLatex canonicalizes it in
+      // latexToStatementStrings, so CE sees an ordinary Integrate node.
+      // \iint is not aliased — CE parses it natively to Integrate.
+      j = ce().parse(s, { form: 'raw' }).json as MathJson;
+    } catch {
+      return ['Error', `'parse-failed'`] as MathJson;
+    }
+    const jj = bigSetOps(j);
+    return bracketIntervals(
+      intervalBind(s, TEXT_FOR.test(s) ? forToComprehension(jj) : jj),
+    );
+  };
   const parsed = statements
     .map((s) => {
       // A \python{...} statement survives the latex path as a marker —
@@ -327,19 +559,19 @@ export function parseCellLatex(latex: string): MathJson | undefined {
           ? undefined
           : (['PythonSource', code] as MathJson);
       }
-      let j: MathJson;
-    try {
-      // `form: 'raw'` skips CE canonicalization so the user's term order
-      // survives to codegen (a * 2 stays Multiply(a, 2), not sorted).
-      // \antid (MathQuill's boundless insertion alias for \int)
-      // already reads as \int here — outputLatex canonicalizes it in
-      // latexToStatementStrings, so CE sees an ordinary Integrate node.
-      // \iint is not aliased — CE parses it natively to Integrate.
-      j = ce().parse(s, { form: 'raw' }).json as MathJson;
-    } catch {
-      return ['Error', `'parse-failed'`] as MathJson;
-    }
-    return intervalBind(s, TEXT_FOR.test(s) ? forToComprehension(j) : j);
+      // `\text{solve}`/`\text{dsolve}`/`\text{pdesolve}` — strip the
+      // marker word and wrap the rest so normalize() can lower it to
+      // the Solve/DSolve/PDESolve heads.
+      const solveMark = SOLVE_STMT_MARK.exec(s);
+      if (solveMark) {
+        const rest = s.slice(solveMark[0].length).trim();
+        return [
+          'SolveMark',
+          solveMark[1],
+          rest === '' ? undefined : parseStatement(rest),
+        ] as MathJson;
+      }
+      return parseStatement(s);
     })
     .filter((n): n is MathJson => n !== undefined);
   if (parsed.length === 0) return undefined;
@@ -475,6 +707,61 @@ function delimiterArgs(delim: MathJson): MathJson[] {
 const isDelimiterGroup = (v: MathJson): v is MathJson[] =>
   isArray(v) && (head(v) === 'Delimiter' || head(v) === 'Delimiters');
 
+// `(a, b, …)` — a paren-delimited comma list is a tuple: two elements
+// are the open interval (or a 1×2 row matrix in pair-matrix mode),
+// longer ones a 1×n row matrix. CE records the delimiters in the
+// marker arg: '(,)' is parens; a bare `a,b` Sequence carries ',' and
+// stays a List.
+const isParenTuple = (v: MathJson): v is MathJson[] =>
+  isDelimiterGroup(v) &&
+  isArray(v[1]) &&
+  head(v[1]) === 'Sequence' &&
+  isString(v[2]) &&
+  unquote(v[2]) === '(,)';
+
+// `[a,b]` in expression position is the same closed interval the
+// `v = [a,b]` binding reads and the Interval CE mints on its own in
+// set context (`x \in [a,b]`, `[a,b)`). Every raw 2-element List is a
+// bracket pair — `\{…\}` parses as Set, paren pairs carry a Delimiter
+// spec — so each becomes Interval; 3+-element Lists stay sequences.
+// Two shapes keep their List nodes: Matrix rows are structural, and a
+// destructuring bind (`[x,y] = [1,2]`) needs a real iterable list.
+const bracketIntervals = (n: MathJson): MathJson => {
+  if (!isArray(n)) return n;
+  const h = head(n);
+  if (h === 'Matrix') return n;
+  if (h === 'List' && n.length === 3)
+    return ['Interval', bracketIntervals(n[1]), bracketIntervals(n[2])];
+  const lhs = n[1];
+  const rhs = n[2];
+  // Destructure target like `[x,y]` / `(x,y)` — the same member check
+  // normalize's Equal fold uses to pick tuple unpacking.
+  const members = isDelimiterGroup(lhs)
+    ? delimiterArgs(lhs)
+    : isArray(lhs) && (head(lhs) === 'List' || head(lhs) === 'Sequence')
+      ? lhs.slice(1)
+      : null;
+  if (
+    (h === 'Equal' || h === 'Assign') &&
+    Array.isArray(members) &&
+    members.length > 1 &&
+    members.every(isSymbolString)
+  ) {
+    // Keep the rhs List's own head so `x, y = [1, 2]` stays unpackable
+    // (Interval isn't iterable), but still rewrite lists inside it.
+    const walked =
+      isArray(rhs) && head(rhs) === 'List' && rhs.length === 3
+        ? ([
+            'List',
+            bracketIntervals(rhs[1]),
+            bracketIntervals(rhs[2]),
+          ] as MathJson)
+        : bracketIntervals(rhs);
+    return [h, lhs, walked] as MathJson;
+  }
+  return [h, ...n.slice(1).map(bracketIntervals)] as MathJson;
+};
+
 // TeX spacing commands CE wraps in nodes (`\,` -> HorizontalSpacing).
 // They carry no value — dropped from implicit-multiplication chains so
 // `x\,y` stays `x * y` instead of leaking `sp.HorizontalSpacing`.
@@ -532,6 +819,37 @@ const isDefMark = (v: MathJson): boolean => {
   return t !== undefined && t.trim() === 'def';
 };
 
+// `\text{plot}` arrives as a text literal 'plot' — the statement-level
+// marker that asks for a plot of the expression after it.
+const isPlotMark = (v: MathJson): boolean => {
+  const t = isString(v) ? unquote(v) : undefined;
+  return t !== undefined && t.trim() === 'plot';
+};
+
+// `\text{plot} <stmt-expr>` — the marker is a bare factor that binds the
+// WHOLE statement (`\text{plot} x^2 + y^2` plots x²+y², not just x²):
+// CE parses the mark into the leftmost InvisibleOperator item, so the
+// strip walks the node's left spine and lifts it out. Returns the
+// statement expression with the mark removed, or undefined when there
+// is no leading plot mark.
+const splitPlotMark = (n: MathJson): MathJson | undefined => {
+  if (!isArray(n)) return undefined;
+  if (head(n) === 'InvisibleOperator') {
+    const items = n.slice(1).filter((x) => !isSpacing(x));
+    if (items.length >= 2 && isPlotMark(items[0]))
+      // The tail re-normalizes as an InvisibleOperator so the usual
+      // juxtaposition rules still apply — `\plot g(x)` applies the
+      // declared g to x (Apply), it is not g·(x).
+      return items.length === 2
+        ? items[1]
+        : (['InvisibleOperator', ...items.slice(1)] as MathJson);
+    return undefined;
+  }
+  const left = splitPlotMark(n[1]);
+  if (left === undefined) return undefined;
+  return [head(n), left, ...n.slice(2)] as MathJson;
+};
+
 // Statement `\text{def} f(x)…`: the marker lands as the first factor of
 // an InvisibleOperator chain (also inside an Equal lhs). Returns the
 // signature when what's left is a name (+args); a bare `\text{def} f`
@@ -581,7 +899,310 @@ function chainLinear(node: MathJson[]): { ops: string[]; args: MathJson[] } {
   return { ops, args };
 }
 
-// The \min_{u} f / \sup_{u} f underscript: a bare variable, `x \in S`,
+// ---- \text{solve} / \text{dsolve} / \text{pdesolve} statements -------
+//
+// The marker word is stripped in parseCellLatex; the rest of the
+// statement parses normally and arrives wrapped as
+// ['SolveMark', kind, node]. This pass splits the item list (comma
+// lists, a {set}, a \begin{cases} Interval of equations, or a single
+// node) into equations, dependent-variable specs (`y`, `y(x)`,
+// `u(x,t)`), and initial conditions (`y(0)=1`, `y'(0)=0`), then
+// rewrites prime and subscript derivative notation on the names that
+// turned out to be dependent variables so the equation nodes codegen
+// sees are all D/Derivative-shaped.
+
+// A solve statement's item list — every spelling of "these equations":
+// comma-separated, a {set}, a \begin{cases} block (a 2-row cases lands
+// as Interval via bracketIntervals), or the one bare node.
+const solveItems = (n: MathJson | undefined): MathJson[] => {
+  if (!isArray(n)) return n === undefined ? [] : [n];
+  const h = head(n);
+  if (
+    h === 'Delimiter' &&
+    isArray(n[1]) &&
+    head(n[1]) === 'Sequence'
+  )
+    return n[1].slice(1);
+  if (h === 'List' || h === 'Set' || h === 'Tuple') return n.slice(1);
+  if (
+    h === 'Interval' &&
+    n.slice(1).every((a) => isArray(a) && head(a) === 'Equal')
+  )
+    return n.slice(1);
+  return [n];
+};
+
+// A whole item spelling a dependent variable: `y`, `y(x)`, `u(x,t)`.
+const depSpecOf = (
+  n: MathJson,
+): { name: string; vars: string[] } | null => {
+  if (isSymbolString(n)) return { name: n, vars: [] };
+  if (
+    isArray(n) &&
+    head(n) === 'InvisibleOperator' &&
+    n.length === 3 &&
+    isSymbolString(n[1]) &&
+    isDelimiterGroup(n[2])
+  ) {
+    const args = delimiterArgs(n[2]);
+    if (args.length > 0 && args.every(isSymbolString))
+      return { name: n[1], vars: args as string[] };
+  }
+  return null;
+};
+
+// The evidence a node gives that `name` is a dependent variable:
+// vars — independent variables it is differentiated/applied by,
+// primed — it carries `'`/`''` notation (variable unknown until the
+//   dep var's own var list resolves), subs — subscript-derivative
+//   letters seen on `name_sub` strings, seen — any derivative sighting.
+interface DepEvidence {
+  vars: string[];
+  primed: boolean;
+  subs: string[];
+  seen: boolean;
+}
+const depEvidenceFor = (
+  acc: Map<string, DepEvidence>,
+  name: string,
+): DepEvidence => {
+  const e = acc.get(name) ?? { vars: [], primed: false, subs: [], seen: false };
+  e.seen = true;
+  acc.set(name, e);
+  return e;
+};
+// `u_t`, `u_{xx}`, `u_{xt}` — the PDE notation the user guide
+// documents: `name_sub` with an all-letter subscript of up to 3
+// variables reads as derivatives of `name` by each subscript letter.
+// Digits (`u_0`) and longer names (`u_max`) are ordinary variables.
+const SUB_DERIV_RE = /^([A-Za-z]+)_([a-zA-Z]{1,3})$/;
+const collectDepEvidence = (
+  n: MathJson,
+  acc: Map<string, DepEvidence>,
+): void => {
+  if (!isArray(n)) {
+    if (isSymbolString(n)) {
+      const m = SUB_DERIV_RE.exec(n);
+      if (m) {
+        const e = depEvidenceFor(acc, m[1]);
+        for (const c of m[2]) if (!e.subs.includes(c)) e.subs.push(c);
+      }
+    }
+    return;
+  }
+  const h = head(n);
+  // D(f, v[, v…]) — `D(u,x,x)` is diff(u, x, x); repeated vars count once.
+  if (h === 'D' && isString(n[1])) {
+    const e = depEvidenceFor(acc, n[1]);
+    for (const v of n.slice(2))
+      if (isString(v) && !e.vars.includes(v)) e.vars.push(v);
+  } else if (h === 'Prime' && isString(n[1])) {
+    depEvidenceFor(acc, n[1]).primed = true;
+  } else if (h === 'Derivative' && isString(n[1])) {
+    depEvidenceFor(acc, n[1]);
+  } else if (
+    h === 'Apply' &&
+    isArray(n[1]) &&
+    head(n[1]) === 'Derivative' &&
+    isString(n[1][1])
+  ) {
+    // `y^{(k)}(x)` — the callee pins the variable list.
+    const e = depEvidenceFor(acc, n[1][1]);
+    for (const v of n.slice(2))
+      if (isString(v) && !e.vars.includes(v)) e.vars.push(v);
+  }
+  for (const c of n.slice(1)) collectDepEvidence(c, acc);
+};
+
+// Rewrite prime and subscript derivative notation for dependent
+// variables into D nodes, so the normalized equation is uniformly
+// `D(name, v, …)` / `Apply(Derivative(name,k), pt)` shaped.
+const rewriteDepNotation = (
+  n: MathJson,
+  ivars: (name: string) => string[] | undefined,
+  issue: NormalizeCtx['issue'],
+): MathJson => {
+  if (!isArray(n)) {
+    if (isSymbolString(n)) {
+      const m = SUB_DERIV_RE.exec(n);
+      if (!m) return n;
+      const vs = ivars(m[1]);
+      if (vs === undefined) return n;
+      const extra = [...m[2]].filter((c) => !vs.includes(c));
+      if (extra.length > 0)
+        issue(
+          'error',
+          `${n} differentiates ${m[1]} by ${extra.join(', ')} — ${m[1]} is a function of (${vs.join(', ')})`,
+        );
+      return ['D', m[1], ...m[2]] as MathJson;
+    }
+    return n;
+  }
+  if (head(n) === 'Prime' && isString(n[1])) {
+    const vs = ivars(n[1]);
+    if (vs !== undefined) {
+      if (vs.length !== 1) {
+        issue(
+          'error',
+          `'${n[1]}' notation needs a single independent variable — write \\frac{d${n[1]}}{dx} or name the variable explicitly`,
+        );
+        return n;
+      }
+      return n.length >= 3
+        ? (['D', n[1], vs[0], n[2]] as MathJson)
+        : (['D', n[1], vs[0]] as MathJson);
+    }
+  }
+  return [
+    n[0],
+    ...n.slice(1).map((c) => rewriteDepNotation(c, ivars, issue)),
+  ] as MathJson;
+};
+
+// `f(<pt>) = rhs` / `f^(k)(<pt>) = rhs` under a dsolve/pdesolve marker —
+// an initial condition when `f` is a dependent variable and the point
+// is not the variable list itself (`y(x)=x^2` stays an equation).
+const icShapeOf = (
+  n: MathJson,
+  isDep: (name: string) => boolean,
+  ivars: (name: string) => string[] | undefined,
+): { name: string; order: MathJson; pt: MathJson; rhs: MathJson } | null => {
+  if (!isArray(n) || head(n) !== 'Equal' || n.length !== 3) return null;
+  const atPt = (
+    fn: MathJson,
+    args: MathJson[],
+    order: MathJson,
+  ): { name: string; order: MathJson; pt: MathJson; rhs: MathJson } | null => {
+    if (!isString(fn) || !isDep(fn) || args.length !== 1) return null;
+    const pt = args[0];
+    if (isString(pt) && (ivars(fn) ?? []).includes(pt)) return null;
+    return { name: fn, order, pt, rhs: n[2] };
+  };
+  const lhs = n[1];
+  if (
+    isArray(lhs) &&
+    head(lhs) === 'InvisibleOperator' &&
+    lhs.length === 3 &&
+    isDelimiterGroup(lhs[2])
+  )
+    return atPt(lhs[1], delimiterArgs(lhs[2]), 'Nothing');
+  if (
+    isArray(lhs) &&
+    head(lhs) === 'Apply' &&
+    isArray(lhs[1]) &&
+    head(lhs[1]) === 'Derivative' &&
+    lhs.length === 3
+  )
+    return atPt(lhs[1][1], [lhs[2]], lhs[1][2] ?? 1);
+  return null;
+};
+
+// Lower a ['SolveMark', kind, body] statement to its Solve/DSolve/
+// PDESolve node. Children normalize with atStatement=false — the eqs
+// stay Equal (never Assign) inside the solver head.
+function solveMarkedStatement(
+  kind: string,
+  body: MathJson | undefined,
+  ctx: NormalizeCtx,
+): MathJson {
+  // `\text{solve} eq \text{ for } cond` arrives as Comprehension(eq, cond)
+  // — the cond supplies the domain (`x \in S`, `x > 0`) or the variable.
+  let domain: MathJson | undefined;
+  if (isArray(body) && head(body) === 'Comprehension' && body.length === 3) {
+    domain = body[2];
+    body = body[1];
+  }
+  const items = solveItems(body);
+  if (items.length === 0) {
+    ctx.issue('error', `a \\text{${kind}} statement needs an equation to solve`);
+    return ['Error', `'empty-${kind}'`];
+  }
+  if (kind === 'solve') {
+    // Trailing bare symbols are the variables to solve for —
+    // `\text{solve} x^2=1, x`. A non-trailing bare name stays an equation.
+    const vars: string[] = [];
+    while (items.length > 1 && isSymbolString(items[items.length - 1]))
+      vars.unshift(items.pop() as string);
+    const eqs =
+      items.length === 1
+        ? ctx.norm(items[0])
+        : (['List', ...items.map((i) => ctx.norm(i))] as MathJson);
+    const vs = ['List', ...vars] as MathJson;
+    return domain === undefined
+      ? ['Solve', eqs, vs]
+      : ['Solve', eqs, vs, ctx.norm(domain)];
+  }
+  // dsolve/pdesolve family. First gather every dependent-variable
+  // sighting so `f(pt)=…` reads as an initial condition only when `f`
+  // is one of the unknowns.
+  const evidence = new Map<string, DepEvidence>();
+  for (const it of items) collectDepEvidence(it, evidence);
+  const specNames = new Set<string>();
+  const specVars = new Map<string, string[]>();
+  for (const it of items) {
+    const spec = depSpecOf(it);
+    if (spec !== null && !specNames.has(spec.name)) {
+      specNames.add(spec.name);
+      specVars.set(spec.name, spec.vars);
+      if (!evidence.has(spec.name)) depEvidenceFor(evidence, spec.name);
+    }
+  }
+  const depNames = [...evidence.keys()];
+  const ivars = (name: string): string[] | undefined => {
+    if (!depNames.includes(name)) return undefined;
+    const declared = specVars.get(name);
+    const e = evidence.get(name)!;
+    if (declared !== undefined && declared.length > 0) {
+      const extra = e.vars.filter((v) => !declared.includes(v));
+      if (extra.length > 0)
+        ctx.issue(
+          'error',
+          `${name} is differentiated by ${extra.join(', ')} but declared a function of (${declared.join(', ')})`,
+        );
+      return declared;
+    }
+    const vars = [...e.vars];
+    for (const c of e.subs) if (!vars.includes(c)) vars.push(c);
+    if (vars.length === 0 && e.primed) vars.push('x');
+    return vars;
+  };
+  const eqs: MathJson[] = [];
+  const ics: MathJson[] = [];
+  for (const it of items) {
+    if (depSpecOf(it) !== null) continue;
+    const ic = icShapeOf(it, (n) => depNames.includes(n), ivars);
+    if (ic !== null) {
+      ics.push(
+        ['IC', ic.name, ic.order, ctx.norm(ic.pt), ctx.norm(ic.rhs)] as MathJson,
+      );
+      continue;
+    }
+    eqs.push(it);
+  }
+  if (eqs.length === 0) {
+    ctx.issue('error', `a \\text{${kind}} statement needs an equation to solve`);
+    return ['Error', `'empty-${kind}'`];
+  }
+  if (domain !== undefined)
+    ctx.issue('note', `a \\text{for} domain only reads on \\text{solve} — ignored here`);
+  const rewritten = eqs.map((e) =>
+    rewriteDepNotation(e, ivars, ctx.issue),
+  );
+  const eqsN =
+    rewritten.length === 1
+      ? ctx.norm(rewritten[0])
+      : (['List', ...rewritten.map((e) => ctx.norm(e))] as MathJson);
+  const depsN = [
+    'List',
+    ...depNames.map(
+      (name) => ['DepVar', name, ...ivars(name)!] as MathJson,
+    ),
+  ] as MathJson;
+  const icsN = ['List', ...ics] as MathJson;
+  return kind === 'pdesolve' || kind === 'pde'
+    ? ['PDESolve', eqsN, depsN, icsN]
+    : ['DSolve', eqsN, depsN, icsN];
+}
 // or a relational bound on the variable (x >= 0, 0 <= x <= 1). Returns
 // the variable plus an Interval/Set domain node when one is expressible.
 function underVarDomain(under: MathJson): { v: MathJson; domain?: MathJson } {
@@ -696,7 +1317,17 @@ function normalizeStatementEqual(
         ? (members as string[])
         : null;
     })();
-    if (tuple) return mkAssign(['List', ...tuple]);
+    if (tuple) {
+      // A paren-tuple rhs unpacks from its element list — the tuple's
+      // own value (Interval/Matrix) isn't destructure-iterable for a
+      // 2-element open interval.
+      const unpackRhs = isParenTuple(rhs)
+        ? (['List', ...delimiterArgs(rhs).map(normalizeExpr)] as MathJson)
+        : normalizeExpr(rhs);
+      return isArray(unpackRhs) && head(unpackRhs) === 'Assign'
+        ? ['Block', unpackRhs, ['Assign', ['List', ...tuple], unpackRhs[1]]]
+        : ['Assign', ['List', ...tuple], unpackRhs];
+    }
     // `\text{def} f(x) = body` — the marker restores the function-def
     // reading; a bare `f(x) = body` is now an ordinary equation
     // (f·x = body, parens multiply like everywhere else).
@@ -731,9 +1362,27 @@ function normalizeStatementEqual(
 // rules (and ultimately the KNOWN_HEADS passthrough / `call` hatch),
 // mirroring an `if` whose inner test failed and fell through the chain.
 
+// How a two-element paren tuple `(a,b)` lowers: the open interval
+// (default) or a 1×2 row matrix. Plumbed from the settings pref; three
+// or more elements always lower to a row matrix either way.
+export type PairTupleMode = 'interval' | 'matrix';
+export interface NormalizeOptions {
+  pairTuple?: PairTupleMode;
+  /** Names a python cell's `def`/`lambda` resolves to (pydefs.ts) —
+   *  `\mathrm{relu}(x)` lowers to a `call` like a declared fn instead
+   *  of raising the unknown-head note. */
+  pyFns?: ReadonlySet<string>;
+}
+
 interface NormalizeCtx {
   /** Names declared callable by statements seen so far, in cell order. */
   declaredFns: Set<string>;
+  /** Names a python cell's `def`/`lambda` binds (pydefs.ts) — a
+   *  registered name juxtaposed to an argument is a call even when no
+   *  Delimiter group marks it (a pmatrix absorbs the parens). */
+  pyFns: ReadonlySet<string>;
+  /** The 2-element paren-tuple lowering for this pass. */
+  pairTuple: PairTupleMode;
   /** True when the node sits in statement position (a top-level child of
    *  a Block, or the cell's single statement). */
   atStatement: boolean;
@@ -754,6 +1403,8 @@ interface NormalizeCtx {
   /** Push an issue into the current cell's issue list. */
   issue(severity: Issue['severity'], message: string): void;
 }
+
+const NO_NAMES: ReadonlySet<string> = new Set();
 
 // Sentinel for "shape matched but the fold doesn't apply" — see above.
 const DECLINE = Symbol('normalize-decline');
@@ -795,7 +1446,32 @@ const ACCENT_SUFFIX: Record<string, string> = {
 
 // Exported so tests can enumerate the folds (name-uniqueness and the
 // coverage probe in compile.test.ts) — not mutated by callers.
+// `\nabla` reaches CE as an unexpected-command Error (the
+// nabla-gradient latex rule leaves it alone before \cdot/\bullet/
+// \times); inside a vector op it becomes the Nabla head so codegen can
+// emit divergence/curl. CircleMinus is the \bullet disguise (\nabla\cdot
+// arrives pre-rewritten to \nabla\bullet); CircledAst the \times one.
+const isNablaError = (v: MathJson | undefined): boolean =>
+  isArray(v) &&
+  head(v) === 'Error' &&
+  isArray(v[2]) &&
+  head(v[2]) === 'LatexString' &&
+  v[2][1] === "'\\nabla'";
+
 export const NORMALIZE_RULES: NormalizeRule[] = [
+  {
+    name: 'nabla-vector-op',
+    why: 'translate the \nabla Error operand in \nabla\\cdot/\\times into the Nabla head so codegen sees divergence/curl instead of an error',
+    when: (h, node) =>
+      (h === 'CircleMinus' || h === 'CircledAst') &&
+      (node as MathJson[]).slice(1).some(isNablaError),
+    rewrite: (node, ctx) => [
+      head(node),
+      ...(node as MathJson[])
+        .slice(1)
+        .map((a) => (isNablaError(a) ? (['Nabla'] as MathJson) : ctx.norm(a))),
+    ] as MathJson,
+  },
   {
     name: 'eval-bar',
     // \left. f \right|_{a}^{b}: CE emits the evaluation bar as
@@ -978,6 +1654,30 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
     },
   },
   {
+    name: 'solve-mark',
+    // `\text{solve}`/`\text{dsolve}`/`\text{pdesolve}` statements —
+    // parseCellLatex strips the marker word and wraps the rest as
+    // ['SolveMark', kind, node]; this lowers it to Solve/DSolve/
+    // PDESolve. Must run before statement-equal so the equations inside
+    // stay Equal, not Assign.
+    why: 'statement-level \\text{solve}/\\text{dsolve}/\\text{pdesolve} marker lowers to a solver head',
+    when: (h) => h === 'SolveMark',
+    rewrite: (node, ctx) => {
+      if (!ctx.atStatement) {
+        ctx.issue(
+          'error',
+          'a \\text{solve}/\\text{dsolve} marker only reads at the start of a statement',
+        );
+        return ['Error', `'misplaced-solve-mark'`];
+      }
+      return solveMarkedStatement(
+        isString(node[1]) ? node[1] : 'solve',
+        node[2],
+        ctx,
+      );
+    },
+  },
+  {
     name: 'statement-equal',
     // Statement-level `=` disambiguation — `x = rhs` assigns, a
     // def-marked `f(x) = rhs` defines, anything else stays an equation.
@@ -1126,13 +1826,24 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
             fn,
             ...(mid.length === 0 ? callArgs : [...mid, ...callArgs]),
           ];
-        if (isString(fn) && fn.length > 1) {
+        if (isString(fn) && fn.length > 1 && !hasTotalDMark(fn)) {
+          // `\nabla f(x)` — the grad word applied through juxtaposition
+          // is the gradient of the whole product, not a grad(f,x) call.
+          if (fn === 'grad' && mid.length > 0) {
+            const parts = [...mid, ...callArgs];
+            return [
+              'Gradient',
+              parts.length === 1
+                ? parts[0]
+                : (['Multiply', ...parts] as MathJson),
+            ];
+          }
           if (mid.length === 0)
             return ctx.norm([fn, ...callArgs] as MathJson[], ctx.atStatement);
           firstNorm = ctx.norm(fn);
           return ['Apply', firstNorm, ...mid, ...callArgs];
         }
-        if (isArray(fn)) {
+        if (isArray(fn) && !hasTotalDMark(fn)) {
           firstNorm = ctx.norm(fn);
           const fnHead = head(firstNorm);
           if (
@@ -1143,9 +1854,11 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
             return ['Apply', firstNorm, ...mid, ...callArgs];
         }
       }
-      // Fold `()` groups into the factor list — `f(x,y)` reads as f·x·y.
+      // Fold `()` groups into the factor list — `f(x)` reads as f·x. A
+      // paren tuple keeps its own value (an open interval at two
+      // elements, a row matrix beyond): `f(x,y)` is f·(x,y), not f·x·y.
       const flatItems = items.flatMap((n): MathJson[] =>
-        isDelimiterGroup(n) ? delimiterArgs(n) : [n],
+        isDelimiterGroup(n) && !isParenTuple(n) ? delimiterArgs(n) : [n],
       );
       // `\iint f dx dy` / `\iiint` — a single sign binds only the FIRST
       // differential; the rest land as `d v` pairs in the juxtaposition.
@@ -1176,12 +1889,30 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
           ];
         }
       }
+      // `\D` — the `\text{D}` mark must fold before each factor norms:
+      // norming unquotes 'D' to an ordinary D symbol. `\D_x f`,
+      // `\frac{\D f}{\D x} g`, `\frac{\D}{\D x} f`, `\D f`.
+      const td = foldTotalD(flatItems, ctx);
+      if (td) return td;
       const args = flatItems.map((n) =>
         n === fn && firstNorm !== undefined ? firstNorm : ctx.norm(n),
       );
+      // `\nabla f` — lowered to `\operatorname{grad}` by the latex
+      // rewrite — binds the rest of the juxtaposition as the
+      // gradient's argument, not a product factor.
+      if (args[0] === 'grad')
+        return [
+          'Gradient',
+          args.length === 2
+            ? args[1]
+            : (['Multiply', ...args.slice(1)] as MathJson),
+        ];
       // `\mathrm{trace}(M)`-style word ops fused to a matrix literal
       // arrive as InvisibleOperator(word, Matrix) — a method call, not
-      // a product (the Delimiter-less pmatrix shape).
+      // a product (the Delimiter-less pmatrix shape). On a bare name
+      // (`\mathrm{eigenvects} A`) it folds to the same `call` node the
+      // parenthesized form produces — codegen's matrix-method branch
+      // mints the MatrixSymbol.
       if (args.length === 2) {
         const [w, m] =
           isString(args[0]) && MATRIX_WORD_OPS.has(args[0])
@@ -1189,12 +1920,16 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
             : isString(args[1]) && MATRIX_WORD_OPS.has(args[1])
               ? ([args[1], args[0]] as const)
               : [undefined, undefined];
-        if (
-          w !== undefined &&
-          isArray(m) &&
-          head(m as MathJson) === 'Matrix'
-        )
+        if (w !== undefined && isArray(m) && head(m as MathJson) === 'Matrix')
           return ['MatrixMethod', w, m as MathJson];
+        if (w !== undefined && isString(m))
+          return ['call', w, m as MathJson];
+        // `\mathrm{f}\left(\begin{pmatrix}…\end{pmatrix}\right)` — a
+        // registered python def applied to a self-delimiting operand
+        // arrives Delimiter-less (the pmatrix absorbs the parens), the
+        // same shape as the word-op fold above: call it, don't multiply.
+        if (isString(args[0]) && ctx.pyFns.has(args[0]))
+          return ['call', args[0], args[1]];
       }
       const folded = foldDQuotient(args);
       if (folded) {
@@ -1228,6 +1963,17 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
     why: 'd-quotient fold, then matrix word-op fold, else plain product',
     when: (h) => h === 'Multiply',
     rewrite: (node, ctx) => {
+      // Same `\D` fold as the implicit-product path, on the raw
+      // children before 'D' unquotes.
+      const td = foldTotalD(
+        node
+          .slice(1)
+          .flatMap((n): MathJson[] =>
+            isDelimiterGroup(n) ? delimiterArgs(n) : [n],
+          ),
+        ctx,
+      );
+      if (td) return td;
       const args = node.slice(1).map((n) => ctx.norm(n));
       const folded = foldDQuotient(args);
       if (folded)
@@ -1241,9 +1987,45 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
               : [undefined, undefined];
         if (w !== undefined && isArray(m) && head(m) === 'Matrix')
           return ['MatrixMethod', w, ctx.norm(m)];
+        // A bare name — `\mathrm{rank} A` — is the same call node the
+        // parenthesized spelling produces (codegen mints the
+        // MatrixSymbol). A defined scalar still flows through and gets
+        // the honest "needs a matrix" flag there.
+        if (w !== undefined && isString(m))
+          return ['call', w, ctx.norm(m)];
       }
       return DECLINE;
     },
+  },
+  {
+    name: 'total-d-quotient',
+    // A standalone `\frac{\D f}{\D x}` — the 'D'-marked quotient, read
+    // on the raw children before norming unquotes the marks. Not the
+    // total-derivative notation; folds to TotalD(body, x) so codegen
+    // flags it and emits the plausible partial.
+    why: 'a \\text{D}-quotient Divide folds to TotalD(body, x[, order]) — flagged',
+    when: (h, node) => h === 'Divide' && node.length === 3,
+    rewrite: (node, ctx) => {
+      const q = tdQuotient(node[1], node[2]);
+      if (q && q.body !== undefined)
+        return q.order !== undefined
+          ? [
+              'TotalD',
+              ctx.norm(q.body),
+              ctx.norm(q.x, false, false, true),
+              ctx.norm(q.order),
+            ]
+          : ['TotalD', ctx.norm(q.body), ctx.norm(q.x, false, false, true)];
+      return DECLINE;
+    },
+  },
+  {
+    name: 'gradient-call',
+    // `\operatorname{grad}(x)` — the `\nabla` rewrite target in call
+    // position — folds to Gradient(body).
+    why: 'a grad(...) call folds to Gradient(body)',
+    when: (h, node) => h === 'grad' && node.length === 2,
+    rewrite: (node, ctx) => ['Gradient', ctx.norm(node[1])],
   },
   {
     name: 'divide-quotient',
@@ -1264,9 +2046,15 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
     name: 'operator-bounds',
     // Non-canonical \int/\sum/\prod take Tuple bounds (or a bare
     // variable for indefinite integrals); fold into the canonical
-    // Limits shape.
+    // Limits shape. BigUnion/BigIntersection carry the same Tuple
+    // bounds as \sum/\prod — the tail below folds them to Limits too.
     why: 'Tuple/bare-variable operator bounds fold to a Limits node',
-    when: (h) => h === 'Integrate' || h === 'Sum' || h === 'Product',
+    when: (h) =>
+      h === 'Integrate' ||
+      h === 'Sum' ||
+      h === 'Product' ||
+      h === 'BigUnion' ||
+      h === 'BigIntersection',
     rewrite: (node, ctx) => {
       const h = head(node) as string;
       // Iterated integrals nest under the outer sign and park EVERY
@@ -1506,10 +2294,53 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
   {
     name: 'delimiter-unwrap',
     // Parenthesized group — CE wraps (a+b) as ["Delimiters", inner, ...];
-    // keep the inner expression.
-    why: 'Delimiter/Delimiters unwrap to the grouped expression',
+    // keep the inner expression. A paren tuple lowers to its tuple
+    // value: 2 elements to the open Interval, more to a 1×n row Matrix.
+    why: 'Delimiter/Delimiters unwrap to the grouped expression; a paren tuple folds to Interval (2) or row Matrix (n)',
+
     when: (h) => h === 'Delimiters' || h === 'Delimiter',
-    rewrite: (node, ctx) => ctx.norm(node[1], ctx.atStatement),
+    rewrite: (node, ctx) => {
+      if (!isParenTuple(node)) return ctx.norm(node[1], ctx.atStatement);
+      const els = (node[1] as MathJson[])
+        .slice(1)
+        .map((n) => ctx.norm(n));
+      // A 2-tuple is the open interval by default — the same Interval
+      // node CE mints for `x \in (a,b)` — or the row matrix in
+      // pair-matrix mode.
+      if (els.length === 2 && ctx.pairTuple !== 'matrix')
+        return ['Interval', ['Open', els[0]], ['Open', els[1]]];
+      // Longer tuples (and pairs in pair-matrix mode) are 1×n row
+      // matrices — the shape a one-row \begin{pmatrix} literal lowers to.
+      return ['Matrix', ['List', ['List', ...els]]];
+    },
+  },
+  {
+    name: 'open-interval-pair',
+    // In pair-matrix mode `(a,b)` means the row matrix everywhere, so
+    // the Interval node CE mints for `x \in (a,b)` membership — and
+    // the one intervalBind makes for `v = (a,b)` — lowers to the same
+    // 1×2 matrix. Closed `[a,b]` intervals carry no Open marks and
+    // stay intervals.
+    why: 'pair-matrix mode lowers Interval(Open,Open) to the 1×2 row matrix',
+    when: (h, node, ctx) =>
+      ctx.pairTuple === 'matrix' &&
+      h === 'Interval' &&
+      node.length === 3 &&
+      isArray(node[1]) &&
+      head(node[1]) === 'Open' &&
+      isArray(node[2]) &&
+      head(node[2]) === 'Open',
+    rewrite: (node, ctx) => [
+      'Matrix',
+      [
+        'List',
+        [
+          'List',
+          ctx.norm((node[1] as MathJson[])[1]),
+          ctx.norm((node[2] as MathJson[])[1]),
+        ],
+      ],
+    ],
   },
   {
     name: 'assign-chain',
@@ -1547,11 +2378,16 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
         node.length === 3 &&
         isString(node[1]) &&
         SET_LEAF.has(node[1]) &&
-        isArray(node[2]) &&
-        head(node[2]) === 'Error' &&
-        isArray(node[2][2]) &&
-        isString(node[2][2][1]) &&
-        node[2][2][1] === "'\\times'"
+        // `^{\times}` reads as an Error after latex.ts's times-cross
+        // rewrite mints `\circledast`; keep the raw \times/\otimes
+        // Error shapes for IR that bypasses parseCellLatex.
+        (isArray(node[2]) &&
+          head(node[2]) === 'Error' &&
+          isArray(node[2][2]) &&
+          isString(node[2][2][1]) &&
+          (node[2][2][1] === "'\\times'" ||
+            node[2][2][1] === "'\\otimes'" ||
+            node[2][2][1] === "'\\circledast'"))
       );
     },
     rewrite: (node) => {
@@ -1601,6 +2437,7 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
 export function normalizeIR(
   json: MathJson | undefined,
   declaredFns?: Set<string>,
+  opts: NormalizeOptions = {},
 ): NormResult {
   const issues: Issue[] = [];
   const pushIssue = (severity: Issue['severity'], message: string) => {
@@ -1741,6 +2578,19 @@ export function normalizeIR(
     // the declaredFns pre-scan below see the chained-relation shape and
     // never mistake the nested form for an assignment.
     if (h === 'Equal') node = flattenEqual(node);
+    // `\text{plot} <stmt-expr>` — strip the marker before any other
+    // statement rule sees the node; it binds the whole expression
+    // (see splitPlotMark).
+    if (atStatement) {
+      const rest = splitPlotMark(node);
+      if (rest !== undefined) {
+        // `\text{plot} f \text{ for } cond` — the for-clause is the
+        // sampling domain; peel it off the plotted expression.
+        if (isArray(rest) && head(rest) === 'Comprehension' && rest.length === 3)
+          return ['Plot', normalize(rest[1], false), normalize(rest[2], false)];
+        return ['Plot', normalize(rest, false)];
+      }
+    }
 
     // Declaration pre-scan: statement-level shapes that bind a callable
     // name (`\text{def}` def/decl, mapsto declaration,
@@ -1788,6 +2638,8 @@ export function normalizeIR(
 
     const ctx: NormalizeCtx = {
       declaredFns,
+      pyFns: opts.pyFns ?? NO_NAMES,
+      pairTuple: opts.pairTuple ?? 'interval',
       atStatement,
       allowNothing,
       asName,
@@ -1807,7 +2659,7 @@ export function normalizeIR(
       // about a stub that never reaches the output. A worksheet-declared
       // name isn't unknown either — `f(3)` after `f(x) = …` calls the
       // def the cell already made.
-      if (!CALL_RENAMED.has(h) && !declaredFns.has(h))
+      if (!CALL_RENAMED.has(h) && !declaredFns.has(h) && !opts.pyFns?.has(h))
         pushIssue('note', `unknown head "${h}" — emitted as ${h}(...)`);
       return ['call', h, ...node.slice(1).map((n) => normalize(n, false))];
     }
