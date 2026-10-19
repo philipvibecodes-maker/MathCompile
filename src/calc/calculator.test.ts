@@ -59,7 +59,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     expect(prog.statements).toEqual([
       {
         code: 'def f(x):\n    return x**2',
-        display: F('(lambda x: sp.Eq(sp.Function("f")(x), x**2))(sp.Symbol("x"))'),
+        display: F('(lambda x: sp.Eq(sp.Function("f")(x), x**2, evaluate=False))(sp.Symbol("x"))'),
         defines: true,
       },
     ]);
@@ -332,7 +332,7 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     const prog = calc('f: x \\mapsto x^{2}');
     expect(prog.statements[0].code).toBe('def f(x):\n    return x**2');
     expect(prog.statements[0].display).toBe(
-      F('(lambda x: sp.Eq(sp.Function("f")(x), x**2))(sp.Symbol("x"))'),
+      F('(lambda x: sp.Eq(sp.Function("f")(x), x**2, evaluate=False))(sp.Symbol("x"))'),
     );
     // Multi-param colon form `f: (x,y) ↦ x+y` lowers the same way.
     expect(calc('f: (x,y) \\mapsto x + y').statements[0].code).toBe(

@@ -2204,7 +2204,7 @@ describe('matrix-returning functions', () => {
       ),
     );
     expect(out.cells[1].statements[0].code).toBe(
-      'clean_and_simplify((diff(phi(x, y), x)).as_explicit().cross((diff(phi(x, y), y)).as_explicit()))',
+      'clean_and_simplify(diff(phi(x, y), x).cross(diff(phi(x, y), y)))',
     );
   });
 

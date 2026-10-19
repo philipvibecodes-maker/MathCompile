@@ -734,7 +734,14 @@ class Emitter {
     if (isHead(node, 'Matrix') || this.identityDim(node)) return true;
     // A matrix-bound name evaluates to a concrete Matrix — method
     // calls (.inv(), .T, .rref()…) apply to `A + B` compositions too.
-    if (isStr(node)) return this.scope.kinds.matrixNames.has(node);
+    // A matrix-returning function's applied form is concrete likewise
+    // (the def returns a `Matrix`, which lacks `.as_explicit()` — the
+    // abstract path must not claim it).
+    if (isStr(node))
+      return (
+        this.scope.kinds.matrixNames.has(node) ||
+        this.scope.emit.matrixFns.has(node)
+      );
     if (!isArr(node)) return false;
     const operands = node.slice(1) as MathJson[];
     switch (headOf(node)) {
@@ -745,6 +752,16 @@ class Emitter {
       case 'ConjugateTranspose':
       case 'Inverse':
         return this.concreteMatrix(node[1]);
+      case 'D':
+      case 'TotalD':
+        // diff/jacobian of a concrete matrix is concrete; of a
+        // MatrixExpr it stays a MatrixExpr (which does carry
+        // .as_explicit()).
+        return this.concreteMatrix(node[1]);
+      case 'Apply':
+      case 'call':
+        // f(…) with f matrix-returning — the def returns a `Matrix`.
+        return isStr(node[1]) && this.scope.emit.matrixFns.has(node[1]);
       case 'Multiply':
       case 'Divide':
       case 'Power':
@@ -4643,10 +4660,12 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     // function would just evaluate back to body. The lambda binds the
     // param idents to fresh Symbols so the display needs no namespace
     // entries for the (def-local) parameters.
+    // evaluate=False: Eq(expr, Matrix) collapses to literal False, so a
+    // vector-valued def would display `False` instead of the signature.
     const display =
       params.length === 0
-        ? `${sp}Eq(${sp}Function(${JSON.stringify(name)})(), ${body})`
-        : `(lambda ${idents}: ${sp}Eq(${sp}Function(${JSON.stringify(name)})(${idents}), ${body}))(${params
+        ? `${sp}Eq(${sp}Function(${JSON.stringify(name)})(), ${body}, evaluate=False)`
+        : `(lambda ${idents}: ${sp}Eq(${sp}Function(${JSON.stringify(name)})(${idents}), ${body}, evaluate=False))(${params
             .map((p) => `${sp}Symbol(${JSON.stringify(p)})`)
             .join(', ')})`;
     return {
