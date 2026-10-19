@@ -198,6 +198,11 @@ class Scope {
     /** Names used as matrices (\det A, \operatorname{tr}(A)) ->
      * `sp.MatrixSymbol` def lines. */
     matrices: Map<string, string>;
+    /** Function names whose def returns a matrix/vector (`\text{def}
+     * f(x) = (x, y)`) — an applied `f(…)`, a bare `f` operand (which
+     * emits applied), and `D`/`\D` derivatives of it are
+     * matrix-valued, so `\times`/matrix ops take the matrix path. */
+    matrixFns: Set<string>;
     /** Argument list recorded for a function name at its decl/call
      * site (`\dot{x}` -> `x` of `t`, `dy/dx` of `x`, `def f(x,y)`,
      * `f(x)`). A bare Function name in operand position (a call arg,
@@ -312,6 +317,7 @@ class Scope {
       symbols: new Map(),
       functions: new Map(),
       matrices: new Map(),
+      matrixFns: new Set(),
       fnArgs: new Map(),
       lambdaParams: new Map(),
       bound: new Set(),
@@ -480,6 +486,7 @@ class Scope {
     }
     this.emit.fnArgs.delete(name);
     this.emit.lambdaParams.delete(name);
+    this.emit.matrixFns.delete(name);
     this.kinds.depVars.delete(name);
   }
 
@@ -593,6 +600,16 @@ function matrixValuedNode(
     case 'Divide':
     case 'Power':
       return operands.some((a) => matrixValuedNode(a, isMatrixLeaf));
+    case 'D':
+      // A partial derivative differentiates the body elementwise —
+      // matrix-valued exactly when the body is (a vector field's
+      // `D_x f` is its Jacobian column/row).
+      return matrixValuedNode(node[1], isMatrixLeaf);
+    case 'Apply':
+    case 'call':
+      // `f(…)` is matrix-valued when f's def returns a matrix —
+      // isMatrixLeaf covers matrixFns entries.
+      return isStr(node[1]) && isMatrixLeaf(node[1]);
     case 'Gradient':
       // `\nabla` always emits a 1×3 Matrix.
       return true;
@@ -704,6 +721,7 @@ class Emitter {
       node,
       (name) =>
         this.matrixRef(name) ||
+        this.scope.emit.matrixFns.has(name) ||
         (minted && this.scope.emit.matrices.has(name)) ||
         this.identityDim(name) !== null,
     );
@@ -2467,7 +2485,8 @@ class Emitter {
         // concrete matrix: a scalar body wraps as a 1×1, a matrix
         // literal differentiates its entries directly.
         const jac =
-          bodyIsFn || !isArr(body) || headOf(body) !== 'Matrix'
+          (bodyIsFn || !isArr(body) || headOf(body) !== 'Matrix') &&
+          !this.matrixValued(body, true)
             ? `${this.sp}Matrix([${emitted}])`
             : emitted;
         let out = `${jac}.jacobian([${vars
@@ -4524,6 +4543,12 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     const name = isStr(node[1]) ? node[1] : 'result';
     // `f = x \mapsto body` binds a callable — later `f(…)` call-folds
     // like a def'd name instead of flagging a bound-value call.
+    const lambdaMatrixFn =
+      isStr(node[1]) &&
+      isHead(node[2], 'Function') &&
+      (isHead(node[2][1], 'List') ||
+        isHead(node[2][1], 'Tuple') ||
+        emitter.matrixValued(node[2][1], true));
     if (isStr(node[1]) && isHead(node[2], 'Function'))
       emitter.scope.declareFn(node[1]);
     // Matrix-valued by shape, not by emitted text — `I_2` emits
@@ -4552,8 +4577,10 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     // bindAssigned so the record isn't cleared, and kept out of `fnArgs`
     // (which carries observed call-site args that merge across sites).
     // A later `\D f`/`\nabla f` applies f at its own arity.
-    if (isStr(node[1]) && isHead(node[2], 'Function'))
+    if (isStr(node[1]) && isHead(node[2], 'Function')) {
       emitter.scope.emit.lambdaParams.set(node[1], node[2].slice(2));
+      if (lambdaMatrixFn) emitter.scope.emit.matrixFns.add(node[1]);
+    }
     if (emitter.scope.errorCount > before) return { lines: [] };
     // A python-list RHS binds a raw list (`u = [1, 2, 3]`), which
     // Eq can't sympify — display it as the column vector the ops
@@ -4602,6 +4629,14 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     // A later bare `f` in operand position emits `f(<params>)` — an
     // unapplied function object raises TypeError as an operand.
     emitter.scope.claimFunction(name, params);
+    // A vector/matrix body means `f(…)` (and `D_x f`, `\D f`) is
+    // matrix-valued — `\times` etc. take the matrix path on it.
+    if (
+      isHead(node[3], 'List') ||
+      isHead(node[3], 'Tuple') ||
+      emitter.matrixValued(node[3], true)
+    )
+      emitter.scope.emit.matrixFns.add(name);
     if (emitter.scope.errorCount > before) return { lines: [] };
     const idents = params.map(pyIdent).join(', ');
     // `f(x) = body` rendered via an undefined function — the def'd python
@@ -4638,6 +4673,12 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
       const before = emitter.scope.errorCount;
       const rhs = emitter.emit(['Function', node[1], sig]);
       emitter.scope.claimFunction(name, [sig]);
+      if (
+        isHead(node[1], 'List') ||
+        isHead(node[1], 'Tuple') ||
+        emitter.matrixValued(node[1], true)
+      )
+        emitter.scope.emit.matrixFns.add(name);
       if (emitter.scope.errorCount > before) return { lines: [] };
       return {
         lines: [`${pyIdent(name)} = ${rhs}`],
@@ -4657,6 +4698,12 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     const rhs = emitter.emit(node[3]);
     const colonParams = node[3].slice(2).filter(isStr);
     emitter.scope.claimFunction(name, colonParams);
+    if (
+      isHead(node[3][1], 'List') ||
+      isHead(node[3][1], 'Tuple') ||
+      emitter.matrixValued(node[3][1], true)
+    )
+      emitter.scope.emit.matrixFns.add(name);
     if (emitter.scope.errorCount > before) return { lines: [] };
     return {
       lines: [`${pyIdent(name)} = ${rhs}`],

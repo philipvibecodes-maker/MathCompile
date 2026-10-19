@@ -6,7 +6,11 @@ import {
   extractPythonBlocks,
   NORMALIZE_RULES,
 } from './ir';
-import { compileWorksheet, compileCellForCalc } from './codegen';
+import {
+  compileWorksheet,
+  compileCellForCalc,
+  compileCellsForCalc,
+} from './codegen';
 
 // Fixture triples per the IR spec: latex -> normalized IR -> generated
 // SymPy. `expectedPython` is the *cell's* def + statement lines in the
@@ -2185,6 +2189,61 @@ describe('worksheet matrix tracking', () => {
         (i) => i.severity === 'error' && i.message.includes('needs a matrix'),
       ),
     ).toBe(true);
+  });
+});
+
+describe('matrix-returning functions', () => {
+  const cells = (...latex: string[]) =>
+    latex.map((l) => ({ json: parseCellLatex(l) }));
+
+  it('D_x f \times D_y f on a vector-valued def emits .cross', () => {
+    const out = compileCellsForCalc(
+      cells(
+        '\\text{def}\\ \\phi(x,y) = (x,\\ y,\\ x y)',
+        '\\text{D}_{x}\\phi\\ \\times D_{y}\\phi',
+      ),
+    );
+    expect(out.cells[1].statements[0].code).toBe(
+      'clean_and_simplify((diff(phi(x, y), x)).as_explicit().cross((diff(phi(x, y), y)).as_explicit()))',
+    );
+  });
+
+  it('names bound to derivative results take the cross path too', () => {
+    const out = compileCellsForCalc(
+      cells(
+        '\\text{def}\\ \\phi(x,y) = (x,\\ y,\\ x y)',
+        '\\displaylines{a=\\text{D}_{x}\\phi\\\\ b=D_{y}\\phi\\\\ a\\times b}',
+      ),
+    );
+    const stmts = out.cells[1].statements.map((s) => s.code);
+    expect(stmts).toContain('a = diff(phi(x, y), x)');
+    expect(stmts).toContain('b = diff(phi(x, y), y)');
+    expect(stmts[2]).toBe('clean_and_simplify(a.cross(b))');
+  });
+
+  it('a scalar def keeps \times as multiplication', () => {
+    const out = compileCellsForCalc(
+      cells(
+        '\\text{def}\\ \\phi(x,y) = x + y',
+        '\\text{D}_{x}\\phi\\ \\times D_{y}\\phi',
+      ),
+    );
+    expect(out.cells[1].statements[0].code).toBe(
+      'clean_and_simplify(diff(phi(x, y), x) * diff(phi(x, y), y))',
+    );
+  });
+
+  it('rebinding the name to a scalar drops the cross path', () => {
+    const out = compileCellsForCalc(
+      cells(
+        '\\text{def}\\ \\phi(x,y) = (x,\\ y,\\ x y)',
+        '\\phi = 5',
+        '\\text{D}_{x}\\phi\\ \\times D_{y}\\phi',
+      ),
+    );
+    const code = out.cells[2].statements[0].code;
+    expect(code).not.toContain('cross');
+    expect(code).toContain(' * ');
   });
 });
 
