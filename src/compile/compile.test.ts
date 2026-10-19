@@ -6,7 +6,11 @@ import {
   extractPythonBlocks,
   NORMALIZE_RULES,
 } from './ir';
-import { compileWorksheet, compileCellForCalc } from './codegen';
+import {
+  compileWorksheet,
+  compileCellForCalc,
+  compileCellsForCalc,
+} from './codegen';
 
 // Fixture triples per the IR spec: latex -> normalized IR -> generated
 // SymPy. `expectedPython` is the *cell's* def + statement lines in the
@@ -176,15 +180,15 @@ const FIXTURES: {
     expectedPython: ['sp.Matrix([1, 2, 3]).cross(sp.Matrix([4, 5, 6]))'],
   },
   {
+    // `u \times v` on undeclared symbols — not vectors, so \times
+    // flags and the statement drops (\times is never scalar
+    // multiplication; \cdot or juxtaposition for that).
     latex: 'u \\times v',
     expectedIR: ['CircledAst', 'u', 'v'],
-    expectedPython: ["u, v = sp.symbols('u v')", 'u * v'],
+    expectedPython: ["u, v = sp.symbols('u v')"],
+    issues: ['cross product needs vectors'],
   },
-  {
-    latex: '2 \\times 3',
-    expectedIR: ['CircledAst', 2, 3],
-    expectedPython: ['2 * 3'],
-  },
+
   {
     // pmatrix column vectors — concrete .cross() directly on the
     // emitted Matrix.
@@ -2183,6 +2187,79 @@ describe('worksheet matrix tracking', () => {
     expect(
       out.cellIssues[0].some(
         (i) => i.severity === 'error' && i.message.includes('needs a matrix'),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe('matrix-returning functions', () => {
+  const cells = (...latex: string[]) =>
+    latex.map((l) => ({ json: parseCellLatex(l) }));
+
+  it('D_x f \times D_y f on a vector-valued def emits .cross', () => {
+    const out = compileCellsForCalc(
+      cells(
+        '\\text{def}\\ \\phi(x,y) = (x,\\ y,\\ x y)',
+        '\\text{D}_{x}\\phi\\ \\times D_{y}\\phi',
+      ),
+    );
+    expect(out.cells[1].statements[0].code).toBe(
+      'clean_and_simplify(diff(phi(x, y), x).cross(diff(phi(x, y), y)))',
+    );
+  });
+
+  it('names bound to derivative results take the cross path too', () => {
+    const out = compileCellsForCalc(
+      cells(
+        '\\text{def}\\ \\phi(x,y) = (x,\\ y,\\ x y)',
+        '\\displaylines{a=\\text{D}_{x}\\phi\\\\ b=D_{y}\\phi\\\\ a\\times b}',
+      ),
+    );
+    const stmts = out.cells[1].statements.map((s) => s.code);
+    expect(stmts).toContain('a = diff(phi(x, y), x)');
+    expect(stmts).toContain('b = diff(phi(x, y), y)');
+    expect(stmts[2]).toBe('clean_and_simplify(a.cross(b))');
+  });
+
+  it('a scalar def makes \times an error, not multiplication', () => {
+    const out = compileCellsForCalc(
+      cells(
+        '\\text{def}\\ \\phi(x,y) = x + y',
+        '\\text{D}_{x}\\phi\\ \\times D_{y}\\phi',
+      ),
+    );
+    expect(out.cells[1].statements[0].code).toBe('');
+    expect(out.cells[1].statements[0].error).toContain(
+      'cross product needs vectors',
+    );
+  });
+
+  it('rebinding the name to a scalar drops the cross path', () => {
+    const out = compileCellsForCalc(
+      cells(
+        '\\text{def}\\ \\phi(x,y) = (x,\\ y,\\ x y)',
+        '\\phi = 5',
+        '\\text{D}_{x}\\phi\\ \\times D_{y}\\phi',
+      ),
+    );
+    expect(out.cells[2].statements[0].code).toBe('');
+    expect(out.cells[2].statements[0].error).toContain(
+      'cross product needs vectors',
+    );
+  });
+
+  it('\\times on scalars flags instead of multiplying', () => {
+    const out = compileWorksheet(
+      [{ json: parseCellLatex('2 \\times 3') }],
+      'python',
+      { importAll: false },
+    );
+    expect(out.cellLines[0].join('\n')).not.toContain('2 * 3');
+    expect(
+      out.cellIssues[0].some(
+        (i) =>
+          i.severity === 'error' &&
+          i.message.includes('cross product needs vectors'),
       ),
     ).toBe(true);
   });
