@@ -180,15 +180,15 @@ const FIXTURES: {
     expectedPython: ['sp.Matrix([1, 2, 3]).cross(sp.Matrix([4, 5, 6]))'],
   },
   {
+    // `u \times v` on undeclared symbols — not vectors, so \times
+    // flags and the statement drops (\times is never scalar
+    // multiplication; \cdot or juxtaposition for that).
     latex: 'u \\times v',
     expectedIR: ['CircledAst', 'u', 'v'],
-    expectedPython: ["u, v = sp.symbols('u v')", 'u * v'],
+    expectedPython: ["u, v = sp.symbols('u v')"],
+    issues: ['cross product needs vectors'],
   },
-  {
-    latex: '2 \\times 3',
-    expectedIR: ['CircledAst', 2, 3],
-    expectedPython: ['2 * 3'],
-  },
+
   {
     // pmatrix column vectors — concrete .cross() directly on the
     // emitted Matrix.
@@ -2221,15 +2221,16 @@ describe('matrix-returning functions', () => {
     expect(stmts[2]).toBe('clean_and_simplify(a.cross(b))');
   });
 
-  it('a scalar def keeps \times as multiplication', () => {
+  it('a scalar def makes \times an error, not multiplication', () => {
     const out = compileCellsForCalc(
       cells(
         '\\text{def}\\ \\phi(x,y) = x + y',
         '\\text{D}_{x}\\phi\\ \\times D_{y}\\phi',
       ),
     );
-    expect(out.cells[1].statements[0].code).toBe(
-      'clean_and_simplify(diff(phi(x, y), x) * diff(phi(x, y), y))',
+    expect(out.cells[1].statements[0].code).toBe('');
+    expect(out.cells[1].statements[0].error).toContain(
+      'cross product needs vectors',
     );
   });
 
@@ -2241,9 +2242,26 @@ describe('matrix-returning functions', () => {
         '\\text{D}_{x}\\phi\\ \\times D_{y}\\phi',
       ),
     );
-    const code = out.cells[2].statements[0].code;
-    expect(code).not.toContain('cross');
-    expect(code).toContain(' * ');
+    expect(out.cells[2].statements[0].code).toBe('');
+    expect(out.cells[2].statements[0].error).toContain(
+      'cross product needs vectors',
+    );
+  });
+
+  it('\\times on scalars flags instead of multiplying', () => {
+    const out = compileWorksheet(
+      [{ json: parseCellLatex('2 \\times 3') }],
+      'python',
+      { importAll: false },
+    );
+    expect(out.cellLines[0].join('\n')).not.toContain('2 * 3');
+    expect(
+      out.cellIssues[0].some(
+        (i) =>
+          i.severity === 'error' &&
+          i.message.includes('cross product needs vectors'),
+      ),
+    ).toBe(true);
   });
 });
 

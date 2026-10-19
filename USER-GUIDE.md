@@ -180,10 +180,13 @@ Calculator and Python targets. A name that isn't built in, like
 | Kronecker product | `A \otimes B` | \(A \otimes B\) |
 | Direct sum (block diagonal) | `A \oplus B` | \(A \oplus B\) |
 
-The infix ops type themselves by operand: on scalars `\cdot`, `\times`,
-`\odot`, and `\otimes` are ordinary multiplication, on sets they
-emit the Cartesian product, and `\oplus` on sets is the symmetric
-difference. `\nabla \cdot F` and `\nabla \times F` differentiate a
+The infix ops type themselves by operand: on scalars `\cdot`,
+`\odot`, and `\otimes` are ordinary multiplication, on sets `\times`
+emits the Cartesian product, and `\oplus` on sets is the symmetric
+difference. `\times` is never scalar multiplication — it only accepts
+vectors (cross product) or sets (Cartesian product); anything else
+flags an error, so write `\cdot` or juxtapose for scalar products.
+`\nabla \cdot F` and `\nabla \times F` differentiate a
 concrete vector field (`[x^2, y, z]`); on an opaque name they flag
 rather than guess. A symbolic vector operand is declared with
 `u \in \mathbb{R}^{3\times1}`; a list- or matrix-bound name already

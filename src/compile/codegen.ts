@@ -1782,8 +1782,9 @@ class Emitter {
         // Cartesian `*` sets get from Multiply; a vector operand makes
         // it a cross — .cross is a MatrixBase method, so bracket lists
         // and list-bound names wrap in sp.Matrix and MatrixExpr lowers
-        // through .as_explicit() (MatrixSymbol has no .cross). Nothing
-        // vector-like: \times stays multiplication (`2 \times 3`).
+        // through .as_explicit() (MatrixSymbol has no .cross). \times
+        // is never scalar multiplication — any other operand flags
+        // (write \cdot or juxtapose instead).
         // `\nabla \times F` is the curl — the Error operand the
         // nabla-gradient rule leaves becomes the Nabla head.
         if (isHead(args[0], 'Nabla')) {
@@ -1842,11 +1843,6 @@ class Emitter {
           return null;
         };
         const texts = args.map(crossArg);
-        if (texts.every((t) => t === null))
-          return [
-            args.map((a) => this.emit(a, PREC_MUL)).join(' * '),
-            PREC_MUL,
-          ];
         const parts = texts.map((t, i) => {
           if (t !== null) return t;
           const a = args[i] as MathJson;
