@@ -1843,19 +1843,22 @@ class Emitter {
           return null;
         };
         const texts = args.map(crossArg);
-        const parts = texts.map((t, i) => {
-          if (t !== null) return t;
-          const a = args[i] as MathJson;
+        if (texts.some((t) => t === null)) {
+          // \times is never scalar multiplication — name each
+          // non-vector operand in one flag (write \cdot or juxtapose).
+          const scalars = args
+            .filter((_, i) => texts[i] === null)
+            .map((a) => (isStr(a) ? a : 'an operand'));
           this.scope.flag(
             'error',
-            `cross product needs vectors — ${isStr(a) ? a : 'an operand'} is a scalar here`,
+            `cross product needs vectors — ${scalars.join(', ')} ${scalars.length > 1 ? 'are' : 'is'} ${scalars.length > 1 ? 'scalars' : 'a scalar'} here`,
           );
-          return this.emit(a);
-        });
+          return ['None', PREC_ATOM];
+        }
         return [
-          parts
+          (texts as string[])
             .slice(1)
-            .reduce((acc, p) => `${acc}.cross(${p})`, parts[0] as string),
+            .reduce((acc, p) => `${acc}.cross(${p})`, texts[0] as string),
           PREC_ATOM,
         ];
       }
