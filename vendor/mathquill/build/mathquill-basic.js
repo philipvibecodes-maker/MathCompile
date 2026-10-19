@@ -3327,8 +3327,10 @@ var __assign = (this && this.__assign) || function () {
             }
             // MATHCOMPILE: a selection covering a whole \displaylines grid
             // copies the wrapper verbatim; it's an editing artifact, not part
-            // of the expression, so the clipboard gets the bare row latex
-            // (`a\\ b`) \u2014 which pastes back as a hard line break.
+            // of the expression, so the clipboard gets one text line per row
+            // (`a\\\nb`). Only top-level `\\` pairs are row separators \u2014 `\\`
+            // inside braced groups or a \begin{\u2026}\u2026\end{\u2026} environment stays
+            // on its row.
             function unwrapDisplaylines(text) {
                 var prefix = '\\displaylines{';
                 if (!text.startsWith(prefix))
@@ -3340,9 +3342,38 @@ var __assign = (this && this.__assign) || function () {
                         depth++;
                     else if (ch === '}') {
                         depth--;
-                        // only a wrapper covering the whole string unwraps
                         if (depth === 0) {
-                            return i === text.length - 1 ? text.slice(prefix.length, i) : text;
+                            // only a wrapper covering the whole string unwraps
+                            if (i !== text.length - 1)
+                                return text;
+                            var inner = text.slice(prefix.length, i);
+                            var out = '';
+                            depth = 0;
+                            // \begin{env}\u2026\end{env} rows keep their inner \\ separators
+                            // on the row's own line.
+                            var envDepth = 0;
+                            for (var j = 0; j < inner.length; j++) {
+                                var c = inner[j];
+                                if (c === '\\') {
+                                    if (inner[j + 1] === '\\' && depth === 0 && envDepth === 0) {
+                                        out += '\\\\\n';
+                                        j++;
+                                        while (inner[j + 1] === ' ')
+                                            j++;
+                                        continue;
+                                    }
+                                    if (inner.startsWith('begin', j + 1))
+                                        envDepth++;
+                                    else if (inner.startsWith('end', j + 1))
+                                        envDepth--;
+                                }
+                                else if (c === '{')
+                                    depth++;
+                                else if (c === '}')
+                                    depth--;
+                                out += c;
+                            }
+                            return out;
                         }
                     }
                 }

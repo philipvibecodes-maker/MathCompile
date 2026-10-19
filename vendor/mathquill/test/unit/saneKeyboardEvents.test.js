@@ -592,10 +592,19 @@ suite('saneKeyboardEvents', function () {
       return clipboardData.getData('text/plain');
     }
 
-    test('unwraps a copied whole-\\displaylines selection', function () {
+    test('unwraps a copied whole-\\displaylines selection to lines', function () {
       assert.equal(
         copyWithSelection('\\displaylines{a\\\\ b^{2}}'),
-        'a\\\\ b^{2}'
+        'a\\\\\nb^{2}'
+      );
+    });
+
+    test('keeps \\ inside braced groups on the same line', function () {
+      assert.equal(
+        copyWithSelection(
+          '\\displaylines{\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}\\\\ y}'
+        ),
+        '\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}\\\\\ny'
       );
     });
 

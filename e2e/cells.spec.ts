@@ -229,9 +229,9 @@ test('copying a multi-line cell puts bare rows on the clipboard', async () => {
   await page.keyboard.press('ControlOrMeta+a');
   await page.keyboard.press('ControlOrMeta+c');
   // The \displaylines wrapper is an editing artifact — the clipboard
-  // holds the row latex.
+  // holds one text line per row.
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-    'x+1\\\\ y',
+    'x+1\\\\\ny',
   );
 });
 

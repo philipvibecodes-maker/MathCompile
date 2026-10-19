@@ -3336,8 +3336,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             }
             // MATHCOMPILE: a selection covering a whole \displaylines grid
             // copies the wrapper verbatim; it's an editing artifact, not part
-            // of the expression, so the clipboard gets the bare row latex
-            // (`a\\ b`) — which pastes back as a hard line break.
+            // of the expression, so the clipboard gets one text line per row
+            // (`a\\\nb`). Only top-level `\\` pairs are row separators — `\\`
+            // inside braced groups or a \begin{…}…\end{…} environment stays
+            // on its row.
             function unwrapDisplaylines(text) {
                 var prefix = '\\displaylines{';
                 if (!text.startsWith(prefix))
@@ -3349,9 +3351,38 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                         depth++;
                     else if (ch === '}') {
                         depth--;
-                        // only a wrapper covering the whole string unwraps
                         if (depth === 0) {
-                            return i === text.length - 1 ? text.slice(prefix.length, i) : text;
+                            // only a wrapper covering the whole string unwraps
+                            if (i !== text.length - 1)
+                                return text;
+                            var inner = text.slice(prefix.length, i);
+                            var out = '';
+                            depth = 0;
+                            // \begin{env}…\end{env} rows keep their inner \\ separators
+                            // on the row's own line.
+                            var envDepth = 0;
+                            for (var j = 0; j < inner.length; j++) {
+                                var c = inner[j];
+                                if (c === '\\') {
+                                    if (inner[j + 1] === '\\' && depth === 0 && envDepth === 0) {
+                                        out += '\\\\\n';
+                                        j++;
+                                        while (inner[j + 1] === ' ')
+                                            j++;
+                                        continue;
+                                    }
+                                    if (inner.startsWith('begin', j + 1))
+                                        envDepth++;
+                                    else if (inner.startsWith('end', j + 1))
+                                        envDepth--;
+                                }
+                                else if (c === '{')
+                                    depth++;
+                                else if (c === '}')
+                                    depth--;
+                                out += c;
+                            }
+                            return out;
                         }
                     }
                 }
@@ -22346,8 +22377,11 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 el[0].dispatchEvent(new ClipboardEvent('copy', { clipboardData: clipboardData }));
                 return clipboardData.getData('text/plain');
             }
-            test('unwraps a copied whole-\\displaylines selection', function () {
-                assert.equal(copyWithSelection('\\displaylines{a\\\\ b^{2}}'), 'a\\\\ b^{2}');
+            test('unwraps a copied whole-\\displaylines selection to lines', function () {
+                assert.equal(copyWithSelection('\\displaylines{a\\\\ b^{2}}'), 'a\\\\\nb^{2}');
+            });
+            test('keeps \\ inside braced groups on the same line', function () {
+                assert.equal(copyWithSelection('\\displaylines{\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}\\\\ y}'), '\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}\\\\\ny');
             });
             test('leaves a partial-\\displaylines or unwrapped selection alone', function () {
                 assert.equal(copyWithSelection('\\displaylines{x} + y'), '\\displaylines{x} + y');
