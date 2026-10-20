@@ -655,8 +655,8 @@ export const HELP_TOPICS: HelpTopic[] = [
   {
     id: 'norm',
     goal: 'Norm ‖x‖',
-    keywords: 'norm magnitude double bars lVert length',
-    how: '\\lVert ⏎ — pairs auto-close',
+    keywords: 'norm magnitude double bars lVert \\| length',
+    how: '\\| or \\lVert ⏎ — pairs auto-close',
     insert: '\\lVert',
   },
   {
