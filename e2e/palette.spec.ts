@@ -95,9 +95,9 @@ test('clicking the backdrop closes the palette', async () => {
 
 test('empty query lists every command', async () => {
   await page.keyboard.press('Control+k');
-  // 23 fixed commands + 3 enabled targets + 1 worksheet switch + 1 goto
+  // 24 fixed commands + 3 enabled targets + 1 worksheet switch + 1 goto
   // per cell (single cell, single worksheet here).
-  await expect(page.locator('.cmd-item')).toHaveCount(28);
+  await expect(page.locator('.cmd-item')).toHaveCount(29);
 });
 
 test('settings commands toggle the persisted options', async () => {

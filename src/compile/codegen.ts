@@ -1844,8 +1844,12 @@ class Emitter {
         };
         const texts = args.map(crossArg);
         if (texts.some((t) => t === null)) {
-          // \times is never scalar multiplication — name each
-          // non-vector operand in one flag (write \cdot or juxtapose).
+          // \times is never scalar multiplication — emit each operand
+          // so its symbols mint before the flag drops the statement
+          // (the mint lines survive like other flagged cells), then
+          // name each non-vector operand in one flag (write \cdot or
+          // juxtapose instead).
+          for (const a of args) this.emit(a);
           const scalars = args
             .filter((_, i) => texts[i] === null)
             .map((a) => (isStr(a) ? a : 'an operand'));

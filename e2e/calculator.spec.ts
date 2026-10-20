@@ -58,7 +58,7 @@ test('flags interim results and the engine-loading banner while SymPy boots', as
   // it's still loading and names the interim engine, and each interim
   // row is tagged as an estimate.
   const chip = page.locator('.engine-chip');
-  await expect(chip).toContainText('SymPy engine loading');
+  await expect(chip).toContainText('SymPy loading');
   await expect(chip).toContainText('Compute Engine');
   await expect(page.locator('.calc-interim').first()).toBeVisible({
     timeout: 10_000,
