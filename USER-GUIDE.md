@@ -59,6 +59,7 @@ right after a letter becomes a subscript:
 | Solve equations | `solve` | \(\text{solve}\) — the solve marker |
 | Solve an ODE | `dsolve` | \(\text{dsolve}\) — the dsolve marker |
 | Solve a PDE | `pdesolve` | \(\text{pdesolve}\) — the pdesolve marker |
+| Plot an expression | `plot` | \(\text{plot}\) — the plot marker (see *Plotting*) |
 | Auto-subscript | `x2` | \(x_2\) |
 
 Operator names like `sin`, `lim`, and `det` stay upright and space
@@ -141,9 +142,16 @@ shortcut and what a `a,b / c,d` grid renders as.
 | Bare grid | `\matrix` | \(\begin{matrix} a & b \\ c & d \end{matrix}\) |
 | Compact inline matrix | `\smallmatrix` | \(\begin{smallmatrix} a & b \\ c & d \end{smallmatrix}\) |
 
+Typing a matrix command doesn't drop a fixed grid — it opens a
+**rows × columns menu** with a live preview: fill the two numbers,
+**Enter** inserts the grid, `Esc` (or clicking away) cancels. `\cases`
+and the non-matrix grids skip the menu and open directly.
+
 Inside a matrix grid: **Enter** adds a row, **Shift+Space** adds a
-column, and the arrow keys walk cell to cell. `&` separates columns
-and `\\` ends a row in the stored LaTeX. The bare forms
+column, **Ctrl+Shift+Backspace** deletes the current row, and
+**Ctrl+Shift+Delete** deletes the current column (each a no-op once
+only one remains). The arrow keys walk cell to cell. `&` separates
+columns and `\\` ends a row in the stored LaTeX. The bare forms
 `\pmatrix{a&b\\c&d}` and friends also work — one brace argument, no
 `\begin`.
 
@@ -158,7 +166,7 @@ Calculator and Python targets. A name that isn't built in, like
 | Operation | Type | Renders |
 | --- | --- | --- |
 | Determinant | `det` then the matrix | \(\det A\) |
-| Trace | `\mathrm{trace}` (or `\mathrm{tr}`) | \(\mathrm{trace}(A)\) |
+| Trace | `\tr` or `\mathrm{trace}` | \(\mathrm{trace}(A)\) — `\tr` expands to `\mathrm{tr}` |
 | Rank | `\mathrm{rank}` | \(\mathrm{rank}(A)\) |
 | Inverse | `A^{-1}` or `\mathrm{inverse}` | \(A^{-1}\) |
 | Transpose | `A^{\mathrm{T}}` or `\mathrm{transpose}` | \(A^{\mathrm{T}}\) |
@@ -191,6 +199,11 @@ concrete vector field (`[x^2, y, z]`); on an opaque name they flag
 rather than guess. A symbolic vector operand is declared with
 `u \in \mathbb{R}^{3\times1}`; a list- or matrix-bound name already
 counts as one.
+
+For an upright operator name that isn't built in, `\operatorname{…}`
+(e.g. `\operatorname{argmin}`) is a real editable group: the word
+stays one upright unit — it isn't split into built-ins the way
+`\mathrm{argmin}` is — and it spaces like a LaTeX `\mathop`.
 
 ### Multi-line equations
 
@@ -439,6 +452,28 @@ mode, or `\solve`, `\dsolve`, `\pdesolve`, `\ode`, `\pde` as commands.
   higher-order PDEs like the heat equation come back as a SymPy
   `NotImplementedError` rather than a wrong answer.
 
+### Python cells
+
+A cell can hold raw Python instead of math: **+ Python cell** under the
+cell list appends one, and the palette's *Insert Python cell below*,
+*Convert cell to Python*, and *Convert cell to math* do the same in
+place (converting keeps the source text).
+
+- Python cells run in the same shared namespace as the math cells, in
+  worksheet order — `import`, assignments, and `def`s above are in
+  scope below.
+- The last expression line of a cell echoes as its result row, like a
+  REPL. `def` blocks and `name = lambda` binds are definitions — they
+  never echo, so a defs-only cell evaluates silently.
+- A `def f(x): …` is **callable from math cells**: write
+  `\mathrm{f}(x)` (an upright name) to call it. Add a
+  `# @latex <latex>` comment above the def to give it a different call
+  form in math notation. A math-cell `\text{def}` for the same name
+  wins.
+- `\python{…}` inside a math cell embeds a raw Python statement inline
+  — braces, backslashes, and newlines inside the braces are code, not
+  LaTeX.
+
 ### Combinatorics
 
 | You want | Type | Renders |
@@ -478,7 +513,8 @@ engine status.
 - Cells share one namespace, in worksheet order: a variable or function
   defined in a cell is usable in every cell below it, and editing a
   cell re-evaluates the ones that depend on it.
-- `!` marks a statement that failed, `i` a note; hover for the message.
+- `!` marks a statement that failed, `i` a note; hover for the
+  message, which is selectable and has a copy button.
 - **Show generating code** reveals the exact Python program that
   produced the results, with a copy button.
 - The `import *` checkbox in the header (shared with the Python
@@ -486,6 +522,42 @@ engine status.
   uses `import sympy as sp` with `sp.`-qualified names.
 - The **Settings** menu (calculator and Python targets) exposes
   display plumbing and animation timing — default values are fine.
+
+#### Plotting
+
+A statement that opens with `\text{plot}` draws an interactive figure
+in place of a result row — type `plot` in Smart mode, or `\plot` as a
+command. The marker binds the whole statement: `\text{plot} x^2 + y^2`
+plots all of \(x^2+y^2\). The free variables pick the plot kind, and a
+column vector (a `\pmatrix` column) is component-wise:
+
+| You write | Draws |
+| --- | --- |
+| `\text{plot} x^2` | a plain ℝ→ℝ curve |
+| `\text{plot} x^2 + y^2` | a 3-D ℝ²→ℝ surface |
+| `\text{plot} \begin{pmatrix} \cos t \\ \sin t \end{pmatrix}` | a parametric ℝ→ℝ² plane curve |
+| `\text{plot} \begin{pmatrix} \cos t \\ \sin t \\ t \end{pmatrix}` | a parametric ℝ→ℝ³ space curve |
+| `\text{plot} \begin{pmatrix} u\cos v \\ u\sin v \\ v \end{pmatrix}` | a parametric ℝ²→ℝ³ surface |
+| `\text{plot} \begin{pmatrix} -y \\ x \end{pmatrix}` | an ℝ²→ℝ² map — a quiver vector field, with an image-of-the-grid view from the figure's **field**/**image** menu |
+
+Add `\text{ for }` plus a condition to set the domain (a missing end
+falls back to a default range):
+
+| Domain clause | Samples |
+| --- | --- |
+| `\text{plot} x^2 \text{ for } x \in (0, 5)` | \(x\) over \((0,5)\) — `[a,b]` works too |
+| `\text{plot} x^2 \text{ for } 0 \le x \le 5` | same, written as a chain |
+| `\text{plot} x^2 \text{ for } x > 0` | \(x > 0\) — the upper end uses the default |
+| `\text{plot} (u,v,1) \text{ for } u \in (0,1),\, v \in (0,2\pi)` | per-variable bounds, combined with `,` or `\land` |
+| `… \text{ for } (u,v) \in I_1 \times I_2` | a product of intervals names both bounds at once |
+
+Conditions that aren't intervals — finite sets, equalities — can't be
+sampled and get an `i` note. Figures are live: pan and zoom 2-D plots,
+rotate and zoom 3-D scenes, and the ℝ²→ℝ² figure's menu switches
+between the field and image views. While the SymPy engine is still
+booting, the figure is a quick estimate drawn by the in-page engine
+(the same dimmed *estimate* treatment); the real plotly figure replaces
+it.
 
 ### Python
 
@@ -510,6 +582,7 @@ mode) to define a function — the generated code is `def f(x): return
 | `Ctrl+Space` | open the symbol picker |
 | `Ctrl+K` / `⌘K` | command palette |
 | `Shift+Space` | new column inside a matrix |
+| `Ctrl+Shift+Backspace`, `Ctrl+Shift+Delete` | delete the current matrix row / column |
 | `↑`, `↓` | move between cells at field edges |
 | `Home`, `End` | block edges (`Ctrl+Home`/`Ctrl+End` for the whole field) |
 | `Backspace` on a blank cell | delete the cell |
