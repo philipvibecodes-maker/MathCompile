@@ -2050,6 +2050,16 @@ const FIXTURES: {
     ],
   },
   {
+    // Multiple equations always emit a funcs list — SymPy rejects a
+    // scalar func next to a list of eqs, even a single-function one.
+    latex: "\\text{dsolve} y''=y', y'=y, y(0)=1",
+    expectedPython: [
+      'x = sp.Symbol("x")',
+      'y = sp.Function("y")',
+      'sp.dsolve([sp.Eq(sp.diff(y(x), x, 2), sp.diff(y(x), x)), sp.Eq(sp.diff(y(x), x), y(x))], [y(x)], ics={y(0): 1})',
+    ],
+  },
+  {
     // `f^{(k)}(pt)=rhs` — a derivative initial condition.
     latex: '\\text{dsolve} \\frac{d^2y}{dx^2} = y, y^{\\prime}(0)=0',
     expectedPython: [
