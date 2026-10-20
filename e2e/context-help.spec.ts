@@ -107,7 +107,7 @@ test('caret after a \\text{plot} marker shows the for-domain hints', async () =>
   await setValue(mf, '\\text{plot} x^2');
   await page.keyboard.press('Control+End');
   await expect(help(mf)).toHaveClass(/\bon\b/);
-  await expect(help(mf)).toContainText('\\text{for}');
+  await expect(help(mf)).toContainText('for x');
   await expect(help(mf)).toContainText('set the domain');
   await expect(help(mf)).toContainText('one-sided');
   await expect(help(mf)).toContainText('2-variable domain');

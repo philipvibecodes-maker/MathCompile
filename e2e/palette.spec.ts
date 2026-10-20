@@ -95,9 +95,47 @@ test('clicking the backdrop closes the palette', async () => {
 
 test('empty query lists every command', async () => {
   await page.keyboard.press('Control+k');
-  // 15 fixed commands + 3 enabled targets + 1 worksheet switch + 1 goto
+  // 23 fixed commands + 3 enabled targets + 1 worksheet switch + 1 goto
   // per cell (single cell, single worksheet here).
-  await expect(page.locator('.cmd-item')).toHaveCount(20);
+  await expect(page.locator('.cmd-item')).toHaveCount(28);
+});
+
+test('settings commands toggle the persisted options', async () => {
+  const store = () =>
+    page.evaluate(() => {
+      const s = (
+        window as unknown as { __mc: { store: Record<string, unknown> } }
+      ).__mc.store;
+      return {
+        importAll: s.importAll,
+        pairTuple: s.pairTuple,
+        fadeMs: s.fadeMs,
+      };
+    });
+
+  await page.keyboard.press('Control+k');
+  await page.locator('.palette-input').pressSequentially('settings import');
+  await page
+    .locator('.cmd-item', { hasText: 'Settings: import *' })
+    .click();
+  expect((await store()).importAll).toBe(false);
+
+  await page.keyboard.press('Control+k');
+  await page.locator('.palette-input').pressSequentially('matrix');
+  await page
+    .locator('.cmd-item', { hasText: '(a,b) is a 1x2 matrix' })
+    .click();
+  expect((await store()).pairTuple).toBe('matrix');
+
+  // ms knobs go through the palette's prompt input.
+  await page.keyboard.press('Control+k');
+  await page.locator('.palette-input').pressSequentially('fade duration');
+  await page
+    .locator('.cmd-item', { hasText: 'Settings: fade duration (ms)' })
+    .click();
+  await page.locator('.palette-input').fill('300');
+  await page.keyboard.press('Enter');
+  expect((await store()).fadeMs).toBe(300);
 });
 
 test('a query matching nothing shows the empty state', async () => {

@@ -10,6 +10,10 @@ import {
 } from './caret-context';
 import { mountStaticMath } from './static-math';
 import { isMqKeyTarget, type MathFieldElement } from './math-field';
+import {
+  loadCompletionUsage,
+  recordCompletionUse,
+} from '../state/persistence';
 
 // IDE-style autocomplete: a filtered dropdown anchored under the caret
 // whenever the typed context has completions — the `\` command input
@@ -76,7 +80,7 @@ export function attachAutocompleteMenu(field: MathFieldElement) {
     ctx = readCompletionContext(field);
     if (!ctx || suppressed) return hide();
     if (ctx.kind === 'word' && ctx.prefix.length < 2) return hide();
-    items = matchCompletions(ctx.prefix);
+    items = matchCompletions(ctx.prefix, 8, loadCompletionUsage());
     if (!items.length) return hide();
     sel = Math.min(sel, items.length - 1);
     menu.replaceChildren(...items.map(row));
@@ -94,6 +98,7 @@ export function attachAutocompleteMenu(field: MathFieldElement) {
     if (!mq || !ctx) return;
     if (ctx.kind === 'command') acceptCommandCompletion(mq, item, ctx.prefix);
     else acceptWordCompletion(mq, item, ctx.prefix);
+    recordCompletionUse(item.name);
     hide();
   };
 

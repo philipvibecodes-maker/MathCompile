@@ -44,12 +44,6 @@
         onclick={() => appStore.toggleHelpPin(t.id)}
         >{pinned ? 'unpin' : 'pin'}</button
       >
-      <button
-        class="howto-hide"
-        title="Hide this tip"
-        aria-label="Hide {t.goal}"
-        onclick={() => appStore.hideHelpTopic(t.id)}>×</button
-      >
     </dd>
   </div>
 {/snippet}

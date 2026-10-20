@@ -47,6 +47,34 @@ describe('matrix environments', () => {
     expect(el.value).toBe('\\begin{array}{cc}&\\\\&\\end{array}');
   });
 
+  it('the dimensions menu pre-fills the last inserted size', () => {
+    localStorage.removeItem('mathcompile-matrix-dims');
+    const { el, mq } = mountAppField();
+    type(mq, '\\pmatrix');
+    mq.keystroke('Enter'); // accept the command -> menu opens
+    let dims = el.querySelectorAll<HTMLInputElement>('.mc-mat-dim');
+    expect(dims[0].value).toBe('2');
+    expect(dims[1].value).toBe('2');
+    dims[0].value = '3';
+    dims[1].value = '4';
+    dims[0].dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+    );
+    expect(el.value).toBe(
+      '\\begin{pmatrix}&&&\\\\&&&\\\\&&&\\end{pmatrix}',
+    );
+    expect(localStorage.getItem('mathcompile-matrix-dims')).toBe(
+      '{"rows":3,"cols":4}',
+    );
+    // A fresh field's menu defaults to the size just inserted.
+    const second = mountAppField();
+    type(second.mq, '\\pmatrix');
+    second.mq.keystroke('Enter');
+    dims = second.el.querySelectorAll<HTMLInputElement>('.mc-mat-dim');
+    expect(dims[0].value).toBe('3');
+    expect(dims[1].value).toBe('4');
+  });
+
   it('Enter inside a matrix cell adds a row, not a displaylines wrap', () => {
     const { el, mq } = mountAppField();
     el.value = '\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}';
@@ -182,5 +210,102 @@ describe('matrix environments', () => {
     mq.keystroke('Ctrl-Home');
     mq.keystroke('Ctrl-Shift-Del');
     expect(el.value).toBe('');
+  });
+
+  it('Ctrl+Enter inside a matrix cell adds a row above, Enter below', () => {
+    const { el, mq } = mountAppField();
+    el.value = '\\begin{matrix}a&b\\\\c&d\\end{matrix}';
+    mq.keystroke('Ctrl-End');
+    mq.keystroke('Left'); // cell d (row 1, col 1)
+    mq.keystroke('Ctrl-Enter');
+    expect(el.value).toBe('\\begin{matrix}a&b\\\\&\\\\c&d\\end{matrix}');
+    // Caret lands on the new empty row; Enter then adds a row below it
+    // again (between the new row and c&d).
+    pressEnter(mq);
+    expect(el.value).toBe(
+      '\\begin{matrix}a&b\\\\&\\\\&\\\\c&d\\end{matrix}',
+    );
+    // And the caret still types into the live new cell — it lands in
+    // the caret's column, here col 1 (d's column).
+    type(mq, 'z');
+    expect(el.value).toBe('\\begin{matrix}a&b\\\\&\\\\&z\\\\c&d\\end{matrix}');
+  });
+
+  it('Ctrl+Shift+Spacebar adds a column left of the caret', () => {
+    const { el, mq } = mountAppField();
+    el.value = '\\begin{matrix}a&b\\\\c&d\\end{matrix}';
+    mq.keystroke('Ctrl-End');
+    mq.keystroke('Left'); // cell d (col 1)
+    mq.keystroke('Ctrl-Shift-Spacebar');
+    expect(el.value).toBe('\\begin{matrix}a&&b\\\\c&&d\\end{matrix}');
+    type(mq, 'z');
+    expect(el.value).toBe('\\begin{matrix}a&&b\\\\c&z&d\\end{matrix}');
+  });
+
+  it('Ctrl-Enter and Ctrl-Shift-Spacebar are matrices-only in multi-line cells', () => {
+    const { el, mq } = mountAppField();
+    el.value = '\\displaylines{a\\\\b}';
+    mq.keystroke('Ctrl-End');
+    mq.keystroke('Ctrl-Enter');
+    mq.keystroke('Ctrl-Shift-Spacebar');
+    // Neither key edits the \displaylines cell — still two rows, no &.
+    expect(el.value).toBe('\\displaylines{a\\\\ b}');
+    expect(el.value).not.toContain('&');
+  });
+});
+
+describe('matrix paste', () => {
+  // controller.paste() is the entry the textarea's paste event calls.
+  const paste = (mq: ReturnType<typeof mountAppField>['mq'], text: string) =>
+    (
+      mq as unknown as { __controller: { paste(t: string): void } }
+    ).__controller.paste(text);
+
+  it('pasting TSV into a matrix fills cells from the caret', () => {
+    const { el, mq } = mountAppField();
+    el.value = '\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}';
+    mq.keystroke('Ctrl-Home');
+    mq.keystroke('Right'); // cell a
+    paste(mq, '1\t2\n3\t4');
+    expect(el.value).toBe('\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}');
+  });
+
+  it('a paste larger than the grid grows it right and down', () => {
+    const { el, mq } = mountAppField();
+    el.value = '\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}';
+    mq.keystroke('Ctrl-Home');
+    mq.keystroke('Right'); // cell a
+    paste(mq, '1\t2\t3\n4\t5\t6\n7\t8\t9');
+    expect(el.value).toBe(
+      '\\begin{pmatrix}1&2&3\\\\4&5&6\\\\7&8&9\\end{pmatrix}',
+    );
+  });
+
+  it('a bare column of lines fills down inside a matrix', () => {
+    const { el, mq } = mountAppField();
+    el.value = '\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}';
+    mq.keystroke('Ctrl-Home');
+    mq.keystroke('Right'); // cell a
+    paste(mq, 'x\ny');
+    expect(el.value).toBe('\\begin{pmatrix}x&b\\\\y&d\\end{pmatrix}');
+  });
+
+  it('pasting CSV outside a matrix writes a \\pmatrix', () => {
+    const { el, mq } = mountAppField();
+    paste(mq, '1,2\n3,4');
+    expect(el.value).toBe('\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}');
+    expect(ed(el).querySelectorAll('.mq-matrix tr')).toHaveLength(2);
+  });
+
+  it('a single comma line stays a literal paste', () => {
+    const { el, mq } = mountAppField();
+    paste(mq, 'a,b');
+    expect(el.value).toBe('a,b');
+  });
+
+  it('latex-looking text never parses as a table', () => {
+    const { el, mq } = mountAppField();
+    paste(mq, '\\frac{1}{2}+\\sqrt{3}');
+    expect(el.value).toBe('\\frac{1}{2}+\\sqrt{3}');
   });
 });

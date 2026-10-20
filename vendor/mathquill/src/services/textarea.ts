@@ -224,6 +224,48 @@ class Controller extends Controller_scrollHoriz {
         text = '\\text{' + text + '}';
       }
     }
+    // MATHCOMPILE: tabular paste — inside a real matrix it fills cells
+    // from the caret, growing the grid; outside one, a multi-column
+    // table becomes a \pmatrix. Anything else (single lines, bare
+    // multi-line text outside a grid, latex-looking text) falls
+    // through to the normal latex write.
+    var table = parseTableText(text);
+    if (table) {
+      var cell: MQNode | undefined = this.cursor.parent;
+      while (cell && !(cell instanceof MatrixCell))
+        cell = cell.parent as MQNode | undefined;
+      var grid =
+        cell && !(cell.parent instanceof DisplayLines)
+          ? (cell.parent as CellGrid)
+          : null;
+      if (cell && grid && grid.pasteCells(cell as MatrixCell, table, this)) {
+        this.notify('edit');
+        this.cursor.show();
+        this.scrollHoriz();
+        if (this.options && this.options.onPaste) {
+          this.options.onPaste();
+        }
+        return;
+      }
+      if (
+        !cell &&
+        Math.max.apply(
+          Math,
+          table.map(function (r) {
+            return r.length;
+          })
+        ) > 1
+      ) {
+        text =
+          '\\pmatrix{' +
+          table
+            .map(function (r) {
+              return r.join('&');
+            })
+            .join('\\\\') +
+          '}';
+      }
+    }
     // FIXME: this always inserts math or a TextBlock, even in a RootTextBlock
     this.writeLatex(text).cursor.show();
     this.scrollHoriz();
