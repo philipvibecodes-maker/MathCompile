@@ -380,17 +380,6 @@
               </button>
             </span>
           {/if}
-          {#if appStore.target === 'python' || appStore.target === 'calculator'}
-            <label class="option-checkbox output-import-all">
-              <input
-                type="checkbox"
-                checked={appStore.importAll}
-                onchange={(e) =>
-                  (appStore.importAll = e.currentTarget.checked)}
-              />
-              import *
-            </label>
-          {/if}
           {#if compiled && appStore.target === 'python'}
             <button
               class="cell-copy"
@@ -418,6 +407,49 @@
                   <span class="settings-tab active">animations</span>
                 </div>
                 <div class="settings-body">
+                  <div class="settings-row">
+                    <label class="option-checkbox output-import-all">
+                      <input
+                        type="checkbox"
+                        checked={appStore.importAll}
+                        onchange={(e) =>
+                          (appStore.importAll = e.currentTarget.checked)}
+                      />
+                      import *
+                    </label>
+                    <button
+                      type="button"
+                      class="info-icon"
+                      aria-label="About the import setting"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        aria-hidden="true"
+                      >
+                        <circle cx="12" cy="12" r="9" />
+                        <line x1="12" y1="11" x2="12" y2="16.5" />
+                        <circle
+                          cx="12"
+                          cy="7.5"
+                          r="0.75"
+                          fill="currentColor"
+                        />
+                      </svg>
+                      <span
+                        class="info-tip"
+                        role="tooltip"
+                        aria-hidden="true"
+                      >
+                        Generated Python imports: `from sympy import *`
+                        (bare names) or `import sympy as sp`
+                        (sp.-qualified).
+                      </span>
+                    </button>
+                  </div>
                   {#if appStore.target === 'calculator'}
                     <div class="settings-row">
                       <label class="option-checkbox">

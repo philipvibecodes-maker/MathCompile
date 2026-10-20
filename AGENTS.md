@@ -141,6 +141,8 @@ and empty blocks serialize as `{ }`.
 
 ## Calculator target
 
+- `calculator` is the default target on a fresh load (persisted pref
+  `target` in `loadPrefs`); e2e specs pin `latex` via `resetApp`.
 - `target === 'calculator'` renders `CalcOutput` per cell: Compute
   Engine interim rows (dimmed, no `code`) until the Pyodide/SymPy
   worker is ready, then one result row per top-level statement.
@@ -172,6 +174,10 @@ and empty blocks serialize as `{ }`.
   do this).
 - Closing the palette refocuses the active cell via
   `focusCell(focusedId)`.
+- The settings menu's options are mirrored as `Settings: …` commands so
+  they stay reachable when the menu isn't rendered (e.g. the latex
+  target); ms-valued knobs use the palette's `prompt` input via
+  `msPrompt` in `src/commands.ts`.
 
 ## MathQuill notes
 

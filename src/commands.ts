@@ -17,6 +17,22 @@ export interface Command {
   prompt?: { placeholder: string; initial: string; run: (value: string) => void };
 }
 
+// ms-valued settings knobs share one prompt: integer input clamped to the
+// slider range; unparseable input is a no-op.
+const msPrompt = (
+  placeholder: string,
+  current: number,
+  max: number,
+  set: (ms: number) => void,
+): Command['prompt'] => ({
+  placeholder,
+  initial: String(current),
+  run: (v) => {
+    const n = Number.parseInt(v, 10);
+    if (Number.isFinite(n)) set(Math.min(max, Math.max(0, n)));
+  },
+});
+
 // The command list reads the store directly; wrap the call in $derived at
 // the callsite so the (always-mounted) palette only recomputes it when the
 // underlying state changes.
@@ -118,6 +134,68 @@ export const buildCommands = (store: AppStore): Command[] => {
       keywords: 'toggle theme appearance light night',
       current: store.darkMode,
       run: () => (store.darkMode = !store.darkMode),
+    },
+    // The settings menu's options, mirrored so they're reachable from the
+    // palette (the menu itself only renders for the codegen targets).
+    {
+      id: 'settings-import-all',
+      title: 'Settings: import *',
+      keywords: 'settings sympy import star codegen qualified',
+      current: store.importAll,
+      run: () => (store.importAll = !store.importAll),
+    },
+    {
+      id: 'settings-plumbing',
+      title: 'Settings: display plumbing',
+      keywords: 'settings calculator generated code plumbing',
+      current: store.showPlumbing,
+      run: () => (store.showPlumbing = !store.showPlumbing),
+    },
+    {
+      id: 'settings-pair-interval',
+      title: 'Settings: (a,b) is an open interval',
+      keywords: 'settings pair tuple interval codegen',
+      current: store.pairTuple === 'interval',
+      run: () => (store.pairTuple = 'interval'),
+    },
+    {
+      id: 'settings-pair-matrix',
+      title: 'Settings: (a,b) is a 1x2 matrix',
+      keywords: 'settings pair tuple matrix codegen',
+      current: store.pairTuple === 'matrix',
+      run: () => (store.pairTuple = 'matrix'),
+    },
+    {
+      id: 'settings-fade',
+      title: 'Settings: fade duration (ms)',
+      keywords: 'settings animation fade code line',
+      prompt: msPrompt('fade ms (0-800)', store.fadeMs, 800, (n) => {
+        store.fadeMs = n;
+      }),
+    },
+    {
+      id: 'settings-debounce',
+      title: 'Settings: issue debounce (ms)',
+      keywords: 'settings animation debounce issues delay',
+      prompt: msPrompt('debounce ms (0-2000)', store.debounceMs, 2000, (n) => {
+        store.debounceMs = n;
+      }),
+    },
+    {
+      id: 'settings-fade-in',
+      title: 'Settings: issue fade-in (ms)',
+      keywords: 'settings animation fade issues overlay',
+      prompt: msPrompt('fade-in ms (0-800)', store.fadeInMs, 800, (n) => {
+        store.fadeInMs = n;
+      }),
+    },
+    {
+      id: 'settings-fade-out',
+      title: 'Settings: issue fade-out (ms)',
+      keywords: 'settings animation fade issues overlay',
+      prompt: msPrompt('fade-out ms (0-800)', store.fadeOutMs, 800, (n) => {
+        store.fadeOutMs = n;
+      }),
     },
     {
       id: 'search-help',
