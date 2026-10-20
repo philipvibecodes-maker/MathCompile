@@ -133,13 +133,13 @@ export const HELP_ENTRIES: Record<HelpContext, { key: string; does: string }[]> 
       { key: '^\\dagger', does: 'adjoint' },
       { key: '^+', does: 'pseudoinverse' },
     ],
-    // The `\text{for}` domain clause the compiler reads off a plot
+    // The `for` domain clause the compiler reads off a plot
     // statement — interval, inequality, conjunction, and product forms.
     'in-plot': [
-      { key: '\\text{for} x \\in (a,b)', does: 'set the domain' },
-      { key: '\\text{for} x > a', does: 'one-sided bound' },
+      { key: 'for x \\in (a,b)', does: 'set the domain' },
+      { key: 'for x > a', does: 'one-sided bound' },
       {
-        key: '\\text{for} u \\in I \\land v \\in J',
+        key: 'for u \\in I \\land v \\in J',
         does: '2-variable domain',
       },
     ],
@@ -149,12 +149,8 @@ export const HELP_ENTRIES: Record<HelpContext, { key: string; does: string }[]> 
       { key: 'g(x,y) = x + y', does: 'several args' },
     ],
     // `\text{solve}` family: equation + trailing symbols name the
-    // variables; `\text{for}` bounds it; dsolve takes ics.
-    'in-solve': [
-      { key: 'x^2 = 1, x', does: 'solve for x' },
-      { key: 'y(0) = 1', does: 'initial condition (dsolve)' },
-      { key: '\\text{for} x > a', does: 'domain (solveset)' },
-    ],
+    // variables.
+    'in-solve': [{ key: 'x^2 = 1, x', does: 'solve for x' }],
     'in-bounds': [
       { key: 'Tab', does: 'other bound' },
       { key: '↑ / ↓', does: 'switch bounds' },
