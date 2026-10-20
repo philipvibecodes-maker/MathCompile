@@ -62,6 +62,12 @@
       </div>
     {/each}
   </dl>
+  <div class="howto-agent-row">
+    <AgentPromptButton
+      label="Copy agent prompt for custom functions"
+      title="Copy a ready-made prompt + doc link to paste into your AI agent"
+    />
+  </div>
   <div class="howto-foot">
     {#if needsRestore}
       <button
@@ -71,10 +77,6 @@
         restore default help topics
       </button>
     {/if}
-    <AgentPromptButton
-      class="howto-agent"
-      label="Copy agent prompt for custom functions"
-    />
     <button
       class="howto-find"
       title="Search help topics (Ctrl+/)"

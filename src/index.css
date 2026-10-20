@@ -1980,19 +1980,15 @@ body {
   text-decoration: underline;
 }
 
-/* Agent-prompt copy entry in the howto foot — link-styled like the
-   neighbouring restore/find buttons. */
-.howto-foot .agent-prompt {
-  padding: 0;
-  font-size: 13px;
-  color: var(--muted);
-  border: none;
+/* Agent-prompt copy affordance — its own row above the howto footer so
+   it can't be confused with the restore/find text links. */
+.howto-agent-row {
+  padding: 10px 12px 0;
 }
 
-.howto-foot .agent-prompt:hover {
-  color: var(--accent-text);
-  background: none;
-  text-decoration: underline;
+.howto-agent-row .agent-prompt {
+  font-size: 13px;
+  padding: 5px 10px;
 }
 
 .howto-item {
