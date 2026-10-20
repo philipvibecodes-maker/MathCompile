@@ -4,7 +4,6 @@
   import { appStore } from '../state/store.svelte';
   import { fuzzyHits, fuzzyTextScore } from '../fuzzy';
   import { HELP_TOPICS, TOPIC_BY_ID, type HelpTopic } from '../help/topics';
-  import { copyAgentPrompt } from '../agent-prompt';
 
   // Permanently mounted like the command palette: opening is a
   // visibility flip + focus(), not a mount — cold-open cost is gone.
@@ -189,11 +188,6 @@
   // single input — they pin instead). Insertion closes the overlay;
   // pinning stays open so several results can be collected.
   const activate = (t: HelpTopic) => {
-    if (t.agentPrompt) {
-      void copyAgentPrompt();
-      close();
-      return;
-    }
     if (t.insert && appStore.insertHelpLatex(t.insert)) {
       close();
       return;

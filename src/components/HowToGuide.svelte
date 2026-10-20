@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
   import { appStore } from '../state/store.svelte';
+  import AgentPromptButton from './AgentPromptButton.svelte';
   import {
     DEFAULT_HELP_IDS,
     TOPIC_BY_ID,
@@ -70,6 +71,10 @@
         restore default help topics
       </button>
     {/if}
+    <AgentPromptButton
+      class="howto-agent"
+      label="Copy agent prompt for custom functions"
+    />
     <button
       class="howto-find"
       title="Search help topics (Ctrl+/)"

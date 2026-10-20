@@ -9,7 +9,6 @@
   import { TARGETS } from './compile/targets';
   import type { TargetId } from './compile/targets';
   import CommandPalette from './components/CommandPalette.svelte';
-  import AgentPromptButton from './components/AgentPromptButton.svelte';
   import HelpSearch from './components/HelpSearch.svelte';
   import HowToGuide from './components/HowToGuide.svelte';
   import WorksheetMenu from './components/WorksheetMenu.svelte';
@@ -580,9 +579,6 @@
                     />
                     <span class="fade-ms">{appStore.fadeOutMs}ms</span>
                   </label>
-                  <div class="settings-row">
-                    <AgentPromptButton label="Copy agent prompt" />
-                  </div>
                 </div>
               </div>
             {/if}
@@ -763,9 +759,6 @@
             + Python cell
           </button>
           <span class="add-hint">Alt+Enter</span>
-        </div>
-        <div class="add-item">
-          <AgentPromptButton class="add-agent" />
         </div>
       </div>
       <HowToGuide />

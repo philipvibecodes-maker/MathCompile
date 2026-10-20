@@ -1595,7 +1595,7 @@ body {
 }
 
 /* Copy-agent-prompt button — shares the small copy-button look outside
- * .add-row (where the row's own rule already styles it). */
+ * .howto-foot (where the foot's own rule styles it). */
 .agent-prompt {
   padding: 3px 8px;
   font-size: 11px;
@@ -1977,6 +1977,21 @@ body {
 
 .howto-find:hover {
   color: var(--accent-text);
+  text-decoration: underline;
+}
+
+/* Agent-prompt copy entry in the howto foot — link-styled like the
+   neighbouring restore/find buttons. */
+.howto-foot .agent-prompt {
+  padding: 0;
+  font-size: 13px;
+  color: var(--muted);
+  border: none;
+}
+
+.howto-foot .agent-prompt:hover {
+  color: var(--accent-text);
+  background: none;
   text-decoration: underline;
 }
 
