@@ -646,6 +646,42 @@
     margin-bottom: -0.4em;
   }
 
+  // The same poke overflows any bordered/barred container that holds a
+  // straddled script — the top edge strikes through the raised sup
+  // (\sqrt's vinculum, the fraction bar, \overline, box outlines), and
+  // a sub's smaller undershoot reaches bottom edges (fraction bar,
+  // \underline, box borders). Padding lifts the border; no negative
+  // margin — these boxes legitimately grow (the √ prefix scales with
+  // the stem). `:has(… ~ .mq-supsub)` matches at any depth inside.
+  .mq-sqrt-stem,
+  .mq-denominator,
+  .mq-overline,
+  .mq-overarc,
+  .mq-overbrace,
+  .mq-overarrow,
+  .mq-boxed,
+  .mq-fbox,
+  .mq-colorbox {
+    &:has(.mq-matrix ~ .mq-supsub),
+    &:has(.mq-displaylines ~ .mq-supsub),
+    &:has(.mq-bracket-container ~ .mq-supsub) {
+      padding-top: 0.5em;
+    }
+  }
+
+  .mq-numerator,
+  .mq-underline,
+  .mq-underbrace,
+  .mq-boxed,
+  .mq-fbox,
+  .mq-colorbox {
+    &:has(.mq-matrix ~ .mq-supsub),
+    &:has(.mq-displaylines ~ .mq-supsub),
+    &:has(.mq-bracket-container ~ .mq-supsub) {
+      padding-bottom: 0.4em;
+    }
+  }
+
   .mq-array > span {
     display: block;
   }

@@ -597,6 +597,55 @@
   margin-top: -0.5em;
   margin-bottom: -0.4em;
 }
+.mq-math-mode .mq-sqrt-stem:has(.mq-matrix ~ .mq-supsub),
+.mq-math-mode .mq-denominator:has(.mq-matrix ~ .mq-supsub),
+.mq-math-mode .mq-overline:has(.mq-matrix ~ .mq-supsub),
+.mq-math-mode .mq-overarc:has(.mq-matrix ~ .mq-supsub),
+.mq-math-mode .mq-overbrace:has(.mq-matrix ~ .mq-supsub),
+.mq-math-mode .mq-overarrow:has(.mq-matrix ~ .mq-supsub),
+.mq-math-mode .mq-boxed:has(.mq-matrix ~ .mq-supsub),
+.mq-math-mode .mq-fbox:has(.mq-matrix ~ .mq-supsub),
+.mq-math-mode .mq-colorbox:has(.mq-matrix ~ .mq-supsub),
+.mq-math-mode .mq-sqrt-stem:has(.mq-displaylines ~ .mq-supsub),
+.mq-math-mode .mq-denominator:has(.mq-displaylines ~ .mq-supsub),
+.mq-math-mode .mq-overline:has(.mq-displaylines ~ .mq-supsub),
+.mq-math-mode .mq-overarc:has(.mq-displaylines ~ .mq-supsub),
+.mq-math-mode .mq-overbrace:has(.mq-displaylines ~ .mq-supsub),
+.mq-math-mode .mq-overarrow:has(.mq-displaylines ~ .mq-supsub),
+.mq-math-mode .mq-boxed:has(.mq-displaylines ~ .mq-supsub),
+.mq-math-mode .mq-fbox:has(.mq-displaylines ~ .mq-supsub),
+.mq-math-mode .mq-colorbox:has(.mq-displaylines ~ .mq-supsub),
+.mq-math-mode .mq-sqrt-stem:has(.mq-bracket-container ~ .mq-supsub),
+.mq-math-mode .mq-denominator:has(.mq-bracket-container ~ .mq-supsub),
+.mq-math-mode .mq-overline:has(.mq-bracket-container ~ .mq-supsub),
+.mq-math-mode .mq-overarc:has(.mq-bracket-container ~ .mq-supsub),
+.mq-math-mode .mq-overbrace:has(.mq-bracket-container ~ .mq-supsub),
+.mq-math-mode .mq-overarrow:has(.mq-bracket-container ~ .mq-supsub),
+.mq-math-mode .mq-boxed:has(.mq-bracket-container ~ .mq-supsub),
+.mq-math-mode .mq-fbox:has(.mq-bracket-container ~ .mq-supsub),
+.mq-math-mode .mq-colorbox:has(.mq-bracket-container ~ .mq-supsub) {
+  padding-top: 0.5em;
+}
+.mq-math-mode .mq-numerator:has(.mq-matrix ~ .mq-supsub),
+.mq-math-mode .mq-underline:has(.mq-matrix ~ .mq-supsub),
+.mq-math-mode .mq-underbrace:has(.mq-matrix ~ .mq-supsub),
+.mq-math-mode .mq-boxed:has(.mq-matrix ~ .mq-supsub),
+.mq-math-mode .mq-fbox:has(.mq-matrix ~ .mq-supsub),
+.mq-math-mode .mq-colorbox:has(.mq-matrix ~ .mq-supsub),
+.mq-math-mode .mq-numerator:has(.mq-displaylines ~ .mq-supsub),
+.mq-math-mode .mq-underline:has(.mq-displaylines ~ .mq-supsub),
+.mq-math-mode .mq-underbrace:has(.mq-displaylines ~ .mq-supsub),
+.mq-math-mode .mq-boxed:has(.mq-displaylines ~ .mq-supsub),
+.mq-math-mode .mq-fbox:has(.mq-displaylines ~ .mq-supsub),
+.mq-math-mode .mq-colorbox:has(.mq-displaylines ~ .mq-supsub),
+.mq-math-mode .mq-numerator:has(.mq-bracket-container ~ .mq-supsub),
+.mq-math-mode .mq-underline:has(.mq-bracket-container ~ .mq-supsub),
+.mq-math-mode .mq-underbrace:has(.mq-bracket-container ~ .mq-supsub),
+.mq-math-mode .mq-boxed:has(.mq-bracket-container ~ .mq-supsub),
+.mq-math-mode .mq-fbox:has(.mq-bracket-container ~ .mq-supsub),
+.mq-math-mode .mq-colorbox:has(.mq-bracket-container ~ .mq-supsub) {
+  padding-bottom: 0.4em;
+}
 .mq-math-mode .mq-array > span {
   display: block;
 }

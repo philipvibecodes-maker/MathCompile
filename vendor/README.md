@@ -131,6 +131,15 @@ Inline `// MATHCOMPILE:` edits, by file:
   `math.less` (thin space each side, dropped at block edges, next to
   binary/summation operators and real brackets, carried by a following
   SupSub — the same rules flat letter-runs get via mq-first/mq-last);
+  sibling `.mq-supsub` after `.mq-matrix`/`.mq-displaylines`/
+  `.mq-bracket-container` takes `display: contents` so its scripts
+  straddle the tall element's edges (`top:-0.4em`/`.13em` relative
+  shifts — layout-invisible, so they poke past the line box): root
+  blocks grow clip headroom via padding + negative margin, and barred
+  containers (`.mq-sqrt-stem`, `.mq-denominator`, `.mq-overline`,
+  braces/arcs/arrows, boxed/fbox/colorbox, `.mq-numerator` for the
+  fraction bar's underside) get real padding so the sup clears their
+  borders instead of striking through;
   `\<char>` escape commands (`\,` `\:` `\;` `\!` `\{` `\}` `\|`) and
   other escaped specials (`\_` …) register on backslash-prefixed keys.
 - `src/commands/math/commands.ts` — `\textcolor[model]{color}{…}` takes

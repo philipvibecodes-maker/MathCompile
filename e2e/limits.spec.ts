@@ -43,6 +43,23 @@ test('lim renders the approach bound below the operator', async () => {
   expect(geo.underTop).toBeGreaterThanOrEqual(geo.limBottom - 1);
 });
 
+test('a sup on a bracket inside \\sqrt stays below the vinculum', async () => {
+  const mf = cell(page);
+  // \left|a\right|^{2} — edge-straddling scripts (.mq-bracket-container
+  // + .mq-supsub) poke ~0.4em above the line box; the radicand's
+  // border-top used to strike through them (SymPy emits this shape for
+  // ‖(a b)‖).
+  await setValue(mf, '\\sqrt{\\left|a\\right|^{2}+\\left|b\\right|^{2}}');
+  const geo = await mf.evaluate((el) => {
+    const stem = el.querySelector('.mq-sqrt-stem')!.getBoundingClientRect();
+    const sup = el
+      .querySelector('.mq-sqrt-stem .mq-bracket-container ~ .mq-supsub .mq-sup')!
+      .getBoundingClientRect();
+    return { stemTop: stem.top, supTop: sup.top };
+  });
+  expect(geo.supTop).toBeGreaterThanOrEqual(geo.stemTop);
+});
+
 test('\\iint with a lone sup bound renders it at bound height', async () => {
   const mf = cell(page);
   await setValue(mf, '\\iint^{b}');
