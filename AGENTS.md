@@ -141,6 +141,8 @@ and empty blocks serialize as `{ }`.
 
 ## Calculator target
 
+- `calculator` is the default target on a fresh load (persisted pref
+  `target` in `loadPrefs`); e2e specs pin `latex` via `resetApp`.
 - `target === 'calculator'` renders `CalcOutput` per cell: Compute
   Engine interim rows (dimmed, no `code`) until the Pyodide/SymPy
   worker is ready, then one result row per top-level statement.
@@ -162,7 +164,10 @@ and empty blocks serialize as `{ }`.
 
 - Ctrl/Cmd+K (or the header button) toggles `paletteOpen`; commands come
   from `src/commands.ts` and fuzzy-match via `src/fuzzy.ts`. The hotkey is
-  registered in capture phase so it works inside `<math-field>`.
+  registered in capture phase so it works inside `<math-field>`. The same
+  capture-phase keymap (`src/editor/keymap.ts`) owns Alt+Enter (insert a
+  python cell below) and Alt+M (flip the focused cell math ↔ python);
+  both shortcuts are also surfaced as `hint`s on the palette commands.
 - The palette is **always mounted** (`.palette-backdrop.open` flips
   `visibility` + `pointer-events`; `.palette` has
   `contain: layout style paint`). Open cost is a class flip + `focus()`.
@@ -172,6 +177,10 @@ and empty blocks serialize as `{ }`.
   do this).
 - Closing the palette refocuses the active cell via
   `focusCell(focusedId)`.
+- The settings menu's options are mirrored as `Settings: …` commands so
+  they stay reachable when the menu isn't rendered (e.g. the latex
+  target); ms-valued knobs use the palette's `prompt` input via
+  `msPrompt` in `src/commands.ts`.
 
 ## MathQuill notes
 
@@ -257,14 +266,23 @@ and empty blocks serialize as `{ }`.
   `\begin{name}{arg}` input that applies the arg on `}`/Enter/Tab.
   Typed matrix-family commands defer to a rows/columns menu
   (`src/editor/matrix-menu.ts` via the vendored `matrixDimensionsMenu`
-  option — Enter inserts the grid, Escape cancels); `\cases` and the
+  option — Enter inserts the grid, Escape cancels); the menu pre-fills
+  the last inserted size, persisted in
+  `localStorage['mathcompile-matrix-dims']`. `\cases` and the
   non-matrix grids skip it. Inside a matrix cell, Enter adds a row and
-  Shift+Space adds a column; Ctrl+Shift+Backspace deletes the current
+  Shift+Space adds a column (Ctrl+Enter adds a row ABOVE the caret,
+  Ctrl+Shift+Spacebar a column left of it); Ctrl+Shift+Backspace deletes
+  the current
   row and Ctrl+Shift+Delete deletes the current column (each a no-op
   once only one remains) — those keys keep their usual word-delete
   everywhere else, including \displaylines cells;
   arrows move cell-to-cell without leaving
-  the field. `I_n` (capital I, whole-number subscript) compiles to
+  the field. Pasting tabular text into a grid fills cells from the caret
+  (growing the grid when needed) — tab-separated always counts as a
+  table; comma/semicolon need ≥2 lines containing the delimiter; a
+  bare multi-line paste fills down inside a grid. Text containing
+  `\`, `{`, `}` or `&` stays a LaTeX paste, and a multi-column table
+  pasted outside a grid becomes `\pmatrix`. `I_n` (capital I, whole-number subscript) compiles to
   `sp.eye(n)` and takes matrix-op paths like a literal; an explicit
   `I_n = …` binding wins.
 - Serializations to pin in tests: empty blocks are `{ }` (with a space);

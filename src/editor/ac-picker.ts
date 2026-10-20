@@ -1,8 +1,13 @@
 import {
   COMPLETIONS,
+  matchCompletions,
   type CompletionItem,
 } from './completions';
 import { mountStaticMath } from './static-math';
+import {
+  loadCompletionUsage,
+  recordCompletionUse,
+} from '../state/persistence';
 import {
   pointerRecentlyDown,
   type MathFieldElement,
@@ -66,18 +71,12 @@ export function attachSymbolPicker(field: MathFieldElement) {
   };
 
   const render = () => {
-    const q = input.value.trim().toLowerCase();
-    const starts = COMPLETIONS.filter((c) =>
-      c.name.toLowerCase().startsWith(q),
-    );
-    const inside = q
-      ? COMPLETIONS.filter(
-          (c) => !c.name.toLowerCase().startsWith(q) &&
-            (c.name.toLowerCase().includes(q) ||
-              c.hint?.toLowerCase().includes(q)),
-        )
-      : [];
-    items = [...starts, ...inside];
+    // Same scored match as the inline menu — fuzzy + hints + usage —
+    // with no cap so the grid still shows every hit in rank order.
+    const usage = loadCompletionUsage();
+    items = input.value.trim()
+      ? matchCompletions(input.value.trim(), COMPLETIONS.length, usage)
+      : matchCompletions('', COMPLETIONS.length, usage);
     sel = Math.min(sel, Math.max(0, items.length - 1));
     grid.replaceChildren(...items.map(card));
     if (items[sel]) grid.children[sel]?.scrollIntoView({ block: 'nearest' });
@@ -110,6 +109,7 @@ export function attachSymbolPicker(field: MathFieldElement) {
     if (mq) {
       mq.focus();
       mq.cmd('\\' + item.name);
+      recordCompletionUse(item.name);
     }
     close();
   };

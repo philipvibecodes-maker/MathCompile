@@ -117,7 +117,7 @@ export class AppStore {
   cells = $state<Cell[]>(this.boot.cells);
   focusedId = $state<number>(this.cells[0].id);
   focusEdge = $state<Edge | undefined>(undefined);
-  target = $state<TargetId>(loadPrefs().target ?? 'latex');
+  target = $state<TargetId>(loadPrefs().target ?? 'calculator');
   smartMode = $state(loadPrefs().smartMode ?? true);
   // Calculator code blocks show the `e = ...` capture lines when on.
   showPlumbing = $state(loadPrefs().showPlumbing ?? false);

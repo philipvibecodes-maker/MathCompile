@@ -82,6 +82,70 @@ export function savePrefs(prefs: Required<Prefs>): void {
   }
 }
 
+// ── Autocomplete usage counts ────────────────────────────────────────
+// localStorage['mathcompile-ac-usage'] holds { commandName: acceptCount };
+// matchCompletions uses it to float frequently accepted commands within
+// their match tier.
+export const USAGE_STORAGE_KEY = 'mathcompile-ac-usage';
+
+export function loadCompletionUsage(): Record<string, number> {
+  const raw = storage()?.getItem(USAGE_STORAGE_KEY);
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return {};
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === 'number' && Number.isFinite(v) && v > 0) out[k] = v;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function recordCompletionUse(name: string): void {
+  const ls = storage();
+  if (!ls) return;
+  const usage = loadCompletionUsage();
+  usage[name] = (usage[name] ?? 0) + 1;
+  try {
+    ls.setItem(USAGE_STORAGE_KEY, JSON.stringify(usage));
+  } catch {
+    // Storage full or disabled — ranking just stays static.
+  }
+}
+
+// ── Matrix menu defaults ─────────────────────────────────────────────
+// localStorage['mathcompile-matrix-dims'] holds { rows, cols } — the
+// last size the dimensions menu inserted, pre-filled on the next open.
+export const MATRIX_DIMS_STORAGE_KEY = 'mathcompile-matrix-dims';
+
+export function loadMatrixDims(): { rows: number; cols: number } | null {
+  const raw = storage()?.getItem(MATRIX_DIMS_STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const { rows, cols } = parsed as Record<string, unknown>;
+    if (typeof rows !== 'number' || typeof cols !== 'number') return null;
+    return { rows, cols };
+  } catch {
+    return null;
+  }
+}
+
+export function recordMatrixDims(rows: number, cols: number): void {
+  try {
+    storage()?.setItem(
+      MATRIX_DIMS_STORAGE_KEY,
+      JSON.stringify({ rows, cols }),
+    );
+  } catch {
+    // Storage full or disabled — the menu just falls back to 2x2.
+  }
+}
+
 // ── Workbook: every worksheet in one document ────────────────────────
 //
 // localStorage['mathcompile-worksheets'] holds { version, active, sheets }

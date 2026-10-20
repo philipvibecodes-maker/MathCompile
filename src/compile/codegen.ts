@@ -4887,10 +4887,14 @@ function emitStatement(node: MathJson, emitter: Emitter): StatementOut {
     }
     const eqText =
       eqTexts.length === 1 ? eqTexts[0] : `[${eqTexts.join(', ')}]`;
+    // SymPy accepts a scalar func only for a single equation — a list of
+    // eqs needs a list of funcs, even a one-element list.
     const targetText =
       targets.length === 0
         ? ''
-        : `, ${targets.length === 1 ? targets[0] : `[${targets.join(', ')}]`}`;
+        : targets.length === 1 && eqTexts.length === 1
+          ? `, ${targets[0]}`
+          : `, [${targets.join(', ')}]`;
     const icNodes = isHead(node[3], 'List') ? node[3].slice(1) : [];
     const icTexts: string[] = [];
     for (const ic of icNodes) {

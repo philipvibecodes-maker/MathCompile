@@ -4,8 +4,8 @@ import type { Page } from '@playwright/test';
 import { clearFirstCell, sharedPage, resetApp } from './helpers';
 
 // The toolbar above the cell list holds the smart mode toggle and the
-// target select. With the latex target (the default), each cell stacks
-// its LaTeX output beneath the input with a copy button.
+// target select. Specs pin the latex target via resetApp; a fresh load
+// defaults to calculator.
 
 const cell = (page: Page, i: number) => page.locator('math-field').nth(i);
 
@@ -29,6 +29,15 @@ test.beforeEach(async () => {
 
 test('latex target hides the python import controls', async () => {
   await expect(page.locator('.output-import-all')).toHaveCount(0);
+});
+
+test('a fresh load defaults to the calculator target', async () => {
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await expect(page.locator('.target-select select')).toHaveValue(
+    'calculator',
+  );
+  // resetApp's latex pin is re-established for the next test.
 });
 
 // Disabled <option>s can't be picked via selectOption; dispatch a change
@@ -214,6 +223,8 @@ test('import-all checkbox switches between import * and sp. qualifiers', async (
   await cell(page, 0).pressSequentially('a=x+1', { delay: 40 });
   await setTarget(page, 'python');
 
+  // The toggle lives in the settings menu.
+  await page.locator('.settings-btn').click();
   const toggle = page.locator('.output-import-all input');
   const first = page.locator('.cell-python').first();
 

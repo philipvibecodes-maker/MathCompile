@@ -3,6 +3,7 @@ import {
   type MathFieldElement,
 } from './math-field';
 import { mountStaticMath } from './static-math';
+import { loadMatrixDims, recordMatrixDims } from '../state/persistence';
 
 // Matrix dimensions menu. With the vendored matrixDimensionsMenu option
 // on, a typed matrix-family command (\pmatrix, \begin{bmatrix},
@@ -90,7 +91,12 @@ export function attachMatrixMenu(field: MathFieldElement) {
     wrap.hidden = true;
     pending = null;
     if (!detail) return;
-    detail.insert(clampDim(rows.value), clampDim(cols.value));
+    const r = clampDim(rows.value);
+    const c = clampDim(cols.value);
+    detail.insert(r, c);
+    // The inserted size becomes the next menu's default — building
+    // several same-size matrices shouldn't re-ask the dimensions.
+    recordMatrixDims(r, c);
     field.mq?.focus();
   };
 
@@ -114,8 +120,9 @@ export function attachMatrixMenu(field: MathFieldElement) {
       0,
       Math.min(anchor.left - fr.left, fr.width - wrap.offsetWidth - 4),
     )}px`;
-    rows.value = String(DEFAULT_DIM);
-    cols.value = String(DEFAULT_DIM);
+    const saved = loadMatrixDims();
+    rows.value = String(clampDim(String(saved?.rows ?? DEFAULT_DIM)));
+    cols.value = String(clampDim(String(saved?.cols ?? DEFAULT_DIM)));
     refresh();
     rows.focus();
     rows.select();

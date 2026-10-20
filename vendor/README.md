@@ -263,6 +263,16 @@ Inline `// MATHCOMPILE:` edits, by file:
   by the block's own `keystroke`). Also: `MatrixCell` carries a
   `lineCell` flag marking grid cells as visual line containers for
   Home/End.
+- `src/commands/math/environments.ts` — caret-relative grid edits:
+  `addRow`/`addColumn`/`insert` take a `before` flag so Ctrl+Enter adds
+  a row above and Ctrl+Shift+Spacebar a column left (mirroring
+  Enter/Shift+Space); `parseTableText` + `CellGrid.pasteCells` fill the
+  grid from pasted TSV/CSV/semicolon rows (growing right/down, clearing
+  each target cell first).
+- `src/services/textarea.ts` — `Controller.paste` intercepts table
+  text: inside a grid cell it fills via `pasteCells`; a multi-column
+  table pasted outside a grid becomes `\pmatrix{…}`. Text containing
+  `\`, `{`, `}`, `&` is never treated as a table.
 - `src/services/keystroke.ts` — "standard textbook" keys on multi-line
   cells: Home/End (and Shift-) go to the visual line edges — the
   innermost grid cell (`lineCell`) or the root block — instead of the
