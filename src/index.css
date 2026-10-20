@@ -1594,6 +1594,23 @@ body {
   background: var(--selected-bg);
 }
 
+/* Copy-agent-prompt button — shares the small copy-button look outside
+ * .howto-foot (where the foot's own rule styles it). */
+.agent-prompt {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--accent-text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.agent-prompt:hover {
+  background: var(--selected-bg);
+}
+
 /* ── Header controls ────────────────────────────────── */
 
 .target-select {
@@ -1961,6 +1978,17 @@ body {
 .howto-find:hover {
   color: var(--accent-text);
   text-decoration: underline;
+}
+
+/* Agent-prompt copy affordance — its own row above the howto footer so
+   it can't be confused with the restore/find text links. */
+.howto-agent-row {
+  padding: 10px 12px 0;
+}
+
+.howto-agent-row .agent-prompt {
+  font-size: 13px;
+  padding: 5px 10px;
 }
 
 .howto-item {

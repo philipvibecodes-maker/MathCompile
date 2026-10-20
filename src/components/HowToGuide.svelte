@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
   import { appStore } from '../state/store.svelte';
+  import AgentPromptButton from './AgentPromptButton.svelte';
   import {
     DEFAULT_HELP_IDS,
     TOPIC_BY_ID,
@@ -61,6 +62,12 @@
       </div>
     {/each}
   </dl>
+  <div class="howto-agent-row">
+    <AgentPromptButton
+      label="Copy agent prompt for custom functions"
+      title="Copy a ready-made prompt + doc link to paste into your AI agent"
+    />
+  </div>
   <div class="howto-foot">
     {#if needsRestore}
       <button
