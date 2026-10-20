@@ -164,7 +164,10 @@ and empty blocks serialize as `{ }`.
 
 - Ctrl/Cmd+K (or the header button) toggles `paletteOpen`; commands come
   from `src/commands.ts` and fuzzy-match via `src/fuzzy.ts`. The hotkey is
-  registered in capture phase so it works inside `<math-field>`.
+  registered in capture phase so it works inside `<math-field>`. The same
+  capture-phase keymap (`src/editor/keymap.ts`) owns Alt+Enter (insert a
+  python cell below) and Alt+M (flip the focused cell math ↔ python);
+  both shortcuts are also surfaced as `hint`s on the palette commands.
 - The palette is **always mounted** (`.palette-backdrop.open` flips
   `visibility` + `pointer-events`; `.palette` has
   `contain: layout style paint`). Open cost is a class flip + `focus()`.

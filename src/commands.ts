@@ -50,6 +50,7 @@ export const buildCommands = (store: AppStore): Command[] => {
       id: 'insert-python',
       title: 'Insert Python cell below',
       keywords: 'code script def function custom python',
+      hint: 'Alt+Enter',
       run: () => store.addPythonCell(focusId),
     },
     // Cell-kind conversions — the source text is kept through the flip.
@@ -57,6 +58,7 @@ export const buildCommands = (store: AppStore): Command[] => {
       id: 'to-python',
       title: 'Convert cell to Python',
       keywords: 'code script def function custom',
+      hint: 'Alt+M',
       current: store.cells.find((c) => c.id === focusId)?.kind === 'python',
       run: () => store.setCellKind(focusId, 'python'),
     },
@@ -64,6 +66,7 @@ export const buildCommands = (store: AppStore): Command[] => {
       id: 'to-math',
       title: 'Convert cell to math',
       keywords: 'latex expression formula',
+      hint: 'Alt+M',
       current: store.cells.find((c) => c.id === focusId)?.kind !== 'python',
       run: () => store.setCellKind(focusId, 'math'),
     },

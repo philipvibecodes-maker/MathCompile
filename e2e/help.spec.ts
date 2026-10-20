@@ -104,7 +104,14 @@ test('clicking a result row pins it', async () => {
 
 test('hiding a row removes it; restore default help topics brings it back', async () => {
   await expect(row(page, 'Fraction')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Hide Fraction' }).click();
+  // Hiding lives in the search overlay — a guide row's only action is
+  // unpin, which already removes it.
+  await openSearch(page);
+  await search(page).fill('fraction');
+  await hit(page, 'Fraction')
+    .getByRole('button', { name: 'Hide Fraction' })
+    .click();
+  await closeSearch(page);
   await expect(row(page, 'Fraction')).toHaveCount(0);
   await expect(page.locator('.howto-restore')).toHaveText(
     'restore default help topics',
@@ -132,9 +139,11 @@ test('default topics unpin like any topic; restore re-pins them', async () => {
 });
 
 test('hidden topics still surface in search and restore from the row', async () => {
-  await page.getByRole('button', { name: 'Hide Greek letters' }).click();
   await openSearch(page);
   await search(page).fill('greek');
+  await hit(page, 'Greek letters')
+    .getByRole('button', { name: 'Hide Greek letters' })
+    .click();
   const g = hit(page, 'Greek letters');
   await expect(g).toHaveCount(1);
   await expect(g.locator('.howto-hidden-tag')).toHaveText('hidden');
@@ -221,8 +230,11 @@ test('pins and hidden topics persist across reload', async () => {
   await openSearch(page);
   await search(page).fill('solve equations');
   await hit(page, 'Solve equations').locator('.howto-pin').click();
+  await search(page).fill('fraction');
+  await hit(page, 'Fraction')
+    .getByRole('button', { name: 'Hide Fraction' })
+    .click();
   await closeSearch(page);
-  await page.getByRole('button', { name: 'Hide Fraction' }).click();
   await page.waitForFunction(
     () =>
       localStorage.getItem('mathcompile-prefs')?.includes('"pinnedHelp"') &&

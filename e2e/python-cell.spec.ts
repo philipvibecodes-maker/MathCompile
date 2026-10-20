@@ -57,6 +57,25 @@ test('typing keeps raw source — no math editing inside', async () => {
   await typePython(page, source);
 });
 
+test('Alt+Enter inserts a python cell below the focused cell', async () => {
+  await cell(page, 0).click();
+  await page.keyboard.press('Alt+Enter');
+  await expect(pyInput(page)).toHaveCount(1);
+  await expect(pyInput(page)).toBeFocused();
+  // Both cells exist: the math field plus the new python cell.
+  await expect(page.locator('math-field')).toHaveCount(1);
+});
+
+test('Alt+M flips a cell between math and python kinds', async () => {
+  await cell(page, 0).click();
+  await page.keyboard.press('Alt+m');
+  await expect(pyInput(page)).toHaveCount(1);
+  await expect(pyInput(page)).toBeFocused();
+  await page.keyboard.press('Alt+m');
+  await expect(pyInput(page)).toHaveCount(0);
+  await expect(page.locator('math-field')).toHaveCount(1);
+});
+
 test('Shift+Enter in a python cell adds a math cell below', async () => {
   await addPythonCell(page);
   await typePython(page, 'x = 1');

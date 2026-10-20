@@ -6,6 +6,8 @@
 export interface GlobalKeymapOptions {
   onPaletteToggle(): void;
   onHelpSearch(): void;
+  onInsertPython?(): void;
+  onToggleCellKind?(): void;
 }
 
 export function installGlobalKeymap(opts: GlobalKeymapOptions) {
@@ -16,6 +18,12 @@ export function installGlobalKeymap(opts: GlobalKeymapOptions) {
     } else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.code === 'Slash') {
       e.preventDefault();
       opts.onHelpSearch();
+    } else if (e.altKey && e.code === 'Enter') {
+      e.preventDefault();
+      opts.onInsertPython?.();
+    } else if (e.altKey && e.code === 'KeyM') {
+      e.preventDefault();
+      opts.onToggleCellKind?.();
     }
   };
   window.addEventListener('keydown', onKeydown, true);
