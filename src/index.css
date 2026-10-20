@@ -235,11 +235,16 @@ body {
   justify-content: flex-start;
 }
 
-/* Calculator packs the whole head right; under two-col the Copy script
-   button stays at the column's left while Settings + Output select hold
-   the right edge, matching the calculator row. */
-.two-col .col-output-head .settings-btn {
+/* Right-pinned group inside the output head: Copy script stays at the
+   column's left while Settings + Output select hold the right edge,
+   matching the calculator row. Works whichever children the target
+   renders (latex shows only the select). */
+.col-head-right {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .two-col .expr-index {
@@ -1563,6 +1568,13 @@ body {
   margin: 8px 0 0 32px;
 }
 
+.add-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
 .add-row button {
   padding: 8px 14px;
   font-size: 13px;
@@ -1571,6 +1583,11 @@ body {
   border: 1px dashed var(--dashed-border);
   border-radius: 4px;
   cursor: pointer;
+}
+
+.add-hint {
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .add-row button:hover {

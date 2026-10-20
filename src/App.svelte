@@ -227,6 +227,12 @@
     {/if}
     <WorksheetMenu />
     <div class="output-options">
+      <a
+        class="guide-link"
+        href={userGuidePdf}
+        target="_blank"
+        rel="noreferrer">User guide</a
+      >
       <button
         class="theme-toggle"
         title={appStore.darkMode
@@ -264,12 +270,6 @@
         {/if}
       </button>
     </div>
-    <a
-      class="guide-link"
-      href={userGuidePdf}
-      target="_blank"
-      rel="noreferrer">User guide</a
-    >
     <button
       class="help-search-btn"
       title="Search help (Ctrl+/)"
@@ -333,13 +333,13 @@
               class:engine-error={calcEngine.status === 'error'}
               role="status"
             >
-              {#if calcEngine.status === 'loading'}
+              {#if calcEngine.status === 'error'}
+                <span class="engine-chip-text">SymPy failed to load</span>
+              {:else if calcEngine.status === 'ready'}
+                <span class="engine-chip-text">SymPy ready</span>
+              {:else}
                 <span class="engine-spinner" aria-hidden="true"></span>
                 <span class="engine-chip-text">SymPy loading</span>
-              {:else if calcEngine.status === 'error'}
-                <span class="engine-chip-text">SymPy failed to load</span>
-              {:else}
-                <span class="engine-chip-text">SymPy ready</span>
               {/if}
               <button
                 type="button"
@@ -382,6 +382,10 @@
               >{copiedScript ? 'Copied' : 'Copy script'}</button
             >
           {/if}
+          <!-- Right-pinned group: Settings + Output select stay
+               contiguous at the column's right edge, whichever of them
+               the target renders (calculator head layout). -->
+          <div class="col-head-right">
           {#if appStore.target === 'python' || appStore.target === 'calculator'}
             <button
               class="settings-btn"
@@ -595,6 +599,7 @@
               {/each}
             </select>
           </label>
+          </div>
         </div>
         <span class="col-delete"></span>
       </div>
@@ -739,16 +744,22 @@
         {/each}
       </ol>
       <div class="add-row">
-        <button class="add-expr" onclick={() => appStore.addCell()}>
-          + Add expression
-        </button>
-        <button
-          class="add-python"
-          title={'Python source cell (Alt+Enter) — def f(x): … defines a function math cells can call as \\mathrm{f}(x); annotate a def with # @latex <latex> to name its call form'}
-          onclick={() => appStore.addPythonCell()}
-        >
-          + Python cell
-        </button>
+        <div class="add-item">
+          <button class="add-expr" onclick={() => appStore.addCell()}>
+            + Add expression
+          </button>
+          <span class="add-hint">Shift+Enter</span>
+        </div>
+        <div class="add-item">
+          <button
+            class="add-python"
+            title={'Python source cell — def f(x): … defines a function math cells can call as \\mathrm{f}(x); annotate a def with # @latex <latex> to name its call form'}
+            onclick={() => appStore.addPythonCell()}
+          >
+            + Python cell
+          </button>
+          <span class="add-hint">Alt+Enter</span>
+        </div>
       </div>
       <HowToGuide />
     </section>
