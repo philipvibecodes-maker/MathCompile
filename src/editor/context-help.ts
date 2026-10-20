@@ -160,18 +160,22 @@ export const HELP_ENTRIES: Record<HelpContext, { key: string; does: string }[]> 
     // `for` clause bounds it via solveset.
     'in-solve': [
       { key: 'x^2 = 1, x', does: 'solve for x' },
+      { key: 'x + y = 3, x - y = 1, x, y', does: 'a system' },
       { key: 'for x > a', does: 'domain (solveset)' },
     ],
     // `\text{dsolve}`/`\text{ode}`: primes rewrite to derivatives;
-    // `f(pt) = rhs` items are initial conditions.
+    // `f(pt) = rhs` items are initial conditions; several equations
+    // with several unknowns solve as a system.
     'in-dsolve': [
       { key: "y' = y", does: 'primes are derivatives' },
       { key: 'y(0) = 1', does: 'initial condition' },
+      { key: "y' = z, z' = -y", does: 'ODE system' },
     ],
     // `\text{pdesolve}`/`\text{pde}`: subscripts are partial
     // derivatives; `u(x,t)` declares the unknown's signature.
     'in-pdesolve': [
       { key: 'u_x + u_t = 0', does: 'subscripts are partials' },
+      { key: 'u_{xt}', does: 'mixed partial' },
       { key: 'u(x,t)', does: 'declares the unknown' },
     ],
     'in-bounds': [
