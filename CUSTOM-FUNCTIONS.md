@@ -23,10 +23,15 @@ targets immediately.
   cells — and in `\python{…}` blocks inside math cells — are collected
   into a function registry. A call written in a math cell then routes
   to that definition instead of minting an abstract `sp.Function`.
-- SymPy is available in every Python cell: `import sympy as sp` (or use
-  names directly — the worksheet runs with SymPy's public names in
-  scope, e.g. `Symbol`, `sin`, `Matrix`). Python cells may also
-  `import` other installed packages.
+- SymPy is already imported into the shared namespace before your cell
+  runs. **By default the worksheet execs `from sympy import *`** — bare
+  names like `Symbol`, `sin`, `Matrix`, `oo` are in scope with no
+  import line. The user can switch that off (Settings → "import *"),
+  which execs `import sympy as sp` instead; `sp` itself is bound in
+  the namespace under *both* settings. So the convention that always
+  works is **`import sympy as sp` + `sp.`-qualified names** inside your
+  def — it behaves identically whether "import *" is on or off.
+- Python cells may also `import` other installed packages.
 
 ## Calling a function from a math cell
 
@@ -46,6 +51,31 @@ Write the call as an **upright name applied in parentheses**:
   work.
 - The call must map cleanly onto the def's parameters. Each argument
   lands as one Python argument; `\mathrm{add}(a,b)` calls `add(a, b)`.
+- **Arguments arrive as whatever the call site compiles to — mostly
+  SymPy objects, but literal numbers stay Python natives.** What the
+  def receives per argument:
+
+  | call-site argument | received as |
+  |---|---|
+  | `-3`, `2` | Python `int` |
+  | `3.14` | Python `float` |
+  | `1/2`, `\frac{1}{2}` | `Rational` |
+  | `x`, `f`, `a` (bare names) | `Symbol` |
+  | `x^2 + 1`, `a b` | `Expr` (`Add`/`Mul`/`Pow`/…) |
+  | `\sin(x)`, `\sqrt{2}` | evaluated SymPy objects (`sin(x)`, `sqrt(2)`) |
+  | `[1,2,3]`, `\begin{pmatrix}1\\2\end{pmatrix}` | `sp.Matrix` (dense) |
+  | a name declared `A \in \mathbb{R}^{m\times n}` | `MatrixSymbol` |
+  | `(a,b)` in interval mode | `Interval` |
+  | `\{1,2\}` | `FiniteSet` |
+
+  Practical consequence: the same call can feed the def an `int` in one
+  cell and a `Symbol` in the next, so normalize at the top —
+  `x = sp.sympify(x)` makes comparisons, `.subs`, and symbolic ops
+  behave identically either way. SymPy arithmetic on mixed inputs
+  already coerces natives (`x + 1` works on both), but pure-Python ops
+  like `x > 0` return a Python `bool` for an `int` and a SymPy
+  relational for a `Symbol` — use `sp.Piecewise`/`sp.Max` or sympify
+  first when the answer must stay symbolic.
 - A def used by a call sits in that cell's standalone Python output
   too (Python target): the source snippet is injected above the call,
   so exported scripts stay self-contained.

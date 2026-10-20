@@ -11,7 +11,12 @@ export const AGENT_PROMPT =
   `aliases, \\mathrm{name}(x) call sites, \\newcommand macros) is ` +
   `documented at ${CUSTOM_FUNCTIONS_DOC_URL} — read that doc, then ` +
   `give me the worksheet cells (Python and/or LaTeX) I should paste in ` +
-  `to define a custom function that does what I describe next:`;
+  `to define a custom function that does what I describe next. ` +
+  `Remember: my worksheet namespace already runs "from sympy import *" ` +
+  `(with "import sympy as sp" as an alternative mode, so "sp."-qualified ` +
+  `code is safest), and call-site arguments reach the def as whatever ` +
+  `the call compiles to — SymPy objects for symbols/exprs/matrices, ` +
+  `Python int/float for literal numbers:`;
 
 // A denied clipboard write rejects the promise — swallow it so the
 // click never throws.
