@@ -14,6 +14,8 @@ export type HelpContext =
   | 'in-plot'
   | 'in-def'
   | 'in-solve'
+  | 'in-dsolve'
+  | 'in-pdesolve'
   | 'in-bounds'
   | 'in-frac'
   | 'command-input';
@@ -32,7 +34,11 @@ const isPlotMarker = (el: Element | null | undefined): boolean =>
 const isDefMarker = (el: Element | null | undefined): boolean =>
   textOf(el) === 'def';
 const isSolveMarker = (el: Element | null | undefined): boolean =>
-  ['solve', 'dsolve', 'ode', 'pdesolve', 'pde'].includes(textOf(el));
+  textOf(el) === 'solve';
+const isDsolveMarker = (el: Element | null | undefined): boolean =>
+  ['dsolve', 'ode'].includes(textOf(el));
+const isPdesolveMarker = (el: Element | null | undefined): boolean =>
+  ['pdesolve', 'pde'].includes(textOf(el));
 
 // Accepting a typed `\pmatrix`/`\begin{...}`/autocomplete command leaves
 // an empty, invisible latex-command-input wrapper as a sibling of the
@@ -59,6 +65,8 @@ const statementContext = (el: Element | null | undefined): HelpContext | null =>
   if (isPlotMarker(el)) return 'in-plot';
   if (isDefMarker(el)) return 'in-def';
   if (isSolveMarker(el)) return 'in-solve';
+  if (isDsolveMarker(el)) return 'in-dsolve';
+  if (isPdesolveMarker(el)) return 'in-pdesolve';
   return null;
 };
 
@@ -148,9 +156,24 @@ export const HELP_ENTRIES: Record<HelpContext, { key: string; does: string }[]> 
       { key: 'g(x) = 2x', does: 'defines g' },
       { key: 'g(x,y) = x + y', does: 'several args' },
     ],
-    // `\text{solve}` family: equation + trailing symbols name the
-    // variables.
-    'in-solve': [{ key: 'x^2 = 1, x', does: 'solve for x' }],
+    // `\text{solve}`: equation + trailing symbols name the variables; a
+    // `for` clause bounds it via solveset.
+    'in-solve': [
+      { key: 'x^2 = 1, x', does: 'solve for x' },
+      { key: 'for x > a', does: 'domain (solveset)' },
+    ],
+    // `\text{dsolve}`/`\text{ode}`: primes rewrite to derivatives;
+    // `f(pt) = rhs` items are initial conditions.
+    'in-dsolve': [
+      { key: "y' = y", does: 'primes are derivatives' },
+      { key: 'y(0) = 1', does: 'initial condition' },
+    ],
+    // `\text{pdesolve}`/`\text{pde}`: subscripts are partial
+    // derivatives; `u(x,t)` declares the unknown's signature.
+    'in-pdesolve': [
+      { key: 'u_x + u_t = 0', does: 'subscripts are partials' },
+      { key: 'u(x,t)', does: 'declares the unknown' },
+    ],
     'in-bounds': [
       { key: 'Tab', does: 'other bound' },
       { key: '↑ / ↓', does: 'switch bounds' },
