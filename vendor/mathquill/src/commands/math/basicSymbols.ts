@@ -987,8 +987,9 @@ LatexCmds.f = class extends Letter {
 LatexCmds[' '] = LatexCmds.space = () =>
   new DigitGroupingChar('\\ ', h('span', {}, [h.text(U_NO_BREAK_SPACE)]), ' ');
 
-// MATHCOMPILE: \<char> escapes — spacing (\, \: \; \!), braces (\{ \}) and the norm
-// shorthand (\|). These are keyed with a backslash prefix so they only
+// MATHCOMPILE: \<char> escapes — spacing (\, \: \; \!) and braces
+// (\{ \}) — plus \|, now a \lVert insertion alias in extraCommands.ts.
+// These are keyed with a backslash prefix so they only
 // resolve through the '\'-prefixed parse branch (see latex.ts): bare
 // ',', ';', '{', ... keep their literal meaning and '}' still closes
 // groups.
@@ -1009,7 +1010,9 @@ LatexCmds['\\!'] = () =>
   );
 LatexCmds['\\{'] = bindVanillaSymbol('\\{ ', '{', 'open brace');
 LatexCmds['\\}'] = bindVanillaSymbol('\\} ', '}', 'close brace');
-LatexCmds['\\|'] = bindVanillaSymbol('\\| ', '&#8741;', 'norm');
+// MATHCOMPILE: \| moved to extraCommands.ts — typed \| is a \lVert
+// insertion alias there (the standalone ‖ symbol still serves the \|
+// parse so pasted \|v\| round-trips).
 
 LatexCmds['.'] = () =>
   new DigitGroupingChar(

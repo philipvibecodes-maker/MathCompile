@@ -5490,6 +5490,42 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     text = '\\text{' + text + '}';
                 }
             }
+            // MATHCOMPILE: tabular paste — inside a real matrix it fills cells
+            // from the caret, growing the grid; outside one, a multi-column
+            // table becomes a \pmatrix. Anything else (single lines, bare
+            // multi-line text outside a grid, latex-looking text) falls
+            // through to the normal latex write.
+            var table = parseTableText(text);
+            if (table) {
+                var cell = this.cursor.parent;
+                while (cell && !(cell instanceof MatrixCell))
+                    cell = cell.parent;
+                var grid = cell && !(cell.parent instanceof DisplayLines)
+                    ? cell.parent
+                    : null;
+                if (cell && grid && grid.pasteCells(cell, table, this)) {
+                    this.notify('edit');
+                    this.cursor.show();
+                    this.scrollHoriz();
+                    if (this.options && this.options.onPaste) {
+                        this.options.onPaste();
+                    }
+                    return;
+                }
+                if (!cell &&
+                    Math.max.apply(Math, table.map(function (r) {
+                        return r.length;
+                    })) > 1) {
+                    text =
+                        '\\pmatrix{' +
+                            table
+                                .map(function (r) {
+                                return r.join('&');
+                            })
+                                .join('\\\\') +
+                            '}';
+                }
+            }
             // FIXME: this always inserts math or a TextBlock, even in a RootTextBlock
             this.writeLatex(text).cursor.show();
             this.scrollHoriz();
@@ -9554,8 +9590,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds[' '] = LatexCmds.space = function () {
         return new DigitGroupingChar('\\ ', h('span', {}, [h.text(U_NO_BREAK_SPACE)]), ' ');
     };
-    // MATHCOMPILE: \<char> escapes — spacing (\, \: \; \!), braces (\{ \}) and the norm
-    // shorthand (\|). These are keyed with a backslash prefix so they only
+    // MATHCOMPILE: \<char> escapes — spacing (\, \: \; \!) and braces
+    // (\{ \}) — plus \|, now a \lVert insertion alias in extraCommands.ts.
+    // These are keyed with a backslash prefix so they only
     // resolve through the '\'-prefixed parse branch (see latex.ts): bare
     // ',', ';', '{', ... keep their literal meaning and '}' still closes
     // groups.
@@ -9573,7 +9610,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     };
     LatexCmds['\\{'] = bindVanillaSymbol('\\{ ', '{', 'open brace');
     LatexCmds['\\}'] = bindVanillaSymbol('\\} ', '}', 'close brace');
-    LatexCmds['\\|'] = bindVanillaSymbol('\\| ', '&#8741;', 'norm');
+    // MATHCOMPILE: \| moved to extraCommands.ts — typed \| is a \lVert
+    // insertion alias there (the standalone ‖ symbol still serves the \|
+    // parse so pasted \|v\| round-trips).
     LatexCmds['.'] = function () {
         return new DigitGroupingChar('.', h('span', { class: 'mq-digit' }, [h.text('.')]), '.');
     };
@@ -13037,6 +13076,29 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds.rVert = function () {
         return new StandaloneBracket(R, '&#8741;', '&#8741;', '\\rVert ', '\\lVert ', 'right norm');
     };
+    // MATHCOMPILE: \| is shorthand for \lVert — typed, it inserts the same
+    // auto-pairing norm bracket \lVert does (serializes
+    // \left\lVert…\right\rVert). A pasted \| keeps the standalone ‖ symbol
+    // (MQSymbol's succeed-self parser) so \|v\| round-trips — a second \|
+    // would otherwise serialize \lVert, and \lVert…\lVert reads as two
+    // left delimiters to the compiler. Overrides the basicSymbols.ts \|
+    // binding.
+    var NormPipeAlias = /** @class */ (function (_super) {
+        __extends(NormPipeAlias, _super);
+        function NormPipeAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        NormPipeAlias.prototype.createLeftOf = function (cursor) {
+            var brack = LatexCmds.lVert('\\|');
+            if (this.replacedFragment)
+                brack.replaces(this.replacedFragment);
+            brack.createLeftOf(cursor);
+        };
+        return NormPipeAlias;
+    }(VanillaSymbol));
+    LatexCmds['\\|'] = function () {
+        return new NormPipeAlias('\\| ', h.entityText('&#8741;'), 'norm');
+    };
     function bindBraKet(ctrlSeq, open, close) {
         return function () {
             return new MathCommand(ctrlSeq, new DOMView(1, function (blocks) {
@@ -13730,15 +13792,18 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     // `\mathrm{rank}(A)` -> `(A).rank()`), the same insertion-time
     // expansion \tr uses. None is a real LaTeX command, so stored latex
     // canonicalizes to \mathrm{…} on the next save. No trailing space (see
-    // \tr): it would put a space node between the name and the parens.
-    function mathrmWordAlias(name, speak) {
+    // \tr): it would put a space node between the name and the parens —
+    // except \norm, whose operand is usually a bare name where
+    // `\mathrm{norm}A` would render "normA" as one word.
+    function mathrmWordAlias(name, speak, space) {
+        if (space === void 0) { space = false; }
         return /** @class */ (function (_super) {
             __extends(class_34, _super);
             function class_34() {
                 return _super.call(this, '\\mathrm{' + name + '}', h('span', { class: 'mq-roman' }, [h.text(name)]), name, speak) || this;
             }
             class_34.prototype.createLeftOf = function (cursor) {
-                cursor.parent.writeLatex(cursor, '\\mathrm{' + name + '}');
+                cursor.parent.writeLatex(cursor, '\\mathrm{' + name + '}' + (space ? '\\ ' : ''));
             };
             return class_34;
         }(MQSymbol));
@@ -13748,7 +13813,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds.eigenvects = mathrmWordAlias('eigenvects', 'eigenvectors');
     LatexCmds.inverse = mathrmWordAlias('inverse', 'inverse');
     LatexCmds.transpose = mathrmWordAlias('transpose', 'transpose');
-    LatexCmds.norm = mathrmWordAlias('norm', 'norm');
+    LatexCmds.norm = mathrmWordAlias('norm', 'norm', true);
     LatexCmds.rref = mathrmWordAlias('rref', 'reduced row echelon form');
     LatexCmds.charpoly = mathrmWordAlias('charpoly', 'characteristic polynomial');
     LatexCmds.nullspace = mathrmWordAlias('nullspace', 'null space');
@@ -14144,6 +14209,56 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
      * base) to the jQuery-free TypeScript internals used here.
      *************************************************/
     var Environments = {};
+    // MATHCOMPILE: recognize pasted tabular data (spreadsheet TSV/CSV).
+    // Tab-separated always qualifies; comma/semicolon need 2+ lines where
+    // every line carries the delimiter (a single 'a,b' stays literal);
+    // a multi-line paste without a delimiter is a single column (only
+    // fills inside an existing grid — outside one it stays plain text so
+    // pasted multi-line LaTeX isn't clobbered). Text that already looks
+    // like LaTeX markup never parses as a table.
+    function parseTableText(text) {
+        if (/[\\{}&]/.test(text))
+            return null;
+        var rows = text
+            .replace(/\r\n?/g, '\n')
+            .split('\n')
+            .filter(function (r) {
+            return r.trim() !== '';
+        });
+        if (!rows.length)
+            return null;
+        var delim = null;
+        if (rows.some(function (r) {
+            return r.indexOf('\t') > -1;
+        }))
+            delim = '\t';
+        else if (rows.length > 1) {
+            if (rows.every(function (r) {
+                return r.indexOf(',') > -1;
+            }))
+                delim = ',';
+            else if (rows.every(function (r) {
+                return r.indexOf(';') > -1;
+            }))
+                delim = ';';
+        }
+        if (!delim) {
+            return rows.length > 1
+                ? rows.map(function (r) {
+                    return [r.trim()];
+                })
+                : null;
+        }
+        var table = rows.map(function (r) {
+            return r.split(delim).map(function (c) {
+                return c.trim();
+            });
+        });
+        var cols = Math.max.apply(Math, table.map(function (r) {
+            return r.length;
+        }));
+        return cols > 1 || rows.length > 1 ? table : null;
+    }
     LatexCmds.begin = /** @class */ (function (_super) {
         __extends(class_35, _super);
         function class_35() {
@@ -14680,14 +14795,17 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             }
             return focus || blocks[0];
         };
-        CellGrid.prototype.addRow = function (afterCell) {
-            var _c;
+        // MATHCOMPILE: `before` inserts the new row above the caret's row
+        // (Ctrl+Enter) instead of below it (Enter).
+        CellGrid.prototype.addRow = function (afterCell, before) {
+            var _c, _d;
+            if (before === void 0) { before = false; }
             var previous = [], newCells = [], next = [];
-            var row = afterCell.row, columns = 0, column = 0;
+            var row = afterCell.row, target = before ? row : row + 1, columns = 0, column = 0;
             this.eachChild(function (child) {
                 var cell = child;
                 // Cache previous rows
-                if (cell.row <= row)
+                if (cell.row < target)
                     previous.push(cell);
                 // Work out how many columns
                 if (cell.row === row) {
@@ -14696,7 +14814,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     columns += 1;
                 }
                 // Cache cells after the new row
-                if (cell.row > row) {
+                if (cell.row >= target) {
                     cell.row += 1;
                     next.push(cell);
                 }
@@ -14705,17 +14823,23 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             // Add new cells, one for each column
             var tds = [];
             for (var i = 0; i < columns; i += 1) {
-                var block = new MatrixCell(row + 1, this);
+                var block = new MatrixCell(target, this);
                 newCells.push(block);
                 tds.push(this.renderCell(block));
             }
-            // Insert the new <tr> after the current row's
+            // Insert the new <tr> in the row's slot
             var trs = this.tableRows();
-            (_c = trs[row]) === null || _c === void 0 ? void 0 : _c.after(h('tr', {}, tds));
+            if (before)
+                (_c = trs[target]) === null || _c === void 0 ? void 0 : _c.before(h('tr', {}, tds));
+            else
+                (_d = trs[row]) === null || _d === void 0 ? void 0 : _d.after(h('tr', {}, tds));
             this.blocks = previous.concat(newCells, next);
             return newCells[column];
         };
-        CellGrid.prototype.addColumn = function (afterCell) {
+        // MATHCOMPILE: `before` inserts the new column left of the caret's
+        // column (Ctrl+Shift+Space) instead of right of it (Shift+Space).
+        CellGrid.prototype.addColumn = function (afterCell, before) {
+            if (before === void 0) { before = false; }
             var rows = [], newCells = [];
             var column = 0;
             // Build the rows array and find the new column index
@@ -14724,7 +14848,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 rows[cell.row] = rows[cell.row] || [];
                 rows[cell.row].push(cell);
                 if (cell === afterCell)
-                    column = rows[cell.row].length;
+                    column = rows[cell.row].length - (before ? 1 : 0);
                 return undefined;
             });
             // Add new cells, one for each row
@@ -14737,9 +14861,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             var trs = this.tableRows();
             for (i = 0; i < trs.length && i < rows.length; i += 1) {
                 var td = this.renderCell(newCells[i]);
-                var before = trs[i].children[column];
-                if (before)
-                    trs[i].insertBefore(td, before);
+                var before_1 = trs[i].children[column];
+                if (before_1)
+                    trs[i].insertBefore(td, before_1);
                 else
                     trs[i].appendChild(td);
             }
@@ -14747,14 +14871,69 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             this.blocks = [].concat.apply([], rows);
             return newCells[afterCell.row];
         };
-        CellGrid.prototype.insert = function (method, afterCell, ctrlr) {
-            var cellToFocus = this[method](afterCell);
+        CellGrid.prototype.insert = function (method, afterCell, ctrlr, before) {
+            if (before === void 0) { before = false; }
+            var cellToFocus = this[method](afterCell, before);
             this.finalizeTree();
             this.bubble(function (node) {
                 node.reflow();
                 return undefined;
             });
             ctrlr.cursor.insAtRightEnd(cellToFocus);
+        };
+        // MATHCOMPILE: fill a parsed TSV/CSV table into the grid starting at
+        // startCell — grows right/down as needed and lands the caret on the
+        // last written cell. Returns false if startCell isn't in this grid.
+        CellGrid.prototype.pasteCells = function (startCell, table, ctrlr) {
+            var rows = this.cellRows(), startCol = -1, startRow = startCell.row;
+            for (var i = 0; i < rows.length; i += 1) {
+                var at = rows[i].indexOf(startCell);
+                if (at > -1) {
+                    startRow = i;
+                    startCol = at;
+                }
+            }
+            if (startCol === -1)
+                return false;
+            var needRows = startRow + table.length, needCols = startCol +
+                Math.max.apply(Math, table.map(function (r) {
+                    return r.length;
+                }));
+            // Grow right, then down. insert() relinks the sibling chain after
+            // each op — bare addRow/addColumn would leave eachChild iterating
+            // stale pointers, corrupting the row-major blocks order.
+            while (true) {
+                rows = this.cellRows();
+                var cols = 0;
+                for (i = 0; i < rows.length; i += 1)
+                    cols = Math.max(cols, rows[i].length);
+                if (cols >= needCols)
+                    break;
+                this.insert('addColumn', rows[0][rows[0].length - 1], ctrlr);
+            }
+            while (rows.length < needRows) {
+                this.insert('addRow', rows[rows.length - 1][0], ctrlr);
+                rows = this.cellRows();
+            }
+            var cursor = ctrlr.cursor;
+            for (var r = 0; r < table.length; r += 1) {
+                for (var c = 0; c < table[r].length; c += 1) {
+                    var target = rows[startRow + r] && rows[startRow + r][startCol + c];
+                    if (!target || table[r][c] === '')
+                        continue;
+                    // Spreadsheet semantics: the pasted value replaces the cell's
+                    // contents.
+                    target.children().remove();
+                    cursor.insAtRightEnd(target);
+                    cursor.parent.writeLatex(cursor, table[r][c]);
+                }
+            }
+            this.finalizeTree();
+            this.bubble(function (node) {
+                node.reflow();
+                return undefined;
+            });
+            return true;
         };
         CellGrid.prototype.deleteRowOrColumn = function (method, cell, ctrlr) {
             var cursor = ctrlr.cursor;
@@ -14849,6 +15028,19 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                         return;
                     e === null || e === void 0 ? void 0 : e.preventDefault();
                     return this.parent.insert('addColumn', this, ctrlr);
+                case 'Ctrl-Shift-Spacebar':
+                    // MATHCOMPILE: add a column LEFT of the caret (Shift+Space's
+                    // mirror). Same matrices-only scoping.
+                    if (this.parent instanceof DisplayLines)
+                        return;
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    return this.parent.insert('addColumn', this, ctrlr, true);
+                case 'Ctrl-Enter':
+                    // MATHCOMPILE: add a row ABOVE the caret (Enter's mirror).
+                    if (this.parent instanceof DisplayLines)
+                        return;
+                    e === null || e === void 0 ? void 0 : e.preventDefault();
+                    return this.parent.insert('addRow', this, ctrlr, true);
                 case 'Ctrl-Shift-Backspace':
                     // Word-delete's key, rebound inside matrices: delete the
                     // current row outright, content and all. In \displaylines and
@@ -15750,175 +15942,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             };
         };
     }
-    suite('SupSub', function () {
-        var $ = window.test_only_jquery;
-        var mq;
-        setup(function () {
-            mq = MQ.MathField($('<span></span>').appendTo('#mock')[0]);
-        });
-        function prayWellFormedPoint(pt) {
-            prayWellFormed(pt.parent, pt[L], pt[R]);
-        }
-        var expecteds = [
-            'x_{ab} x_{ba}, x_{a}^{b} x_{a}^{b}; x_{ab} x_{ba}, x_{a}^{b} x_{a}^{b}; x_{a} x_{a}, x_{a}^{} x_{a}^{}',
-            'x_{b}^{a} x_{b}^{a}, x^{ab} x^{ba}; x_{b}^{a} x_{b}^{a}, x^{ab} x^{ba}; x_{}^{a} x_{}^{a}, x^{a} x^{a}'
-        ];
-        var expectedsAfterC = [
-            'x_{abc} x_{bca}, x_{a}^{bc} x_{a}^{bc}; x_{ab}c x_{bca}, x_{a}^{b}c x_{a}^{b}c; x_{a}c x_{ca}, x_{a}^{}c x_{a}^{}c',
-            'x_{bc}^{a} x_{bc}^{a}, x^{abc} x^{bca}; x_{b}^{a}c x_{b}^{a}c, x^{ab}c x^{bca}; x_{}^{a}c x_{}^{a}c, x^{a}c x^{ca}'
-        ];
-        'sub super'.split(' ').forEach(function (initSupsub, i) {
-            var initialLatex = 'x_{a} x^{a}'.split(' ')[i];
-            'typed, wrote, wrote empty'.split(', ').forEach(function (did, j) {
-                var doTo = [
-                    function (mq, supsub) {
-                        mq.typedText(supsub).typedText('b');
-                    },
-                    function (mq, supsub) {
-                        mq.write(supsub + 'b');
-                    },
-                    function (mq, supsub) {
-                        mq.write(supsub + '{}');
-                    }
-                ][j];
-                'sub super'.split(' ').forEach(function (supsub, k) {
-                    var cmd = '_^'.split('')[k];
-                    'after before'.split(' ').forEach(function (side, l) {
-                        var moveToSide = [
-                            noop,
-                            function (mq) {
-                                mq.moveToLeftEnd().keystroke('Right');
-                            }
-                        ][l];
-                        var expected = expecteds[i].split('; ')[j].split(', ')[k].split(' ')[l];
-                        var expectedAfterC = expectedsAfterC[i]
-                            .split('; ')[j].split(', ')[k].split(' ')[l];
-                        test('initial ' +
-                            initSupsub +
-                            'script then ' +
-                            did +
-                            ' ' +
-                            supsub +
-                            'script ' +
-                            side, function () {
-                            mq.latex(initialLatex);
-                            assert.equal(mq.latex(), initialLatex);
-                            moveToSide(mq);
-                            doTo(mq, cmd);
-                            assert.equal(mq.latex().replace(/ /g, ''), expected);
-                            prayWellFormedPoint(mq.__controller.cursor);
-                            mq.typedText('c');
-                            assert.equal(mq.latex().replace(/ /g, ''), expectedAfterC);
-                        });
-                    });
-                });
-            });
-        });
-        var expecteds = 'x_{a}^{3} x_{a}^{3}, x_{a}^{3} x_{a}^{3}; x^{a3} x^{3a}, x^{a3} x^{3a}';
-        var expectedsAfterC = 'x_{a}^{3}c x_{a}^{3}c, x_{a}^{3}c x_{a}^{3}c; x^{a3}c x^{3ca}, x^{a3}c x^{3ca}';
-        'sub super'.split(' ').forEach(function (initSupsub, i) {
-            var initialLatex = 'x_{a} x^{a}'.split(' ')[i];
-            'typed wrote'.split(' ').forEach(function (did, j) {
-                var doTo = [
-                    function (mq) {
-                        mq.typedText('³');
-                    },
-                    function (mq) {
-                        mq.write('³');
-                    }
-                ][j];
-                'after before'.split(' ').forEach(function (side, k) {
-                    var moveToSide = [
-                        noop,
-                        function (mq) {
-                            mq.moveToLeftEnd().keystroke('Right');
-                        }
-                    ][k];
-                    var expected = expecteds.split('; ')[i].split(', ')[j].split(' ')[k];
-                    var expectedAfterC = expectedsAfterC
-                        .split('; ')[i].split(', ')[j].split(' ')[k];
-                    test('initial ' + initSupsub + 'script then ' + did + " '³' " + side, function () {
-                        mq.latex(initialLatex);
-                        assert.equal(mq.latex(), initialLatex);
-                        moveToSide(mq);
-                        doTo(mq);
-                        assert.equal(mq.latex().replace(/ /g, ''), expected);
-                        prayWellFormedPoint(mq.__controller.cursor);
-                        mq.typedText('c');
-                        assert.equal(mq.latex().replace(/ /g, ''), expectedAfterC);
-                    });
-                });
-            });
-        });
-        test("render LaTeX with 2 SupSub's in a row", function () {
-            mq.latex('x_a_b');
-            assert.equal(mq.latex(), 'x_{ab}');
-            mq.latex('x_a_{}');
-            assert.equal(mq.latex(), 'x_{a}');
-            mq.latex('x_{}_a');
-            assert.equal(mq.latex(), 'x_{a}');
-            mq.latex('x^a^b');
-            assert.equal(mq.latex(), 'x^{ab}');
-            mq.latex('x^a^{}');
-            assert.equal(mq.latex(), 'x^{a}');
-            mq.latex('x^{}^a');
-            assert.equal(mq.latex(), 'x^{a}');
-        });
-        test("render LaTeX with 3 alternating SupSub's in a row", function () {
-            mq.latex('x_a^b_c');
-            assert.equal(mq.latex(), 'x_{ac}^{b}');
-            mq.latex('x^a_b^c');
-            assert.equal(mq.latex(), 'x_{b}^{ac}');
-        });
-        suite('deleting', function () {
-            test('backspacing out of and then re-typing subscript', function () {
-                mq.latex('x_a^b');
-                assert.equal(mq.latex(), 'x_{a}^{b}');
-                mq.keystroke('Down Backspace');
-                assert.equal(mq.latex(), 'x_{ }^{b}');
-                mq.keystroke('Backspace');
-                assert.equal(mq.latex(), 'x^{b}');
-                mq.typedText('_a');
-                assert.equal(mq.latex(), 'x_{a}^{b}');
-                mq.keystroke('Left Backspace');
-                assert.equal(mq.latex(), 'xa^{b}');
-                mq.typedText('c');
-                assert.equal(mq.latex(), 'xca^{b}');
-            });
-            test('backspacing out of and then re-typing superscript', function () {
-                mq.latex('x_a^b');
-                assert.equal(mq.latex(), 'x_{a}^{b}');
-                mq.keystroke('Up Backspace');
-                assert.equal(mq.latex(), 'x_{a}^{ }');
-                mq.keystroke('Backspace');
-                assert.equal(mq.latex(), 'x_{a}');
-                mq.typedText('^b');
-                assert.equal(mq.latex(), 'x_{a}^{b}');
-                mq.keystroke('Left Backspace');
-                assert.equal(mq.latex(), 'x_{a}b');
-                mq.typedText('c');
-                assert.equal(mq.latex(), 'x_{a}cb');
-            });
-        });
-        suite('Escpae', function () {
-            test('from partial selection of a superscript', function () {
-                mq.typedText('x^2.3');
-                assert.equal(mq.latex(), 'x^{2.3}');
-                mq.keystroke('Shift-Left');
-                mq.keystroke('Esc');
-                mq.typedText('+1');
-                assert.equal(mq.latex(), 'x^{2.3}+1');
-            });
-            test('from partial selection of a subscript', function () {
-                mq.typedText('x_2.3');
-                assert.equal(mq.latex(), 'x_{2.3}');
-                mq.keystroke('Shift-Left');
-                mq.keystroke('Esc');
-                mq.typedText('+1');
-                assert.equal(mq.latex(), 'x_{2.3}+1');
-            });
-        });
-    });
     suite('ans command', function () {
         var $ = window.test_only_jquery;
         var mq;
@@ -22584,6 +22607,175 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             });
         });
     });
+    suite('SupSub', function () {
+        var $ = window.test_only_jquery;
+        var mq;
+        setup(function () {
+            mq = MQ.MathField($('<span></span>').appendTo('#mock')[0]);
+        });
+        function prayWellFormedPoint(pt) {
+            prayWellFormed(pt.parent, pt[L], pt[R]);
+        }
+        var expecteds = [
+            'x_{ab} x_{ba}, x_{a}^{b} x_{a}^{b}; x_{ab} x_{ba}, x_{a}^{b} x_{a}^{b}; x_{a} x_{a}, x_{a}^{} x_{a}^{}',
+            'x_{b}^{a} x_{b}^{a}, x^{ab} x^{ba}; x_{b}^{a} x_{b}^{a}, x^{ab} x^{ba}; x_{}^{a} x_{}^{a}, x^{a} x^{a}'
+        ];
+        var expectedsAfterC = [
+            'x_{abc} x_{bca}, x_{a}^{bc} x_{a}^{bc}; x_{ab}c x_{bca}, x_{a}^{b}c x_{a}^{b}c; x_{a}c x_{ca}, x_{a}^{}c x_{a}^{}c',
+            'x_{bc}^{a} x_{bc}^{a}, x^{abc} x^{bca}; x_{b}^{a}c x_{b}^{a}c, x^{ab}c x^{bca}; x_{}^{a}c x_{}^{a}c, x^{a}c x^{ca}'
+        ];
+        'sub super'.split(' ').forEach(function (initSupsub, i) {
+            var initialLatex = 'x_{a} x^{a}'.split(' ')[i];
+            'typed, wrote, wrote empty'.split(', ').forEach(function (did, j) {
+                var doTo = [
+                    function (mq, supsub) {
+                        mq.typedText(supsub).typedText('b');
+                    },
+                    function (mq, supsub) {
+                        mq.write(supsub + 'b');
+                    },
+                    function (mq, supsub) {
+                        mq.write(supsub + '{}');
+                    }
+                ][j];
+                'sub super'.split(' ').forEach(function (supsub, k) {
+                    var cmd = '_^'.split('')[k];
+                    'after before'.split(' ').forEach(function (side, l) {
+                        var moveToSide = [
+                            noop,
+                            function (mq) {
+                                mq.moveToLeftEnd().keystroke('Right');
+                            }
+                        ][l];
+                        var expected = expecteds[i].split('; ')[j].split(', ')[k].split(' ')[l];
+                        var expectedAfterC = expectedsAfterC[i]
+                            .split('; ')[j].split(', ')[k].split(' ')[l];
+                        test('initial ' +
+                            initSupsub +
+                            'script then ' +
+                            did +
+                            ' ' +
+                            supsub +
+                            'script ' +
+                            side, function () {
+                            mq.latex(initialLatex);
+                            assert.equal(mq.latex(), initialLatex);
+                            moveToSide(mq);
+                            doTo(mq, cmd);
+                            assert.equal(mq.latex().replace(/ /g, ''), expected);
+                            prayWellFormedPoint(mq.__controller.cursor);
+                            mq.typedText('c');
+                            assert.equal(mq.latex().replace(/ /g, ''), expectedAfterC);
+                        });
+                    });
+                });
+            });
+        });
+        var expecteds = 'x_{a}^{3} x_{a}^{3}, x_{a}^{3} x_{a}^{3}; x^{a3} x^{3a}, x^{a3} x^{3a}';
+        var expectedsAfterC = 'x_{a}^{3}c x_{a}^{3}c, x_{a}^{3}c x_{a}^{3}c; x^{a3}c x^{3ca}, x^{a3}c x^{3ca}';
+        'sub super'.split(' ').forEach(function (initSupsub, i) {
+            var initialLatex = 'x_{a} x^{a}'.split(' ')[i];
+            'typed wrote'.split(' ').forEach(function (did, j) {
+                var doTo = [
+                    function (mq) {
+                        mq.typedText('³');
+                    },
+                    function (mq) {
+                        mq.write('³');
+                    }
+                ][j];
+                'after before'.split(' ').forEach(function (side, k) {
+                    var moveToSide = [
+                        noop,
+                        function (mq) {
+                            mq.moveToLeftEnd().keystroke('Right');
+                        }
+                    ][k];
+                    var expected = expecteds.split('; ')[i].split(', ')[j].split(' ')[k];
+                    var expectedAfterC = expectedsAfterC
+                        .split('; ')[i].split(', ')[j].split(' ')[k];
+                    test('initial ' + initSupsub + 'script then ' + did + " '³' " + side, function () {
+                        mq.latex(initialLatex);
+                        assert.equal(mq.latex(), initialLatex);
+                        moveToSide(mq);
+                        doTo(mq);
+                        assert.equal(mq.latex().replace(/ /g, ''), expected);
+                        prayWellFormedPoint(mq.__controller.cursor);
+                        mq.typedText('c');
+                        assert.equal(mq.latex().replace(/ /g, ''), expectedAfterC);
+                    });
+                });
+            });
+        });
+        test("render LaTeX with 2 SupSub's in a row", function () {
+            mq.latex('x_a_b');
+            assert.equal(mq.latex(), 'x_{ab}');
+            mq.latex('x_a_{}');
+            assert.equal(mq.latex(), 'x_{a}');
+            mq.latex('x_{}_a');
+            assert.equal(mq.latex(), 'x_{a}');
+            mq.latex('x^a^b');
+            assert.equal(mq.latex(), 'x^{ab}');
+            mq.latex('x^a^{}');
+            assert.equal(mq.latex(), 'x^{a}');
+            mq.latex('x^{}^a');
+            assert.equal(mq.latex(), 'x^{a}');
+        });
+        test("render LaTeX with 3 alternating SupSub's in a row", function () {
+            mq.latex('x_a^b_c');
+            assert.equal(mq.latex(), 'x_{ac}^{b}');
+            mq.latex('x^a_b^c');
+            assert.equal(mq.latex(), 'x_{b}^{ac}');
+        });
+        suite('deleting', function () {
+            test('backspacing out of and then re-typing subscript', function () {
+                mq.latex('x_a^b');
+                assert.equal(mq.latex(), 'x_{a}^{b}');
+                mq.keystroke('Down Backspace');
+                assert.equal(mq.latex(), 'x_{ }^{b}');
+                mq.keystroke('Backspace');
+                assert.equal(mq.latex(), 'x^{b}');
+                mq.typedText('_a');
+                assert.equal(mq.latex(), 'x_{a}^{b}');
+                mq.keystroke('Left Backspace');
+                assert.equal(mq.latex(), 'xa^{b}');
+                mq.typedText('c');
+                assert.equal(mq.latex(), 'xca^{b}');
+            });
+            test('backspacing out of and then re-typing superscript', function () {
+                mq.latex('x_a^b');
+                assert.equal(mq.latex(), 'x_{a}^{b}');
+                mq.keystroke('Up Backspace');
+                assert.equal(mq.latex(), 'x_{a}^{ }');
+                mq.keystroke('Backspace');
+                assert.equal(mq.latex(), 'x_{a}');
+                mq.typedText('^b');
+                assert.equal(mq.latex(), 'x_{a}^{b}');
+                mq.keystroke('Left Backspace');
+                assert.equal(mq.latex(), 'x_{a}b');
+                mq.typedText('c');
+                assert.equal(mq.latex(), 'x_{a}cb');
+            });
+        });
+        suite('Escpae', function () {
+            test('from partial selection of a superscript', function () {
+                mq.typedText('x^2.3');
+                assert.equal(mq.latex(), 'x^{2.3}');
+                mq.keystroke('Shift-Left');
+                mq.keystroke('Esc');
+                mq.typedText('+1');
+                assert.equal(mq.latex(), 'x^{2.3}+1');
+            });
+            test('from partial selection of a subscript', function () {
+                mq.typedText('x_2.3');
+                assert.equal(mq.latex(), 'x_{2.3}');
+                mq.keystroke('Shift-Left');
+                mq.keystroke('Esc');
+                mq.typedText('+1');
+                assert.equal(mq.latex(), 'x_{2.3}+1');
+            });
+        });
+    });
     suite('text', function () {
         var $ = window.test_only_jquery;
         var mq, mostRecentlyReportedLatex;
@@ -23308,9 +23500,14 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 mq.typedText('\\,');
                 assertLatex('\\, ');
             });
-            test('\\| resolves to the pipe escape, not space + pair', function () {
+            // MATHCOMPILE: \| is a \lVert insertion alias — typed, it inserts
+            // the auto-pairing norm bracket (a pasted \| still parses as the
+            // standalone \| symbol).
+            test('\\| types the \\lVert pair', function () {
                 mq.typedText('\\|');
-                assertLatex('\\| ');
+                assertLatex('\\left\\lVert\\right\\rVert');
+                mq.typedText('v');
+                assertLatex('\\left\\lVert v\\right\\rVert');
             });
             test('\\{ types a brace pair', function () {
                 mq.typedText('\\{');
@@ -25261,67 +25458,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             assert.equal(inner.__controller.cursor.parent, inner.__controller.root);
         });
     });
-    suite('HTML', function () {
-        function renderHtml(domView) {
-            var Cmd = /** @class */ (function (_super) {
-                __extends(class_37, _super);
-                function class_37() {
-                    var _this_1 = _super.call(this, undefined, domView) || this;
-                    _this_1.id = 1;
-                    _this_1.blocks = Array(domView.childCount);
-                    var _loop_6 = function (i) {
-                        var content = 'Block:' + i;
-                        this_5.blocks[i] = {
-                            id: 2 + i,
-                            setDOM: function (_sibling) { },
-                            html: function () {
-                                var frag = document.createDocumentFragment();
-                                frag.appendChild(h.text(content));
-                                return frag;
-                            }
-                        };
-                    };
-                    var this_5 = this;
-                    for (var i = 0; i < domView.childCount; i += 1) {
-                        _loop_6(i);
-                    }
-                    return _this_1;
-                }
-                return class_37;
-            }(MathCommand));
-            return new Cmd().html();
-        }
-        function assertDOMEqual(actual, expected, message) {
-            var expectedNode = parseHTML(expected);
-            if (actual.isEqualNode(expectedNode))
-                return;
-            var d = document.createElement('div');
-            d.appendChild(actual);
-            var actualString = d.innerHTML;
-            assert.fail(message + ' expected (' + actualString + ') to equal (' + expected + ')');
-        }
-        test('simple HTML templates', function () {
-            assertDOMEqual(renderHtml(new DOMView(0, function () { return h('span', {}, [h.text('A Symbol')]); })), '<span>A Symbol</span>', 'a symbol');
-            assertDOMEqual(renderHtml(new DOMView(1, function (blocks) { return h.block('span', {}, blocks[0]); })), '<span>Block:0</span>', 'same span is cmd and block');
-            assertDOMEqual(renderHtml(new DOMView(2, function (blocks) {
-                return h('span', {}, [
-                    h.block('span', {}, blocks[0]),
-                    h.block('span', {}, blocks[1])
-                ]);
-            })), '<span>' + '<span>Block:0</span>' + '<span>Block:1</span>' + '</span>', 'container span with two block spans');
-            assertDOMEqual(renderHtml(new DOMView(0, function () { return h('br'); })), '<br/>', 'self-closing tag');
-        });
-        test('Attempting to render multiple html nodes into a math command throws', function () {
-            assert.throws(function () {
-                renderHtml(new DOMView(2, function (blocks) {
-                    var frag = document.createDocumentFragment();
-                    frag.appendChild(h('span', {}, [h.block('span', {}, blocks[0])]));
-                    frag.appendChild(h('span', {}, [h.block('span', {}, blocks[1])]));
-                    return frag;
-                }));
-            });
-        });
-    });
     suite('DOMFragment', function () {
         function nodeArraysEqual(arr1, arr2) {
             if (arr1.length !== arr2.length)
@@ -25726,7 +25862,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 assert.ok(nodeArraysEqual(domFrag(docFrag.firstChild, docFrag.lastChild).toNodeArray(), children));
             });
         });
-        var _loop_7 = function (name, apply) {
+        var _loop_6 = function (name, apply) {
             suite(name, function () {
                 test('is a noop when called on an empty fragment', function () {
                     var children = [h('span')];
@@ -25804,9 +25940,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             }
         ]; _c < _d.length; _c++) {
             var _f = _d[_c], name = _f.name, apply = _f.apply;
-            _loop_7(name, apply);
+            _loop_6(name, apply);
         }
-        var _loop_8 = function (name, apply) {
+        var _loop_7 = function (name, apply) {
             suite(name, function () {
                 test('is a noop when called on an empty fragment', function () {
                     var children = [h('span')];
@@ -25887,7 +26023,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             }
         ]; _g < _h.length; _g++) {
             var _j = _h[_g], name = _j.name, apply = _j.apply;
-            _loop_8(name, apply);
+            _loop_7(name, apply);
         }
         suite('.append()', function () {
             test('is a noop when called with an empty fragment', function () {
@@ -26011,7 +26147,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 assert.ok(nodeArraysEqual(domFrag(targetParent).children().toNodeArray(), sourceChildren.concat(targetChildren)), 'all source children moved to target children');
             });
         });
-        var _loop_9 = function (name, apply) {
+        var _loop_8 = function (name, apply) {
             suite(name, function () {
                 test('is a noop when this is an empty fragment', function () {
                     var children = [h('span')];
@@ -26057,9 +26193,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             }
         ]; _k < _l.length; _k++) {
             var _m = _l[_k], name = _m.name, apply = _m.apply;
-            _loop_9(name, apply);
+            _loop_8(name, apply);
         }
-        var _loop_10 = function (name, apply) {
+        var _loop_9 = function (name, apply) {
             suite(name, function () {
                 test('is a noop when this is an empty fragment', function () {
                     var children = [h('span')];
@@ -26105,7 +26241,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             }
         ]; _o < _p.length; _o++) {
             var _q = _p[_o], name = _q.name, apply = _q.apply;
-            _loop_10(name, apply);
+            _loop_9(name, apply);
         }
         suite('.parent()', function () {
             test('returns an empty fragment when this is an empty fragment', function () {
@@ -26498,7 +26634,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 }
             });
         });
-        var _loop_11 = function (method) {
+        var _loop_10 = function (method) {
             suite(".".concat(method, "()"), function () {
                 test('is a noop on an empty fragment', function () {
                     assert.ok(domFrag()[method]().isValid());
@@ -26526,7 +26662,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         // that DOMFragment doesn't
         for (var _r = 0, _s = ['remove', 'detach']; _r < _s.length; _r++) {
             var method = _s[_r];
-            _loop_11(method);
+            _loop_10(method);
         }
         suite('.hasClass()', function () {
             test('is always false for an empty fragment', function () {
@@ -26678,6 +26814,67 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 assert.equal(children[0].className, 'a b');
                 assert.equal(children[2].className, 'c');
                 assert.equal(children[3].className, 'd');
+            });
+        });
+    });
+    suite('HTML', function () {
+        function renderHtml(domView) {
+            var Cmd = /** @class */ (function (_super) {
+                __extends(class_37, _super);
+                function class_37() {
+                    var _this_1 = _super.call(this, undefined, domView) || this;
+                    _this_1.id = 1;
+                    _this_1.blocks = Array(domView.childCount);
+                    var _loop_11 = function (i) {
+                        var content = 'Block:' + i;
+                        this_5.blocks[i] = {
+                            id: 2 + i,
+                            setDOM: function (_sibling) { },
+                            html: function () {
+                                var frag = document.createDocumentFragment();
+                                frag.appendChild(h.text(content));
+                                return frag;
+                            }
+                        };
+                    };
+                    var this_5 = this;
+                    for (var i = 0; i < domView.childCount; i += 1) {
+                        _loop_11(i);
+                    }
+                    return _this_1;
+                }
+                return class_37;
+            }(MathCommand));
+            return new Cmd().html();
+        }
+        function assertDOMEqual(actual, expected, message) {
+            var expectedNode = parseHTML(expected);
+            if (actual.isEqualNode(expectedNode))
+                return;
+            var d = document.createElement('div');
+            d.appendChild(actual);
+            var actualString = d.innerHTML;
+            assert.fail(message + ' expected (' + actualString + ') to equal (' + expected + ')');
+        }
+        test('simple HTML templates', function () {
+            assertDOMEqual(renderHtml(new DOMView(0, function () { return h('span', {}, [h.text('A Symbol')]); })), '<span>A Symbol</span>', 'a symbol');
+            assertDOMEqual(renderHtml(new DOMView(1, function (blocks) { return h.block('span', {}, blocks[0]); })), '<span>Block:0</span>', 'same span is cmd and block');
+            assertDOMEqual(renderHtml(new DOMView(2, function (blocks) {
+                return h('span', {}, [
+                    h.block('span', {}, blocks[0]),
+                    h.block('span', {}, blocks[1])
+                ]);
+            })), '<span>' + '<span>Block:0</span>' + '<span>Block:1</span>' + '</span>', 'container span with two block spans');
+            assertDOMEqual(renderHtml(new DOMView(0, function () { return h('br'); })), '<br/>', 'self-closing tag');
+        });
+        test('Attempting to render multiple html nodes into a math command throws', function () {
+            assert.throws(function () {
+                renderHtml(new DOMView(2, function (blocks) {
+                    var frag = document.createDocumentFragment();
+                    frag.appendChild(h('span', {}, [h.block('span', {}, blocks[0])]));
+                    frag.appendChild(h('span', {}, [h.block('span', {}, blocks[1])]));
+                    return frag;
+                }));
             });
         });
     });

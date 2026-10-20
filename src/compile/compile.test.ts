@@ -789,6 +789,21 @@ const FIXTURES: {
     expectedPython: ['v = sp.Symbol("v")', 'sp.Abs(v)'],
   },
   {
+    // |A| of a matrix is the norm — the single-bar spelling lowers the
+    // same way \|A\| does; sp.Abs would apply elementwise.
+    latex:
+      '\\displaylines{ A = \\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix} \\\\ |A| \\\\ |A + A| }',
+    expectedPython: [
+      'A = sp.Matrix([[1, 2], [3, 4]])',
+      '(A).norm()',
+      '(A + A).norm()',
+    ],
+  },
+  {
+    latex: '|\\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix}|',
+    expectedPython: ['(sp.Matrix([[1, 2], [3, 4]])).norm()'],
+  },
+  {
     // a \mid b: a divides b.
     latex: 'a \\mid b',
     expectedPython: ["b, a = sp.symbols('b a')", 'sp.Eq(sp.Mod(b, a), 0)'],

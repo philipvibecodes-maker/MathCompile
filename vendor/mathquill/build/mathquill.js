@@ -9590,8 +9590,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds[' '] = LatexCmds.space = function () {
         return new DigitGroupingChar('\\ ', h('span', {}, [h.text(U_NO_BREAK_SPACE)]), ' ');
     };
-    // MATHCOMPILE: \<char> escapes \u2014 spacing (\, \: \; \!), braces (\{ \}) and the norm
-    // shorthand (\|). These are keyed with a backslash prefix so they only
+    // MATHCOMPILE: \<char> escapes \u2014 spacing (\, \: \; \!) and braces
+    // (\{ \}) \u2014 plus \|, now a \lVert insertion alias in extraCommands.ts.
+    // These are keyed with a backslash prefix so they only
     // resolve through the '\'-prefixed parse branch (see latex.ts): bare
     // ',', ';', '{', ... keep their literal meaning and '}' still closes
     // groups.
@@ -9609,7 +9610,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     };
     LatexCmds['\\{'] = bindVanillaSymbol('\\{ ', '{', 'open brace');
     LatexCmds['\\}'] = bindVanillaSymbol('\\} ', '}', 'close brace');
-    LatexCmds['\\|'] = bindVanillaSymbol('\\| ', '&#8741;', 'norm');
+    // MATHCOMPILE: \| moved to extraCommands.ts \u2014 typed \| is a \lVert
+    // insertion alias there (the standalone \u2016 symbol still serves the \|
+    // parse so pasted \|v\| round-trips).
     LatexCmds['.'] = function () {
         return new DigitGroupingChar('.', h('span', { class: 'mq-digit' }, [h.text('.')]), '.');
     };
@@ -13073,6 +13076,29 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds.rVert = function () {
         return new StandaloneBracket(R, '&#8741;', '&#8741;', '\\rVert ', '\\lVert ', 'right norm');
     };
+    // MATHCOMPILE: \| is shorthand for \lVert \u2014 typed, it inserts the same
+    // auto-pairing norm bracket \lVert does (serializes
+    // \left\lVert\u2026\right\rVert). A pasted \| keeps the standalone \u2016 symbol
+    // (MQSymbol's succeed-self parser) so \|v\| round-trips \u2014 a second \|
+    // would otherwise serialize \lVert, and \lVert\u2026\lVert reads as two
+    // left delimiters to the compiler. Overrides the basicSymbols.ts \|
+    // binding.
+    var NormPipeAlias = /** @class */ (function (_super) {
+        __extends(NormPipeAlias, _super);
+        function NormPipeAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        NormPipeAlias.prototype.createLeftOf = function (cursor) {
+            var brack = LatexCmds.lVert('\\|');
+            if (this.replacedFragment)
+                brack.replaces(this.replacedFragment);
+            brack.createLeftOf(cursor);
+        };
+        return NormPipeAlias;
+    }(VanillaSymbol));
+    LatexCmds['\\|'] = function () {
+        return new NormPipeAlias('\\| ', h.entityText('&#8741;'), 'norm');
+    };
     function bindBraKet(ctrlSeq, open, close) {
         return function () {
             return new MathCommand(ctrlSeq, new DOMView(1, function (blocks) {
@@ -13766,15 +13792,18 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     // `\mathrm{rank}(A)` -> `(A).rank()`), the same insertion-time
     // expansion \tr uses. None is a real LaTeX command, so stored latex
     // canonicalizes to \mathrm{\u2026} on the next save. No trailing space (see
-    // \tr): it would put a space node between the name and the parens.
-    function mathrmWordAlias(name, speak) {
+    // \tr): it would put a space node between the name and the parens \u2014
+    // except \norm, whose operand is usually a bare name where
+    // `\mathrm{norm}A` would render "normA" as one word.
+    function mathrmWordAlias(name, speak, space) {
+        if (space === void 0) { space = false; }
         return /** @class */ (function (_super) {
             __extends(class_34, _super);
             function class_34() {
                 return _super.call(this, '\\mathrm{' + name + '}', h('span', { class: 'mq-roman' }, [h.text(name)]), name, speak) || this;
             }
             class_34.prototype.createLeftOf = function (cursor) {
-                cursor.parent.writeLatex(cursor, '\\mathrm{' + name + '}');
+                cursor.parent.writeLatex(cursor, '\\mathrm{' + name + '}' + (space ? '\\ ' : ''));
             };
             return class_34;
         }(MQSymbol));
@@ -13784,7 +13813,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     LatexCmds.eigenvects = mathrmWordAlias('eigenvects', 'eigenvectors');
     LatexCmds.inverse = mathrmWordAlias('inverse', 'inverse');
     LatexCmds.transpose = mathrmWordAlias('transpose', 'transpose');
-    LatexCmds.norm = mathrmWordAlias('norm', 'norm');
+    LatexCmds.norm = mathrmWordAlias('norm', 'norm', true);
     LatexCmds.rref = mathrmWordAlias('rref', 'reduced row echelon form');
     LatexCmds.charpoly = mathrmWordAlias('charpoly', 'characteristic polynomial');
     LatexCmds.nullspace = mathrmWordAlias('nullspace', 'null space');

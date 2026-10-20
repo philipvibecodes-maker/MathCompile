@@ -170,7 +170,7 @@ Calculator and Python targets. A name that isn't built in, like
 | Rank | `\mathrm{rank}` | \(\mathrm{rank}(A)\) |
 | Inverse | `A^{-1}` or `\mathrm{inverse}` | \(A^{-1}\) |
 | Transpose | `A^{\mathrm{T}}` or `\mathrm{transpose}` | \(A^{\mathrm{T}}\) |
-| Norm | `\lVert` (auto-pairs) | \(\lVert A \rVert\) |
+| Norm | `\lVert` or `\|` (auto-pairs); `|A|`/`\norm A` work too | \(\lVert A \rVert\) |
 | Eigenvalues | `\mathrm{eigenvals}` | \(\mathrm{eigenvals}(A)\) |
 | Eigenvectors | `\mathrm{eigenvects}` | \(\mathrm{eigenvects}(A)\) |
 | Kernel / null space | `\ker` | \(\ker A\) |

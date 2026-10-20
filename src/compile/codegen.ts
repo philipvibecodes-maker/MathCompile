@@ -3271,14 +3271,15 @@ class Emitter {
         const m = MATRIX_METHODS[w] ?? `${w}()`;
         return [`(${this.emit(args[1])}).${m}`, PREC_ATOM];
       }
+      case 'Abs':
       case 'Norm':
-        // \|v\|: Abs for scalars, .norm() for matrices — including a
-        // bare name already declared as a matrix elsewhere.
-        if (isHead(args[0], 'Matrix') || this.identityDim(args[0]))
+        // |v| and \|v\|: Abs for scalars, .norm() for anything
+        // matrix-valued — |A| of a matrix is its norm, not the
+        // elementwise sp.Abs — including a bare name already declared
+        // as a matrix elsewhere.
+        if (this.matrixValued(args[0], true))
           return [`(${this.emit(args[0])}).norm()`, PREC_ATOM];
-        if (this.matrixRef(args[0]) || (isStr(args[0]) && this.scope.emit.matrices.has(args[0])))
-          return [`(${this.emit(args[0])}).norm()`, PREC_ATOM];
-        return [`${this.sp}Abs(${this.emit(args[0])})`, PREC_ATOM];
+        return [`${this.sp}Abs(${this.callArg(args[0])})`, PREC_ATOM];
       case 'Divides':
         // a \mid b: a divides b.
         return [
