@@ -1585,6 +1585,23 @@ body {
   background: var(--selected-bg);
 }
 
+/* Copy-agent-prompt button — shares the small copy-button look outside
+ * .add-row (where the row's own rule already styles it). */
+.agent-prompt {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--accent-text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.agent-prompt:hover {
+  background: var(--selected-bg);
+}
+
 /* ── Header controls ────────────────────────────────── */
 
 .target-select {

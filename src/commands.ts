@@ -1,4 +1,5 @@
 import { TARGETS } from './compile/targets';
+import { copyAgentPrompt } from './agent-prompt';
 import type { AppStore } from './state/store.svelte';
 import {
   downloadWorksheetFile,
@@ -35,6 +36,13 @@ export const buildCommands = (store: AppStore): Command[] => {
       title: 'Insert Python cell below',
       keywords: 'code script def function custom python',
       run: () => store.addPythonCell(focusId),
+    },
+    {
+      id: 'copy-agent-prompt',
+      title: 'Copy agent prompt for custom functions',
+      keywords:
+        'ai agent llm claude chatgpt prompt custom function python def',
+      run: () => void copyAgentPrompt(),
     },
     // Cell-kind conversions — the source text is kept through the flip.
     {

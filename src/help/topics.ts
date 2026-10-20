@@ -17,6 +17,8 @@ export interface HelpTopic {
   smart?: string;
   plain?: string;
   insert?: string;
+  /** Enter/click copies the agent prompt instead of inserting latex. */
+  agentPrompt?: boolean;
   default?: boolean;
 }
 
@@ -831,6 +833,14 @@ export const HELP_TOPICS: HelpTopic[] = [
     goal: 'Python cell',
     keywords: 'code custom function @latex def',
     how: '+ Python cell — def f(x): … is callable as \\mathrm{f}(x)',
+  },
+  {
+    id: 'agentprompt',
+    goal: 'Custom function via an AI agent',
+    keywords:
+      'ai agent llm claude chatgpt prompt custom function copy paste doc',
+    how: 'Enter copies a prompt linking the custom-functions doc',
+    agentPrompt: true,
   },
   {
     id: 'targets',
