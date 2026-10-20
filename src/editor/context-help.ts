@@ -125,9 +125,7 @@ export const HELP_ENTRIES: Record<HelpContext, { key: string; does: string }[]> 
   {
     'inside-matrix': [
       { key: 'Enter', does: 'add row below' },
-      { key: 'Ctrl+Enter', does: 'add row above' },
       { key: 'Shift+Space', does: 'add column right' },
-      { key: 'Ctrl+Shift+Space', does: 'add column left' },
       { key: 'Ctrl+Shift+Backspace', does: 'delete row' },
       { key: 'Ctrl+Shift+Delete', does: 'delete column' },
       { key: 'Ctrl+V', does: 'paste TSV/CSV into the grid' },

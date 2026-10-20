@@ -343,8 +343,8 @@ export const HELP_TOPICS: HelpTopic[] = [
     id: 'matnorm',
     goal: 'Matrix norm',
     keywords: 'norm frobenius spectral magnitude matrix',
-    how: '\\mathrm{norm} then the matrix',
-    insert: '\\mathrm{norm}',
+    how: '\\norm ⏎ — or \\mathrm{norm} then the matrix',
+    insert: '\\norm',
   },
   {
     id: 'diagonalize',
@@ -655,8 +655,8 @@ export const HELP_TOPICS: HelpTopic[] = [
   {
     id: 'norm',
     goal: 'Norm ‖x‖',
-    keywords: 'norm magnitude double bars lVert length',
-    how: '\\lVert ⏎ — pairs auto-close',
+    keywords: 'norm magnitude double bars lVert \\| length',
+    how: '\\| or \\lVert ⏎ — pairs auto-close',
     insert: '\\lVert',
   },
   {

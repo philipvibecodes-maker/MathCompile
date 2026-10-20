@@ -772,6 +772,24 @@ LatexCmds.rVert = () =>
     'right norm'
   );
 
+// MATHCOMPILE: \| is shorthand for \lVert — typed, it inserts the same
+// auto-pairing norm bracket \lVert does (serializes
+// \left\lVert…\right\rVert). A pasted \| keeps the standalone ‖ symbol
+// (MQSymbol's succeed-self parser) so \|v\| round-trips — a second \|
+// would otherwise serialize \lVert, and \lVert…\lVert reads as two
+// left delimiters to the compiler. Overrides the basicSymbols.ts \|
+// binding.
+class NormPipeAlias extends VanillaSymbol {
+  createLeftOf(cursor: Cursor) {
+    var brack = (LatexCmds.lVert as MQNodeBuilderOneParam)('\\|');
+    if (this.replacedFragment)
+      (brack as MathCommand).replaces(this.replacedFragment);
+    brack.createLeftOf(cursor);
+  }
+}
+LatexCmds['\\|'] = () =>
+  new NormPipeAlias('\\| ', h.entityText('&#8741;'), 'norm');
+
 function bindBraKet(ctrlSeq: string, open: string, close: string) {
   return () =>
     new MathCommand(
@@ -1518,11 +1536,16 @@ LatexCmds.dotproduct = () =>
 // `\mathrm{rank}(A)` -> `(A).rank()`), the same insertion-time
 // expansion \tr uses. None is a real LaTeX command, so stored latex
 // canonicalizes to \mathrm{…} on the next save. No trailing space (see
-// \tr): it would put a space node between the name and the parens.
-function mathrmWordAlias(name: string, speak: string) {
+// \tr): it would put a space node between the name and the parens —
+// except \norm, whose operand is usually a bare name where
+// `\mathrm{norm}A` would render "normA" as one word.
+function mathrmWordAlias(name: string, speak: string, space = false) {
   return class extends MQSymbol {
     createLeftOf(cursor: Cursor) {
-      cursor.parent.writeLatex(cursor, '\\mathrm{' + name + '}');
+      cursor.parent.writeLatex(
+        cursor,
+        '\\mathrm{' + name + '}' + (space ? '\\ ' : '')
+      );
     }
     constructor() {
       super(
@@ -1539,7 +1562,7 @@ LatexCmds.eigenvals = mathrmWordAlias('eigenvals', 'eigenvalues');
 LatexCmds.eigenvects = mathrmWordAlias('eigenvects', 'eigenvectors');
 LatexCmds.inverse = mathrmWordAlias('inverse', 'inverse');
 LatexCmds.transpose = mathrmWordAlias('transpose', 'transpose');
-LatexCmds.norm = mathrmWordAlias('norm', 'norm');
+LatexCmds.norm = mathrmWordAlias('norm', 'norm', true);
 LatexCmds.rref = mathrmWordAlias('rref', 'reduced row echelon form');
 LatexCmds.charpoly = mathrmWordAlias('charpoly', 'characteristic polynomial');
 LatexCmds.nullspace = mathrmWordAlias('nullspace', 'null space');

@@ -241,7 +241,17 @@ and empty blocks serialize as `{ }`.
   compiles to `sp.solve`/`sp.solveset`, `sp.dsolve`, or `sp.pdsolve`
   (see SYMBOLS.md "Solver statements").
 - `\tr` is an insertion alias for `\mathrm{tr}` — the matrix-trace
-  word-op codegen lowers to `(A).trace()` / `sp.Trace(A)`.
+  word-op codegen lowers to `(A).trace()` / `sp.Trace(A)`. The other
+  matrix word-ops alias the same way (`\rank`, `\eigenvals`, `\norm`,
+  `\rref`, … → `\mathrm{<word>}`); `\norm` alone appends a `\ ` space —
+  its operand is usually a bare name, and `\mathrm{norm}A` would render
+  "normA" as one word.
+- `\|` is an insertion alias for `\lVert` — typed, it inserts the
+  auto-pairing norm bracket; a pasted `\|` keeps the standalone ‖
+  symbol so `\|v\|` still round-trips (two `\lVert`s would parse as
+  two left delimiters — a downstream unexpected-delimiter error).
+  `|A|` on a matrix operand compiles to `(A).norm()` — the same
+  lowering `\|A\|` gets, not elementwise `sp.Abs`.
 - `\operatorname{…}` is a real one-block group (a `mq-roman mq-font`
   wrapper, like `\mathrm`) — typed `\operatorname{f}` types into the
   arg block and round-trips. Interior letters stay one upright word:

@@ -198,9 +198,14 @@ suite('typing with auto-replaces', function () {
       assertLatex('\\, ');
     });
 
-    test('\\| resolves to the pipe escape, not space + pair', function () {
+    // MATHCOMPILE: \| is a \lVert insertion alias — typed, it inserts
+    // the auto-pairing norm bracket (a pasted \| still parses as the
+    // standalone \| symbol).
+    test('\\| types the \\lVert pair', function () {
       mq.typedText('\\|');
-      assertLatex('\\| ');
+      assertLatex('\\left\\lVert\\right\\rVert');
+      mq.typedText('v');
+      assertLatex('\\left\\lVert v\\right\\rVert');
     });
 
     test('\\{ types a brace pair', function () {

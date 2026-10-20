@@ -99,6 +99,15 @@ export const NOTATION: Notation[] = [
     heads: ['Abs'],
     sympy: 'Abs',
     spellings: ['|x|', '\\left|x\\right|', '\\operatorname{abs}(x)'],
+    probes: [
+      {
+        latex:
+          '\\displaylines{ A = \\begin{pmatrix}1&2\\\\3&4\\end{pmatrix} \\\\ |A| }',
+        expect: '(A).norm()',
+      },
+    ],
+    note: '|A| of a matrix operand lowers to .norm() in codegen — the '
+      + 'single-bar spelling of \\|A\\|, not elementwise sp.Abs',
   },
   { name: 'Sign', heads: ['Sign'], sympy: 'sign' },
   {

@@ -65,6 +65,17 @@ test('R²→R³ plot renders a parametric surface over the 3-D window', async ({
   page,
 }) => {
   test.setTimeout(180_000);
+  // echarts-gl's interim surface and plotly's `surface` trace both draw
+  // through WebGL — headless Chromium without GPU/SwiftShader shows
+  // "WebGL is not supported" in place of the canvas, so skip there.
+  const hasWebGL = await page.evaluate(() => {
+    const c = document.createElement('canvas');
+    return !!(c.getContext('webgl2') ?? c.getContext('webgl'));
+  });
+  test.skip(
+    !hasWebGL,
+    'the 3-D interim and the plotly surface trace need WebGL — unavailable in this browser',
+  );
   await page.addInitScript(() => {
     localStorage.setItem(
       'mathcompile-prefs',

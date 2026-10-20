@@ -246,6 +246,29 @@ describe('insertion aliases', () => {
     mq.keystroke('Enter');
     expect(el.value).toBe('\\nabla');
   });
+
+  // \norm expands like \tr but keeps a trailing space — its operand is
+  // usually a bare name where `\mathrm{norm}A` would render as one word.
+  it('typed \\norm expands to \\mathrm{norm} + space', () => {
+    const { el, mq } = mountAppField();
+    type(mq, '\\norm');
+    mq.keystroke('Enter');
+    expect(el.value).toBe('\\mathrm{norm}\\ ');
+    type(mq, 'A');
+    expect(el.value).toBe('\\mathrm{norm}\\ A');
+  });
+
+  // \| is shorthand for \lVert — typed, it inserts the same
+  // auto-pairing norm bracket. (Pasted \| keeps the standalone ‖
+  // symbol — the escape-hydration table above — so \|v\| still
+  // round-trips.)
+  it('typed \\| inserts the \\lVert pair', () => {
+    const { el, mq } = mountAppField();
+    type(mq, '\\|');
+    expect(el.value).toBe('\\left\\lVert\\right\\rVert');
+    type(mq, 'v');
+    expect(el.value).toBe('\\left\\lVert v\\right\\rVert');
+  });
 });
 
 describe('delimiters and accents', () => {
