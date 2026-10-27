@@ -2,6 +2,8 @@
 
 Baseline: `eb8cdc2318f219d2f6d97cfe1dcc67c5d2ba268f` on main.
 Changes are recorded as a series of independently validated local commits.
+The validation tables below describe refactor completion. The two performance
+timeouts were subsequently resolved in the [follow-up](#follow-up-performance-timeout-fix).
 
 ## A. Summary
 
@@ -96,13 +98,13 @@ calculator programs, diagnostics and line metadata. Export inspection retained
 all 16 original codegen exports and all 12 original IR exports; the only added
 public type is `RawMathJson`.
 
-The two unresolved performance-test failures are unchanged from main:
+At refactor completion, two performance-test failures were unchanged from main:
 
 - `perf/options.spec.ts`: target switch -> output repaint.
 - `perf/typing.spec.ts`: keystroke -> output panel reflects the character.
 
-Both report `timed: outcome never became true`. Their tests and timeouts were
-not modified. Initial missing-browser failures were resolved by installing
+Both reported `timed: outcome never became true`. At that stage their tests
+and timeouts were not modified. Initial missing-browser failures were resolved by installing
 Chromium. Intermediate runs also encountered compiler/browser timeouts under
 load; reruns of unchanged tests passed. One early full E2E repeat had 182
 passes, two timeouts and one unrun test; the final full run passed all 185.
@@ -171,8 +173,8 @@ not SymPy execution or Pyodide boot time.
 
 ## G. Remaining concerns and deliberate deferrals
 
-- The two existing performance-battery outcome timeouts remain unresolved and
-  should be corrected separately, without weakening their intended coverage.
+- The two performance-battery outcome timeouts were deferred during the
+  refactor and are resolved by the separate follow-up below.
 - Development browser logs still contain the pre-existing Svelte
   `state_unsafe_mutation` during field teardown (`MathField` caret-context
   callback). This behavioral issue was not mixed into compiler restructuring.
@@ -192,3 +194,40 @@ None intended or found in the regression corpus or final functional suites.
 Generated Python matches byte-for-byte for the captured cases. Source ordering,
 worksheet execution, diagnostics, focus ownership and persisted data formats
 retain their existing behavior. No behavioral fixes were silently included.
+
+
+## Follow-up: performance timeout fix
+
+Both failures were outdated performance-test assumptions, rather than slow
+application work. The target-switch test assumed Python had no `.cell-output`,
+but Python now renders a code column there. The typing-commit test assumed the
+initial target was LaTeX, whereas the application defaults to Calculator.
+
+The tests now select LaTeX explicitly before measuring. Target switching checks
+LaTeX content, generated Python content, or the absence of output for the
+unimplemented targets, preserving all five original switches. The commit wait
+checks the field and its own row's LaTeX output together, requires a change from
+the pre-keystroke value, and compares exact text. The typing test also verifies
+all ten characters and the final output. Empty/missing or stale output cannot
+satisfy the wait. Application code and timeout limits are unchanged.
+
+Validation:
+
+```sh
+# Before: both tests reproduced the existing timeout.
+PERF_LABEL=timeouts-before npx playwright test -c playwright.perf.config.ts perf/options.spec.ts perf/typing.spec.ts --grep 'target switch|output panel reflects'
+# After: 2 passed.
+PERF_LABEL=timeouts-fixed npx playwright test -c playwright.perf.config.ts perf/options.spec.ts perf/typing.spec.ts --grep 'target switch|output panel reflects'
+# Stability: 6 passed (three repetitions of each test).
+PERF_LABEL=timeouts-repeat npx playwright test -c playwright.perf.config.ts perf/options.spec.ts perf/typing.spec.ts --grep 'target switch|output panel reflects' --repeat-each=3
+# Complete performance battery: 16 passed, 0 failed.
+PERF_LABEL=timeouts-all npm run test:perf
+# Standalone type checking of the modified performance tests: passed.
+npx tsc --ignoreConfig --noEmit --module esnext --moduleResolution bundler --target es2023 --lib ES2023,DOM --types node --skipLibCheck perf/options.spec.ts perf/typing.spec.ts
+# Passed with the same existing warnings.
+npm run lint
+```
+
+The full battery now records both formerly missing metrics: target switching
+and typing-to-output commit. Historical failed measurements above are retained
+for the refactor audit; they do not describe the current suite status.
