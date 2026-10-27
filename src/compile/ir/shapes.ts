@@ -94,3 +94,14 @@ export const isParenTuple = (v: MathJson): v is MathJson[] =>
 // spec — so each becomes Interval; 3+-element Lists stay sequences.
 // Two shapes keep their List nodes: Matrix rows are structural, and a
 // destructuring bind (`[x,y] = [1,2]`) needs a real iterable list.
+
+// TeX spacing commands CE wraps in nodes (`\,` -> HorizontalSpacing).
+// They carry no value — dropped from implicit-multiplication chains so
+// `x\,y` stays `x * y` instead of leaking `sp.HorizontalSpacing`.
+const SPACING_HEADS = new Set([
+  'HorizontalSpacing', 'Spacing', 'Space', 'TextSpace', 'Quad', 'Qquad',
+]);
+export const isSpacing = (v: MathJson): boolean => {
+  const h = head(v);
+  return h !== undefined && SPACING_HEADS.has(h);
+};
