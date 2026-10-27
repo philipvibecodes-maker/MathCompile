@@ -249,10 +249,10 @@ export function compileCellInScope(
   ir: MathJson,
   issues: Issue[],
   scope: Scope,
+  cellIndex: number,
 ): CalcCellProgram {
+  scope.beginCell(cellIndex, issues);
   scope.scanDecls(ir);
-  scope.issues = issues;
-  scope.errorCount = 0;
   const { defs, parts } = cellBody(ir, scope);
   // Statements dropped by an emission error carry it in place — the
   // error becomes their row so the cell keeps written order. The

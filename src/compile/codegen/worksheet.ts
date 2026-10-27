@@ -146,7 +146,7 @@ export function compileWorksheet(
       'python',
       pyRegistry.fns,
     );
-    scope.cellIdx = i;
+    scope.beginCell(i, issues);
     const lines = cellStatements(r.ir, scope);
     // The standalone cell script inlines every python def it calls —
     // `relu(x)` emits the real call, so the script needs the source.
@@ -238,7 +238,6 @@ export function compileCellsForCalc(
     // so the shown program stays self-contained under a star import.
     prelude: [calcImportLine(qualified), calcRuntimePy(qualified)],
     cells: cells.map((cell, i) => {
-      scope.cellIdx = i;
       // The shared declaredFns set both seeds this cell's normalize
       // (a `g(4)` below a `\def g` is a call, not juxtaposition) and
       // collects the names this cell declares for the cells below it.
@@ -254,7 +253,7 @@ export function compileCellsForCalc(
       );
       if (ir === undefined)
         return { defs: [], statements: [], issues, statementLines: [] };
-      return compileCellInScope(ir, issues, scope);
+      return compileCellInScope(ir, issues, scope, i);
     }),
   };
 }
@@ -285,8 +284,7 @@ export function compileCellForCalc(
     'calc',
     pyRegistry.fns,
   );
-  scope.cellIdx = 0;
-  const c = compileCellInScope(ir, issues, scope);
+  const c = compileCellInScope(ir, issues, scope, 0);
   return {
     prelude: [calcImportLine(qualified), calcRuntimePy(qualified), ...c.defs],
     ...c,

@@ -34,9 +34,9 @@ export class Scope {
   };
   /** Emission bookkeeping — minted python identifiers and transient
    * emission state. The ident maps share the scope's lifetime;
-   * `bound`/`lambdaBound`/`emitting` are call-stack-lifetime — swapped
-   * wholesale (save/restore) by withBound/withBoundOnly/
-   * withLambdaBound/withEmitting, never mutated in place — and
+   * `bound`/`lambdaBound` are call-stack-lifetime — swapped wholesale
+   * (save/restore) by withBound/withBoundOnly/withLambdaBound.
+   * `emitting` is a call-stack guard added/removed by withEmitting, and
    * `constNames` accumulates over the scope's lifetime. */
   readonly emit: {
     /** Free symbol name -> emitted python identifier,
@@ -191,6 +191,15 @@ export class Scope {
     this.issues = issues;
     this.cellIssues = cellIssues;
     this.cell = cell;
+  }
+
+  /** Select cell-local diagnostics without resetting persistent bindings.
+   * `cell` independently controls worksheet-export diagnostic prefixes;
+   * calculator scopes intentionally keep that label at zero. */
+  beginCell(index: number, issues: Issue[]): void {
+    this.cellIdx = index;
+    this.issues = issues;
+    this.errorCount = 0;
   }
 
   flag(severity: Issue['severity'], message: string): void {
