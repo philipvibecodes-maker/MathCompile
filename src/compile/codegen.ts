@@ -1,3 +1,4 @@
+import { emitDerivative } from './codegen/derivatives';
 import { emitBoundOperator } from './codegen/bound-operators';
 import { PREC_LOW, PREC_ADD, PREC_MUL, PREC_UNARY, PREC_POW, PREC_ATOM } from './codegen/precedence';
 import { emitStatement } from './codegen/statements';
@@ -318,7 +319,7 @@ class Emitter {
     return ident;
   }
 
-  private sym(name: string): string {
+  sym(name: string): string {
     // A bare `i` in value position is the imaginary unit (i^2 -> -1,
     // e^{i\pi} -> -1); only a bound operator/def variable or an
     // `i = …` assignment keeps it an ordinary symbol.
@@ -391,7 +392,7 @@ class Emitter {
   // A name used as a function (f in f'(x)) needs sp.Function, not
   // sp.symbols — symbols aren't callable. A python-cell `def` resolves
   // to the real callable instead.
-  private fn(name: string): string {
+  fn(name: string): string {
     if (this.scope.decls.defined.has(name)) {
       // `x = 5` then `\dot{x}` — the name is already a bound value;
       // `x(t)` raises TypeError at exec. Def'd/lambda-bound names stay
@@ -1737,285 +1738,10 @@ class Emitter {
           .join(', ');
         return [`${this.sp}Piecewise(${pieces})`, PREC_ATOM];
       }
-      case 'D': {
-        // \frac{d}{dx} f and partials both parse to D(f, x[, n]). The
-        // variable is bound for the body's emission (a bound `i` stays
-        // a symbol instead of resolving to sp.I).
-        return this.scope.withLambdaBound(
-          isStr(args[1]) ? [args[1]] : [],
-          (): [string, number] => {
-            // \frac{df}{dx} — a bare name as the body is a function of
-            // the variable, not an independent symbol: `diff(f, x)`
-            // would evaluate to 0. Emit `diff(f(x), x)` ->
-            // Derivative(f(x), x).
-            let f: string;
-            if (
-              isStr(args[0]) &&
-              args[0] !== args[1] &&
-              !this.scope.decls.defined.has(args[0])
-            ) {
-              // A dependent variable's full arg list applies at every
-              // site — `D(u,t) = D(u,x,x)` emits diff(u(t,x), t), not
-              // u(t) here / u(x) there. cellBody seeds the union before
-              // emission; args[1] is always part of it.
-              const call = [
-                ...(this.scope.emit.fnArgs.get(args[0]) ?? []),
-                args[1],
-              ].filter((v, i, a) => a.indexOf(v) === i);
-              f = `${this.fn(args[0])}(${call.map((a) => this.emit(a)).join(', ')})`;
-              this.scope.noteDepVar(args[0], call);
-            } else {
-              f = this.emit(args[0]);
-              // `\dot{x}` after `x = 5` — sp.diff(5, t) evaluates to 0,
-              // so the emitted equation silently says `0 = rhs` instead
-              // of a derivative; flag rather than emit a plausible
-              // falsehood. A symbol-bound name is still a variable —
-              // diff(f, x) = 0 is the honest partial.
-              if (isStr(args[0]) && this.scope.isValueBound(args[0]))
-                this.scope.flag(
-                  'error',
-                  `${args[0]} is bound to a value — cannot differentiate`,
-                );
-            }
-            const x = this.emit(args[1]);
-            return args.length >= 3
-              ? [
-                  `${this.sp}diff(${f}, ${x}, ${this.emit(args[2])})`,
-                  PREC_ATOM,
-                ]
-              : [`${this.sp}diff(${f}, ${x})`, PREC_ATOM];
-          },
-        );
-      }
-      case 'TotalD': {
-        // `\D f` — the TOTAL derivative: the best linear approximation
-        // of f at a point, expressed as the Jacobian —
-        // `sp.Matrix([body]).jacobian(vars)`. It takes no variable:
-        // `\D_x f` is a
-        // partial and folds to the ordinary D path, and the
-        // `\frac{\D}{\D}` spelling is not the notation — flagged, with
-        // the plausible univariate derivative emitted as a fallback.
-        const body = args[0];
-        const v = args[1];
-        if (isStr(v) && !missingArg(v)) {
-          this.scope.flag(
-            'error',
-            '\\frac{\\D}{\\D} is not the notation — write \\D f for the total derivative or \\D_x f for the partial in x',
-          );
-          return this.scope.withLambdaBound([v], (): [string, number] => {
-            let f: string;
-            if (
-              isStr(body) &&
-              body !== v &&
-              !this.scope.decls.defined.has(body)
-            ) {
-              const call = [
-                ...(this.scope.emit.fnArgs.get(body) ?? []),
-                v,
-              ].filter((a, i, arr) => arr.indexOf(a) === i);
-              f = `${this.fn(body)}(${call.map((a) => this.emit(a)).join(', ')})`;
-              this.scope.noteDepVar(body, call);
-            } else {
-              f = this.emit(body);
-            }
-            const x = this.emit(v);
-            return args.length >= 3
-              ? [
-                  `${this.sp}diff(${f}, ${x}, ${this.emit(args[2])})`,
-                  PREC_ATOM,
-                ]
-              : [`${this.sp}diff(${f}, ${x})`, PREC_ATOM];
-          });
-        }
-        // Bare `\D f` / `\D^n f` — the total derivative. `\D` applies to
-        // a function: one variable emits plain `sp.diff(body, v)` —
-        // SymPy differentiates matrices elementwise — and a multivariate
-        // scalar emits the Jacobian `sp.Matrix([body]).jacobian(vars)`.
-        let vars: string[];
-        let bodyIsFn = false;
-        let recordedArgs: MathJson[] | undefined;
-        if (isStr(body)) {
-          // `\D f` on a bare name — a field, not a symbol. Its recorded
-          // args define the variables; an undeclared f becomes f(x) —
-          // unless the name IS the variable (`\D x` → `diff(x, x)`),
-          // which must not mark x as a function of anything.
-          recordedArgs =
-            this.scope.emit.fnArgs.get(body) ??
-            this.scope.emit.lambdaParams.get(body);
-          if (recordedArgs !== undefined) {
-            vars = recordedArgs.filter((a): a is string => isStr(a));
-            bodyIsFn = true;
-          } else if (this.scope.isValueBound(body)) {
-            this.scope.flag(
-              'error',
-              `${body} is bound to a value — not a field`,
-            );
-            return [
-              `${this.sp}diff(${this.emit(body)}, x)`,
-              PREC_ATOM,
-            ];
-          } else if (this.scope.emit.matrices.has(body)) {
-            // `\D A` — differentiate the matrix entries: `diff` handles
-            // matrices elementwise.
-            vars = ['x'];
-          } else if (body === 'x' || this.scope.emit.symbols.has(body)) {
-            // A coordinate or a symbol-bound name is its own variable —
-            // `\D x`/`diff(u, u)` = 1, not a field claim.
-            vars = [body];
-          } else {
-            this.fn(body);
-            this.scope.noteDepVar(body, ['x']);
-            vars = ['x'];
-            bodyIsFn = true;
-          }
-        } else {
-          vars = freeNames(body).filter(
-            (n) =>
-              !this.scope.isValueBound(n) &&
-              !this.scope.emit.matrices.has(n) &&
-              !this.scope.emit.functions.has(n) &&
-              !this.scope.decls.declaredFns.has(n) &&
-              !this.scope.kinds.depVars.has(n),
-          );
-        }
-        if (vars.length === 0) {
-          this.scope.flag('error', 'total derivative needs a free variable');
-          return [
-            `${this.sp}diff(${this.emit(body)}, x)`,
-            PREC_ATOM,
-          ];
-        }
-        // `\D^n f` — the nth total derivative. A non-integer order flags.
-        let order = 1;
-        const orderNode = v === 'Nothing' ? args[2] : undefined;
-        if (orderNode !== undefined) {
-          const n = typeof orderNode === 'number' ? orderNode : NaN;
-          if (Number.isInteger(n) && n >= 1) {
-            order = n;
-          } else {
-            this.scope.flag(
-              'error',
-              'higher-order total derivative needs a whole-number order',
-            );
-          }
-        }
-        // A callable bound by `f = x \mapsto …` lives in `lambdaParams`,
-        // not `functions` — sym() would emit the bare Lambda object, so
-        // apply it at its declared signature here.
-        const emitted =
-          isStr(body) &&
-          bodyIsFn &&
-          recordedArgs !== undefined &&
-          !this.scope.emit.functions.has(body)
-            ? `${this.fn(body)}(${recordedArgs
-                .map((a) => this.emit(a))
-                .join(', ')})`
-            : this.emit(body);
-        if (vars.length === 1) {
-          const x = this.emit(vars[0]);
-          return [
-            `${this.sp}diff(${emitted}, ${x}${
-              order > 1 ? `, ${order}` : ''
-            })`,
-            PREC_ATOM,
-          ];
-        }
-        // Multivariate — the Jacobian. `sp.Matrix(...).jacobian` needs a
-        // concrete matrix: a scalar body wraps as a 1×1, a matrix
-        // literal differentiates its entries directly.
-        const jac =
-          (bodyIsFn || !isArr(body) || headOf(body) !== 'Matrix') &&
-          !this.matrixValued(body, true)
-            ? `${this.sp}Matrix([${emitted}])`
-            : emitted;
-        let out = `${jac}.jacobian([${vars
-          .map((sv) => this.sym(sv))
-          .join(', ')}])`;
-        for (let i = 1; i < order; i++)
-          out = `${out}.jacobian([${vars
-            .map((sv) => this.sym(sv))
-            .join(', ')}])`;
-        return [out, PREC_ATOM];
-      }
-      case 'Gradient': {
-        // `\nabla f` — the gradient over the canonical coordinates
-        // (x, y, z), emitted as a 1×3 Matrix (the Jacobian of the scalar
-        // body) — an sp.Array doesn't carry matrix ops. `\nabla x` is
-        // the coordinate field itself -> (1, 0, 0); a coordinate bound
-        // to a value can't be a diff variable, so its column is a
-        // literal 0.
-        const body = args[0];
-        const COORDS = ['x', 'y', 'z'];
-        const grad = (b: string): [string, number] => {
-          if (COORDS.every((c) => !this.scope.isValueBound(c)))
-            return [
-              `${this.sp}Matrix([${b}]).jacobian([${COORDS.map((c) =>
-                this.sym(c),
-              ).join(', ')}])`,
-              PREC_ATOM,
-            ];
-          return [
-            `${this.sp}Matrix([[${COORDS.map((c) =>
-              this.scope.isValueBound(c)
-                ? '0'
-                : `${this.sp}diff(${b}, ${this.sym(c)})`,
-            ).join(', ')}]])`,
-            PREC_ATOM,
-          ];
-        };
-        if (isStr(body)) {
-          // ∇f on a bare name: a def'd/called name is the field
-          // f(<args>) — applied at its recorded signature — a
-          // coordinate or symbol-bound name is the symbol itself
-          // (∇x → (1,0,0)), a fresh name becomes a field of all three
-          // coords, and a name bound to a scalar value differentiates
-          // as that value (∇x after `x = 5` is the zero row).
-          // Matrix/set/list bindings aren't scalar fields.
-          const recorded =
-            this.scope.emit.fnArgs.get(body) ??
-            this.scope.emit.lambdaParams.get(body);
-          if (recorded !== undefined) {
-            const applied = this.scope.emit.functions.has(body)
-              ? this.emit(body)
-              : `${this.fn(body)}(${recorded
-                  .map((a) => this.emit(a))
-                  .join(', ')})`;
-            return grad(applied);
-          }
-          if (
-            this.scope.emit.matrices.has(body) ||
-            this.scope.kinds.matrixNames.has(body) ||
-            this.scope.kinds.setNames.has(body) ||
-            this.scope.kinds.listNames.has(body)
-          ) {
-            this.scope.flag(
-              'error',
-              `${body} is bound to a value — not a scalar field`,
-            );
-            return [`${this.sp}Matrix([[0, 0, 0]])`, PREC_ATOM];
-          }
-          if (
-            !COORDS.includes(body) &&
-            !this.scope.emit.symbols.has(body) &&
-            !this.scope.isValueBound(body)
-          ) {
-            this.fn(body);
-            this.scope.noteDepVar(body, COORDS);
-            const applied = this.scope.emit.functions.has(body)
-              ? this.emit(body)
-              : `${this.fn(body)}(${COORDS.map((c) => this.sym(c)).join(', ')})`;
-            return grad(applied);
-          }
-          return grad(this.emit(body));
-        }
-        for (const n of freeNames(body))
-          if (this.scope.isValueBound(n))
-            this.scope.flag(
-              'error',
-              `${n} is bound to a value — cannot differentiate`,
-            );
-        return grad(this.emit(body));
-      }
+      case 'D':
+      case 'TotalD':
+      case 'Gradient':
+        return emitDerivative(h, args, this);
       case 'Apply': {
         const callee = args[0];
         if (isHead(callee, 'InverseFunction')) {
