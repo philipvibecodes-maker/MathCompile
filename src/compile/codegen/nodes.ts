@@ -105,3 +105,15 @@ export const stripZeroSuffix = (s: string): string | undefined =>
       ? s.slice(0, -2)
       : undefined;
 
+
+// CE wraps calculus bodies as ["Function", body, x] (x binds the operator
+// variable). Unwrap to the plain body + the bound parameter list.
+export function unwrapLambda(node: MathJson): { body: MathJson; params: string[] } {
+  if (isHead(node, 'Function') && node.length >= 3)
+    return {
+      body: node[1],
+      params: node.slice(2).filter(isStr),
+    };
+  return { body: node, params: [] };
+}
+
