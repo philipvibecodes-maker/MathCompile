@@ -1,4 +1,4 @@
-import type { Issue,MathJson,NormResult,NormalizeOptions } from '../ir';
+import type { Issue, MathJson, NormResult, NormalizeOptions } from '../ir';
 
 export interface StatementOut {
   lines: string[];
@@ -121,4 +121,3 @@ export interface CalcWorksheetProgram {
   prelude: string[];
   cells: CalcCellProgram[];
 }
-

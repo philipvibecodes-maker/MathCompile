@@ -1,11 +1,26 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { MathJson } from './types';
 import {
-  addNode, assignNode, callNode, defNode, listNode, multiplyNode, negateNode,
-  powerNode, pythonSourceNode,
-  isAddNode, isAssignNode, isCallNode, isDefNode, isListNode, isMultiplyNode,
-  isNegateNode, isPowerNode, isPythonSourceNode,
-  type PowerNode, type DefNode,
+  addNode,
+  assignNode,
+  callNode,
+  defNode,
+  listNode,
+  multiplyNode,
+  negateNode,
+  powerNode,
+  pythonSourceNode,
+  isAddNode,
+  isAssignNode,
+  isCallNode,
+  isDefNode,
+  isListNode,
+  isMultiplyNode,
+  isNegateNode,
+  isPowerNode,
+  isPythonSourceNode,
+  type PowerNode,
+  type DefNode,
 } from './normalized';
 
 describe('checked normalized shapes', () => {

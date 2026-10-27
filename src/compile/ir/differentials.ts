@@ -1,5 +1,5 @@
 import type { NormalizeCtx } from './context';
-import { head,isArray,isString } from './shapes';
+import { head, isArray, isString } from './shapes';
 import type { MathJson } from './types';
 
 // Differential marks: plain `d`/`d_upright` symbols and the quoted
@@ -194,7 +194,7 @@ export const hasTotalDMark = (v: MathJson): boolean =>
 // codegen can flag it.
 export const foldTotalD = (
   rawArgs: MathJson[],
-  ctx: NormalizeCtx,
+  ctx: Pick<NormalizeCtx, 'norm'>,
 ): MathJson | null => {
   const normVar = (v: MathJson): MathJson => ctx.norm(v, false, false, true);
   const bodyOf = (parts: MathJson[]): MathJson =>
@@ -260,4 +260,3 @@ export const foldTotalD = (
   }
   return null;
 };
-

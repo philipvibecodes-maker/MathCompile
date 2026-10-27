@@ -116,4 +116,3 @@ export function unwrapLambda(node: MathJson): { body: MathJson; params: string[]
     };
   return { body: node, params: [] };
 }
-

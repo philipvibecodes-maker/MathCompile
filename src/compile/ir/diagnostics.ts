@@ -1,5 +1,5 @@
-import { head,isArray,isString,unquote } from './shapes';
-import type { Issue,MathJson } from './types';
+import { head, isArray, isString, unquote } from './shapes';
+import type { Issue, MathJson } from './types';
 
 export function issue(severity: Issue['severity'], message: string): Issue {
   return { severity, message };
@@ -53,4 +53,3 @@ export function describeCommand(src: string, hint: string): string {
     return 'unexpected \\displaylines inside an expression';
   return `incomplete or unsupported command${hint}`;
 }
-

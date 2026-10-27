@@ -356,4 +356,3 @@ function emitPlotImagePython(
     ],
   };
 }
-

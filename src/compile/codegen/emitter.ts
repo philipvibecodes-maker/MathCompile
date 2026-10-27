@@ -1,29 +1,37 @@
 // Expression emission and precedence dispatch. Domain helpers recurse
 // through emit(), preserving symbol allocation and diagnostic order.
 import type { MathJson } from '../ir';
+import { unquote } from '../ir';
 import {
-unquote
-} from '../ir';
-import {
-CALL_RENAMES,
-CONSTANTS,
-LEAF_SETS,
-MATRIX_METHODS,
-SET_CONSTRAINTS,
-SETISH_SYMBOLS,
-SP_BUILTIN_CALL,
-SP_FUNC_MIN_ARGS,
-SP_FUNCS
+  CALL_RENAMES,
+  CONSTANTS,
+  LEAF_SETS,
+  MATRIX_METHODS,
+  SET_CONSTRAINTS,
+  SETISH_SYMBOLS,
+  SP_BUILTIN_CALL,
+  SP_FUNC_MIN_ARGS,
+  SP_FUNCS,
 } from '../notation';
-import { freeNames,isIntExpr } from './analysis';
+import { freeNames, isIntExpr } from './analysis';
 import { emitBoundOperator } from './bound-operators';
 import { emitCollection } from './collections';
 import { emitDerivative } from './derivatives';
 import { emitFunction } from './functions';
-import { BOOLISH_HEADS,CMP_NESTABLE_HEADS,SETISH_OP_HEADS,UNPARSEABLE_MSG } from './heads';
+import { BOOLISH_HEADS, CMP_NESTABLE_HEADS, SETISH_OP_HEADS, UNPARSEABLE_MSG } from './heads';
 import { pyIdent } from './identifiers';
-import { asInt,headOf,isArr,isHead,isStr,matrixValuedNode,missingArg,numText,stripZeroSuffix } from './nodes';
-import { PREC_ADD,PREC_ATOM,PREC_LOW,PREC_MUL,PREC_POW,PREC_UNARY } from './precedence';
+import {
+  asInt,
+  headOf,
+  isArr,
+  isHead,
+  isStr,
+  matrixValuedNode,
+  missingArg,
+  numText,
+  stripZeroSuffix,
+} from './nodes';
+import { PREC_ADD, PREC_ATOM, PREC_LOW, PREC_MUL, PREC_POW, PREC_UNARY } from './precedence';
 import { Scope } from './scope';
 
 export class Emitter {
@@ -1951,4 +1959,3 @@ export class Emitter {
     }
   }
 }
-

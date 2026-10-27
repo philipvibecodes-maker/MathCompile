@@ -1,9 +1,15 @@
-import { cellStatements,compileCellInScope } from './cells';
-import { collectDeclared,collectMatrices } from './declarations';
-import { STATEMENT_CALL_HEADS,STATEMENT_HEADS } from './heads';
-import { headOf,isArr,isStr } from './nodes';
+import { cellStatements, compileCellInScope } from './cells';
+import { collectDeclared, collectMatrices } from './declarations';
+import { STATEMENT_CALL_HEADS, STATEMENT_HEADS } from './heads';
+import { headOf, isArr, isStr } from './nodes';
 import { Scope } from './scope';
-import type { CalcProgram,CalcWorksheetProgram,CellInput,CompileOptions,CompileResult } from './types';
+import type {
+  CalcProgram,
+  CalcWorksheetProgram,
+  CellInput,
+  CompileOptions,
+  CompileResult,
+} from './types';
 // Normalized IR -> target codegen.
 //
 // The `python` target emits executable SymPy. Cells are compiled
@@ -22,10 +28,8 @@ import type { CalcProgram,CalcWorksheetProgram,CellInput,CompileOptions,CompileR
 // targets is future work.
 
 import { CALC_RUNTIME_PY } from '../calc-runtime';
-import type { Issue,MathJson } from '../ir';
-import {
-normalizeIR
-} from '../ir';
+import type { Issue, MathJson } from '../ir';
+import { normalizeIR } from '../ir';
 import { collectPyFns } from '../pydefs';
 // The name tables below are derived views over the notation registry —
 // each name lives once in src/compile/notation.ts.
@@ -290,4 +294,3 @@ export function compileCellForCalc(
     ...c,
   };
 }
-

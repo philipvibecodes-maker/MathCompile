@@ -1,7 +1,7 @@
 import { ComputeEngine } from '@cortex-js/compute-engine';
-import { applyLatexRules,outputLatex,PRE_PARSE_RULES } from '../latex';
+import { applyLatexRules, outputLatex, PRE_PARSE_RULES } from '../latex';
 import { pythonSourceNode } from './normalized';
-import { delimiterArgs,head,isArray,isDelimiterGroup,isString,isSymbolString } from './shapes';
+import { delimiterArgs, head, isArray, isDelimiterGroup, isString, isSymbolString } from './shapes';
 import type { MathJson } from './types';
 
 let engine: ComputeEngine | undefined;
@@ -310,4 +310,3 @@ const bracketIntervals = (n: MathJson): MathJson => {
   }
   return [h, ...n.slice(1).map(bracketIntervals)] as MathJson;
 };
-

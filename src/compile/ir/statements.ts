@@ -1,6 +1,16 @@
 import { KNOWN_HEADS } from '../notation';
-import { assignNode,defNode } from './normalized';
-import { delimiterArgs,head,isArray,isDelimiterGroup,isParenTuple,isSpacing,isString,isSymbolString,unquote } from './shapes';
+import { assignNode, defNode } from './normalized';
+import {
+  delimiterArgs,
+  head,
+  isArray,
+  isDelimiterGroup,
+  isParenTuple,
+  isSpacing,
+  isString,
+  isSymbolString,
+  unquote,
+} from './shapes';
 import type { MathJson } from './types';
 
 // f(x, y) shape: lowercase-ish head applied to bare symbols. Canonical CE
@@ -278,4 +288,3 @@ export function normalizeStatementEqual(
   }
   return ['Equal', ...node.slice(1).map(normalizeExpr)];
 }
-

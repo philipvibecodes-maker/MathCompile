@@ -29,4 +29,3 @@ export const BOOLISH_HEADS = new Set([
 // marker-only — the python overlay renders it as a ! icon (never text)
 // and the calculator drops it from statement errors entirely.
 export const UNPARSEABLE_MSG = 'unparseable input — statement skipped';
-

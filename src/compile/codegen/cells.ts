@@ -1,13 +1,11 @@
-import type { Issue,MathJson } from '../ir';
-import {
-CE_DISPLAY_NAMES
-} from '../notation';
+import type { Issue, MathJson } from '../ir';
+import { CE_DISPLAY_NAMES } from '../notation';
 import { Emitter } from './emitter';
 import { UNPARSEABLE_MSG } from './heads';
-import { headOf,isArr,isHead,isStr } from './nodes';
+import { headOf, isArr, isHead, isStr } from './nodes';
 import { Scope } from './scope';
 import { emitStatement } from './statements';
-import type { CalcCellProgram,StatementOut } from './types';
+import type { CalcCellProgram, StatementOut } from './types';
 
 interface CellBody {
   /** Symbol/Function def lines for names first needed by this cell. */
@@ -331,4 +329,3 @@ export function compileCellInScope(
     statementLines,
   };
 }
-

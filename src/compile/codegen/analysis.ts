@@ -64,4 +64,3 @@ export function firstFreeCapital(used: Set<string>): string {
   }
   return 'C';
 }
-

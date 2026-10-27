@@ -36,4 +36,3 @@ export interface NormalizeOptions {
    *  of raising the unknown-head note. */
   pyFns?: ReadonlySet<string>;
 }
-

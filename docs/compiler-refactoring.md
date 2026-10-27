@@ -93,3 +93,50 @@ flush-time snapshot, worksheet identity, and debounce tests remain intact.
 The protection against resurrection belongs to the store's flush-before-delete
 contract; the low-level storage removal operation does not independently own
 pending writes.
+
+## Final module boundaries
+
+The compatibility facades retain all former exports and caller signatures.
+Implementation modules never import their own facade.
+
+- Codegen: worksheet orchestration owns normalization options, Python-function
+  discovery and scope allocation. Cell assembly owns declaration lines,
+  statement order and diagnostic row mapping. Statements own assignments,
+  definitions, Python source, solvers and plot dispatch. Plotting owns static
+  signatures, domains and Python plot programs.
+- Expressions: the emitter owns precedence dispatch, name resolution and
+  recursive `emit`. Bound operators, derivatives, functions/lambdas and
+  sets/predicates consume narrow structural contracts; they recurse through
+  the same emitter. They do not construct scopes or import the emitter class.
+  Arithmetic, matrix resolution and the call escape hatch stay in the core:
+  further extraction would currently require a broad shared interface.
+- Shared codegen leaves own identifier policy, name/declaration analysis,
+  structural checks, precedence constants and emission-head classifications.
+  These are shared policies, not a module per operator.
+- IR: parsing owns the lazy Compute Engine instance and preprocessing;
+  shapes and diagnostics are pure; differential, solver and statement helpers
+  own their corresponding recognition/transformation logic. Helpers receive
+  only the normalization callbacks they actually use.
+- Normalization keeps its ordered rule list and traversal together. Its
+  sequence remains: raw shape/spacing/error handling; block recursion and line
+  attribution; equality-chain flattening; plot-marker recognition; callable
+  declaration discovery; first-applicable rule (or DECLINE); unknown-head
+  escape/known-head fallback. Total differential recognition still precedes
+  generic quotient handling. No normalization pass was added or reordered.
+
+`node scripts/check-compiler-boundaries.mjs` checks every compiler source
+module, including import/re-export and type edges. The graph is acyclic.
+
+## Shared-definition audit and deliberate limits
+
+The existing notation registry already derives the supported-name tables for
+normalization, codegen and Python-function discovery. Keep it authoritative.
+Statement gating, comparison nesting, Boolean value classification and solver
+recognition overlap in spelling but answer different questions; merging them
+would conflate semantics. No registry/vocabulary or vendored code changed.
+
+A fully recursive typed IR is deferred: unknown heads, malformed fragments and
+noncanonical calculus shapes still need permissive handling. The ordered rule
+list stays together for traceability. The emitter's tightly coupled arithmetic,
+matrix and call logic remains cohesive. Store/persistence services, storage
+migrations, new dependencies and behavioral bug fixes were unnecessary.

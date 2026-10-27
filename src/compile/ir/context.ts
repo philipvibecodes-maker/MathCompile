@@ -1,4 +1,4 @@
-import type { Issue,MathJson,PairTupleMode } from './types';
+import type { Issue, MathJson, PairTupleMode } from './types';
 
 export interface NormalizeCtx {
   /** Names declared callable by statements seen so far, in cell order. */
@@ -47,4 +47,3 @@ export interface NormalizeRule {
     ctx: NormalizeCtx,
   ): MathJson | typeof DECLINE;
 }
-

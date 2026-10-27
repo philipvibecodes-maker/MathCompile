@@ -1,9 +1,9 @@
 import type { MathJson } from '../ir';
 import { freeNames } from './analysis';
-import type { Emission,ExpressionEmitter } from './expression-types';
+import type { Emission, ExpressionEmitter } from './expression-types';
 import { BOOLISH_HEADS } from './heads';
-import { asInt,headOf,isArr,isHead,isStr } from './nodes';
-import { PREC_ATOM,PREC_MUL } from './precedence';
+import { asInt, headOf, isArr, isHead, isStr } from './nodes';
+import { PREC_ATOM, PREC_MUL } from './precedence';
 
 interface CollectionEmitter extends ExpressionEmitter {
   assumeFrom(member: MathJson, set: MathJson): void;

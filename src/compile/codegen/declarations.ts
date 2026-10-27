@@ -71,4 +71,3 @@ export function collectMatrices(ir: MathJson, matrixNames: Set<string>): void {
   };
   collect(ir);
 }
-

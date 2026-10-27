@@ -5,4 +5,3 @@ export const PREC_MUL = 20;
 export const PREC_UNARY = 30;
 export const PREC_POW = 40;
 export const PREC_ATOM = 90;
-

@@ -1,5 +1,5 @@
 import type { NormalizeCtx } from './context';
-import { delimiterArgs,head,isArray,isDelimiterGroup,isString,isSymbolString } from './shapes';
+import { delimiterArgs, head, isArray, isDelimiterGroup, isString, isSymbolString } from './shapes';
 import type { MathJson } from './types';
 
 const solveItems = (n: MathJson | undefined): MathJson[] => {
@@ -191,7 +191,7 @@ const icShapeOf = (
 export function solveMarkedStatement(
   kind: string,
   body: MathJson | undefined,
-  ctx: NormalizeCtx,
+  ctx: Pick<NormalizeCtx, 'norm' | 'issue'>,
 ): MathJson {
   // `\text{solve} eq \text{ for } cond` arrives as Comprehension(eq, cond)
   // — the cond supplies the domain (`x \in S`, `x > 0`) or the variable.

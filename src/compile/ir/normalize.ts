@@ -1,17 +1,39 @@
-import { DECLINE,type NormalizeCtx,type NormalizeRule } from './context';
-import { describeCommand,describeError,issue } from './diagnostics';
-import { dQuotient,foldDQuotient,foldTotalD,hasTotalDMark,isDiffMark,tdQuotient } from './differentials';
+import { DECLINE, type NormalizeCtx, type NormalizeRule } from './context';
+import { describeCommand, describeError, issue } from './diagnostics';
 import {
-addNode,
-callNode,
-isNegateNode,
-isPowerNode,
-negateNode,powerNode
-} from './normalized';
-import { delimiterArgs,flattenSubscript,head,isArray,isDelimiterGroup,isParenTuple,isSpacing,isString,isUnexpectedCommand,paramName,unquote } from './shapes';
+  dQuotient,
+  foldDQuotient,
+  foldTotalD,
+  hasTotalDMark,
+  isDiffMark,
+  tdQuotient,
+} from './differentials';
+import { addNode, callNode, isNegateNode, isPowerNode, negateNode, powerNode } from './normalized';
+import {
+  delimiterArgs,
+  flattenSubscript,
+  head,
+  isArray,
+  isDelimiterGroup,
+  isParenTuple,
+  isSpacing,
+  isString,
+  isUnexpectedCommand,
+  paramName,
+  unquote,
+} from './shapes';
 import { solveMarkedStatement } from './solvers';
-import { chainLinear,defMarkedShape,flattenEqual,isDefMark,normalizeStatementEqual,REL_CHAIN,splitPlotMark,underVarDomain } from './statements';
-import type { Issue,MathJson,NormalizeOptions,NormResult } from './types';
+import {
+  chainLinear,
+  defMarkedShape,
+  flattenEqual,
+  isDefMark,
+  normalizeStatementEqual,
+  REL_CHAIN,
+  splitPlotMark,
+  underVarDomain,
+} from './statements';
+import type { Issue, MathJson, NormalizeOptions, NormResult } from './types';
 // MathJSON IR: LaTeX -> Compute Engine parse -> normalized IR.
 //
 // The editor (vendored MathQuill) produces LaTeX only; parsing is delegated
@@ -33,13 +55,7 @@ import type { Issue,MathJson,NormalizeOptions,NormResult } from './types';
 
 // The name tables below are derived views over the notation registry —
 // each name lives once in src/compile/notation.ts.
-import {
-CALL_RENAMED,
-CE_CONSTANTS,
-KNOWN_HEADS,
-MATRIX_WORD_OPS,
-SET_LEAF,
-} from '../notation';
+import { CALL_RENAMED, CE_CONSTANTS, KNOWN_HEADS, MATRIX_WORD_OPS, SET_LEAF } from '../notation';
 
 // ————————————————————————————————————————————————————————————————————
 // normalize() rules — the head-dispatched folds as an ordered list.
