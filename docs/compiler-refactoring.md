@@ -11,7 +11,8 @@ Baseline: main at `eb8cdc2318f219d2f6d97cfe1dcc67c5d2ba268f`.
 - `npm run build`: passed; existing Svelte and large-chunk warnings.
 - `npm run test:e2e:smoke`: 14 passed after `npx playwright install chromium`.
   Initial missing-browser failures were environment setup failures.
-- Full E2E: retained runner status passed; repeating to retain exact counts.
+- Full E2E baseline: retained runner status passed; console counts were lost
+  during the environment restart. See the final report for subsequent runs.
 - `PERF_LABEL=baseline-eb8cdc2 npm run test:perf`: 14 passed, 2 failed.
   `options: target switch -> output repaint` and `typing: keystroke -> output
   panel reflects the character` both fail with `timed: outcome never became
@@ -140,3 +141,6 @@ noncanonical calculus shapes still need permissive handling. The ordered rule
 list stays together for traceability. The emitter's tightly coupled arithmetic,
 matrix and call logic remains cohesive. Store/persistence services, storage
 migrations, new dependencies and behavioral bug fixes were unnecessary.
+
+Final commands, counts, performance comparisons and remaining concerns are in
+[compiler-refactoring-report.md](compiler-refactoring-report.md).
