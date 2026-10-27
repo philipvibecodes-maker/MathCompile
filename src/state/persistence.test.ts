@@ -159,6 +159,26 @@ describe('persistCells', () => {
 });
 
 describe('workbook', () => {
+  it('reads partially valid mixed-kind sheets without rewriting storage', () => {
+    const { fake } = stubStorage({
+      [WORKBOOK_STORAGE_KEY]: JSON.stringify({
+        version: 1, active: 'missing', sheets: [
+          { id: 'valid', name: 'Mixed', cells: [
+            { id: 3, latex: 'x' }, null, { id: 4, latex: 42 },
+            { id: 5, latex: 'x = 1', kind: 'python' },
+          ] },
+          { id: 'bad', cells: [] },
+        ],
+      }),
+    });
+    expect(loadWorkbook()).toEqual({
+      version: 1, active: 'valid', sheets: [{ id: 'valid', name: 'Mixed', cells: [
+        { id: 3, latex: 'x' }, { id: 5, latex: 'x = 1', kind: 'python' },
+      ] }],
+    });
+    expect(fake.setItem).not.toHaveBeenCalled();
+  });
+
   it('returns null when nothing is stored', () => {
     stubStorage();
     expect(loadWorkbook()).toBeNull();

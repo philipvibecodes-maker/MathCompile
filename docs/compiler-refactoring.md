@@ -78,3 +78,18 @@ canonicalization, models every external head, or validates the whole tree
 again. Unknown vocabulary, tuple assignments and malformed/noncanonical shapes
 retain the prior runtime handling and diagnostics. Guards declining a shape
 are not new compiler rejection rules.
+
+## Application state and persistence audit
+
+Keep the existing store as the focus owner and persistence as the storage
+boundary. A service extraction would add indirection to their modest existing
+interfaces. No production state/storage behavior or schema changed.
+
+New tests exercise deletion, switching and renaming with a debounce pending,
+including advancing the clock afterwards to prove there is no late write or
+resurrection; mixed valid/invalid stored cells without a rewrite; and editing
+without replacing a cell/field or requesting focus. Existing migration,
+flush-time snapshot, worksheet identity, and debounce tests remain intact.
+The protection against resurrection belongs to the store's flush-before-delete
+contract; the low-level storage removal operation does not independently own
+pending writes.

@@ -21,7 +21,7 @@ function stubStorage(initial: Record<string, string> = {}) {
     },
   } satisfies Storage;
   vi.stubGlobal('window', { localStorage: fake });
-  return { map };
+  return { map, storage: fake };
 }
 
 const storedWorkbook = (map: Map<string, string>): Workbook =>
@@ -29,7 +29,74 @@ const storedWorkbook = (map: Map<string, string>): Workbook =>
 
 afterEach(() => {
   flushPendingCells();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+describe('pending worksheet writes', () => {
+  it('deleting the active worksheet cancels its pending timer without resurrection', () => {
+    vi.useFakeTimers();
+    const { map, storage } = stubStorage();
+    const s = new AppStore();
+    s.setLatex(s.cells[0].id, 'kept');
+    const kept = s.activeWorksheetId;
+    const deleted = s.createWorksheet('Delete me');
+    s.setLatex(s.cells[0].id, 'pending edit');
+    s.deleteWorksheet(deleted);
+    const writes = storage.setItem.mock.calls.length;
+    vi.advanceTimersByTime(1_000);
+    expect(storage.setItem).toHaveBeenCalledTimes(writes);
+    expect(storedWorkbook(map).sheets.map((sheet) => sheet.id)).toEqual([kept]);
+    expect(s.cells[0].latex).toBe('kept');
+  });
+
+  it('switching flushes recent edits and retains saved cell identities', () => {
+    vi.useFakeTimers();
+    const { map } = stubStorage();
+    const s = new AppStore();
+    const first = s.activeWorksheetId;
+    const firstCell = s.cells[0].id;
+    s.setLatex(firstCell, 'first edit');
+    const second = s.createWorksheet();
+    s.setLatex(s.cells[0].id, 'second edit');
+    s.switchWorksheet(first);
+    expect(s.cells[0]).toMatchObject({ id: firstCell, latex: 'first edit' });
+    vi.advanceTimersByTime(1_000);
+    expect(storedWorkbook(map).sheets.find((sheet) => sheet.id === second)?.cells[0].latex)
+      .toBe('second edit');
+  });
+
+  it('renaming with a pending edit preserves the new name without a late write', () => {
+    vi.useFakeTimers();
+    const { map, storage } = stubStorage();
+    const s = new AppStore();
+    s.setLatex(s.cells[0].id, 'latest');
+    s.renameWorksheet(s.activeWorksheetId, 'Renamed');
+    const writes = storage.setItem.mock.calls.length;
+    vi.advanceTimersByTime(1_000);
+    expect(storage.setItem).toHaveBeenCalledTimes(writes);
+    expect(storedWorkbook(map).sheets[0]).toMatchObject({
+      name: 'Renamed', cells: [{ id: s.cells[0].id, latex: 'latest' }],
+    });
+  });
+
+  it('editing retains the field and cell identity without requesting focus', () => {
+    const s = new AppStore();
+    const first = s.cells[0].id;
+    const second = s.addCell();
+    const handle = {
+      focus: vi.fn(), getValue: () => '', setValue: vi.fn(),
+      setSmartMode: vi.fn(), lineAnchors: () => [], dispose: vi.fn(),
+    };
+    s.registerField(first, handle);
+    expect(handle.focus).not.toHaveBeenCalled();
+    const original = s.cells[0];
+    s.setLatex(first, 'x + 1');
+    expect(s.cells[0]).toBe(original);
+    expect(s.fields.get(first)).toBe(handle);
+    expect(s.focusedId).toBe(second);
+    expect(handle.focus).not.toHaveBeenCalled();
+  });
 });
 
 // Cell-list operations are DOM-free: focusCell just updates focusedId when
