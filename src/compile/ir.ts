@@ -1,3 +1,9 @@
+import type { MathJson, Issue, NormResult, NormalizeOptions, PairTupleMode } from './ir/types';
+import {
+  addNode, negateNode, powerNode, callNode, assignNode, defNode,
+  pythonSourceNode, isPowerNode, isNegateNode,
+} from './ir/normalized';
+export type { MathJson, RawMathJson, Issue, NormResult, NormalizeOptions, PairTupleMode } from './ir/types';
 // MathJSON IR: LaTeX -> Compute Engine parse -> normalized IR.
 //
 // The editor (vendored MathQuill) produces LaTeX only; parsing is delegated
@@ -28,29 +34,6 @@ import {
   MATRIX_WORD_OPS,
   SET_LEAF,
 } from './notation';
-
-// MathJSON is untyped JSON: head arrays, bare symbol strings, numbers, and
-// occasional `{num: "..."}` / `{str: "..."}` wrappers.
-export type MathJson =
-  | string
-  | number
-  | boolean
-  | { [key: string]: unknown }
-  | MathJson[];
-
-export interface Issue {
-  severity: 'error' | 'note';
-  message: string;
-  /** 0-based input line (displayline index) the issue was raised at,
-   * when codegen can place it — where a line-anchored indicator pins. */
-  line?: number;
-}
-
-export interface NormResult {
-  ok: boolean;
-  ir: MathJson | undefined;
-  issues: Issue[];
-}
 
 let engine: ComputeEngine | undefined;
 const ce = (): ComputeEngine => (engine ??= new ComputeEngine());
@@ -557,7 +540,7 @@ export function parseCellLatex(latex: string): MathJson | undefined {
         const code = snippets[Number(mark[1])];
         return code.trim() === ''
           ? undefined
-          : (['PythonSource', code] as MathJson);
+          : pythonSourceNode(code);
       }
       // `\text{solve}`/`\text{dsolve}`/`\text{pdesolve}` — strip the
       // marker word and wrap the rest so normalize() can lower it to
@@ -1288,7 +1271,9 @@ function normalizeStatementEqual(
       const rhsN = normalizeExpr(rhs);
       if (isArray(rhsN) && head(rhsN) === 'Assign')
         return ['Block', rhsN, ['Assign', lhsN, rhsN[1]]];
-      return ['Assign', lhsN, rhsN];
+      return typeof lhsN === 'string'
+        ? assignNode(lhsN, rhsN)
+        : ['Assign', lhsN, rhsN];
     };
     if (isSymbolString(lhs)) return mkAssign(lhs);
     // x' = rhs / x'' = rhs — a primed-variable assignment, not a
@@ -1333,12 +1318,7 @@ function normalizeStatementEqual(
     // (f·x = body, parens multiply like everywhere else).
     const def = defMarkedShape(lhs);
     if (def)
-      return [
-        'Def',
-        def.name,
-        ['List', ...def.params],
-        normalizeExpr(rhs),
-      ];
+      return defNode(def.name, def.params, normalizeExpr(rhs));
   }
   return ['Equal', ...node.slice(1).map(normalizeExpr)];
 }
@@ -1361,18 +1341,6 @@ function normalizeStatementEqual(
 // matched but the fold doesn't apply — dispatch then continues to later
 // rules (and ultimately the KNOWN_HEADS passthrough / `call` hatch),
 // mirroring an `if` whose inner test failed and fell through the chain.
-
-// How a two-element paren tuple `(a,b)` lowers: the open interval
-// (default) or a 1×2 row matrix. Plumbed from the settings pref; three
-// or more elements always lower to a row matrix either way.
-export type PairTupleMode = 'interval' | 'matrix';
-export interface NormalizeOptions {
-  pairTuple?: PairTupleMode;
-  /** Names a python cell's `def`/`lambda` resolves to (pydefs.ts) —
-   *  `\mathrm{relu}(x)` lowers to a `call` like a declared fn instead
-   *  of raising the unknown-head note. */
-  pyFns?: ReadonlySet<string>;
-}
 
 interface NormalizeCtx {
   /** Names declared callable by statements seen so far, in cell order. */
@@ -1730,11 +1698,9 @@ export const NORMALIZE_RULES: NormalizeRule[] = [
     // the canonical multi-term shape.
     why: 'Subtract(a, b) -> Add(a, Negate(b))',
     when: (h, node) => h === 'Subtract' && node.length === 3,
-    rewrite: (node, ctx) => [
-      'Add',
-      ctx.norm(node[1]),
-      ['Negate', ctx.norm(node[2])],
-    ],
+    rewrite: (node, ctx) => addNode(
+      ctx.norm(node[1]), negateNode(ctx.norm(node[2])),
+    ),
   },
   {
     name: 'grouping-unwrap',
@@ -2661,9 +2627,15 @@ export function normalizeIR(
       // def the cell already made.
       if (!CALL_RENAMED.has(h) && !declaredFns.has(h) && !opts.pyFns?.has(h))
         pushIssue('note', `unknown head "${h}" — emitted as ${h}(...)`);
-      return ['call', h, ...node.slice(1).map((n) => normalize(n, false))];
+      return callNode(h, ...node.slice(1).map((n) => normalize(n, false)));
     }
 
+    // Common checked shapes have typed construction; other vocabulary and
+    // noncanonical arities retain the existing permissive path below.
+    if (isPowerNode(node))
+      return powerNode(normalize(node[1], false), normalize(node[2], false));
+    if (isNegateNode(node))
+      return negateNode(normalize(node[1], false));
     return [h, ...node.slice(1).map((n) => normalize(n, false))];
   };
 

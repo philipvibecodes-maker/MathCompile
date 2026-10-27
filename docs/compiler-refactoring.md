@@ -61,3 +61,20 @@ zero-based Python-registry cell index. Calculator scopes keep the label at
 zero. `beginCell` does not reset persistent binding or classification facts.
 Cycle guards are only entered when a name is not already being emitted;
 recursive references take the existing guarded fallback.
+
+## IR type boundary
+
+`ir/types` owns the permissive `RawMathJson` (`MathJson` remains a compatible
+alias), issues and public options/results. `ir/normalized` provides checked
+local tuple views and constructors for Power, Negate, nonempty Add/Multiply,
+List, call, scalar Assign, Def with string parameters, and PythonSource.
+Normalization uses typed constructors for common outputs; statement emission
+uses the checked Def signature. Constructor signatures prevent missing operands
+and non-name definition parameters at compile time. Guards reject wrong arity,
+missing/sparse slots and wrong name/source slots before narrowing.
+
+Operands deliberately remain MathJSON-compatible. No type claims full
+canonicalization, models every external head, or validates the whole tree
+again. Unknown vocabulary, tuple assignments and malformed/noncanonical shapes
+retain the prior runtime handling and diagnostics. Guards declining a shape
+are not new compiler rejection rules.

@@ -1,4 +1,5 @@
 import type { MathJson } from '../ir';
+import { isDefNode } from '../ir/normalized';
 import type { Scope } from './scope';
 import type { StatementOut } from './types';
 import { isArr, isStr, isHead, headOf } from './nodes';
@@ -265,9 +266,11 @@ export function emitStatement(node: MathJson, emitter: StatementEmitter): Statem
     };
   }
   if (h === 'Def') {
-    const name = isStr(node[1]) ? node[1] : 'f';
-    const params =
-      isHead(node[2], 'List') ? node[2].slice(1).filter(isStr) : [];
+    const checked = isDefNode(node) ? node : undefined;
+    const name = checked ? checked[1] : isStr(node[1]) ? node[1] : 'f';
+    const params = checked
+      ? checked[2].slice(1)
+      : isHead(node[2], 'List') ? node[2].slice(1).filter(isStr) : [];
     const before = emitter.scope.errorCount;
     const body = emitter.scope.withBoundOnly(params, () =>
       emitter.emit(node[3]),
