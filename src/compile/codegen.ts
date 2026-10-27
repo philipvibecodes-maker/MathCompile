@@ -1,14 +1,16 @@
-import { emitFunction } from './codegen/functions';
-import { emitDerivative } from './codegen/derivatives';
+import { freeNames,isIntExpr } from './codegen/analysis';
 import { emitBoundOperator } from './codegen/bound-operators';
-import { PREC_LOW, PREC_ADD, PREC_MUL, PREC_UNARY, PREC_POW, PREC_ATOM } from './codegen/precedence';
-import { emitStatement } from './codegen/statements';
-import { Scope } from './codegen/scope';
-import type { StatementOut } from './codegen/types';
+import { emitCollection } from './codegen/collections';
+import { collectDeclared,collectMatrices } from './codegen/declarations';
+import { emitDerivative } from './codegen/derivatives';
+import { emitFunction } from './codegen/functions';
+import { BOOLISH_HEADS,CMP_NESTABLE_HEADS,SETISH_OP_HEADS,STATEMENT_CALL_HEADS,STATEMENT_HEADS,UNPARSEABLE_MSG } from './codegen/heads';
 import { pyIdent } from './codegen/identifiers';
-import { isArr, isStr, headOf, isHead, matrixValuedNode, numText, missingArg, asInt, stripZeroSuffix } from './codegen/nodes';
-import { freeNames, isIntExpr } from './codegen/analysis';
-import { collectDeclared, collectMatrices } from './codegen/declarations';
+import { asInt,headOf,isArr,isHead,isStr,matrixValuedNode,missingArg,numText,stripZeroSuffix } from './codegen/nodes';
+import { PREC_ADD,PREC_ATOM,PREC_LOW,PREC_MUL,PREC_POW,PREC_UNARY } from './codegen/precedence';
+import { Scope } from './codegen/scope';
+import { emitStatement } from './codegen/statements';
+import type { StatementOut } from './codegen/types';
 // Normalized IR -> target codegen.
 //
 // The `python` target emits executable SymPy. Cells are compiled
@@ -26,27 +28,27 @@ import { collectDeclared, collectMatrices } from './codegen/declarations';
 // error diagnostic instead of code. The expression subset for those
 // targets is future work.
 
-import type { Issue, MathJson, NormResult } from './ir';
-import {
-  normalizeIR,
-  unquote,
-  type NormalizeOptions,
-} from './ir';
 import { CALC_RUNTIME_PY } from './calc-runtime';
+import type { Issue,MathJson,NormResult } from './ir';
+import {
+normalizeIR,
+unquote,
+type NormalizeOptions,
+} from './ir';
 import { collectPyFns } from './pydefs';
 // The name tables below are derived views over the notation registry —
 // each name lives once in src/compile/notation.ts.
 import {
-  CALL_RENAMES,
-  CE_DISPLAY_NAMES,
-  CONSTANTS,
-  LEAF_SETS,
-  MATRIX_METHODS,
-  SET_CONSTRAINTS,
-  SETISH_SYMBOLS,
-  SP_BUILTIN_CALL,
-  SP_FUNCS,
-  SP_FUNC_MIN_ARGS,
+CALL_RENAMES,
+CE_DISPLAY_NAMES,
+CONSTANTS,
+LEAF_SETS,
+MATRIX_METHODS,
+SET_CONSTRAINTS,
+SETISH_SYMBOLS,
+SP_BUILTIN_CALL,
+SP_FUNC_MIN_ARGS,
+SP_FUNCS,
 } from './notation';
 
 export interface CellInput {
@@ -73,32 +75,6 @@ export interface CompileResult {
 
 // ------------------------------------------------------------------
 // Python identifiers
-
-const STATEMENT_HEADS = new Set([
-  'Assign', 'Def', 'Declare', 'Block', 'WhereBlock', 'Which', 'Piecewise',
-  'PythonSource', 'Plot', 'Solve', 'DSolve', 'PDESolve',
-]);
-const CMP_NESTABLE_HEADS = new Set([
-  'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
-]);
-const STATEMENT_CALL_HEADS = new Set(['solve', 'Solve', 'piecewise', 'Piecewise']);
-
-// Set-valued operator heads — setish only when every operand is too
-// (Subsets/Supersets are predicates, not sets, so they don't appear here).
-const SETISH_OP_HEADS = new Set([
-  'Union', 'Intersection', 'SetMinus', 'Complement', 'CircleTimes',
-]);
-
-// Heads that emit a Boolean — the only predicates ConditionSet accepts.
-const BOOLISH_HEADS = new Set([
-  'Element', 'NotElement', 'Equal', 'NotEqual', 'IdenticallyEqual',
-  'Less', 'LessEqual', 'Greater', 'GreaterEqual', 'NotLess',
-  'NotLessEqual', 'NotGreater', 'NotGreaterEqual', 'Divides',
-  'NotDivides', 'Subset', 'SubsetEqual', 'Superset', 'SupersetEqual',
-  'NotSubset', 'NotSubsetNotEqual', 'NotSuperset',
-  'NotSupersetNotEqual', 'And', 'Or', 'Not', 'Xor', 'Implies',
-  'Equivalent',
-]);
 
 class Emitter {
   scope: Scope;
@@ -511,7 +487,7 @@ class Emitter {
 
   /** A positive integer literal — the only `Power` exponent a set can
    * take (`S.Reals**2` is a ProductSet; `S.Reals**n` raises). */
-  private isPosInt(v: MathJson | undefined): v is number {
+  isPosInt(v: MathJson | undefined): v is number {
     return typeof v === 'number' && Number.isInteger(v) && v > 0;
   }
 
@@ -537,7 +513,7 @@ class Emitter {
    * name (`x \in \mathbb{R}` before any def -> `real=True`). Also
    * records MatrixSymbol dims for `A \in \mathbb{R}^{m\times n}` — the
    * membership is the only place the member's shape is stated. */
-  private assumeFrom(member: MathJson, set: MathJson): void {
+  assumeFrom(member: MathJson, set: MathJson): void {
     if (
       !isStr(member) ||
       this.scope.decls.defined.has(member) ||
@@ -676,7 +652,7 @@ class Emitter {
   /** Emit `n` as a set op's operand: set-ish nodes emit directly, plain
    * expressions wrap as `sp.FiniteSet(...)` so Union/Intersection/
    * Complement compute instead of raising TypeError on bare Symbols. */
-  private setArg(n: MathJson): string {
+  setArg(n: MathJson): string {
     if (this.isSetish(n)) return this.emit(n);
     // A python list or matrix can't nest inside FiniteSet's args —
     // splat it (a paren tuple's elements are the set members).
@@ -728,7 +704,7 @@ class Emitter {
 
   /** Emit a `call`-tier Function stub for a head we know but can't map —
    * same flag + output shape normalizeIR's unknown-head path produces. */
-  private unknownCall(h: string, args: MathJson[]): [string, number] {
+  unknownCall(h: string, args: MathJson[]): [string, number] {
     this.scope.flag('note', `unknown head "${h}" — emitted as ${h}(...)`);
     const fnArgs = args.filter((a) => a !== h);
     this.scope.noteCallArgs(h, fnArgs);
@@ -1436,233 +1412,24 @@ class Emitter {
           `${this.sp}Eq(${this.sp}Mod(${this.emit(args[0])}, ${this.emit(args[2])}), ${this.emit(args[1])})`,
           PREC_ATOM,
         ];
-      case 'Condition': {
-        // A Condition escaping a Set wrapper — defensive; the variable
-        // comes from the predicate's single free name.
-        const free = freeNames(args[0]);
-        if (free.length !== 1) {
-          this.scope.flag(
-            'error',
-            'set-builder notation needs exactly one variable',
-          );
-          return ['None', PREC_ATOM];
-        }
-        return [
-          `${this.sp}ConditionSet(${this.emit(free[0])}, ${this.emit(args[0])})`,
-          PREC_ATOM,
-        ];
-      }
+      case 'Condition':
       case 'Complement':
       case 'Difference':
-      case 'SymmetricDifference': {
-        // A \ B, A \triangle B — non-set operands wrap as singletons so
-        // `x \ y` shows `{x} \ {y}` instead of a flagged stub (sympy has
-        // no set variables; `A \ B` can't be held abstractly anyway).
-        const fn =
-          h === 'SymmetricDifference' ? 'SymmetricDifference' : 'Complement';
-        return [
-          `${this.sp}${fn}(${args.map((a) => this.setArg(a)).join(', ')})`,
-          PREC_ATOM,
-        ];
-      }
+      case 'SymmetricDifference':
       case 'Degrees':
-        // x^{\circ} — convert to radians.
-        return [
-          `${this.emit(args[0], PREC_MUL)} * ${this.sp}pi / 180`,
-          PREC_MUL,
-        ];
       case 'Minimum':
-      case 'Maximum': {
-        // \min_{x} f — value of f minimized over x (sp.minimum), not the
-        // elementwise sp.Min that \min(x, y) emits. A third arg is the
-        // domain (\min_{x \in S} f / \min_{x \ge 0} f -> Interval).
-        const fn = h === 'Minimum' ? 'minimum' : 'maximum';
-        const mx = h === 'Minimum' ? 'Min' : 'Max';
-        const [body, v, dom] = args;
-        // The index var is bound inside the body — a bound `i` stays a
-        // Symbol instead of resolving to sp.I (same as Sum/Integrate).
-        return this.scope.withLambdaBound(isStr(v) ? [v] : [], () => {
-          // SymPy's minimum/maximum can't bound an undefined function's
-          // range — call/Apply bodies raise NotImplementedError at eval.
-          if (isHead(body, 'call') || isHead(body, 'Apply'))
-            return this.unknownCall(h, args);
-          if (dom === undefined)
-            return [
-              `${this.sp}${fn}(${this.emit(body)}, ${this.emit(v)})`,
-              PREC_ATOM,
-            ];
-          // \min_{i=lo}^{hi}: i is an integer index (like \sum bounds),
-          // not a real interval. Concrete integer bounds emit Min/Max
-          // over the explicit substitutions; sympy can't iterate a
-          // symbolic sp.Range, so those degrade to a flagged stub.
-          if (isHead(dom, 'IntegerRange')) {
-            const lo = asInt(dom[1]);
-            const hi = asInt(dom[2]);
-            if (lo !== undefined && hi !== undefined)
-              return [
-                `${this.sp}${mx}(*[${this.emit(body, PREC_ATOM)}.subs(${this.emit(v)}, _i) for _i in range(${lo}, ${hi + 1})])`,
-                PREC_ATOM,
-              ];
-            this.scope.flag(
-              'note',
-              `${fn} over a symbolic i=lo..hi range — sympy can't iterate a symbolic sp.Range; emitted as a ${h} stub`,
-            );
-            return this.unknownCall(h, args);
-          }
-          if (!this.isSetish(dom)) {
-            this.scope.flag(
-              'note',
-              `${fn} domain isn't a set — emitted without it`,
-            );
-            return [
-              `${this.sp}${fn}(${this.emit(body)}, ${this.emit(v)})`,
-              PREC_ATOM,
-            ];
-          }
-          return [
-            `${this.sp}${fn}(${this.emit(body)}, ${this.emit(v)}, ${this.emit(dom)})`,
-            PREC_ATOM,
-          ];
-        });
-      }
+      case 'Maximum':
       case 'Supremum':
       case 'Infimum':
-        // No `sp.Supremum`/`sp.Infimum` exists — keep the readable stub
-        // (Function, valid python) instead of an AttributeError.
-        return this.unknownCall(h, args);
-      case 'IntegerRange': {
-        // i=lo..hi index bounds — sp.Range's upper bound is exclusive.
-        const hi = asInt(args[1]);
-        return [
-          `${this.sp}Range(${this.emit(args[0])}, ${hi !== undefined ? String(hi + 1) : `${this.emit(args[1])} + 1`})`,
-          PREC_ATOM,
-        ];
-      }
-      case 'Interval': {
-        // (a,b] / [a,b) — CE marks open ends with Open(x). A fully
-        // closed [a,b] parses as List, not Interval.
-        const [a0, a1] = args;
-        const lo = this.emit(isHead(a0, 'Open') ? a0[1] : a0);
-        const hi = this.emit(isHead(a1, 'Open') ? a1[1] : a1);
-        const loOpen = isHead(a0, 'Open');
-        const hiOpen = isHead(a1, 'Open');
-        const flags =
-          (loOpen ? ', left_open=True' : '') +
-          (hiOpen ? ', right_open=True' : '');
-        return [`${this.sp}Interval(${lo}, ${hi}${flags})`, PREC_ATOM];
-      }
+      case 'IntegerRange':
+      case 'Interval':
       case 'Open':
-        // Open marks an interval endpoint — a stray one is meaningless.
-        return [this.emit(args[0]), PREC_ATOM];
-      case 'Element': {
-        // x \in S — sp.Contains requires a real Set (a bare Symbol raises
-        // TypeError); a non-set operand is wrapped as a singleton like
-        // the Union operands (`x \in S` -> `x \in {S}`). A first-referenced
-        // member also picks up the set's domain as Symbol kwargs
-        // (\mathbb{R} -> real=True, or MatrixSymbol dims for
-        // \mathbb{R}^{2\times2} — assumeFrom must run even when the set
-        // isn't setish); \notin asserts the opposite, so NotElement
-        // intentionally skips this.
-        this.assumeFrom(args[0], args[1]);
-        const set = args[1];
-        if (!this.isSetish(set) && isHead(set, 'Power') && this.isSetish(set[1])) {
-          // \mathbb{R}^{2\times2} / \mathbb{R}^n — SymPy has no matrix
-          // space or symbolic set power; a named stub keeps it valid
-          // Python and readable.
-          const exp = set[2];
-          const dims =
-            (isHead(exp, 'Multiply') ||
-              isHead(exp, 'CircleMinus') ||
-              isHead(exp, 'CircleTimes') ||
-              isHead(exp, 'CircledAst')) &&
-            (exp as MathJson[]).slice(1).every((e) => this.isPosInt(e))
-              ? (exp as MathJson[]).slice(1)
-              : null;
-          const fname = dims ? 'MatrixSpace' : 'SetPower';
-          this.scope.flag(
-            'note',
-            `no SymPy ${dims ? 'matrix space' : 'symbolic set power'} — emitted as a ${fname} stub`,
-          );
-          const extra = dims
-            ? dims.map((e) => this.emit(e)).join(', ')
-            : this.emit(exp);
-          return [
-            `${this.fn('Element')}(${this.emitMember(args[0])}, ${this.fn(fname)}(${this.emit(set[1])}, ${extra}))`,
-            PREC_ATOM,
-          ];
-        }
-        return [
-          `${this.sp}Contains(${this.emitMember(args[0])}, ${this.setArg(set)})`,
-          PREC_ATOM,
-        ];
-      }
-      case 'NotElement': {
-        return [
-          `${this.sp}Not(${this.sp}Contains(${this.emitMember(args[0])}, ${this.setArg(args[1])}))`,
-          PREC_ATOM,
-        ];
-      }
-      case 'Set': {
-        // \{a, b\} is a FiniteSet; set-builder \{x | p(x)\} is a
-        // ConditionSet, and \{f(x) | x \in D\} is an ImageSet.
-        const [elem, cond] = args;
-        const condNode = isHead(cond, 'call') ? cond.slice(1) : cond;
-        const condHead = isArr(condNode) ? headOf(condNode) : undefined;
-        const condPred = isArr(condNode) ? condNode[1] : undefined;
-        // ConditionSet's predicate must emit a Boolean — a stray
-        // expression (`{p : p \text{ prime}}` multiplies the text in)
-        // raises TypeError at eval, so it falls through to FiniteSet.
-        const boolish = isArr(condPred) && BOOLISH_HEADS.has(headOf(condPred) ?? '');
-        if (condHead === 'Condition' && boolish) {
-          if (isHead(elem, 'Element') && isStr(elem[1])) {
-            // \{x \in D \mid p\} — base set is D. A non-set base can't
-            // be a ConditionSet domain — keep a readable Function stub.
-            this.assumeFrom(elem[1], elem[2]);
-            return [
-              this.isSetish(elem[2])
-                ? `${this.sp}ConditionSet(${this.sym(elem[1])}, ${this.emit(condPred)}, ${this.emit(elem[2])})`
-                : `${this.sp}Function("ConditionSet")(${this.sym(elem[1])}, ${this.emit(condPred)}, ${this.emit(elem[2])})`,
-              PREC_ATOM,
-            ];
-          }
-          if (isHead(condPred, 'Element') && isStr(condPred[1])) {
-            // \{f(x) \mid x \in D\} — an image over the base set.
-            this.assumeFrom(condPred[1], condPred[2]);
-            return [
-              this.isSetish(condPred[2])
-                ? `${this.sp}ImageSet(${this.sp}Lambda(${this.sym(condPred[1])}, ${this.emit(elem)}), ${this.emit(condPred[2])})`
-                : `${this.sp}Function("ImageSet")(${this.sp}Lambda(${this.sym(condPred[1])}, ${this.emit(elem)}), ${this.emit(condPred[2])})`,
-              PREC_ATOM,
-            ];
-          }
-          if (isStr(elem))
-            return [
-              `${this.sp}ConditionSet(${this.sym(elem)}, ${this.emit(condPred)})`,
-              PREC_ATOM,
-            ];
-        }
-        return [
-          `${this.sp}FiniteSet(${args.map((a) => this.emitMember(a)).join(', ')})`,
-          PREC_ATOM,
-        ];
-      }
+      case 'Element':
+      case 'NotElement':
+      case 'Set':
       case 'Union':
       case 'Intersection':
-      case 'SetMinus': {
-        // Union/Intersection/Complement raise on non-Set operands —
-        // `x \cup y` wraps each side as a singleton so it computes
-        // `{x, y}` instead of echoing a flagged `Union(x, y)` stub.
-        const fn =
-          h === 'Union'
-            ? 'Union'
-            : h === 'Intersection'
-              ? 'Intersection'
-              : 'Complement';
-        return [
-          `${this.sp}${fn}(${args.map((a) => this.setArg(a)).join(', ')})`,
-          PREC_ATOM,
-        ];
-      }
+      case 'SetMinus':
       case 'Subset':
       case 'SubsetEqual':
       case 'Superset':
@@ -1670,74 +1437,13 @@ class Emitter {
       case 'NotSubset':
       case 'NotSubsetNotEqual':
       case 'NotSuperset':
-      case 'NotSupersetNotEqual': {
-        // `A.is_subset(B)` returns None (not a Boolean) whenever the
-        // operands are undecidable — bare `sp.Not(None)` then raises
-        // AttributeError. `A ⊆ B` ⟺ `Union(A,B) == B` (strict ⊂ adds
-        // `A != B`) always lowers to an Eq/Ne the worker can hold.
-        const [sub, sup] = h.startsWith('NotSup') || h.startsWith('Sup')
-          ? [args[1], args[0]]
-          : [args[0], args[1]];
-        if (!this.isSetish(sub) || !this.isSetish(sup)) {
-          // SymPy has no set-typed symbol (unlike MatrixSymbol), so a
-          // bare `A ⊆ B` can't name two unknown sets — FiniteSet(A)
-          // would be the singleton, turning ⊆ into membership.
-          this.scope.flag(
-            'error',
-            'subset/superset needs concrete set operands — sympy has no set-typed symbols',
-          );
-        }
-        const l = this.setArg(sub);
-        const r = this.setArg(sup);
-        const strict =
-          h === 'Subset' || h === 'Superset' ||
-          h === 'NotSubset' || h === 'NotSuperset';
-        const eq = `${this.sp}Eq(${this.sp}Union(${l}, ${r}), ${r})`;
-        const base = strict
-          ? `${this.sp}And(${eq}, ${this.sp}Ne(${l}, ${r}))`
-          : eq;
-        return [
-          h.startsWith('Not') ? `${this.sp}Not(${base})` : base,
-          PREC_ATOM,
-        ];
-      }
+      case 'NotSupersetNotEqual':
       case 'And':
-        return [`${this.sp}And(${args.map((a) => this.emit(a)).join(', ')})`, PREC_ATOM];
       case 'Or':
-        return [`${this.sp}Or(${args.map((a) => this.emit(a)).join(', ')})`, PREC_ATOM];
       case 'Not':
-        return [`${this.sp}Not(${this.emit(args[0])})`, PREC_ATOM];
-      case 'Which': {
-        // CE: (cond, expr) pairs, odd tail is the else value. An
-        // `\mathrm{otherwise}`/`\mathrm{else}` condition arrives as a
-        // bare symbol — it means the default branch (True), not a
-        // symbolic condition that can never fire.
-        const cond = (a: MathJson): string =>
-          a === 'otherwise' || a === 'else' || a === 'True'
-            ? 'True'
-            : this.emit(a);
-        const pieces: string[] = [];
-        for (let i = 0; i + 1 < args.length; i += 2)
-          pieces.push(`(${this.emit(args[i + 1])}, ${cond(args[i])})`);
-        if (args.length % 2 === 1)
-          pieces.push(`(${this.emit(args[args.length - 1])}, True)`);
-        return [`${this.sp}Piecewise(${pieces.join(', ')})`, PREC_ATOM];
-      }
-      case 'Piecewise': {
-        // CE also emits ["Piecewise", ["List", expr, cond], ...]
-        const cond = (a: MathJson): string =>
-          a === 'otherwise' || a === 'else' || a === 'True'
-            ? 'True'
-            : this.emit(a);
-        const pieces = args
-          .map((a) =>
-            isHead(a, 'List') && a.length === 3
-              ? `(${this.emit(a[1])}, ${cond(a[2])})`
-              : `(${this.emit(a)}, True)`,
-          )
-          .join(', ');
-        return [`${this.sp}Piecewise(${pieces})`, PREC_ATOM];
-      }
+      case 'Which':
+      case 'Piecewise':
+        return emitCollection(h, args, this);
       case 'D':
       case 'TotalD':
       case 'Gradient':
@@ -2684,12 +2390,6 @@ export function compileWorksheet(
   };
 }
 
-// `emit` flags a dropped Error node with this generic message; the
-// normalizer already issued the real diagnostic, so the placeholder is
-// marker-only — the python overlay renders it as a ! icon (never text)
-// and the calculator drops it from statement errors entirely.
-const UNPARSEABLE_MSG = 'unparseable input — statement skipped';
-
 export interface CalcStatement {
   /** Python source for the statement: exec'd (Assign/Def) or eval'd
    * (expression) by the calculator worker. */
@@ -2957,6 +2657,6 @@ export function compileCellForCalc(
 }
 
 // Compatibility exports used by the interim calculator.
-export { freeNames, firstFreeCapital } from './codegen/analysis';
+export { firstFreeCapital,freeNames } from './codegen/analysis';
 export { collectDeclared } from './codegen/declarations';
-export { plotComponents, plotDomainBounds, type PlotBound } from './codegen/plotting';
+export { plotComponents,plotDomainBounds,type PlotBound } from './codegen/plotting';
