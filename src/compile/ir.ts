@@ -1,9 +1,19 @@
-import type { MathJson, Issue, NormResult, NormalizeOptions, PairTupleMode } from './ir/types';
+import { DECLINE,type NormalizeCtx,type NormalizeRule } from './ir/context';
+import { describeCommand,describeError,issue } from './ir/diagnostics';
 import {
-  addNode, negateNode, powerNode, callNode, assignNode, defNode,
-  pythonSourceNode, isPowerNode, isNegateNode,
+addNode,
+assignNode,
+callNode,
+defNode,
+isNegateNode,
+isPowerNode,
+negateNode,powerNode,
+pythonSourceNode,
 } from './ir/normalized';
-export type { MathJson, RawMathJson, Issue, NormResult, NormalizeOptions, PairTupleMode } from './ir/types';
+import { delimiterArgs,flattenSubscript,head,isArray,isDelimiterGroup,isParenTuple,isString,isSymbolString,isUnexpectedCommand,paramName,unquote } from './ir/shapes';
+import type { Issue,MathJson,NormalizeOptions,NormResult } from './ir/types';
+export { unquote } from './ir/shapes';
+export type { Issue,MathJson,NormalizeOptions,NormResult,PairTupleMode,RawMathJson } from './ir/types';
 // MathJSON IR: LaTeX -> Compute Engine parse -> normalized IR.
 //
 // The editor (vendored MathQuill) produces LaTeX only; parsing is delegated
@@ -24,24 +34,19 @@ export type { MathJson, RawMathJson, Issue, NormResult, NormalizeOptions, PairTu
 // unflattened — which this pass folds back into the canonical vocabulary.
 
 import { ComputeEngine } from '@cortex-js/compute-engine';
-import { applyLatexRules, outputLatex, PRE_PARSE_RULES } from './latex';
+import { applyLatexRules,outputLatex,PRE_PARSE_RULES } from './latex';
 // The name tables below are derived views over the notation registry —
 // each name lives once in src/compile/notation.ts.
 import {
-  CALL_RENAMED,
-  CE_CONSTANTS,
-  KNOWN_HEADS,
-  MATRIX_WORD_OPS,
-  SET_LEAF,
+CALL_RENAMED,
+CE_CONSTANTS,
+KNOWN_HEADS,
+MATRIX_WORD_OPS,
+SET_LEAF,
 } from './notation';
 
 let engine: ComputeEngine | undefined;
 const ce = (): ComputeEngine => (engine ??= new ComputeEngine());
-
-const isArray = (v: MathJson | undefined): v is MathJson[] => Array.isArray(v);
-const isString = (v: MathJson | undefined): v is string => typeof v === 'string';
-const head = (v: MathJson | undefined): string | undefined =>
-  isArray(v) && isString(v[0]) ? v[0] : undefined;
 
 // Differential marks: plain `d`/`d_upright` symbols and the quoted
 // `'d'` string literal that `\text{d}` produces.
@@ -569,146 +574,6 @@ export function parseCellLatex(latex: string): MathJson | undefined {
   return tagged.length === 1 ? tagged[0] : (['Block', ...tagged] as MathJson);
 }
 
-// CE string literals arrive as "'text'" (e.g. \text{...}); `unquote`
-// returns the inner text, or undefined for non-literals.
-export const unquote = (s: string): string | undefined =>
-  s.length >= 2 && s.startsWith("'") && s.endsWith("'")
-    ? s.slice(1, -1)
-    : undefined;
-const isTextLiteral = (v: MathJson): v is string =>
-  isString(v) && unquote(v) !== undefined;
-
-// CE marks unparseable atoms as the *quoted* symbol 'unexpected-command'
-// (a string literal), e.g. `['Power', "'unexpected-command'", LatexString]
-// for a bare `\int_{ }^{ }`.
-const isUnexpectedCommand = (v: MathJson): boolean =>
-  v === "'unexpected-command'";
-
-function issue(severity: Issue['severity'], message: string): Issue {
-  return { severity, message };
-}
-
-// CE reports parse problems as ['Error', "'<code>'", ['LatexString', "'<src>'"]]
-// — translate the code to a plain-language message, quoting the offending
-// fragment when CE carried one. `parse-failed` is our own catch-all for a
-// thrown parse.
-function describeError(node: MathJson[]): string {
-  const codeStr = isString(node[1]) ? node[1] : 'error';
-  const code = unquote(codeStr) ?? codeStr;
-  let src = '';
-  for (const arg of node.slice(2)) {
-    if (isArray(arg) && head(arg) === 'LatexString' && isString(arg[1])) {
-      src = (unquote(arg[1]) ?? arg[1]).trim();
-      break;
-    }
-  }
-  const hint = src ? ` "${src}"` : '';
-  switch (code) {
-    case 'missing':
-      return 'empty slot — fill it in or delete it';
-    case 'unexpected-command':
-      return describeCommand(src, hint);
-    case 'unexpected-operator':
-      return `stray operator${hint} — delete it or finish the expression`;
-    case 'unexpected-delimiter':
-      return `stray ${src || 'delimiter'} — unmatched delimiter`;
-    case 'unbalanced-environment':
-      return 'unclosed \\begin{...} — missing \\end{...}';
-    case 'expected-closing-delimiter':
-      return `missing closing brace${hint ? ` near${hint}` : ''}`;
-    case 'parse-failed':
-      return "couldn't parse this — check for a typo";
-    default:
-      return `unparseable input (${code})`;
-  }
-}
-
-// A 'unexpected-command' diagnostic names the command CE couldn't
-// place. \\ and \displaylines are serialization internals (the row
-// separator and the multi-line wrapper), so inside an expression they
-// mean a line break leaked into a group — describe that, not the token.
-function describeCommand(src: string, hint: string): string {
-  if (src === '\\int')
-    return 'integral sign with no integrand — type the integrand after ∫';
-  if (src === '\\\\' || src === '\\newline')
-    return 'unexpected line break inside an expression';
-  if (src === '\\displaylines')
-    return 'unexpected \\displaylines inside an expression';
-  return `incomplete or unsupported command${hint}`;
-}
-
-// Flatten a subscript position to symbol-name text: a_{n+1} -> 'a_{n+1}'.
-// Best-effort — complex subscripts keep a readable placeholder name.
-function flattenSubscript(node: MathJson): string {
-  if (isString(node)) return node;
-  if (typeof node === 'number') return String(node);
-  if (isArray(node)) {
-    const h = head(node);
-    if (h === 'Add') return node.slice(1).map(flattenSubscript).join('+');
-    if (h === 'Multiply') return node.slice(1).map(flattenSubscript).join('');
-    if (h === 'InvisibleOperator')
-      return node.slice(1).map(flattenSubscript).join('');
-    if (h === 'Negate') return `-${flattenSubscript(node[1])}`;
-    if (h === 'Power')
-      return `${flattenSubscript(node[1])}^${flattenSubscript(node[2])}`;
-    // x_{i,j}/P_{5,2}: Sequence/Delimiter wrap the comma-list — join
-    // with commas, dropping delimiter-marker text literals like '(,)'.
-    if (h === 'Sequence' || h === 'Delimiter')
-      return node
-        .slice(1)
-        .filter((c) => !isTextLiteral(c))
-        .map(flattenSubscript)
-        .join(',');
-  }
-  return '?';
-}
-
-// Is this node a plain symbol usable as an assignment target?
-const isSymbolString = (v: MathJson): v is string =>
-  isString(v) && v !== '' && !v.startsWith("'");
-
-// A parameter name slot — `x` or the quoted literal `'x'` CE puts in
-// Typed declaration signatures (`f: x \mapsto x^2`). Strips the quotes
-// without emitting a literal note; undefined for anything else.
-const paramName = (v: MathJson): string | undefined => {
-  if (isSymbolString(v)) return v;
-  return isString(v) ? unquote(v) : undefined;
-};
-
-// A Delimiter node's argument list: Delimiter(x) -> [x],
-// Delimiter(Sequence(a, b), '(,)') -> [a, b] (the '(,)' marker is dropped).
-function delimiterArgs(delim: MathJson): MathJson[] {
-  if (!isArray(delim)) return [delim];
-  const inner = delim.slice(1).filter((a) => !isTextLiteral(a));
-  if (inner.length === 1 && isArray(inner[0]) && head(inner[0]) === 'Sequence')
-    return inner[0].slice(1);
-  return inner;
-}
-
-// Is `last` a Delimiter/Delimiters group — the applicand of an
-// InvisibleOperator application like f(x)?
-const isDelimiterGroup = (v: MathJson): v is MathJson[] =>
-  isArray(v) && (head(v) === 'Delimiter' || head(v) === 'Delimiters');
-
-// `(a, b, …)` — a paren-delimited comma list is a tuple: two elements
-// are the open interval (or a 1×2 row matrix in pair-matrix mode),
-// longer ones a 1×n row matrix. CE records the delimiters in the
-// marker arg: '(,)' is parens; a bare `a,b` Sequence carries ',' and
-// stays a List.
-const isParenTuple = (v: MathJson): v is MathJson[] =>
-  isDelimiterGroup(v) &&
-  isArray(v[1]) &&
-  head(v[1]) === 'Sequence' &&
-  isString(v[2]) &&
-  unquote(v[2]) === '(,)';
-
-// `[a,b]` in expression position is the same closed interval the
-// `v = [a,b]` binding reads and the Interval CE mints on its own in
-// set context (`x \in [a,b]`, `[a,b)`). Every raw 2-element List is a
-// bracket pair — `\{…\}` parses as Set, paren pairs carry a Delimiter
-// spec — so each becomes Interval; 3+-element Lists stay sequences.
-// Two shapes keep their List nodes: Matrix rows are structural, and a
-// destructuring bind (`[x,y] = [1,2]`) needs a real iterable list.
 const bracketIntervals = (n: MathJson): MathJson => {
   if (!isArray(n)) return n;
   const h = head(n);
@@ -1342,55 +1207,7 @@ function normalizeStatementEqual(
 // rules (and ultimately the KNOWN_HEADS passthrough / `call` hatch),
 // mirroring an `if` whose inner test failed and fell through the chain.
 
-interface NormalizeCtx {
-  /** Names declared callable by statements seen so far, in cell order. */
-  declaredFns: Set<string>;
-  /** Names a python cell's `def`/`lambda` binds (pydefs.ts) — a
-   *  registered name juxtaposed to an argument is a call even when no
-   *  Delimiter group marks it (a pmatrix absorbs the parens). */
-  pyFns: ReadonlySet<string>;
-  /** The 2-element paren-tuple lowering for this pass. */
-  pairTuple: PairTupleMode;
-  /** True when the node sits in statement position (a top-level child of
-   *  a Block, or the cell's single statement). */
-  atStatement: boolean;
-  /** True inside Limits bounds, where 'Nothing' means an indefinite
-   *  operator rather than an empty slot. */
-  allowNothing: boolean;
-  /** True in name slots (assignment targets, def params, integral
-   *  variables) — strings there keep literal meaning. */
-  asName: boolean;
-  /** Recursive normalize; the non-statement expression position is the
-   *  default (the flags today's `normalize(n, false)` calls used). */
-  norm(
-    n: MathJson,
-    atStatement?: boolean,
-    allowNothing?: boolean,
-    asName?: boolean,
-  ): MathJson;
-  /** Push an issue into the current cell's issue list. */
-  issue(severity: Issue['severity'], message: string): void;
-}
-
 const NO_NAMES: ReadonlySet<string> = new Set();
-
-// Sentinel for "shape matched but the fold doesn't apply" — see above.
-const DECLINE = Symbol('normalize-decline');
-
-interface NormalizeRule {
-  /** Stable id — the audit/test handle for this fold. */
-  name: string;
-  /** The decision the rule implements — why the fold exists, including
-   *  real ordering constraints on its position in the list. */
-  why: string;
-  /** Pure shape test. rewrite() runs only when this matches. */
-  when(h: string, node: MathJson[], ctx: NormalizeCtx): boolean;
-  /** The fold — or DECLINE to continue dispatch to later rules. */
-  rewrite(
-    node: MathJson[],
-    ctx: NormalizeCtx,
-  ): MathJson | typeof DECLINE;
-}
 
 // Accent marks that denote distinct variables — \hat{x}, \vec{v},
 // \bar{z} (CE 'Mean'), \tilde{t} ('OverTilde') — become suffixed symbol
