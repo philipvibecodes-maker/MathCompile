@@ -1,3 +1,7 @@
+import { pyIdent } from './codegen/identifiers';
+import { isArr, isStr, headOf, isHead, matrixValuedNode, numText, missingArg, isNum, asInt, stripZeroSuffix } from './codegen/nodes';
+import { freeNames, isIntExpr, allNames, firstFreeCapital } from './codegen/analysis';
+import { collectDeclared, collectMatrices } from './codegen/declarations';
 // Normalized IR -> target codegen.
 //
 // The `python` target emits executable SymPy. Cells are compiled
@@ -65,68 +69,6 @@ export interface CompileResult {
 // ------------------------------------------------------------------
 // Python identifiers
 
-const PY_KEYWORDS = new Set([
-  'and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue',
-  'def', 'del', 'elif', 'else', 'except', 'finally', 'for', 'from',
-  'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal', 'not',
-  'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield',
-  'None', 'True', 'False',
-]);
-
-// Names the emitted program itself defines: `sp` is the module alias
-// (`import sympy as sp`) and the mc_* helpers come from CALC_RUNTIME_PY
-// in the calc prelude — a user name colliding with any of them would
-// clobber the machinery, so each mangles to a trailing-underscore form.
-const RESERVED_IDENTS = new Set([
-  'sp',
-  'mc_deg',
-  'mc_doit',
-  'mc_simplify',
-  'mc_order',
-  'mc_answers',
-  'clean_and_simplify',
-]);
-
-// CE tags font-styled letters with a per-piece suffix: `\mathrm{a}` ->
-// `a_upright`, `\mathbf{x}` -> `x_bold`, `a_{\mathrm{i}}` -> `a_i_upright`.
-// Rewrite each tagged piece to the latex command's prefix so the python
-// identifier reads like what was typed — `mathrm_a`, `x_mathrm_i`,
-// `mathrm_a_mathrm_i` for `\mathrm{a}_{\mathrm{i}}`.
-const FONT_TAG_CMD: Record<string, string> = {
-  upright: 'mathrm',
-  italic: 'mathit',
-  bold: 'mathbf',
-  calligraphic: 'mathcal',
-  script: 'mathscr',
-  sansserif: 'mathsf',
-  monospace: 'mathtt',
-  fraktur: 'mathfrak',
-};
-const FONT_TAG =
-  /(^|_)([A-Za-z]+)_(upright|italic|bold|calligraphic|script|sansserif|monospace|fraktur)(?=_|$)/g;
-
-// Mangle an arbitrary symbol name (e.g. `a_{n+1}`) into a valid python
-// identifier that consistently refers to that symbol.
-function pyIdent(name: string): string {
-  name = name.replace(
-    FONT_TAG,
-    (_, lead, piece, tag) => `${lead}${FONT_TAG_CMD[tag]}_${piece}`,
-  );
-  if (RESERVED_IDENTS.has(name)) return `${name}_`;
-  if (/^[A-Za-z_]\w*$/.test(name) && !PY_KEYWORDS.has(name)) return name;
-  // Prime ticks are meaningful (x' is a distinct variable, not x) —
-  // translate them to _prime before the generic strip eats them.
-  let out = name
-    .replaceAll("'", '_prime')
-    .replace(/[^A-Za-z0-9_]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  if (out === '') out = 'sym';
-  if (/^\d/.test(out)) out = `_${out}`;
-  if (PY_KEYWORDS.has(out) || RESERVED_IDENTS.has(out)) out += '_';
-  return out;
-}
-
-// Statement-position heads that only lower to Python.
 const STATEMENT_HEADS = new Set([
   'Assign', 'Def', 'Declare', 'Block', 'WhereBlock', 'Which', 'Piecewise',
   'PythonSource', 'Plot', 'Solve', 'DSolve', 'PDESolve',
@@ -566,111 +508,6 @@ class Scope {
     }
   }
 }
-
-const isArr = (v: MathJson | undefined): v is MathJson[] => Array.isArray(v);
-const isStr = (v: MathJson | undefined): v is string => typeof v === 'string';
-const headOf = (v: MathJson | undefined): string | undefined =>
-  isArr(v) && isStr(v[0]) ? v[0] : undefined;
-const isHead = (v: MathJson | undefined, h: string): v is MathJson[] =>
-  headOf(v) === h;
-
-// The matrix-valued walk shared by emission and the matrixNames
-// pre-scan: a `Matrix` literal or a `isMatrixLeaf` name, or a
-// composition that stays a matrix — a sum/negation of matrix terms, a
-// product/quotient/power with a matrix factor, or a matrix-returning
-// op (transpose/adjoint/inverse). `isMatrixLeaf` decides what a bare
-// name resolves to (scope-bound at emission, sequential at pre-scan).
-function matrixValuedNode(
-  node: MathJson | undefined,
-  isMatrixLeaf: (name: string) => boolean,
-): boolean {
-  if (isHead(node, 'Matrix')) return true;
-  if (isStr(node)) return isMatrixLeaf(node);
-  if (!isArr(node)) return false;
-  const operands = node.slice(1) as MathJson[];
-  switch (headOf(node)) {
-    case 'Add':
-      return operands.every((a) => matrixValuedNode(a, isMatrixLeaf));
-    case 'Negate':
-    case 'Transpose':
-    case 'ConjugateTranspose':
-    case 'Inverse':
-      return matrixValuedNode(node[1], isMatrixLeaf);
-    case 'Multiply':
-    case 'Divide':
-    case 'Power':
-      return operands.some((a) => matrixValuedNode(a, isMatrixLeaf));
-    case 'D':
-      // A partial derivative differentiates the body elementwise —
-      // matrix-valued exactly when the body is (a vector field's
-      // `D_x f` is its Jacobian column/row).
-      return matrixValuedNode(node[1], isMatrixLeaf);
-    case 'Apply':
-    case 'call':
-      // `f(…)` is matrix-valued when f's def returns a matrix —
-      // isMatrixLeaf covers matrixFns entries.
-      return isStr(node[1]) && isMatrixLeaf(node[1]);
-    case 'Gradient':
-      // `\nabla` always emits a 1×3 Matrix.
-      return true;
-    case 'TotalD':
-      // `\D` on a matrix body differentiates elementwise / Jacobians —
-      // matrix-valued; on a scalar body it's a scalar unless several
-      // free vars force the Jacobian row (caught at emission by the
-      // `.jacobian(` text check in emitStatement).
-      return matrixValuedNode(node[1], isMatrixLeaf);
-    case 'CircleTimes':
-    case 'CirclePlus':
-    case 'HadamardProduct':
-      // Kronecker product, direct sum and elementwise product of
-      // matrices are matrices.
-      return operands.some((a) => matrixValuedNode(a, isMatrixLeaf));
-    case 'CircledAst':
-      // `u \times v` emits a vector when an operand is one — a matrix
-      // node or a bracket list (which wraps in sp.Matrix).
-      return operands.some(
-        (a) => matrixValuedNode(a, isMatrixLeaf) || isHead(a, 'List'),
-      );
-    default:
-      return false;
-  }
-}
-
-function numText(node: MathJson): string {
-  if (typeof node === 'number') return String(node);
-  if (typeof node === 'object' && node !== null && 'num' in node)
-    return String((node as { num: unknown }).num);
-  return String(node);
-}
-
-// CE's empty-argument marker (or a hole/absent slot).
-const missingArg = (n: MathJson | undefined): boolean =>
-  n === undefined || n === 'Nothing' || isHead(n, 'Error');
-
-// Numeric literal node — number or `{num: "..."}`.
-const isNum = (v: MathJson | undefined): boolean =>
-  typeof v === 'number' ||
-  (typeof v === 'object' && v !== null && 'num' in v);
-
-// Concrete integer value of a numeric literal, else undefined.
-const asInt = (v: MathJson | undefined): number | undefined => {
-  const n =
-    typeof v === 'number'
-      ? v
-      : isNum(v)
-        ? Number(numText(v as MathJson))
-        : NaN;
-  return Number.isInteger(n) ? n : undefined;
-};
-
-// `RealNumbers_{0}`-style names: a `_0`/`_{0}` subscript marks the ±0
-// variant of a number set. Returns the base name, else undefined.
-const stripZeroSuffix = (s: string): string | undefined =>
-  s.endsWith('_{0}')
-    ? s.slice(0, -4)
-    : s.endsWith('_0')
-      ? s.slice(0, -2)
-      : undefined;
 
 // Python precedence levels for parenthesization.
 const PREC_LOW = 0; // expression statements, call args
@@ -3774,69 +3611,6 @@ interface CellBody {
   newNames: Set<string>;
 }
 
-// Free symbol names inside an expression — used to infer the variable of
-// an integral written without a differential. Constants, the CE 'Nothing'
-// marker, and callee names (f in f(t), call heads) don't count.
-export function freeNames(node: MathJson, acc = new Set<string>()): string[] {
-  if (isStr(node)) {
-    if (!CONSTANTS[node] && node !== 'Nothing' && !node.startsWith("'"))
-      acc.add(node);
-    return [...acc];
-  }
-  if (!isArr(node)) return [...acc];
-  const h = headOf(node);
-  if (h === 'Function') {
-    // Lambda: body names minus the bound params.
-    freeNames(node[1], acc);
-    for (const p of node.slice(2)) if (isStr(p)) acc.delete(p);
-    return [...acc];
-  }
-  // The variable slot of Limits and the callee of Apply/call are names,
-  // not free symbols.
-  const skip = h === 'Limits' || h === 'Apply' || h === 'call' ? 1 : 0;
-  for (const child of node.slice(1 + skip)) freeNames(child, acc);
-  return [...acc];
-}
-
-// int-valued literals: num nodes plus (integer) Negates, products, sums, and
-// powers of them — `10^6/3` must emit `Rational(10**6, 3)`
-// so it stays exact instead of a float.
-function isIntExpr(v: MathJson | undefined): boolean {
-  if (isNum(v)) return asInt(v) !== undefined;
-  if (!isArr(v)) return false;
-  const h = headOf(v);
-  if (h === 'Negate') return isIntExpr(v[1]);
-  if (h === 'Power' || h === 'Multiply' || h === 'Add')
-    return v.slice(1).every(isIntExpr);
-  return false;
-}
-
-// Every bare name token under the node — cellBody uses it to reserve the
-// cell's names so constants of integration never shadow them.
-function allNames(node: MathJson, acc: Set<string>): void {
-  if (isStr(node)) {
-    acc.add(node);
-    return;
-  }
-  if (isArr(node)) for (const child of node) allNames(child, acc);
-}
-
-// The next constant-of-integration letter: first capital not in `used`
-// (C, else D, E, …). `used` is mutated — the returned letter is claimed.
-// Exhausted alphabet falls back to reusing C — nothing else is left to
-// give. Shared with the interim engine so both pick the same letter
-// for the same cell.
-export function firstFreeCapital(used: Set<string>): string {
-  for (let code = 'C'.charCodeAt(0); code <= 'Z'.charCodeAt(0); code++) {
-    const name = String.fromCharCode(code);
-    if (!used.has(name)) {
-      used.add(name);
-      return name;
-    }
-  }
-  return 'C';
-}
-
 // The next constant of integration: first capital letter not used by the
 // cell or bound elsewhere in the worksheet (C, else D, E, …).
 function nextConstName(scope: Scope): string {
@@ -5117,77 +4891,6 @@ export function compileWorksheet(
   };
 }
 
-// Names bound by Assign/Def anywhere in the IR (pre-scan). Distinguishes
-// worksheet-declared calls (`f(x)` when `f` is defined here) from the
-// `sp.<head>` escape hatch. Exported for the interim engine, which
-// reserves the same declared names when allocating constants of
-// integration so its letters match the real program's.
-export function collectDeclared(
-  ir: MathJson,
-  declared: Set<string>,
-  declaredFns: Set<string>,
-): void {
-  const collect = (n: MathJson) => {
-    if (!isArr(n)) return;
-    const h = headOf(n);
-    if (h === 'Assign' && isStr(n[1])) declared.add(n[1]);
-    if ((h === 'Def' || h === 'Declare') && isStr(n[1])) {
-      declared.add(n[1]);
-      declaredFns.add(n[1]);
-    }
-    // `f: x ↦ body` — the typed/Colon def forms mirror emitStatement's.
-    const typed = isArr(n[2]) && headOf(n[2]) === 'call' ? n[2] : undefined;
-    if (
-      h === 'Function' &&
-      isArr(typed) &&
-      typed[1] === 'Typed' &&
-      isStr(typed[2])
-    ) {
-      declared.add(typed[2]);
-      declaredFns.add(typed[2]);
-    }
-    if (
-      h === 'call' &&
-      n[1] === 'Colon' &&
-      isStr(n[2]) &&
-      isHead(n[3], 'Function')
-    ) {
-      declared.add(n[2]);
-      declaredFns.add(n[2]);
-    }
-    if (h === 'Block' || h === 'WhereBlock')
-      n.slice(1).forEach(collect);
-  };
-  collect(ir);
-}
-
-// Names bound to a matrix value by the end of the IR — `A.det()`,
-// `A.norm()` etc. are valid on the emitted `A = <matrix>`. A later
-// `A = <non-matrix>` rebinds the name back to a scalar, so a name only
-// counts when its last assignment is a matrix. Same leaf rule as
-// emission: a Matrix literal, an `I_n` identity (unless that name is
-// itself bound), or an earlier matrix-bound name.
-function collectMatrices(ir: MathJson, matrixNames: Set<string>): void {
-  const defined = new Set<string>();
-  const collect = (n: MathJson) => {
-    if (!isArr(n)) return;
-    const h = headOf(n);
-    if (h === 'Assign' && isStr(n[1])) {
-      if (
-        matrixValuedNode(
-          n[2],
-          (s) => matrixNames.has(s) || (!defined.has(s) && /^I_\d+$/.test(s)),
-        )
-      )
-        matrixNames.add(n[1]);
-      else matrixNames.delete(n[1]);
-      defined.add(n[1]);
-    }
-    if (h === 'Block') n.slice(1).forEach(collect);
-  };
-  collect(ir);
-}
-
 // `emit` flags a dropped Error node with this generic message; the
 // normalizer already issued the real diagnostic, so the placeholder is
 // marker-only — the python overlay renders it as a ! icon (never text)
@@ -5459,3 +5162,7 @@ export function compileCellForCalc(
     ...c,
   };
 }
+
+// Compatibility exports used by the interim calculator.
+export { freeNames, firstFreeCapital } from './codegen/analysis';
+export { collectDeclared } from './codegen/declarations';
