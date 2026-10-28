@@ -13,6 +13,7 @@ import {
   focusCell,
   lenGrows,
   seedCells,
+  SEL,
   settleFocus,
   valueLen,
 } from './contract';
@@ -57,15 +58,22 @@ test('keystroke -> paint, single cell', async ({ page }) => {
 });
 
 test('keystroke -> output panel reflects the character', async ({ page }) => {
-  await cell(page).pressSequentially('x');
+  await page.locator(SEL.targetSelect).selectOption('latex');
+  await expect(page.locator(SEL.cellLatex)).toHaveText('');
+  await cell(page).pressSequentially('x1');
+  await committedToOutput(page)();
   for (let i = 0; i < 10; i++) {
+    const previous = await cellValue(cell(page));
     const { ms } = await timed(
       page,
       () => page.keyboard.press(KEYS[i % KEYS.length]),
-      { until: committedToOutput(page, 0) },
+      { until: committedToOutput(page, 0, previous) },
     );
     record('typing.commit cells=1', ms);
   }
+  const expected = 'x1' + KEYS.slice(0, 10).join('');
+  expect(await cellValue(cell(page))).toBe(expected);
+  await expect(page.locator(SEL.cellLatex)).toHaveText(expected);
 });
 
 test('keystroke -> paint vs document size', async ({ page }) => {

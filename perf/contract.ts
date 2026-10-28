@@ -94,29 +94,25 @@ export const waitFocusedIndex = (page: Page, i: number) =>
     i,
   );
 
-// Resolves once cell i's .cell-latex output shows its *current* getValue() —
-// i.e. the app committed the latest edit. Used instead of a length
-// predicate: serialized LaTeX is not monotonic under editing (inline
+// Resolves once cell i's LaTeX output exactly matches its current value,
+// optionally requiring a change from the value before the measured input.
+// Read both in one poll so stale output cannot satisfy a newer edit. Compare
+// values rather than lengths: serialized LaTeX is not monotonic (inline
 // shortcuts like xx -> \times collapse it), so "length grows" can deadlock.
-// Requires the latex target (the default) — other targets hide .cell-latex.
+// Requires explicitly selecting the LaTeX target before measuring.
 export const committedToOutput =
-  (page: Page, i = 0) => async () => {
-    const v = await page.evaluate(
-      (idx) => {
-        const e = document.querySelectorAll('math-field')[idx] as unknown as CellEl;
-        return e.getValue?.() ?? e.value;
+  (page: Page, i = 0, previous?: string) => () =>
+    page.waitForFunction(
+      ({ index, previous, cellSelector, outputSelector }) => {
+        const field = document.querySelectorAll(cellSelector)[index] as
+          (HTMLElement & CellEl) | undefined;
+        const output = field?.closest('.expr-row')?.querySelector(outputSelector);
+        if (!field || !output) return false;
+        const latex = field.getValue?.() ?? field.value;
+        return latex !== previous && output.textContent === latex;
       },
-      i,
+      { index: i, previous, cellSelector: SEL.cell, outputSelector: SEL.cellLatex },
     );
-    if (!v) return;
-    await page.waitForFunction(
-      ([latex, idx]) =>
-        document
-          .querySelectorAll('.cell-latex')
-          [idx as number]?.textContent?.includes(latex as string),
-      [v, i] as const,
-    );
-  };
 
 // Safety margin before handing focus to a cell — the current editor has
 // no deferred refocus, but other implementations have stolen focus back

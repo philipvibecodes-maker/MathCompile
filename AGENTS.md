@@ -58,9 +58,14 @@ src/
     persistence.ts    all localStorage access, debounced cell writes
   compile/            pure-TS pipeline (no DOM): latex -> MathJSON IR -> code
     latex.ts            \displaylines unwrap + output/display helpers
-    ir.ts               ce.parse + normalizeIR (MathJSON)
-    codegen.ts          normalized IR -> SymPy Python (compileWorksheet,
-                        compileCellForCalc for the calculator target)
+    ir.ts               public parsing/normalization API (MathJSON)
+    ir/                 parse + checked tuple views + shape/differential/
+                        solver helpers; normalize keeps ordered rules
+                        and the single recursive traversal together
+    codegen.ts          public SymPy Python/calculator API (same exports)
+    codegen/            worksheet orchestration -> cell assembly ->
+                        statements -> emitter/domain helpers; scope and
+                        pure name/declaration analysis underneath
     targets.ts          output-target registry
   calc/               calculator target: SymPy results per cell
     calculator.svelte.ts  evaluate()/interimEvaluate()/prewarm() +
@@ -113,6 +118,16 @@ src/
   compiler; in vitest that's wired via the svelte plugin in
   `vitest.config.ts`.
 
+
+Compiler boundaries and invariants are documented in
+[`docs/compiler-refactoring.md`](docs/compiler-refactoring.md). Run
+`node scripts/check-compiler-boundaries.mjs` to check cycles (including type
+imports) and prevent implementation modules importing their own public facade.
+`npx vitest run src/compile/baseline.test.ts` compares exact pre-refactor IR,
+Python, calculator programs, and diagnostics in both import and tuple modes.
+Python export cells retain independent emission state; calculator cells share
+state in written order. Common normalized tuples have local guards and typed
+constructors; this does not make all external MathJSON canonical or validated.
 
 ## Design decisions
 
