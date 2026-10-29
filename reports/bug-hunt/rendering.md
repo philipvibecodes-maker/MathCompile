@@ -1,8 +1,61 @@
 # Rendering bug-hunt report
 
-Baseline: `eb8cdc2318f219d2f6d97cfe1dcc67c5d2ba268f` (2026-10-27).
+Original investigation baseline: `eb8cdc2318f219d2f6d97cfe1dcc67c5d2ba268f` (2026-10-27).
 
-Search is complete: **36 findings — 4 high (P1), 28 medium (P2), 4 low (P3)**. No product implementation changed, no fixes were applied, and no commits or pushes were made. The user's later instruction prohibiting fixes superseded the original proposed fix phase. Recommendations below are analysis, not an active implementation plan.
+Reviewed refactor baseline: `8e69e4d92e18b534d51a98f369c66a6778ea6637` (merged PR #113); reassessed 2026-10-29.
+
+Search is complete: **36 findings — 4 high (P1), 28 medium (P2), 4 low (P3)**. No product implementation was changed by the investigation and no fixes were applied. Subsequent report-only commits and pushes publish documentation. The user's later instruction prohibiting fixes superseded the original proposed fix phase. Recommendations below are analysis, not an active implementation plan.
+
+## Refactor reassessment — PR #113
+
+[PR #113](https://github.com/philipvibecodes-maker/MathCompile/pull/113) split the compiler and IR implementation behind their existing public APIs. **All 36 rendering findings are retained; none is marked fixed by this refactor.** This is a bounded reassessment of the reported causes, not another five-hour search or a fresh browser certification.
+
+The rendering/editor implementation, vendored renderer and shipped assets, calculator/frontend/worker, output helpers, styles, notation registry and store implementation have no diff between the two pinned revisions. A byte comparison additionally checked all **25 unchanged files explicitly referenced by this report** (excluding the two replaced compiler/IR facades). Thus the earlier browser observations remain historical evidence against unchanged implementations; they are not relabeled as newly reproduced browser results. Compiler references are updated below rather than pointing into the now-small facade files.
+
+On the reviewed refactor checkout, small pure-helper checks reproduced the exact reported transformations for **RENDER-22, RENDER-32, RENDER-33 and RENDER-35**. Local source/CSS assertions rechecked **RENDER-34 and RENDER-36**. No browser, DOM, worker, generated Python, external request, deep-input or capacity workload was run for this reassessment. In particular, the RENDER-31 depth threshold is carried forward from the original bounded evidence without a new crash/threshold claim.
+
+Status key: **S** = carried forward by unchanged-source review (30 findings); **H** = reported pure-helper defect reproduced on the refactor (4); **M** = source/CSS metadata contradiction rechecked on the refactor (2). All statuses retain the original severity and evidence limits. Neither passing baseline tests nor unchanged source alone is a fresh runtime reproduction.
+
+| Finding | Refactor status | Current source anchor / responsibility |
+| --- | --- | --- |
+| RENDER-01 | S | `vendor/mathquill/src/commands/math/commands.ts:1903` — `LatexCmds.left.parser`; `src/editor/static-math.ts:10` |
+| RENDER-02 | S | `src/compile/calc-runtime.ts:79` — `clean_and_simplify` |
+| RENDER-03 | S | `vendor/mathquill/src/commands/text.ts:55` — text parser / serializer |
+| RENDER-04 | S | `vendor/mathquill/src/commands/text.ts:63` — bounded text-group regex |
+| RENDER-05 | S | `vendor/mathquill/src/commands/math/environments.ts:173` — `CellGrid`; `vendor/mathquill/src/commands/math.ts:341` — `mathspeak` |
+| RENDER-06 | S | `vendor/mathquill/src/css/math.less:608` — tall-atom / cursor script selectors |
+| RENDER-07 | S | `src/calc/result-latex.ts:15` — inverse-name replacement; `src/calc/calculator.svelte.ts:134` |
+| RENDER-08 | S | `vendor/mathquill/src/commands/math/commands.ts:259` and `vendor/mathquill/src/commands/math/extraCommands.ts:117` — color argument → CSS |
+| RENDER-09 | S | `src/index.css:66` — header; `:220` — two-column layout; `:377` — empty hint |
+| RENDER-10 | S | `vendor/mathquill/src/css/math.less:627` — paired tall-script width |
+| RENDER-11 | S | `vendor/mathquill/src/commands/math/extraCommands.ts:52`; `vendor/mathquill/src/css/math.less:307` — Fraktur family |
+| RENDER-12 | S | `vendor/mathquill/src/commands/math/advancedSymbols.ts:244` — `LatexCmds[c]` dispatch before glyph fallback |
+| RENDER-13 | S | `src/components/CalcOutput.svelte:235` — checkbox versus result-row rendering branches |
+| RENDER-14 | S; compiler anchor moved | `src/compile/codegen/statements.ts:21` — `CALC_LAYOUT_WORDS` / `calcDisplayLayout`; `src/compile/calc-runtime.ts:146` — empty-span output |
+| RENDER-15 | S | `src/components/CalcIssues.svelte:48` — measurement effect; `src/components/PythonField.svelte:107` — line anchors |
+| RENDER-16 | S | `vendor/mathquill/src/services/latex.ts:21` — group flattening; `vendor/mathquill/src/commands/math/commands.ts:463` — `SupSub` merging |
+| RENDER-17 | S | `src/components/CalcOutput.svelte:193` — `# cell` regex section splitting |
+| RENDER-18 | S | `vendor/mathquill/src/css/math.less:9` — root clipping; `src/index.css:1189` — outer result scroller |
+| RENDER-19 | S | `vendor/mathquill/src/commands/math/environments.ts:1283` — `ArrayEnv` / retained spec |
+| RENDER-20 | S | `vendor/mathquill/src/commands/math/environments.ts:1572` — `TabularEnv` |
+| RENDER-21 | S | `vendor/mathquill/src/commands/math/environments.ts:1224` — `Gathered` inherits left alignment |
+| RENDER-22 | H | `src/compile/latex.ts:51` — `rewriteOverUnder` |
+| RENDER-23 | S; parser anchor moved | `src/compile/latex.ts:453` — `displayLatex`; `src/compile/ir/parse.ts:29` — `extractPythonBlocks` |
+| RENDER-24 | S | `vendor/mathquill/src/commands/math/extraCommands.ts:64` — bold wrappers; `vendor/mathquill/src/css/math.less:193` — working bold control |
+| RENDER-25 | S | `vendor/mathquill/src/commands/math/extraCommands.ts:695` — cancel-to wrapper |
+| RENDER-26 | S | `src/editor/math-field.ts:196` — focus / edge-move order; `src/state/store.svelte.ts:357` — cell-hop caller |
+| RENDER-27 | S | `src/calc/calculator.worker.ts:1224` — exception serialization; `src/calc/calculator.svelte.ts:218` — IR-line assignment |
+| RENDER-28 | S | `src/editor/attach-field.ts:163` — descendant line-anchor query |
+| RENDER-29 | S | `vendor/mathquill/src/commands/math/advancedSymbols.ts:1426` — `RAW_GROUP` |
+| RENDER-30 | S | `vendor/mathquill/src/commands/math/advancedSymbols.ts` — glyph registry; `vendor/mathquill/src/commands/math/extraCommands.ts:664` — labeled right harpoons |
+| RENDER-31 | S; bounded stress case not rerun | `vendor/mathquill/src/services/latex.ts:154` — edit before parse; `vendor/mathquill/src/services/keystroke.ts:266` — selection deletion |
+| RENDER-32 | H | `src/compile/latex.ts:77` — `rewriteEvalBar` |
+| RENDER-33 | H | `src/compile/latex.ts:73` — `BIG_DELIM`; `:51` — annotation rewrite parity |
+| RENDER-34 | M | `vendor/mathquill/src/commands/math/environments.ts:1255` — `Aligned.cellTextAlign`; `vendor/mathquill/src/css/math.less:394` — odd-column rule |
+| RENDER-35 | H | `src/compile/latex.ts:73` — `stripBigDelims`; `vendor/mathquill/src/commands/math/extraCommands.ts:930` — null delimiter mapping |
+| RENDER-36 | M | `vendor/mathquill/src/commands/math/extraCommands.ts:876` — `SizedDelimiter`; `vendor/mathquill/src/css/math.less:386` — shared suffix size |
+
+Current-review evidence: `/workspace/bug-hunt-evidence/rendering/refactor-113/review.mjs` and `review.json`. The latter pins both full commits, file hashes, exact helper inputs/outputs and metadata assertions. Run `node /workspace/bug-hunt-evidence/rendering/refactor-113/review.mjs` from the reviewed checkout to repeat these bounded checks; the script reads product code and writes evidence only. Source identity is checked with Git as well as per-file byte comparisons. All other named screenshots, runtime results, campaign counters and investigation timings below belong to the original baseline unless explicitly called out here. References into the old monolithic compiler/IR are historical only; the current anchors above and the updated RENDER-14/23 paragraphs are authoritative for PR #113.
 
 ## Timing and stop reason
 
@@ -410,7 +463,7 @@ Suggested fix analysis: make generated-code rendering independent of whether mat
 
 Enter `\ker I_2` in Calculator mode. The answer is ∅. But the kernel of the identity matrix is the zero subspace, containing the zero vector; it is not empty. Likewise `\mathrm{columnspace}\begin{pmatrix}0&0\\0&0\end{pmatrix}` shows ∅ although that column space contains zero. As a control, the kernel of the zero2×2 matrix displays `span{(1,0), (0,1)}`, making clear that the formatter is presenting a space, not consistently presenting an unlabelled list of basis vectors.
 
-Root: SymPy correctly returns an empty **basis list** for these zero-dimensional spaces. `src/compile/codegen.ts:4054-4058` requests the `span` layout for Kernel/nullspace/columnspace. `src/compile/calc-runtime.ts:146-155` renders a nonempty basis as its span but special-cases an empty list to `\varnothing`, conflating an empty basis with the space it spans. Its comment explicitly calls ∅ the trivial space; that mathematical assertion is incorrect.
+Root: SymPy correctly returns an empty **basis list** for these zero-dimensional spaces. The original `src/compile/codegen.ts:4054-4058` requested the `span` layout for Kernel/nullspace/columnspace; after PR #113 this is `CALC_LAYOUT_WORDS` / `calcDisplayLayout` in `src/compile/codegen/statements.ts:21-34`, with layout application at `:50-56`. `src/compile/calc-runtime.ts:146-155` renders a nonempty basis as its span but special-cases an empty list to `\varnothing`, conflating an empty basis with the space it spans. Its comment explicitly calls ∅ the trivial space; that mathematical assertion is incorrect.
 
 Evidence: `empty-span.json` captures source, ready status and actual rendered mathematics for identity-kernel, zero-kernel and zero-columnspace cases. Screenshots `kernel-identity.png`, `kernel-zero.png`, `columnspace-zero.png` show the real app. Native SymPy confirms `eye(2).nullspace()==[]`, `zeros(2).columnspace()==[]`, while `eye(2)*zeros(2,1)` is the zero vector, which belongs to the kernel. The compiler's raw matrix methods are correct; the display transformation introduces the wrong mathematical meaning.
 
@@ -568,7 +621,7 @@ Additional safe pure-helper check: a two-level ordinary annotation `\overset{2}{
 
 Load `\python{r"C:\\Users\\me"}` into a LaTeX-target cell. The inline Python field correctly contains the raw string `r"C:\Users\me"`. The output column, however, inserts actual newline characters immediately after each escaped backslash pair, splitting the quoted string into3 lines. Expected: format actual mathematical row separators as lines while preserving embedded Python source literally. The displayed source fragment now describes a different, invalid single-line Python string if selected and reused verbatim.
 
-Root: `src/compile/latex.ts:447-449` applies `displayLatex()`'s global backslash-pair replacement to the whole serialized cell. It has no embedded-Python/text lexical context, so it mistakes escaped literal backslashes for grid/worksheet row separators. The parse/evaluation path protects Python snippets by extracting them first (`src/compile/ir.ts:401`); the source-display path does not.
+Root: `src/compile/latex.ts:447-449` applies `displayLatex()`'s global backslash-pair replacement to the whole serialized cell. It has no embedded-Python/text lexical context, so it mistakes escaped literal backslashes for grid/worksheet row separators. The parse/evaluation path protects Python snippets by extracting them first (originally `src/compile/ir.ts:401`, now `extractPythonBlocks` in `src/compile/ir/parse.ts:29` and its use before normalization at `:215`); the source-display path does not.
 
 Evidence: `python-latex-display.json` records input, unchanged stored source, correct editable Python text, output-column text with inserted newlines, direct `displayLatex` return, and unchanged `copyableLatex` result. `python-latex-display.png` shows the mismatch. Diagnostic `hunt/python-latex-display.mjs` uses normal field/store paths. This is deliberately not classified as actual clipboard-button or runtime-source corruption.
 

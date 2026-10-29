@@ -1,10 +1,48 @@
 # Plotting bug hunt report
 
-Repository: philipvibecodes-maker/MathCompile. Baseline: `eb8cdc2318f219d2f6d97cfe1dcc67c5d2ba268f`. Hunt checkout: `/workspace/hunt-plotting`.
+Repository: philipvibecodes-maker/MathCompile. Original hunt baseline: `eb8cdc2318f219d2f6d97cfe1dcc67c5d2ba268f`. Current reassessment baseline: **`8e69e4d92e18b534d51a98f369c66a6778ea6637`**, merged [compiler refactor PR #113](https://github.com/philipvibecodes-maker/MathCompile/pull/113). Original hunt checkout: `/workspace/hunt-plotting`; read-only reassessment checkout: `/workspace/refactor-review`.
 
-Reported: **18 issues — 3 high, 14 medium, 1 low**. PLOT-17 is confirmed under explicit one-shot dependency fault injection; no naturally occurring renderer rejection was reproduced. Other findings use ordinary baseline inputs, exact worker payloads or real browser behavior. All fixes were canceled by the user: **no product fixes, commits or pushes were made**. Tracked product files match baseline; the temporary Vite cacheDir diagnostic change was restored. Untracked diagnostic probes, cache and evidence remain available.
+Reported: **18 issues — 3 high, 14 medium, 1 low**. PLOT-17 is confirmed under explicit one-shot dependency fault injection; no naturally occurring renderer rejection was reproduced. Other findings use ordinary baseline inputs, exact worker payloads or real browser behavior. All fixes were canceled by the user: **no product fixes were made**. Subsequent commits and pushes publish report documents only. Tracked product files in each investigation checkout match its stated baseline; the temporary Vite cacheDir diagnostic change was restored. Untracked diagnostic probes, cache and evidence remain available.
 
-## Actual timing and stopping reason
+## Reassessment after the merged compiler refactor
+
+Reviewed on **2026-10-29** against the pinned merge above. **All 18 finding groups remain open: 13 have a current bounded executable reproduction, and 5 are carried forward on byte-identical implicated source without a new browser or hazardous-input run. No finding is marked fixed.** Severity and the original evidence qualifications are retained; source continuity is not presented as a fresh end-to-end reproduction.
+
+PR #113 extracted plot compilation into `src/compile/codegen/plotting.ts`, with statement orchestration in `codegen/statements.ts` and free-name analysis in `codegen/analysis.ts`. It did not change any of the 17 tracked files under `src/calc/` and `src/plot/`, or either dependency manifest: all **19 files are byte-identical** between the pinned baselines (`refactor-review/source-identity.json`). This includes the worker, interim sampler, chart adapters and both rendering components.
+
+Current verification was deliberately bounded:
+
+- **39 retained plot cases** were recompiled against both baselines. Raw and normalized IR, qualified standalone Python (including diagnostics and per-cell output), and default-mode calculator programs are identical for all 39 (`refactor-review/compiler-comparison.json`). Cases cover domain conjunction order, π endpoints, same-cell scalar/vector bindings, explicit and reversed-signature lambdas, field/image export, and one-sided windows. This verifies the reported compiler failures survived the module extraction; it does not imply every historical input or import/tuple configuration was rerun.
+- The current checkout's actual JavaScript `SETUP_PY` string was extracted and executed with host **SymPy 1.14.0, NumPy 2.3.5 and Plotly 7.1.0**. Finite reduced probes reproduce PLOT-01, PLOT-03, PLOT-09, PLOT-10, PLOT-16 and PLOT-18. In particular, complex samples still all become `y=2`; the folded-map fill still has area `0`; the displayed `lambda` program still raises `SyntaxError`; and the one-sided window still becomes `[-10,10]` (`refactor-review/worker-recheck.json`). These are host-worker checks, not new Pyodide/browser results.
+- The freshly generated ordinary `x²` worker payload still gives `echartsOption(...) === null`, reproducing PLOT-12 using the current converter (`refactor-review/worker-square-current.json`, `refactor-review/fallback-recheck.json`). Current field export still imports missing `plot_vector_field`; current image export still references missing `plt.Patch`. The dependency/API checks were repeated with SymPy 1.14.0 and Matplotlib 3.10.8/Agg.
+- **No infinity, nonadvancing-grid, browser/WebGL, resize, pixel-geometry or injected-renderer campaign was rerun.** PLOT-02, PLOT-11, PLOT-13, PLOT-14 and PLOT-17 retain their original evidence plus the checked source continuity. PLOT-17 remains an explicitly injected one-shot dependency rejection; no naturally occurring rejection is claimed.
+
+The table below gives authoritative **current-baseline source anchors**. `Reproduced` means a relevant finite compiler/worker/converter/API reduction was reexecuted in this update; it does not upgrade a historical browser observation into a new browser check. `Source unchanged` means that the original evidence remains the behavioral evidence.
+
+| ID | Current status | Current source / anchor | Current reassessment evidence |
+| --- | --- | --- | --- |
+| PLOT-01 | Reproduced | `src/calc/calculator.worker.ts:602` `_mc_field_view`; mixed-grid/scalar conversion at `:620` | Current extracted worker still raises the inhomogeneous-array `ValueError`. |
+| PLOT-02 | Source unchanged; remains open | `src/calc/calculator.worker.ts:279` `_mc_extent`; `:304` `_mc_desmos_grid` | Both helpers byte-identical. Original finite/nonfinite hang evidence retained; hazardous loops not rerun. |
+| PLOT-03 | Reproduced | `src/calc/calculator.worker.ts:780` `_mc_rows` | Current complex input still produces a real constant line and the imaginary-discard warning. |
+| PLOT-04 | Reproduced | `src/compile/codegen/plotting.ts:289` `emitPlotFieldPython` | Current rotation export matches original; fresh SymPy import check still raises `ImportError`. |
+| PLOT-05 | Reproduced | `src/compile/codegen/plotting.ts:56` `plotDomainBounds`; overwriting `push` at `:60` | Recompiled clause-order cases still overwrite bounds; outputs exactly match the original. |
+| PLOT-06 | Reproduced | `src/compile/codegen/plotting.ts:154` string-operand checks in `plotDomainBounds` | Recompiled π-bound cases still drop the affected endpoints; outputs exactly match the original. |
+| PLOT-07 | Reproduced | `src/compile/codegen/plotting.ts:170` `emitPlotPython`; `src/compile/codegen/analysis.ts:8` `freeNames` | Recompiled explicit-lambda curve still emits the constant-expression comment. |
+| PLOT-08 | Reproduced | `src/compile/codegen/plotting.ts:170` `emitPlotPython` signature/component inference | Recompiled same-cell coefficient/vector cases still emit the incorrect plotting calls. |
+| PLOT-09 | Reproduced | `src/calc/calculator.worker.ts:207` `_mc_rng`; `src/calc/calculator.svelte.ts:825` interim `rng`; `src/compile/codegen/plotting.ts:199` export `rng` | Current worker still maps `(20,None)` to `[-10,10]`; current export retains reversed `(20,10)`. Interim source is unchanged, not newly executed. |
+| PLOT-10 | Reproduced (worker geometry) | `src/calc/calculator.worker.ts:650` `_mc_gridimg_view` | Current finite folded-map payload still has fill area `0`, expected `81`. Original screenshot remains historical. |
+| PLOT-11 | Source unchanged; remains open | `src/calc/calculator.svelte.ts:797` `vars = [...params].sort()` | Interim sampler byte-identical; explicit-signature ordering not newly run in a browser. |
+| PLOT-12 | Reproduced | `src/plot/echarts.ts:65` `numArr`; `:67` `grid2d`; `:479` `echartsOption` | Fresh current worker square payload still returns `null` from the current converter. |
+| PLOT-13 | Source unchanged; remains open | `src/plot/echarts.ts:258` `opt2d`; `:479` `echartsOption` | Equal-aspect conversion path byte-identical; original measured circle distortion not newly measured. |
+| PLOT-14 | Source unchanged; remains open | `src/plot/EchartsPlot.svelte:65` height-only resize effect | Component byte-identical; original viewport/canvas-width evidence retained. |
+| PLOT-15 | Reproduced (emission/API) | `src/compile/codegen/plotting.ts:313` `emitPlotImagePython`; `plt.Patch` at `:349` | Current export still contains `plt.Patch`; fresh Matplotlib check confirms that attribute is absent. Full image program not rerun. |
+| PLOT-16 | Reproduced | `src/calc/calculator.worker.ts:957` `_mc_plot_code` | Current worker reconstructs `lambda = sp.symbols('lambda')`; compiling the shown program still raises `SyntaxError`. |
+| PLOT-17 | Source unchanged; injected case remains open | `src/plot/PlotView.svelte:474` render effect; rejection at `:547`; failure branch at `:593` | Component byte-identical. Original injected failure/retry evidence retained; no new fault injection or natural failure claimed. |
+| PLOT-18 | Reproduced | `src/calc/calculator.worker.ts:801` NumPy `lambdify` and subsequent array evaluation | Current extracted worker still raises the scalar-array `TypeError` for `erf(x)`. |
+
+Reassessment scripts and full outputs are under `/workspace/bug-hunt-evidence/plotting/refactor-review/`: `compare-compiler.mjs`, `worker-probe.py`, `worker-setup-current.py`, `fallback-probe.mjs` and the JSON artifacts named above. These diagnostic artifacts do not modify product source. The original timings, search coverage and browser evidence below describe the **original hunt only**; this focused revision is not additional five-hour search credit.
+
+## Original hunt timing and stopping reason
 
 | Active session (UTC) | Supported active duration |
 |---|---:|
@@ -18,7 +56,7 @@ Reported: **18 issues — 3 high, 14 medium, 1 low**. PLOT-17 is confirmed under
 
 Last substantive progress: Oct28 05:13:07UTC, when apparent new multivariate ceil/sign mismatches were reduced to reference-oracle sensitivity at exact discontinuities. Subsequent probing found no new structure, narrowed hypothesis or root defect. The active no-progress periods were21m28s before the interruption,10m37s in session4 and0:28:22 in session5: **1:00:27 total**. More parameter cases/counter growth did not reset that clock.
 
-## Coverage and verification
+## Original hunt coverage and verification
 
 - **120,330 distinct worker-payload cases** across scalar, vector-field, constant-component, anonymous-function, 3D-curve and parametric-surface signatures, rational/transcendental/piecewise formulas and asymmetric domains. Its18deduplicated failure classes reduce to shared reported causes, expected zero-variable rejection and loaded-machine timeout artifacts; they are not18separate bugs.
 - **17,160 scalar numerical cases / 461,032 coordinate comparisons** against50-digit SymPy references. No silent real-number mismatch was found in successful cases; special-function array failures are PLOT-18.
@@ -30,7 +68,7 @@ Last substantive progress: Oct28 05:13:07UTC, when apparent new multivariate cei
 
 ## Code-area and root-cause map
 
-Plot-related compiler branches are `plotDomainBounds`, `plotComponents`, `emitPlotPython` and field/image export helpers in `src/compile/codegen.ts`. Worker plot helpers span `_mc_plot_components` through `_mc_plot_payload` in `src/calc/calculator.worker.ts`; worker snapshot/evaluation helpers below that are outside this report’s scope. Interim sampling is in `calculator.svelte.ts`; browser conversion/rendering is in `src/plot/`. This is an ownership map for review, not an active fix plan.
+Plot-related compiler branches are now `plotDomainBounds`, `plotComponents`, `emitPlotPython` and field/image export helpers in `src/compile/codegen/plotting.ts`; the public `src/compile/codegen.ts` facade preserves the exported APIs. Plot statement orchestration is in `codegen/statements.ts`, and shared `freeNames` analysis is in `codegen/analysis.ts`. Worker plot helpers span `_mc_plot_components` through `_mc_plot_payload` in `src/calc/calculator.worker.ts`; worker snapshot/evaluation helpers below that are outside this report’s scope. Interim sampling is in `calculator.svelte.ts`; browser conversion/rendering is in `src/plot/`. This is an ownership map for review, not an active fix plan.
 
 | ID | Severity | Code area / distinct cause |
 |---|---|---|
@@ -89,7 +127,7 @@ Numeric normalization is shared context for PLOT-01/03/18 but their causes diffe
 
 ### PLOT-04 — High: Python field export imports a nonexistent SymPy API
 
-- Source: `src/compile/codegen.ts:4465`–`:4483` (`emitPlotFieldPython`).
+- Source: `src/compile/codegen/plotting.ts:289` (`emitPlotFieldPython`).
 - Input: any R²→R² field, e.g. column vector `(-y,x)`.
 - Actual emitted code: `from sympy.plotting import plot_vector_field` followed by `plot_vector_field(...)`.
 - Expected: executable exported plotting program.
@@ -99,7 +137,7 @@ Numeric normalization is shared context for PLOT-01/03/18 but their causes diffe
 
 ### PLOT-05 — Medium: conjunctions widen domains depending on clause order
 
-- Source: `src/compile/codegen.ts:4241` (`plotDomainBounds.push`).
+- Source: `src/compile/codegen/plotting.ts:60` (`plotDomainBounds.push`).
 - Input: `plot x² for 1<x<2 AND x<5`.
 - Expected: interval (1,2).
 - Actual: samples (1,5). Likewise `x>2 AND x>0` yields (0,10), whereas reordered clauses yield (2,10).
@@ -109,7 +147,7 @@ Numeric normalization is shared context for PLOT-01/03/18 but their causes diffe
 
 ### PLOT-06 — Medium: simple symbolic constants in inequality domains are dropped
 
-- Source: `src/compile/codegen.ts:4333`–`:4338`.
+- Source: `src/compile/codegen/plotting.ts:154`–`:157`.
 - Input: `plot x² for 0<x<\pi`.
 - Expected: samples only x∈(0,π).
 - Actual: generated bounds `(0,None)`, final/interim samples extend to 10 with no note. `x<π` drops all bounds and emits a generic note, while `x<2π` works.
@@ -119,7 +157,7 @@ Numeric normalization is shared context for PLOT-01/03/18 but their causes diffe
 
 ### PLOT-07 — Medium: explicit lambda plots vanish from Python export
 
-- Source: `src/compile/codegen.ts:4360`–`:4400` (`emitPlotPython`).
+- Source: `src/compile/codegen/plotting.ts:170` (`emitPlotPython`).
 - Input: `plot (t ↦ (cos t,sin t))` using column-vector output.
 - Expected: parametric plot export using lambda signature t.
 - Actual: comment `nothing varies — the expression is constant`; worker and CE plot the curve correctly.
@@ -129,7 +167,7 @@ Numeric normalization is shared context for PLOT-01/03/18 but their causes diffe
 
 ### PLOT-08 — Medium: Python plotting misclassifies names already bound in the same cell
 
-- Source: `src/compile/codegen.ts:4360` (`emitPlotPython`).
+- Source: `src/compile/codegen/plotting.ts:170` (`emitPlotPython`).
 - Input: one multiline cell `a=2` then `plot ax`.
 - Expected: plot y=2x.
 - Actual: `a=2; sp.plot3d(a*x,(a,-3,3),(x,-3,3))`, treating integer 2 as a plotting variable. Bound vector `v=(cos t,sin t)` then `plot v` emits `sp.plot(v,(v,-10,10))`.
@@ -158,7 +196,7 @@ Numeric normalization is shared context for PLOT-01/03/18 but their causes diffe
 
 ### PLOT-11 — Medium: anonymous-function parameter order changes the interim vector field
 
-- Source: `src/calc/calculator.svelte.ts:799`, `vars = [...params].sort()`.
+- Source: `src/calc/calculator.svelte.ts:797`, `vars = [...params].sort()`.
 - Input: `plot ((y,x) ↦ column-vector(x,−y))`.
 - Expected: input-axis order follows the explicit signature (y,x), matching the real worker.
 - Actual: interim uses [x,y], worker uses [y,x]. At the same source point (−2.25,−3), interim arrow is (−2.25,3) and worker arrow is (−3,2.25), so the field changes meaning when the engine finishes loading.
@@ -167,7 +205,7 @@ Numeric normalization is shared context for PLOT-01/03/18 but their causes diffe
 
 ### PLOT-12 — Medium: ECharts fallback cannot read the worker’s binary numeric arrays
 
-- Source: `src/plot/echarts.ts:76` (`numArr`, `grid2d`) and `bucketTraces`.
+- Source: `src/plot/echarts.ts:65` (`numArr`, `grid2d`) and `bucketTraces`.
 - Input: any ordinary worker-produced 1D curve such as `plot x²`.
 - Expected: real payload remains drawable through ECharts while Plotly loads, as documented by the fallback contract.
 - Actual: Plotly7 Python serializes x/y NumPy arrays as `{dtype,bdata[,shape]}`. `echartsOption` rejects these and returns null, leaving the intended fallback blank. This matters especially when prior-cell bindings prevent an interim row and the plot component first mounts on the final payload.
@@ -176,7 +214,7 @@ Numeric normalization is shared context for PLOT-01/03/18 but their causes diffe
 
 ### PLOT-13 — Medium: interim parametric curves ignore equal aspect and distort geometry
 
-- Source: `src/plot/echarts.ts:275` (`opt2d`), which drops the figure’s scaleanchor/scaleratio.
+- Source: `src/plot/echarts.ts:258` (`opt2d`), which drops the figure’s scaleanchor/scaleratio.
 - Input: `plot column-vector(cos t,sin t)` while SymPy is loading.
 - Expected: a circle.
 - Actual: ECharts maps one x unit to296.67pixels and one y unit to186.67pixels in the default780px plot, making an ellipse (~1.59:1). The CE figure explicitly requests equal aspect, but conversion ignores it.
@@ -185,7 +223,7 @@ Numeric normalization is shared context for PLOT-01/03/18 but their causes diffe
 
 ### PLOT-14 — Medium: interim canvas does not resize with the browser viewport
 
-- Source: `src/plot/EchartsPlot.svelte:71` (resize reacts to height only); `PlotView` grips explicitly resize but no observer watches available width.
+- Source: `src/plot/EchartsPlot.svelte:65` (resize reacts to height only); `PlotView` grips explicitly resize but no observer watches available width.
 - Input: show an interim plot, then narrow viewport from1280px to480px.
 - Expected: canvas follows its plot container.
 - Actual: container shrinks780→372px, ECharts chart remains780px wide, clipping/overflowing the plot.
@@ -194,7 +232,7 @@ Numeric normalization is shared context for PLOT-01/03/18 but their causes diffe
 
 ### PLOT-15 — Low: commented standalone grid-image Python program uses nonexistent pyplot.Patch
 
-- Source: `src/compile/codegen.ts:4532` (legend handles in `emitPlotImagePython`).
+- Source: `src/compile/codegen/plotting.ts:349` (legend handles in `emitPlotImagePython`).
 - Input: export an R²→R² map’s Python, uncomment the documented image-of-grid program.
 - Expected: runnable documented NumPy/Matplotlib image view.
 - Actual: rotation map reaches `AttributeError: module matplotlib.pyplot has no attribute Patch` at the legend.
@@ -230,7 +268,7 @@ Numeric normalization is shared context for PLOT-01/03/18 but their causes diffe
 
 ## Evidence, reproduction and limits
 
-Evidence filenames in the findings are relative to `/workspace/bug-hunt-evidence/plotting/`. The hunt checkout’s untracked `src/plot/hunt-*.test.ts` and `e2e/hunt-*.spec.ts` are diagnostic probes, not product changes or a proposed fix suite.
+Unless explicitly prefixed `refactor-review/`, evidence filenames in the findings describe the original baseline and are relative to `/workspace/bug-hunt-evidence/plotting/`. The hunt checkout’s untracked `src/plot/hunt-*.test.ts` and `e2e/hunt-*.spec.ts` are diagnostic probes, not product changes or a proposed fix suite.
 
 - Exact baseline worker setup is extracted as `worker-setup.py`. Reduced Python probes: `probe_worker.py`, `probe_extents.py`, `probe_real_values.py`; execute with Python3 + NumPy2.3.5, SymPy1.14.0 and Plotly7.1.0. Matplotlib export was checked with3.10.8/Agg.
 - Compiler/IR evidence: `compiler-probe.json`, `scope-probe.json`, `identifier-probe.json`; run `npx vitest run src/plot/hunt-probe.test.ts src/plot/hunt-scope.test.ts src/plot/hunt-names.test.ts` in the detached checkout.
@@ -242,8 +280,8 @@ Evidence filenames in the findings are relative to `/workspace/bug-hunt-evidence
 - Unit tests and browser checks were targeted hunt verification. No fix was implemented, so no post-fix full-suite result is claimed. Some early diagnostic attempts hit a separate Svelte focus-removal exception owned by the UI hunt; they were corrected before collecting plotting evidence.
 - CodeGraph CLI reported no index in the isolated checkout; direct source inspection and structured executable probes were used. Software WebGL is load-sensitive; successful clean targeted runs supersede earlier overloaded timeouts.
 
-Potential directions in the findings are analysis only. No issue was fixed, no fix agent was started by this agent, and no repository commit/push or external publication was performed.
+Potential directions in the findings are analysis only. No issue was fixed and no fix agent was started. Later repository commits/pushes publish report documents only; the original investigation did not publish externally.
 
-Shared-report cross-reference: the code-generation hunter reports CG23, a `freeNames` collector defect involving bound Sum/Integrate indices. Plot Python static signature analysis consumes the same helper. A separate plotting manifestation was not executed here, so this is an ownership/dependency note, not an additional plotting issue ID or a fresh plotting finding.
+Shared-report cross-reference: the code-generation hunter reports CG23, a `freeNames` collector defect involving bound Sum/Integrate indices. Plot Python static signature analysis consumes the same helper, now located at `src/compile/codegen/analysis.ts:8`. A separate plotting manifestation was not executed here, so this is an ownership/dependency note, not an additional plotting issue ID or a fresh plotting finding.
 
 The final4 floor flags in session5 repeat the same previously closed ceil/sign oracle sensitivity; all4 match the ideal rational grid (`surface-diff-triage-session5.json`). Their alternative manifestation did not reset the no-progress clock.

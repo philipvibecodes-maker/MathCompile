@@ -2,11 +2,42 @@
 
 Repository: https://github.com/philipvibecodes-maker/MathCompile
 
-Baseline: `eb8cdc2318f219d2f6d97cfe1dcc67c5d2ba268f`
+Original investigation baseline: `eb8cdc2318f219d2f6d97cfe1dcc67c5d2ba268f`
+
+Current review baseline: `8e69e4d92e18b534d51a98f369c66a6778ea6637` — [merged compiler refactor, PR #113](https://github.com/philipvibecodes-maker/MathCompile/pull/113).
 
 **All four investigations are complete. There are 127 numbered findings across the reports. No fixes were made.** The user cancelled the original later fix phase; no fix agents or product patches were made. The completed reports are published separately from product code at the user’s request.
 
-## Reports and stopping conditions
+## Review after the merged refactor
+
+The reports were reassessed on **2026-10-29** against the merged commit above. This is a bounded reassessment of the existing findings, not another five-hour investigation. The original timing, severity, inputs and observations remain an audit record for the original baseline. Each report now gives current status, new implementation locations, and the extent of fresh validation for its findings. Original monolithic `codegen.ts` / `ir.ts` line references in historical analysis must be read alongside those current mappings; the public files are now facades.
+
+PR #113 separates compiler and normalization responsibilities, introduces checked IR tuple helpers and explicit cell-state boundaries, adds regression tests, and repairs performance-test assumptions. It does not change product UI, editor, storage, calculator worker, plotting renderer, notation registry, or vendored MathQuill implementations. Passing the refactor's tests alone does not establish that a reported defect was fixed. The individual reviews distinguish fresh reproductions from findings carried forward through source comparison; source-identical findings are not presented as fresh browser tests.
+
+**All 127 finding groups are retained; none is established as fixed by this refactor.** Each of the 39 code-generation groups has a freshly reproduced representative manifestation. Other areas combine bounded rechecks with explicitly labeled unchanged-source carryforwards, as summarized below.
+
+Fresh checks executed on the merged baseline:
+
+| Check | Result |
+| --- | --- |
+| `npm test -- --maxWorkers=2` | **1,021 tests passed across 30 files**, including the new compiler baseline, normalized-IR, ordering and state-lifetime suites. |
+| `npm run check` | **0 errors**, 3 existing warnings. |
+| `npm run lint` | Passed with 7 existing warnings. |
+| `npm run build` | Passed with existing Svelte and bundle-size warnings. |
+| `node scripts/check-compiler-boundaries.mjs` | **35 modules, no cycles**, including type imports. |
+
+New logs and probe artifacts are under `/workspace/bug-hunt-evidence/refactor-review/` and the report-specific paths identified in each revision section. The refactor's own reported e2e/performance results are documented in [`docs/compiler-refactoring-report.md`](https://github.com/philipvibecodes-maker/MathCompile/blob/8e69e4d92e18b534d51a98f369c66a6778ea6637/docs/compiler-refactoring-report.md); those are upstream results, not browser or performance reruns performed for this reassessment. No new full browser suite or renewed fuzzing campaign is claimed.
+
+Current reassessment coverage:
+
+| Area | Fresh evidence and retained limits |
+| --- | --- |
+| UI | 28 Node diagnostic tests reproduce mechanisms for UI-21/22/24/25/26; 29 other findings carried forward through unchanged-source review. UI-21's browser undo consequence and UI-26's real keyboard-layout consequence were not rerun. |
+| Code generation | All 39 groups have a freshly reproduced representative manifestation. Across 376 retained worksheet cases, IR, Python, calculator metadata and diagnostics match the original outputs in both import modes. 36 regenerated worksheet cases were executed in both modes; edit/delete rollback, import-prelude caching, standalone dependency omission and compiler exceptions received separate checks. No new browser/Pyodide run. |
+| Rendering | Four pure-helper defects reproduced (RENDER-22/32/33/35), two source/CSS contradictions rechecked (RENDER-34/36), and 30 findings carried forward through unchanged-source review. No new browser, worker, or depth/capacity tests. |
+| Plotting | 39 retained compiler cases match the original outputs; 13 findings have fresh finite compiler/host-worker/converter/API reductions, and 5 are carried forward through unchanged-source review. No grid-loop, browser/WebGL, resize, or renderer-fault campaign rerun; PLOT-17 remains an injected case. |
+
+## Reports and original stopping conditions
 
 | Area | Findings | Credited active search | Stopping condition | Report |
 | --- | ---: | --- | --- | --- |
@@ -35,7 +66,7 @@ The requested rule was five hours of active searching per investigator, with ear
 
 Quota limits, environment resets, and paused or blocked review periods split the work across sessions. These gaps, waiting, and final editorial cleanup are excluded from credited search time. Additional counters from saturated test families did not reset the no-progress clock. Each report records its supported active windows and exact stopping reason. Detailed technical evidence logs retain explicit UTC timestamps.
 
-## Untouched baseline validation
+## Original investigation baseline validation
 
 - Unit tests: **26 files, 990 tests passed**.
 - Vendored MathQuill suite: **944 assertions passed**, checked independently against its static test page.
@@ -50,4 +81,4 @@ Diagnostic tests sometimes deliberately assert the observed defect state. A pass
 
 Raw logs, screenshots, probe outputs, campaign records, and timing evidence are retained under `/workspace/bug-hunt-evidence/`. Exact filenames and reproduction commands are listed in each report. Diagnostic scripts remain in the corresponding isolated `/workspace/hunt-*` worktrees; their product source stays at the pinned baseline.
 
-The main repository contains these report documents only as new task artifacts. Its temporary baseline Playwright configuration was archived to `/workspace/bug-hunt-evidence/playwright.hunt.config.ts`; copy it back to the repository root if rerunning the archived per-file baseline harness, because its import is relative to that root. No product file was changed.
+The reports branch contains documentation changes only. The merged refactor was inspected in a separate detached worktree at `/workspace/refactor-review`; it was not merged into the reports branch. The main repository's temporary original-baseline Playwright configuration was archived to `/workspace/bug-hunt-evidence/playwright.hunt.config.ts`; copy it back to the repository root if rerunning the archived per-file baseline harness, because its import is relative to that root. No product file was changed by either reporting pass.
