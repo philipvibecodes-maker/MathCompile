@@ -550,10 +550,10 @@ describe('compileCellForCalc (cell latex -> evaluable SymPy program)', () => {
     // `x \in S` echoed a `Element(x, S)` call stub; `x \in {S}` is the
     // honest reading and matches `x \cup y` -> `{x, y}`.
     expect(calc('x \\in S').statements[0].code).toBe(
-      F('sp.Contains(x, sp.FiniteSet(S))'),
+      F('sp.Contains(x, sp.FiniteSet(S_))'),
     );
     expect(calc('x \\notin S').statements[0].code).toBe(
-      F('sp.Not(sp.Contains(x, sp.FiniteSet(S)))'),
+      F('sp.Not(sp.Contains(x, sp.FiniteSet(S_)))'),
     );
     expect(calc('x \\in \\mathbb{R}').statements[0].code).toBe(
       F('sp.Contains(x, sp.S.Reals)'),
@@ -1045,8 +1045,8 @@ describe('compileCellsForCalc (worksheet cells share one scope)', () => {
 describe('codegen edge cases', () => {
   it('reads a bare prime as a primed variable name', () => {
     const p = calc("x'");
-    expect(p.statements[0]?.code).toBe(F('x_prime'));
-    expect(p.prelude).toContain("x_prime = sp.Symbol(\"x'\")");
+    expect(p.statements[0]?.code).toBe(F('x_prime_'));
+    expect(p.prelude).toContain("x_prime_ = sp.Symbol(\"x'\")");
   });
 
   it('applies nested calls, not a literal call(f, x)', () => {
@@ -1133,7 +1133,7 @@ describe('function applied to a set emits its image', () => {
       'f\\left(S\\right)',
     );
     expect(prog.cells[2].statements[0]?.code).toBe(
-      F('sp.imageset(sp.Lambda(sp.Symbol("a"), f(sp.Symbol("a"))), S)'),
+      F('sp.imageset(sp.Lambda(sp.Symbol("a"), f(sp.Symbol("a"))), S_)'),
     );
   });
 
