@@ -105,6 +105,15 @@ export function attachAutocompleteMenu(field: MathFieldElement) {
   const onKeydown = (e: KeyboardEvent) => {
     if (!isMqKeyTarget(e.target)) return;
     if (menu.hidden) return;
+    // A word suggestion must not steal Tab from a set-builder field jump.
+    // Explicit backslash-command inputs still accept their completion.
+    if (e.key === 'Tab' && ctx?.kind === 'word' &&
+        field.mq?.moveAcrossSetBuilderSeparator(e.shiftKey ? -1 : 1)) {
+      e.preventDefault();
+      e.stopPropagation();
+      hide();
+      return;
+    }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       e.stopPropagation();

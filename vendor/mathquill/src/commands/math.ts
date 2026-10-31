@@ -513,6 +513,8 @@ function bindBinaryOperator(
  */
 class MathBlock extends MathElement {
   controller?: Controller;
+  // MATHCOMPILE: grid cells contain expressions, not LaTeX argument groups.
+  isCommandArgument = true;
 
   join(methodName: JoinMethod) {
     return this.foldChildren('', function (fold, child) {
@@ -681,7 +683,7 @@ class MathBlock extends MathElement {
     // command. (Bracket blocks keep the pair/close behavior, and `{`/`}`
     // elsewhere keep making real braces.)
     var owner = this.parent;
-    if (owner instanceof MathCommand && !(owner instanceof Bracket)) {
+    if (this.isCommandArgument && owner instanceof MathCommand && !(owner instanceof Bracket)) {
       if (ch === '{' && this.isEmpty() && !cursor[L] && !cursor.selection) {
         return;
       }

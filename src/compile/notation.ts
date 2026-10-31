@@ -1022,6 +1022,17 @@ export const NOTATION: Notation[] = [
   // — call-position names with bespoke branches in codegen (real
   //   emissions or self-flagged degradations — either way, not
   //   "unknown head") —
+  {
+    name: 'SetBuilderSeparator',
+    commands: ['where', 'st', 'setbuilder'],
+    note: 'Smart where inserts \\mid; st inserts \\operatorname{s.t.}, '
+      + 'which parses as the same separator.',
+    probes: [
+      { latex: '\\{x\\where x>0\\}', expect: 'sp.ConditionSet(x, sp.Gt(x, 0))' },
+      { latex: '\\{x\\text{s.t.}x>0\\}', expect: 'sp.ConditionSet(x, sp.Gt(x, 0))' },
+      { latex: '\\{x\\operatorname{s.t.}x>0\\}', expect: 'sp.ConditionSet(x, sp.Gt(x, 0))' },
+    ],
+  },
   { name: 'Set', heads: ['Set'], callTier: true, callSympy: 'FiniteSet' },
   {
     name: 'Superstar',

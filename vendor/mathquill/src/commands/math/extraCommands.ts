@@ -1503,6 +1503,42 @@ LatexCmds.for = () =>
   );
 
 //======================================================================
+//  Set-builder separators — where → \mid, st → upright s.t.
+//======================================================================
+
+// The help topic inserts a complete editable template, with the caret
+// before the separator so typing fills the element first.
+class SetBuilderAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\left\\{\\mid\\right\\}');
+    var bracket = cursor[L];
+    if (bracket instanceof Bracket)
+      cursor.insAtLeftEnd(bracket.getEnd(L) as MathBlock);
+  }
+}
+LatexCmds.setbuilder = () =>
+  new SetBuilderAlias(
+    '\\left\\{\\mid\\right\\}',
+    h('span', {}, [h.text('{∣}')]) as HTMLElement,
+    '{|}',
+    'set builder'
+  );
+
+LatexCmds.where = LatexCmds.mid;
+class SuchThatAlias extends MQSymbol {
+  createLeftOf(cursor: Cursor) {
+    cursor.parent.writeLatex(cursor, '\\operatorname{s.t.}');
+  }
+}
+LatexCmds.st = () =>
+  new SuchThatAlias(
+    '\\operatorname{s.t.}',
+    h('span', { class: 'mq-operatorname mq-roman mq-font' }, [h.text('s.t.')]) as HTMLElement,
+    's.t.',
+    'such that'
+  );
+
+//======================================================================
 //  \dotproduct — insertion alias for \bullet
 //======================================================================
 

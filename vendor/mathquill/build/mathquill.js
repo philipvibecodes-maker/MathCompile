@@ -2626,6 +2626,13 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     this.__controller.typedText(text.charAt(i));
                 return this;
             };
+            // MATHCOMPILE: let word autocomplete give set-builder navigation priority.
+            EditableField.prototype.moveAcrossSetBuilderSeparator = function (dir) {
+                var moved = this.__controller.moveAcrossSetBuilderSeparator(dir);
+                if (moved)
+                    this.__controller.scrollHoriz();
+                return moved;
+            };
             // MATHCOMPILE: Enter semantics \u2014 matrix row inside a matrix,
             // \displaylines row split otherwise (src/commands/math/environments.ts).
             EditableField.prototype.insertLineBreak = function () {
@@ -3875,9 +3882,45 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         Controller_keystroke.prototype.keystroke = function (key, evt) {
             this.cursor.parent.keystroke(key, evt, this.getControllerSelf());
         };
+        // MATHCOMPILE: treat the two sides of a set-builder separator as
+        // navigation fields. Search only the nearest enclosing curly group;
+        // nested tuples may be skipped, while fraction/grid Tab behavior stays.
+        Controller_keystroke.prototype.moveAcrossSetBuilderSeparator = function (dir) {
+            var cursor = this.cursor;
+            if (cursor.selection)
+                return false;
+            var block = cursor.parent;
+            var branch;
+            while (block && block !== this.root) {
+                var owner = block.parent;
+                if (owner instanceof Bracket &&
+                    owner.sides[L].ch === '{' && owner.sides[R].ch === '}') {
+                    for (var node = branch ? branch[dir] : cursor[dir]; node; node = node[dir]) {
+                        var latex = node.latex().trim();
+                        if (latex === '\\mid' ||
+                            /^\\(?:operatorname|text|mathrm)\{\s*s\.\s*t\.\s*\}$/.test(latex)) {
+                            this.notify('move');
+                            cursor.insDirOf(dir, node);
+                            this.aria.queue('such that');
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+                if (!block.isCommandArgument || !(owner instanceof MathCommand) || owner.numBlocks() > 1)
+                    return false;
+                branch = owner;
+                block = owner.parent;
+            }
+            return false;
+        };
         Controller_keystroke.prototype.escapeDir = function (dir, _key, e) {
             prayDirection(dir);
             var cursor = this.cursor;
+            if ((_key === 'Tab' || _key === 'Shift-Tab') && this.moveAcrossSetBuilderSeparator(dir)) {
+                e === null || e === void 0 ? void 0 : e.preventDefault();
+                return this;
+            }
             // MATHCOMPILE: a caret in the dir-edge cell of a grid that fills
             // the root (\displaylines) can't step out to the root edge \u2014
             // Cursor::rootEdgeEnd snaps it back \u2014 so it counts as root-level
@@ -6003,6 +6046,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         __extends(MathBlock, _super);
         function MathBlock() {
             var _this_1 = _super !== null && _super.apply(this, arguments) || this;
+            // MATHCOMPILE: grid cells contain expressions, not LaTeX argument groups.
+            _this_1.isCommandArgument = true;
             _this_1.ariaLabel = 'block';
             return _this_1;
         }
@@ -6165,7 +6210,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             // command. (Bracket blocks keep the pair/close behavior, and `{`/`}`
             // elsewhere keep making real braces.)
             var owner = this.parent;
-            if (owner instanceof MathCommand && !(owner instanceof Bracket)) {
+            if (this.isCommandArgument && owner instanceof MathCommand && !(owner instanceof Bracket)) {
                 if (ch === '{' && this.isEmpty() && !cursor[L] && !cursor.selection) {
                     return;
                 }
@@ -11629,6 +11674,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 // be set by createLeftOf or parser
                 'span', { class: 'mq-non-leaf mq-bracket-container' }, [
                     h('span', {
+                        'data-mq-delimiter': _this_1.sides[L].ch,
                         style: 'width:' + leftSymbol.width,
                         class: 'mq-scaled mq-bracket-l mq-paren' +
                             (_this_1.side === R ? ' mq-ghost' : '')
@@ -11641,6 +11687,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                         class: 'mq-bracket-middle mq-non-leaf'
                     }, blocks[0]),
                     h('span', {
+                        'data-mq-delimiter': _this_1.sides[R].ch,
                         style: 'width:' + rightSymbol.width,
                         class: 'mq-scaled mq-bracket-r mq-paren' +
                             (_this_1.side === L ? ' mq-ghost' : '')
@@ -11689,8 +11736,16 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             return _super.prototype.mathspeak.call(this);
         };
         Bracket.prototype.matchBrack = function (opts, expectedSide, node) {
+            // MATHCOMPILE: a pipe inside a set opens absolute value; it must
+            // not consume the ghost curly brace (nor may a brace close a pipe).
+            var mine = this.sides[this.side].ch;
+            var theirs = node instanceof Bracket && node.side
+                ? node.sides[node.side].ch : undefined;
+            var braceAndPipe = (mine === '|' && (theirs === '{' || theirs === '}')) ||
+                (theirs === '|' && (mine === '{' || mine === '}'));
             // return node iff it's a matching 1-sided bracket of expected side (if any)
-            return (node instanceof Bracket &&
+            return (!braceAndPipe &&
+                node instanceof Bracket &&
                 node.side &&
                 node.side !== -expectedSide &&
                 (!opts.restrictMismatchedBrackets ||
@@ -11842,6 +11897,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             var symbol = this.getSymbol(side);
             brackFrag.children().replaceWith(domFrag(symbol.html()));
             brackFrag.oneElement().style.width = symbol.width;
+            brackFrag.oneElement().setAttribute('data-mq-delimiter', this.sides[side || R].ch);
             if (side === L) {
                 var next = brackFrag.next();
                 if (!next.isEmpty()) {
@@ -13761,6 +13817,41 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         return new ForAlias('\\text{for}', h('span', { class: 'mq-text-mode' }, [h.text('for')]), 'for', 'for');
     };
     //======================================================================
+    //  Set-builder separators \u2014 where \u2192 \mid, st \u2192 upright s.t.
+    //======================================================================
+    // The help topic inserts a complete editable template, with the caret
+    // before the separator so typing fills the element first.
+    var SetBuilderAlias = /** @class */ (function (_super) {
+        __extends(SetBuilderAlias, _super);
+        function SetBuilderAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        SetBuilderAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\left\\{\\mid\\right\\}');
+            var bracket = cursor[L];
+            if (bracket instanceof Bracket)
+                cursor.insAtLeftEnd(bracket.getEnd(L));
+        };
+        return SetBuilderAlias;
+    }(MQSymbol));
+    LatexCmds.setbuilder = function () {
+        return new SetBuilderAlias('\\left\\{\\mid\\right\\}', h('span', {}, [h.text('{\u2223}')]), '{|}', 'set builder');
+    };
+    LatexCmds.where = LatexCmds.mid;
+    var SuchThatAlias = /** @class */ (function (_super) {
+        __extends(SuchThatAlias, _super);
+        function SuchThatAlias() {
+            return _super !== null && _super.apply(this, arguments) || this;
+        }
+        SuchThatAlias.prototype.createLeftOf = function (cursor) {
+            cursor.parent.writeLatex(cursor, '\\operatorname{s.t.}');
+        };
+        return SuchThatAlias;
+    }(MQSymbol));
+    LatexCmds.st = function () {
+        return new SuchThatAlias('\\operatorname{s.t.}', h('span', { class: 'mq-operatorname mq-roman mq-font' }, [h.text('s.t.')]), 's.t.', 'such that');
+    };
+    //======================================================================
     //  \dotproduct \u2014 insertion alias for \bullet
     //======================================================================
     // Typing `\dotproduct` expands to the \bullet sign the compiler reads
@@ -15004,6 +15095,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         __extends(MatrixCell, _super);
         function MatrixCell(row, parent, replaces) {
             var _this_1 = _super.call(this) || this;
+            // MATHCOMPILE: typed braces are literal delimiters inside grid cells.
+            _this_1.isCommandArgument = false;
             // MATHCOMPILE: marks the block as a visual line container for
             // Home/End (see Controller_keystroke::lineBlock).
             _this_1.lineCell = true;

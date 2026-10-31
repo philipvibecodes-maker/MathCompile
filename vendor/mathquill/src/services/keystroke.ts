@@ -275,9 +275,45 @@ class Controller_keystroke extends Controller_focusBlur {
     this.cursor.parent.keystroke(key, evt, this.getControllerSelf());
   }
 
+  // MATHCOMPILE: treat the two sides of a set-builder separator as
+  // navigation fields. Search only the nearest enclosing curly group;
+  // nested tuples may be skipped, while fraction/grid Tab behavior stays.
+  moveAcrossSetBuilderSeparator(dir: Direction): boolean {
+    var cursor = this.cursor;
+    if (cursor.selection) return false;
+    var block = cursor.parent;
+    var branch: MQNode | undefined;
+    while (block && block !== this.root) {
+      var owner = block.parent;
+      if (owner instanceof Bracket &&
+          owner.sides[L].ch === '{' && owner.sides[R].ch === '}') {
+        for (var node = branch ? branch[dir] : cursor[dir]; node; node = node[dir]) {
+          var latex = node.latex().trim();
+          if (latex === '\\mid' ||
+              /^\\(?:operatorname|text|mathrm)\{\s*s\.\s*t\.\s*\}$/.test(latex)) {
+            this.notify('move');
+            cursor.insDirOf(dir, node);
+            this.aria.queue('such that');
+            return true;
+          }
+        }
+        return false;
+      }
+      if (!block.isCommandArgument || !(owner instanceof MathCommand) || owner.numBlocks() > 1)
+        return false;
+      branch = owner;
+      block = owner.parent;
+    }
+    return false;
+  }
+
   escapeDir(dir: Direction, _key: string, e?: KeyboardEvent) {
     prayDirection(dir);
     var cursor = this.cursor;
+    if ((_key === 'Tab' || _key === 'Shift-Tab') && this.moveAcrossSetBuilderSeparator(dir)) {
+      e?.preventDefault();
+      return this;
+    }
 
     // MATHCOMPILE: a caret in the dir-edge cell of a grid that fills
     // the root (\displaylines) can't step out to the root edge —

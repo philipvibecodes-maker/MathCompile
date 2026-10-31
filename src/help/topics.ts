@@ -421,9 +421,10 @@ export const HELP_TOPICS: HelpTopic[] = [
   {
     id: 'setbuilder',
     goal: 'Set-builder notation',
-    keywords: 'such that condition predicate bar',
-    how: '{x \\mid x > 0}',
-    insert: '\\mid',
+    keywords: 'such that condition predicate bar multiple variables tuple domain where st',
+    smart: 'where → ∣; st → s.t. — {(x,y) ∣ x+y > 0}',
+    plain: '\\mid or \\st ⏎ — {(x,y) ∣ x+y > 0}',
+    insert: '\\setbuilder',
   },
   {
     id: 'elem',

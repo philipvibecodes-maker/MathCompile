@@ -64,3 +64,39 @@ test('the first line does not shift when a cell goes multi-line', async () => {
   expect(yMulti).not.toBeNull();
   expect(Math.abs((yMulti as number) - (ySingle as number))).toBeLessThan(0.5);
 });
+
+test('braces appear on a new line after a set-builder definition', async () => {
+  const mf = page.locator('math-field').first();
+  await mf.pressSequentially('A=\\left\\{\\left(x,y\\right)\\mid x+y=1\\right\\}');
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.press('Enter');
+  await mf.pressSequentially('{x}');
+  await expect.poll(() => mf.evaluate((el) => (el as HTMLElement & { value: string }).value))
+    .toContain('\\left\\{x\\right\\}');
+  const line = mf.locator('.mq-displaylines tr').nth(1);
+  await expect(line.locator('.mq-bracket-l')).toBeVisible();
+  await expect(line.locator('.mq-bracket-r')).toBeVisible();
+  await expect(line.locator('var')).toHaveText('x');
+});
+
+
+for (const [word, separator] of [['where', '\\mid'], ['st', '\\operatorname{s.t.}']]) {
+  test(`typing ${word} inserts a set-builder separator`, async () => {
+    const mf = page.locator('math-field').first();
+    await mf.pressSequentially(`A={(x,y)${word}x+y=1}`);
+    await expect.poll(() => mf.evaluate((el) => (el as HTMLElement & { value: string }).value))
+      .toContain(separator);
+    const root = mf.locator('.mq-editable-field > .mq-root-block');
+    await expect(root).toContainText('x+y=1');
+    if (word === 'st') {
+      const operator = root.locator('.mq-operatorname');
+      await expect(operator).toHaveText('s.t.');
+      const spacing = await operator.evaluate((el) => {
+        const style = getComputedStyle(el);
+        return [parseFloat(style.paddingLeft), parseFloat(style.paddingRight)];
+      });
+      expect(spacing[0]).toBeGreaterThan(0);
+      expect(spacing[1]).toBeGreaterThan(0);
+    }
+  });
+}
