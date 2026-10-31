@@ -309,8 +309,9 @@ const FIXTURES: {
     latex: '\\bigcup_{i \\in S} A_i',
     expectedIR: ['BigUnion', 'A_i', ['Element', 'i', 'S']],
     expectedPython: [
-      "A_i, i, S = sp.symbols('A_i i S')",
-      'sp.Union(*[A_i for i in S])',
+      "A_i, i = sp.symbols('A_i i')",
+      'S_ = sp.Symbol("S")',
+      'sp.Union(*[A_i for i in S_])',
     ],
   },
   {
@@ -603,7 +604,7 @@ const FIXTURES: {
     // Bare `a_{n+1}` collapses to just its definition line.
     latex: 'a_{n+1}',
     expectedIR: 'a_{n+1}',
-    expectedPython: ['a__n_1 = sp.Symbol("a_{n+1}")'],
+    expectedPython: ['a_n_plus_1_ = sp.Symbol("a_{n+1}")'],
   },
   {
     latex: 'n!',
@@ -639,11 +640,11 @@ const FIXTURES: {
   },
   {
     // `a'` is a primed name, not an applied derivative — `sp.prime`
-    // doesn't exist; it emits as its own symbol (a_prime ident so it
+    // doesn't exist; it emits as its own symbol (a_prime_ ident so it
     // can't silently collide with `a`).
     latex: "a'",
     expectedIR: "a'",
-    expectedPython: ['a_prime = sp.Symbol("a\'")'],
+    expectedPython: ['a_prime_ = sp.Symbol("a\'")'],
   },
   {
     latex: "x''(t)",
@@ -669,8 +670,8 @@ const FIXTURES: {
     // sp.Determinant(non-matrix) raises TypeError at eval — a Function
     // stub displays the intended form and stays valid python.
     expectedPython: [
-      'Determinant = sp.Function("Determinant")',
-      'Determinant(3)',
+      'Determinant_ = sp.Function("Determinant")',
+      'Determinant_(3)',
     ],
     issues: ['determinant needs a matrix'],
   },
@@ -731,7 +732,7 @@ const FIXTURES: {
   {
     // Comma-list subscripts keep their name — used to emit 'x_{?}'.
     latex: 'x_{i,j}',
-    expectedPython: ['x__i_j = sp.Symbol("x_{i,j}")'],
+    expectedPython: ['x_i_comma_j_ = sp.Symbol("x_{i,j}")'],
   },
   {
     // \boxed is presentational — emit the wrapped expression.
@@ -745,44 +746,44 @@ const FIXTURES: {
   },
   {
     // Font-styled letters mint latex-style prefixes: CE tags the letter
-    // `a_upright`; the python variable reads `mathrm_a` while the
+    // `a_upright`; the python variable reads `mathrm_a_` while the
     // Symbol's own name keeps the CE form.
     latex: '\\mathrm{a}',
-    expectedPython: ['mathrm_a = sp.Symbol("a_upright")'],
+    expectedPython: ['mathrm_a_ = sp.Symbol("a_upright")'],
   },
   {
     latex: '\\mathrm{a} + \\mathbf{x} + \\mathcal{A}',
     expectedPython: [
-      'mathrm_a = sp.Symbol("a_upright")',
-      'mathbf_x = sp.Symbol("x_bold")',
-      'mathcal_A = sp.Symbol("A_calligraphic")',
-      'mathrm_a + mathbf_x + mathcal_A',
+      'mathrm_a_ = sp.Symbol("a_upright")',
+      'mathbf_x_ = sp.Symbol("x_bold")',
+      'mathcal_A_ = sp.Symbol("A_calligraphic")',
+      'mathrm_a_ + mathbf_x_ + mathcal_A_',
     ],
   },
   {
     latex: '\\mathit{u} + \\mathscr{s} + \\mathsf{v} + \\mathtt{w} + \\mathfrak{k}',
     expectedPython: [
-      'mathit_u = sp.Symbol("u_italic")',
-      'mathscr_s = sp.Symbol("s_script")',
-      'mathsf_v = sp.Symbol("v_sansserif")',
-      'mathtt_w = sp.Symbol("w_monospace")',
-      'mathfrak_k = sp.Symbol("k_fraktur")',
-      'mathit_u + mathscr_s + mathsf_v + mathtt_w + mathfrak_k',
+      'mathit_u_ = sp.Symbol("u_italic")',
+      'mathscr_s_ = sp.Symbol("s_script")',
+      'mathsf_v_ = sp.Symbol("v_sansserif")',
+      'mathtt_w_ = sp.Symbol("w_monospace")',
+      'mathfrak_k_ = sp.Symbol("k_fraktur")',
+      'mathit_u_ + mathscr_s_ + mathsf_v_ + mathtt_w_ + mathfrak_k_',
     ],
   },
   {
     // The tag is per name piece: `a_{\mathrm{i}}` -> `a_i_upright`.
     latex: 'a_{\\mathrm{i}}',
-    expectedPython: ['a_mathrm_i = sp.Symbol("a_i_upright")'],
+    expectedPython: ['a_mathrm_i_ = sp.Symbol("a_i_upright")'],
   },
   {
     latex: '\\mathrm{a}_{\\mathrm{i}}',
-    expectedPython: ['mathrm_a_mathrm_i = sp.Symbol("a_upright_i_upright")'],
+    expectedPython: ['mathrm_a_mathrm_i_ = sp.Symbol("a_upright_i_upright")'],
   },
   {
-    // Font names bind like any symbol — \mathrm{a} = 5 assigns mathrm_a.
+    // Font names bind like any symbol — \mathrm{a} = 5 assigns mathrm_a_.
     latex: '\\mathrm{a} = 5',
-    expectedPython: ['mathrm_a = 5'],
+    expectedPython: ['mathrm_a_ = 5'],
   },
   {
     latex: '\\|v\\|',
@@ -862,12 +863,12 @@ const FIXTURES: {
   },
   {
     // A primed variable is distinct from the unprimed name — the `'` must
-    // survive ident mangling (x' -> x_prime), not collapse onto `x`.
+    // survive ident mangling (x' -> x_prime_), not collapse onto `x`.
     latex: "x' + x",
     expectedPython: [
       'x = sp.Symbol("x")',
-      'x_prime = sp.Symbol("x\'")',
-      'x_prime + x',
+      'x_prime_ = sp.Symbol("x\'")',
+      'x_prime_ + x',
     ],
   },
   {
@@ -900,7 +901,7 @@ const FIXTURES: {
   {
     // x_{-} is a subscripted name, not an unknown 'Subminus' head.
     latex: 'x_{-}',
-    expectedPython: ['x = sp.Symbol("x_{-}")'],
+    expectedPython: ['x_minus_ = sp.Symbol("x_{-}")'],
   },
   {
     // \min_{x} f minimizes f over x — used to emit sp.Min(_ * x * f)
@@ -1009,8 +1010,9 @@ const FIXTURES: {
     // the same convention the set ops use (`x \cup y` -> `{x, y}`).
     latex: 'x \\in S',
     expectedPython: [
-      "x, S = sp.symbols('x S')",
-      'sp.Contains(x, sp.FiniteSet(S))',
+      'x = sp.Symbol("x")',
+      'S_ = sp.Symbol("S")',
+      'sp.Contains(x, sp.FiniteSet(S_))',
     ],
   },
   {
@@ -1438,7 +1440,7 @@ const FIXTURES: {
     // x' = 1 assigns a primed variable — functionDefShape used to match
     // the Prime(x) shape and emit `def Prime(x): return 1`.
     latex: "x' = 1",
-    expectedPython: ['x_prime = 1'],
+    expectedPython: ['x_prime_ = 1'],
   },
   {
     // S^{-} / S^{*} / S^{\times}: decorated standard sets map to real
@@ -1921,24 +1923,24 @@ const FIXTURES: {
     latex: '\\displaylines{I=[0,1]\\\\ \\forall x\\in I,\\ x>0}',
     expectedPython: [
       'x = sp.Symbol("x")',
-      'I = sp.Interval(0, 1)',
-      'sp.Not(sp.Contains(sp.false, sp.ImageSet(sp.Lambda(x, sp.Gt(x, 0)), I), evaluate=False))',
+      'I_ = sp.Interval(0, 1)',
+      'sp.Not(sp.Contains(sp.false, sp.ImageSet(sp.Lambda(x, sp.Gt(x, 0)), I_), evaluate=False))',
     ],
   },
   {
     latex: '\\displaylines{I=(1,2)\\\\ x\\in I}',
     expectedPython: [
       'x = sp.Symbol("x")',
-      'I = sp.Interval(1, 2, left_open=True, right_open=True)',
-      'sp.Contains(x, I)',
+      'I_ = sp.Interval(1, 2, left_open=True, right_open=True)',
+      'sp.Contains(x, I_)',
     ],
   },
   {
     latex: '\\displaylines{I=[1,2)\\\\ x\\in I}',
     expectedPython: [
       'x = sp.Symbol("x")',
-      'I = sp.Interval(1, 2, right_open=True)',
-      'sp.Contains(x, I)',
+      'I_ = sp.Interval(1, 2, right_open=True)',
+      'sp.Contains(x, I_)',
     ],
   },
   {
@@ -2774,7 +2776,7 @@ describe('worksheet program', () => {
       'python',
       { importAll: false },
     );
-    expect(out.program).toContain(`# cell 1\na__n_1 = sp.Symbol("a_{n+1}")`);
+    expect(out.program).toContain(`# cell 1\na_n_plus_1_ = sp.Symbol("a_{n+1}")`);
   });
 
   it("function names (f'(x)) get sp.Function, not sp.Symbol", () => {

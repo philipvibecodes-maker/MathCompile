@@ -1,8 +1,8 @@
 import type { Issue, MathJson } from '../ir';
 import type { PyFnEntry } from '../pydefs';
-import { pyIdent } from './identifiers';
+import { numberedIdent, pyIdent } from './identifiers';
 import { allNames } from './analysis';
-import { collectDeclared, collectMatrices } from './declarations';
+import { collectDeclared } from './declarations';
 
 // Emission scope — the name tables codegen carries plus the issue sink.
 // The trackers are grouped by what they answer, not into one map: their
@@ -10,7 +10,85 @@ import { collectDeclared, collectMatrices } from './declarations';
 // naive merge would alias them. All mutation goes through the facade
 // methods below — reads stay direct field access — so multi-tracker
 // updates like Assign's value rebind are a single transition.
+type BindingKind = 'symbol' | 'function' | 'matrix' | 'value' | 'definedFunction';
+
 export class Scope {
+  private readonly identifiers = new Map<string, string>();
+  private readonly occupied = new Set<string>();
+  private localIdentifiers = new Map<string, string>();
+  private readonly definitions: Set<string>;
+  private readonly statementReferences = new Set<string>();
+  readonly bindings = new Map<string, BindingKind>();
+
+  beginStatement(): void {
+    this.statementReferences.clear();
+  }
+
+  noteReference(name: string): void {
+    if (!this.emit.bound.has(name) && !this.emit.lambdaBound.has(name))
+      this.statementReferences.add(name);
+  }
+
+  finishStatement(success: boolean): void {
+    if (success)
+      for (const name of this.statementReferences) this.definitions.add(name);
+    this.statementReferences.clear();
+  }
+
+  /** Advisory history includes earlier free-symbol uses. References from
+   * the current RHS count only after this statement, so a first a=a+1
+   * assignment doesn't warn about itself. */
+  recordDefinition(name: string): void {
+    if (this.definitions.has(name))
+      this.flag('note', `Warning: ${JSON.stringify(name)} is redefined — the previous definition is replaced.`);
+    this.definitions.add(name);
+  }
+
+  /** One identifier per raw name, independent of its declaration/value kind. */
+  ident(name: string): string {
+    const local = this.localIdentifiers.get(name);
+    if (local !== undefined) return local;
+    const existing = this.identifiers.get(name);
+    if (existing !== undefined) return existing;
+    const base = pyIdent(name);
+    let ident = base;
+    let suffix = 2;
+    while (this.occupied.has(ident) || [...this.localIdentifiers.values()].includes(ident))
+      ident = numberedIdent(base, suffix++);
+    this.identifiers.set(name, ident);
+    this.occupied.add(ident);
+    return ident;
+  }
+
+  /** Register a declaration without changing a later explicit binding. */
+  allocate(map: Map<string, string>, name: string, kind: BindingKind): string {
+    const ident = this.ident(name);
+    map.set(name, ident);
+    if (!this.bindings.has(name)) this.bindings.set(name, kind);
+    return ident;
+  }
+
+  /** Function parameters have an independent, temporary Python namespace. */
+  withParameters<T>(names: readonly string[], fn: () => T): T {
+    const saved = this.localIdentifiers;
+    const locals = new Map<string, string>();
+    const used = new Set(this.occupied);
+    for (const name of names) {
+      const ident = this.identifiers.get(name);
+      if (ident !== undefined) used.delete(ident);
+    }
+    for (const name of names) {
+      const base = pyIdent(name);
+      let ident = base;
+      let suffix = 2;
+      while (used.has(ident)) ident = numberedIdent(base, suffix++);
+      locals.set(name, ident);
+      used.add(ident);
+    }
+    this.localIdentifiers = locals;
+    try { return fn(); } finally { this.localIdentifiers = saved; }
+  }
+
   /** `import sympy as sp` mode: emit `sp.` qualifiers. With
    * `from sympy import *` (the default) names emit unqualified. */
   qualified: boolean;
@@ -160,7 +238,9 @@ export class Scope {
     cell: number,
     plotTarget: 'calc' | 'python' = 'calc',
     pyFns: Map<string, PyFnEntry> = new Map(),
+    definitions: Set<string> = new Set(),
   ) {
+    this.definitions = definitions;
     this.qualified = qualified;
     this.plotTarget = plotTarget;
     this.decls = { declared, declaredFns, defined: new Set() };
@@ -178,6 +258,7 @@ export class Scope {
       pyBacked: new Set(),
     };
     this.py = { fns: pyFns, usedSrcs: new Set(), warned: new Set() };
+    for (const entry of pyFns.values()) this.occupied.add(entry.ident);
     this.cellIdx = -1;
     this.kinds = {
       matrixNames,
@@ -214,13 +295,9 @@ export class Scope {
 
   // ---- facade mutations -------------------------------------------------
 
-  /** Pre-scan a cell's IR for the names its statements bind: every
-   * Assign/Def target into `decls.declared`/`declaredFns`, and the
-   * names whose last assignment is matrix-valued into
-   * `kinds.matrixNames`. */
+  /** Discover declared names; value kinds change only in emission order. */
   scanDecls(ir: MathJson): void {
     collectDeclared(ir, this.decls.declared, this.decls.declaredFns);
-    collectMatrices(ir, this.kinds.matrixNames);
   }
 
   /** `name` is bound from this point in emission order — Assign/Def
@@ -246,11 +323,7 @@ export class Scope {
    * differentiate w.r.t. it — `decls.defined` alone can't tell the two
    * apart, since it also covers every emitted decl line. */
   isValueBound(name: string): boolean {
-    return (
-      this.decls.declared.has(name) &&
-      this.decls.defined.has(name) &&
-      !this.decls.declaredFns.has(name)
-    );
+    return this.bindings.get(name) === 'value' && !this.emit.lambdaParams.has(name);
   }
 
   /** Claim `name` as a function — the Def/Declare/colon-def binding
@@ -258,7 +331,17 @@ export class Scope {
    * the arg list a later bare `f` emits applied. */
   claimFunction(name: string, params: MathJson[] = []): void {
     this.decls.defined.add(name);
-    this.emit.functions.set(name, pyIdent(name));
+    this.emit.functions.set(name, this.ident(name));
+    this.bindings.set(name, 'definedFunction');
+    this.emit.matrixFns.delete(name);
+    this.emit.fnArgs.delete(name);
+    this.emit.lambdaParams.delete(name);
+    this.kinds.matrixNames.delete(name);
+    this.kinds.matrixDims.delete(name);
+    this.kinds.listNames.delete(name);
+    this.kinds.setNames.delete(name);
+    this.kinds.finiteNames.delete(name);
+    this.kinds.depVars.delete(name);
     // A math-side def of a py-backed name wins — its own
     // `sp.Function`/def decl must emit (pyBacked names emit none).
     this.emit.pyBacked.delete(name);
@@ -298,9 +381,10 @@ export class Scope {
       // A python-def'd name differentiated as `D(f,x)` applies the real
       // callable — record it py-backed so no `sp.Function` decl emits.
       const ent = this.py.fns.get(name);
-      this.emit.functions.set(name, ent?.ident ?? pyIdent(name));
+      this.emit.functions.set(name, ent?.ident ?? this.ident(name));
       if (ent !== undefined) this.notePyUse(name, ent);
     }
+    if (!this.bindings.has(name)) this.bindings.set(name, 'function');
     this.noteDepVar(name, args);
   }
 
@@ -335,6 +419,9 @@ export class Scope {
     value: { matrix: boolean; set: boolean; finite: boolean; list: boolean },
   ): void {
     this.decls.defined.add(name);
+    this.ident(name);
+    this.bindings.set(name, 'value');
+    this.kinds.matrixDims.delete(name);
     for (const [names, on] of [
       [this.kinds.matrixNames, value.matrix],
       [this.kinds.setNames, value.set],
