@@ -141,6 +141,36 @@ test('R²→R³ plot renders a parametric surface over the 3-D window', async ({
   expect(String(surf.shape)).toMatch(/^80,\s*80$/);
   expect(surf.corner).toBeCloseTo(3 * Math.cos(3), 5);
 
+  // The helicoid's grid curves hold u or v constant in the input plane.
+  // Fixed output x/y contours fail this check on the curved u=const lines.
+  const grid = await page.evaluate(() => {
+    const gd = document.querySelector('.js-plotly-plot') as unknown as {
+      data: { name?: string; x: (number | null)[]; y: (number | null)[];
+        z: (number | null)[]; contours?: { x?: { show?: boolean }; y?: { show?: boolean } } }[];
+    };
+    const surface = gd.data.find((t) => t.name === 'surf');
+    const curves = gd.data.filter((t) => t.name === 'iso');
+    const spreads = curves.map((t, axis) => {
+      let values: number[] = [];
+      const spans: number[] = [];
+      for (let i = 0; i < t.x.length; i++) {
+        if (t.x[i] == null) {
+          if (values.length) spans.push(Math.max(...values) - Math.min(...values));
+          values = [];
+        } else {
+          const z = t.z[i]!;
+          values.push(axis === 0 ? t.x[i]! * Math.cos(z) + t.y[i]! * Math.sin(z) : z);
+        }
+      }
+      return Math.max(...spans);
+    });
+    return { contours: surface?.contours, count: curves.length, spreads };
+  });
+  expect(grid.contours?.x?.show).toBe(false);
+  expect(grid.contours?.y?.show).toBe(false);
+  expect(grid.count).toBe(2);
+  for (const span of grid.spreads) expect(span).toBeLessThan(1e-9);
+
   // 3-D drags rotate the camera turntable-style — the cartesian 'pan'
   // default would otherwise inherit into the scene.
   const sceneDrag = await page.evaluate(

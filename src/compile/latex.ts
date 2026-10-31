@@ -101,7 +101,28 @@ const canonicalInt = (s: string): string =>
 // at an odd position in a run, or `\\` + the letters is literal text.
 const BIG_SET_OPS = /(?<!\\)((?:\\\\)*)\\big(cup|cap)(?![a-zA-Z])/g;
 
+// Preserve row separators while recognizing the insertion aliases and the
+// upright abbreviation. Display/copy keep s.t.; only parsing treats it as ∣.
+const SET_BUILDER_SEPARATOR = /(?<!\\)((?:\\\\)*)\\(?:where(?![a-zA-Z])|st(?![a-zA-Z])|(?:text|mathrm|operatorname)\s*\{\s*s\s*\.\s*t\s*\.\s*\})/g;
+
 export const LATEX_RULES: LatexRule[] = [
+  {
+    name: 'set-builder-separator',
+    why: 'where and upright s.t. mean the same set-builder separator as \\mid.',
+    applies: /\\(?:where|st|text|mathrm|operatorname)/,
+    rewrite: (s) => s.replace(SET_BUILDER_SEPARATOR, '$1\\mid '),
+    tests: [
+      ['\\{x\\text{s.t.}x>0\\}', '\\{x\\mid x>0\\}'],
+      ['\\{x\\mathrm{s.t.}x>0\\}', '\\{x\\mid x>0\\}'],
+      ['\\{x\\operatorname{s.t.}x>0\\}', '\\{x\\mid x>0\\}'],
+      ['\\{x\\where x>0\\}', '\\{x\\mid  x>0\\}'],
+      ['\\{x\\st x>0\\}', '\\{x\\mid  x>0\\}'],
+      ['\\text{first s.t. last}', '\\text{first s.t. last}'],
+      ['\\stop', '\\stop'],
+      ['x\\\\st y', 'x\\\\st y'],
+      ['x\\\\\\st y', 'x\\\\\\mid  y'],
+    ],
+  },
   {
     name: 'over-under',
     why: 'CE parses neither \\underset nor \\overset but handles the '
@@ -436,6 +457,7 @@ export function outputLatex(latex: string): string {
 // rule-name list so the parse path composes by name like every other
 // consumer.
 export const PRE_PARSE_RULES = [
+  'set-builder-separator',
   'limits-hints',
   'thin-space',
   'partial-subscript',

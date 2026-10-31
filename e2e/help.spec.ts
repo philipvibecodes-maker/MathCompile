@@ -249,3 +249,20 @@ test('pins and hidden topics persist across reload', async () => {
     'restore default help topics',
   );
 });
+
+
+test('set-builder help inserts braces and mid with the caret inside', async () => {
+  await clearFirstCell(page);
+  await openSearch(page);
+  await search(page).fill('set-builder notation');
+  await hit(page, 'Set-builder notation').click();
+  await expect(panel(page)).not.toBeVisible();
+  const field = page.locator('math-field').first();
+  const value = () => field.evaluate((el) => (el as HTMLElement & { value: string }).value);
+  await expect.poll(value).toBe('\\left\\{\\mid\\right\\}');
+  await page.keyboard.type('(x,y)');
+  await expect.poll(value).toBe('\\left\\{\\left(x,y\\right)\\mid\\right\\}');
+  const root = field.locator('.mq-editable-field > .mq-root-block');
+  await expect(root.locator('.mq-bracket-l').first()).toBeVisible();
+  await expect(root.locator('.mq-bracket-r').last()).toBeVisible();
+});

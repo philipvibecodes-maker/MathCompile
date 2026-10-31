@@ -8,6 +8,7 @@
 // Carets inside \sum-style bounds, a \frac, or an open \-command input
 // get their own navigational hints.
 export type HelpContext =
+  | 'in-set'
   | 'inside-matrix'
   | 'left-of-matrix'
   | 'right-of-matrix'
@@ -78,6 +79,15 @@ export function readHelpContext(field: HTMLElement): HelpContext | null {
 
   if (cursor.closest('.mq-matrix')) return 'inside-matrix';
   if (cursor.closest('.mq-latex-command-input')) return 'command-input';
+  // Delimiter metadata comes from the rendered bracket glyphs, including
+  // ghost braces. Walk outward so nested tuples/absolute values keep the
+  // enclosing set's guidance; command inputs and matrix cells keep theirs.
+  for (let el: Element | null = cursor.parentElement; el && el !== field; el = el.parentElement) {
+    if (el.classList.contains('mq-bracket-middle') &&
+        el.previousElementSibling?.getAttribute('data-mq-delimiter') === '{' &&
+        el.nextElementSibling?.getAttribute('data-mq-delimiter') === '}')
+      return 'in-set';
+  }
   const direct = statementContext(cursor.closest('.mq-text-mode'));
   if (direct) return direct;
 
@@ -123,6 +133,12 @@ export function readHelpContext(field: HTMLElement): HelpContext | null {
 // `^\dagger` -> Adjoint, `^+` -> .pinv().
 export const HELP_ENTRIES: Record<HelpContext, { key: string; does: string }[]> =
   {
+    'in-set': [
+      { key: '{(x,y) ∣ x+y=1}', does: 'set-builder notation' },
+      { key: 'where or \\mid', does: 'insert ∣ (such that)' },
+      { key: 'st or \\st', does: 'insert s.t. (same meaning)' },
+      { key: 'Tab / Shift+Tab', does: 'move across ∣ or s.t.' },
+    ],
     'inside-matrix': [
       { key: 'Enter', does: 'add row below' },
       { key: 'Shift+Space', does: 'add column right' },

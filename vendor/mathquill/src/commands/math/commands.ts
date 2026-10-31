@@ -1539,6 +1539,7 @@ class Bracket extends DelimsNode {
           h(
             'span',
             {
+              'data-mq-delimiter': this.sides[L].ch,
               style: 'width:' + leftSymbol.width,
               class:
                 'mq-scaled mq-bracket-l mq-paren' +
@@ -1561,6 +1562,7 @@ class Bracket extends DelimsNode {
           h(
             'span',
             {
+              'data-mq-delimiter': this.sides[R].ch,
               style: 'width:' + rightSymbol.width,
               class:
                 'mq-scaled mq-bracket-r mq-paren' +
@@ -1618,8 +1620,17 @@ class Bracket extends DelimsNode {
     expectedSide: BracketSide,
     node: NodeRef | undefined
   ) {
+    // MATHCOMPILE: a pipe inside a set opens absolute value; it must
+    // not consume the ghost curly brace (nor may a brace close a pipe).
+    var mine = this.sides[this.side as Direction].ch;
+    var theirs = node instanceof Bracket && node.side
+      ? node.sides[node.side].ch : undefined;
+    var braceAndPipe =
+      (mine === '|' && (theirs === '{' || theirs === '}')) ||
+      (theirs === '|' && (mine === '{' || mine === '}'));
     // return node iff it's a matching 1-sided bracket of expected side (if any)
     return (
+      !braceAndPipe &&
       node instanceof Bracket &&
       node.side &&
       node.side !== -expectedSide &&
@@ -1797,6 +1808,7 @@ class Bracket extends DelimsNode {
     var symbol = this.getSymbol(side);
     brackFrag.children().replaceWith(domFrag(symbol.html()));
     brackFrag.oneElement().style.width = symbol.width;
+    brackFrag.oneElement().setAttribute('data-mq-delimiter', this.sides[side || R].ch);
 
     if (side === L) {
       const next = brackFrag.next();

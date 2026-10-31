@@ -10,4 +10,4 @@
 // ("befor" tails) — the domain keyword earns its place next to the
 // other statement markers.
 export const SMART_AUTO_COMMANDS =
-  'int iint antid sum sqrt prod lim pi phi infty theta derivative def nabla gradient solve dsolve pdesolve plot for';
+  'int iint antid sum sqrt prod lim pi phi infty theta derivative def nabla gradient solve dsolve pdesolve plot for where st';

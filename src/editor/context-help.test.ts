@@ -87,8 +87,32 @@ describe('readHelpContext', () => {
     expect(ctx(el)).toBe('inside-matrix');
   });
 
+  it('shows set-builder help inside typed braces and nested absolute values', () => {
+    const { el, mq } = mountAppField();
+    type(mq, '{');
+    expect(ctx(el)).toBe('in-set');
+    type(mq, '|x');
+    expect(ctx(el)).toBe('in-set');
+    type(mq, '|}');
+    expect(ctx(el)).toBeNull();
+  });
+
+  it('recognizes hydrated braces but not parentheses or escaped braces as symbols', () => {
+    const { el, mq } = mountAppField();
+    el.value = '\\left\\{x\\mid x>0\\right\\}';
+    mq.keystroke('Ctrl-End Left');
+    expect(ctx(el)).toBe('in-set');
+    el.value = '\\left(x\\right)';
+    mq.keystroke('Ctrl-End Left');
+    expect(ctx(el)).toBeNull();
+    el.value = '\\{x\\}';
+    mq.keystroke('Ctrl-End Left');
+    expect(ctx(el)).toBeNull();
+  });
+
   it('HELP_ENTRIES has a row for every context', () => {
     for (const k of [
+      'in-set',
       'inside-matrix',
       'left-of-matrix',
       'right-of-matrix',

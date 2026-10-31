@@ -430,9 +430,10 @@ def _mc_desmos_axes(fig, bounds):
             hoverinfo='skip', name='ticks')
 
 
-def _mc_desmos_surf(fig, X, Y, Z):
-    # The graph itself: flat brick red, integer contour gridlines on
-    # the surface (solid hex only — an rgba() contour color silently
+def _mc_desmos_surf(fig, X, Y, Z, parametric=False):
+    # The graph itself: flat brick red, output-coordinate contours for
+    # heightfields (parametric surfaces add mapped input lines below).
+    # Solid hex only — an rgba() contour color silently
     # falls back to white), and lighting tuned for curvature
     # readability.
     import numpy as _mc_np
@@ -444,14 +445,14 @@ def _mc_desmos_surf(fig, X, Y, Z):
                       roughness=0.45, fresnel=0.0),
         lightposition=dict(x=-1400, y=-800, z=3200),
         contours=dict(
-            x=dict(show=True, start=float(_mc_np.nanmin(X)),
+            x=dict(show=not parametric, start=float(_mc_np.nanmin(X)),
                    end=float(_mc_np.nanmax(X)),
                    # Half the decor-grid pitch — twice the gridline
                    # density reads better at the shorter default height.
                    size=_mc_grid_step(
                        float(_mc_np.nanmax(X) - _mc_np.nanmin(X))) / 2,
                    color='#7e1f1a', width=1, highlight=False),
-            y=dict(show=True, start=float(_mc_np.nanmin(Y)),
+            y=dict(show=not parametric, start=float(_mc_np.nanmin(Y)),
                    end=float(_mc_np.nanmax(Y)),
                    size=_mc_grid_step(
                        float(_mc_np.nanmax(Y) - _mc_np.nanmin(Y))) / 2,
@@ -461,6 +462,30 @@ def _mc_desmos_surf(fig, X, Y, Z):
         hovertemplate='x: %{x:.2f}<br>y: %{y:.2f}<br>'
                       'z: %{z:.2f}<extra></extra>',
         name='surf')
+
+
+def _mc_param_grid(fig, fnum, ru, rv, npts=160):
+    # Push forward the domain's coordinate lines. Output-coordinate
+    # contours do not follow the parametrization (e.g. on a helicoid).
+    import numpy as _mc_np
+    for axis, fixed_range, varying_range in ((0, ru, rv), (1, rv, ru)):
+        step = _mc_grid_step(fixed_range[1] - fixed_range[0]) / 2
+        fixed = _mc_np.arange(_mc_np.ceil(fixed_range[0] / step) * step,
+                              fixed_range[1] + step * 1e-9, step)
+        varying = _mc_np.linspace(*varying_range, npts)
+        coords = [[], [], []]
+        for level in fixed:
+            constant = _mc_np.full_like(varying, level)
+            args = (constant, varying) if axis == 0 else (varying, constant)
+            values = _mc_rows(fnum(*args), varying.shape)
+            valid = _mc_np.all(_mc_np.isfinite(values), axis=0)
+            for k in range(3):
+                coords[k].extend(_mc_np.where(valid, values[k], _mc_np.nan).tolist())
+                coords[k].append(None)
+        fig.add_scatter3d(
+            x=coords[0], y=coords[1], z=coords[2], mode='lines',
+            line=dict(color='#7e1f1a', width=2), connectgaps=False,
+            hoverinfo='skip', showlegend=False, name='iso')
 
 
 def _mc_desmos_sheet(fig, bounds):
@@ -891,7 +916,8 @@ def _mc_plot_figure(d, c, vars_, comps, ranges):
             _mc_extent(vals[0]), _mc_extent(vals[1]),
             _mc_extent(vals[2]))
         _mc_desmos_decor(fig, bounds)
-        _mc_desmos_surf(fig, vals[0], vals[1], vals[2])
+        _mc_desmos_surf(fig, vals[0], vals[1], vals[2], parametric=True)
+        _mc_param_grid(fig, fnum, ru, rv, _MC_PLOT_NGPTS)
         _mc_desmos_sheet(fig, bounds)
         _mc_desmos_scene(fig, bounds)
         fig.update_layout(margin=_MC_PLOT_MARGIN, showlegend=False)
@@ -1117,7 +1143,8 @@ def _mc_plot_code(d, c, vars_, comps, bounds, ranges):
                 '    _mc_extent(vals[0]), _mc_extent(vals[1]),',
                 '    _mc_extent(vals[2]))',
                 '_mc_desmos_decor(fig, bounds)',
-                '_mc_desmos_surf(fig, vals[0], vals[1], vals[2])',
+                '_mc_desmos_surf(fig, vals[0], vals[1], vals[2], parametric=True)',
+                f'_mc_param_grid(fig, fnum, {ru!r}, {rv!r}, {_MC_PLOT_NGPTS})',
                 '_mc_desmos_sheet(fig, bounds)',
                 '_mc_desmos_scene(fig, bounds)',
             ]

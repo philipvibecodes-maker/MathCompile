@@ -486,6 +486,12 @@ function getInterface(v: number): MathQuill.v3.API | MathQuill.v1.API {
         this.__controller.typedText(text.charAt(i));
       return this;
     }
+    // MATHCOMPILE: let word autocomplete give set-builder navigation priority.
+    moveAcrossSetBuilderSeparator(dir: Direction) {
+      var moved = this.__controller.moveAcrossSetBuilderSeparator(dir);
+      if (moved) this.__controller.scrollHoriz();
+      return moved;
+    }
     // MATHCOMPILE: Enter semantics — matrix row inside a matrix,
     // \displaylines row split otherwise (src/commands/math/environments.ts).
     insertLineBreak() {

@@ -1098,6 +1098,71 @@ const FIXTURES: {
     ],
   },
   {
+    latex: "\\{(x,y)\\mid x+y>0\\}",
+    expectedPython: [
+      "x, y = sp.symbols('x y')",
+      "sp.ConditionSet((x, y), sp.Gt(x + y, 0))",
+    ],
+  },
+  {
+    latex: "\\{(x,y)\\in\\mathbb{R}^2\\mid x+y>0\\}",
+    expectedPython: [
+      "x, y = sp.symbols('x y')",
+      "sp.ConditionSet((x, y), sp.Gt(x + y, 0), sp.S.Reals**2)",
+    ],
+  },
+  {
+    latex: "\\{x+y\\mid x\\in\\{1,2\\},y\\in\\{3,4\\}\\}",
+    expectedPython: [
+      "x, y = sp.symbols('x y')",
+      "sp.ImageSet(sp.Lambda((x, y), x + y), sp.FiniteSet(1, 2), sp.FiniteSet(3, 4))",
+    ],
+  },
+  {
+    latex: "\\{x+y\\mid x,y\\in\\mathbb{R}\\}",
+    expectedPython: [
+      "x = sp.Symbol(\"x\", real=True)",
+      "y = sp.Symbol(\"y\", real=True)",
+      "sp.ImageSet(sp.Lambda((x, y), x + y), sp.S.Reals, sp.S.Reals)",
+    ],
+  },
+  {
+    latex: "\\{(x,y)\\mid x,y\\in\\mathbb{R}\\}",
+    expectedPython: [
+      "x = sp.Symbol(\"x\", real=True)",
+      "y = sp.Symbol(\"y\", real=True)",
+      "sp.ImageSet(sp.Lambda((x, y), sp.Tuple(x, y)), sp.S.Reals, sp.S.Reals)",
+    ],
+  },
+  {
+    latex: "\\{x+y\\mid (x,y)\\in\\mathbb{R}^2\\}",
+    expectedPython: [
+      "x, y = sp.symbols('x y')",
+      "sp.ImageSet(sp.Lambda(((x, y),), x + y), sp.S.Reals**2)",
+    ],
+  },
+  {
+    latex: "\\{x+y\\mid x\\in\\{1,2\\},y\\in\\{3,4\\},x<y\\}",
+    expectedPython: [
+      "x, y = sp.symbols('x y')",
+      "sp.ImageSet(sp.Lambda(((x, y),), x + y), sp.ConditionSet((x, y), sp.Lt(x, y), sp.ProductSet(sp.FiniteSet(1, 2), sp.FiniteSet(3, 4))))",
+    ],
+  },
+  {
+    latex: "\\{(x,x^2)\\mid x\\in\\mathbb{R}\\}",
+    expectedPython: [
+      "x = sp.Symbol(\"x\", real=True)",
+      "sp.ImageSet(sp.Lambda((x,), sp.Tuple(x, x**2)), sp.S.Reals)",
+    ],
+  },
+  {
+    latex: '\\{x+y\\mid (x,y)\\in\\mathbb{R}^2,x<y\\}',
+    expectedPython: [
+      "x, y = sp.symbols('x y')",
+      'sp.ImageSet(sp.Lambda(((x, y),), x + y), sp.ConditionSet((x, y), sp.Lt(x, y), sp.S.Reals**2))',
+    ],
+  },
+  {
     // A function applied to a set emits its image — imageset maps the
     // call elementwise (f(FiniteSet) would raise TypeError at exec).
     latex:
@@ -2487,6 +2552,19 @@ describe('SymPy codegen fixtures', () => {
         expect(
           out.issues.some((i) => i.message.includes(frag)),
         ).toBe(true);
+    });
+  }
+});
+
+describe('set-builder tuple preferences', () => {
+  for (const pairTuple of ['interval', 'matrix'] as const) {
+    it(`keeps tuple binders and values in ${pairTuple} mode`, () => {
+      const json = parseCellLatex('\\{(x,y)\\mid x,y\\in\\mathbb{R}\\}');
+      const out = compileWorksheet([{ json }], 'python', { importAll: false, pairTuple });
+      expect(out.issues).toEqual([]);
+      expect(out.cellLines[0].at(-1)).toBe(
+        'sp.ImageSet(sp.Lambda((x, y), sp.Tuple(x, y)), sp.S.Reals, sp.S.Reals)',
+      );
     });
   }
 });

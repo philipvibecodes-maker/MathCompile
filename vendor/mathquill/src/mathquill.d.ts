@@ -55,6 +55,7 @@ declare namespace MathQuill {
       write: (latex: string) => EditableMathQuill;
       keystroke: (key: string, evt?: KeyboardEvent) => EditableMathQuill;
       typedText: (text: string) => EditableMathQuill;
+      moveAcrossSetBuilderSeparator: (dir: Direction) => boolean;
       // MATHCOMPILE: Enter semantics (matrix row / displaylines split).
                   insertLineBreak: () => EditableMathQuill;
       clearSelection: () => EditableMathQuill;

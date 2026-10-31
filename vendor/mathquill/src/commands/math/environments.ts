@@ -906,6 +906,8 @@ class CellGrid extends MathCommand {
 }
 
 class MatrixCell extends MathBlock {
+  // MATHCOMPILE: typed braces are literal delimiters inside grid cells.
+  isCommandArgument = false;
   // MATHCOMPILE: marks the block as a visual line container for
   // Home/End (see Controller_keystroke::lineBlock).
   lineCell = true;

@@ -16,6 +16,82 @@ interface CollectionEmitter extends ExpressionEmitter {
   unknownCall(head: string, args: MathJson[]): Emission;
 }
 
+// Parenthesized pairs normally denote intervals. Inside a set-builder's
+// element/binder slot they denote ordered tuples, including in matrix mode.
+function builderItems(node: MathJson): MathJson[] | undefined {
+  if (!isArr(node)) return undefined;
+  if (headOf(node) === 'Delimiter') return builderItems(node[1]);
+  if (['Tuple', 'List', 'Sequence', 'Interval'].includes(headOf(node) ?? ''))
+    return node.slice(1).map((n) => isHead(n, 'Open') ? n[1] : n);
+  if (isHead(node, 'Matrix') && isHead(node[1], 'List')) {
+    const rows = (node[1] as MathJson[]).slice(1);
+    if (rows.every((r) => isHead(r, 'List')) &&
+        (rows.length === 1 || rows.every((r) => r.length === 2)))
+      return rows.flatMap((r) => (r as MathJson[]).slice(1));
+  }
+  return undefined;
+}
+
+function builderVars(node: MathJson): string[] | undefined {
+  const items = isStr(node) ? [node] : builderItems(node);
+  return items?.length && items.every(isStr) && new Set(items).size === items.length
+    ? items as string[] : undefined;
+}
+
+function multiBuilder(elem: MathJson, pred: MathJson, e: CollectionEmitter): Emission | undefined {
+  const tuple = (names: string[]) => `(${names.map((n) => e.sym(n)).join(', ')}${names.length === 1 ? ',' : ''})`;
+  const value = () => {
+    const items = builderItems(elem);
+    return items ? `${e.sp}Tuple(${items.map((n) => e.emit(n)).join(', ')})` : e.emit(elem);
+  };
+  const clauses = isHead(pred, 'And') ? pred.slice(1) : [pred];
+  // x,y ∈ D is parsed as And(x, Element(y,D)); expand the shared domain.
+  const expanded: MathJson[] = [];
+  for (let i = 0; i < clauses.length; i++) {
+    if (isStr(clauses[i])) {
+      let j = i;
+      while (j < clauses.length && isStr(clauses[j])) j++;
+      const next = clauses[j];
+      if (isHead(next, 'Element') && isStr(next[1])) {
+        for (; i < j; i++) expanded.push(['Element', clauses[i], next[2]]);
+        expanded.push(next);
+        continue;
+      }
+    }
+    expanded.push(clauses[i]);
+  }
+  pred = expanded.length === 1 ? expanded[0] : ['And', ...expanded];
+  const names = builderVars(isHead(elem, 'Element') ? elem[1] : elem);
+  if (names && names.length > 1) {
+    // {(x,y) ∈ D | predicate}, or {(x,y) | predicate}.
+    // Pure memberships on the right are handled as image domains below.
+    if (isHead(elem, 'Element') || !expanded.some((p) => isHead(p, 'Element'))) {
+      const base = isHead(elem, 'Element') ? `, ${e.setArg(elem[2])}` : '';
+      return [`${e.sp}ConditionSet(${tuple(names)}, ${e.emit(pred)}${base})`, PREC_ATOM];
+    }
+  }
+  const memberships = expanded.filter((p) => isHead(p, 'Element')) as MathJson[][];
+  const bindings = memberships.map((p) => builderVars(p[1]));
+  if (!memberships.length || bindings.some((b) => !b)) return undefined;
+  const vars = bindings.flat() as string[];
+  if ((vars.length < 2 && !builderItems(elem)) || new Set(vars).size !== vars.length) return undefined;
+  const filters = expanded.filter((p) => !isHead(p, 'Element'));
+  // Each membership supplies one domain; tuple membership supplies a product.
+  memberships.forEach((p, i) => {
+    if (bindings[i]!.length === 1) e.assumeFrom(p[1], p[2]);
+  });
+  const domains = memberships.map((p) => e.setArg(p[2]));
+  const bound = bindings.map((b) => b!.length === 1 ? e.sym(b![0]) : tuple(b!));
+  if (!filters.length)
+    return [`${e.sp}ImageSet(${e.sp}Lambda((${bound.join(', ')}${bound.length === 1 ? ',' : ''}), ${value()}), ${domains.join(', ')})`, PREC_ATOM];
+  // Filter a product domain before mapping, retaining coupled predicates.
+  if (memberships.length > 1 && bindings.some((b) => b!.length !== 1)) return undefined;
+  const condition = filters.length === 1 ? filters[0] : ['And', ...filters] as MathJson;
+  const base = memberships.length === 1 ? domains[0] : `${e.sp}ProductSet(${domains.join(', ')})`;
+  const domain = `${e.sp}ConditionSet(${tuple(vars)}, ${e.emit(condition)}, ${base})`;
+  return [`${e.sp}ImageSet(${e.sp}Lambda((${tuple(vars)},), ${value()}), ${domain})`, PREC_ATOM];
+}
+
 type CollectionHead = 'Condition' | 'Complement' | 'Difference' | 'SymmetricDifference' | 'Degrees' | 'Minimum' | 'Maximum' | 'Supremum' | 'Infimum' | 'IntegerRange' | 'Interval' | 'Open' | 'Element' | 'NotElement' | 'Set' | 'Union' | 'Intersection' | 'SetMinus' | 'Subset' | 'SubsetEqual' | 'Superset' | 'SupersetEqual' | 'NotSubset' | 'NotSubsetNotEqual' | 'NotSuperset' | 'NotSupersetNotEqual' | 'And' | 'Or' | 'Not' | 'Which' | 'Piecewise';
 
 export function emitCollection(
@@ -24,17 +100,17 @@ export function emitCollection(
   switch (h) {
       case 'Condition': {
         // A Condition escaping a Set wrapper — defensive; the variable
-        // comes from the predicate's single free name.
+        // comes from the predicate's free names.
         const free = freeNames(args[0]);
-        if (free.length !== 1) {
+        if (free.length === 0) {
           emitter.scope.flag(
             'error',
-            'set-builder notation needs exactly one variable',
+            'set-builder notation needs at least one variable',
           );
           return ['None', PREC_ATOM];
         }
         return [
-          `${emitter.sp}ConditionSet(${emitter.emit(free[0])}, ${emitter.emit(args[0])})`,
+          `${emitter.sp}ConditionSet(${free.length === 1 ? emitter.emit(free[0]) : `(${free.map((n) => emitter.sym(n)).join(', ')})`}, ${emitter.emit(args[0])})`,
           PREC_ATOM,
         ];
       }
@@ -200,6 +276,8 @@ export function emitCollection(
         // raises TypeError at eval, so it falls through to FiniteSet.
         const boolish = isArr(condPred) && BOOLISH_HEADS.has(headOf(condPred) ?? '');
         if (condHead === 'Condition' && boolish) {
+          const multi = multiBuilder(elem, condPred!, emitter);
+          if (multi) return multi;
           if (isHead(elem, 'Element') && isStr(elem[1])) {
             // \{x \in D \mid p\} — base set is D. A non-set base can't
             // be a ConditionSet domain — keep a readable Function stub.
