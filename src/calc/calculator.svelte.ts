@@ -1,9 +1,11 @@
+import { SET_PLOT_PY } from '../compile/set-plot-runtime';
 import { ComputeEngine, compile } from '@cortex-js/compute-engine';
 import {
   collectDeclared,
   compileCellsForCalc,
   firstFreeCapital,
   freeNames,
+  isImplicitPlot,
   plotComponents,
   plotDomainBounds,
   type CalcWorksheetProgram,
@@ -106,7 +108,7 @@ function ensureWorker(): Worker {
   });
   // The worker can't read import.meta.env (classic worker), so the
   // base public assets are served under comes from the page.
-  w.postMessage({ type: 'init', snapshotBase: import.meta.env.BASE_URL });
+  w.postMessage({ type: 'init', snapshotBase: import.meta.env.BASE_URL, setPlotPython: SET_PLOT_PY });
   w.onmessage = (e: MessageEvent<WorkerReply>) => {
     const m = e.data;
     if (m.type === 'ready') {
@@ -760,9 +762,8 @@ function interimPlotRow(
   domain?: MathJson,
 ): CalcRow | null {
   const h = headOf(expr);
-  // The worker rejects sets/intervals with a "cannot be plotted"
-  // error — the interim stays silent until that row lands.
-  if (h === 'Interval' || h === 'Set') return null;
+  // Set plots require SymPy membership evaluation; wait for the worker.
+  if (h === 'Interval' || h === 'Set' || isImplicitPlot(expr)) return null;
   // A lambda carries its own parameters — vars come from the signature
   // rather than the body's free symbols.
   const lambda = h === 'Function' && isArr(expr) ? expr : undefined;

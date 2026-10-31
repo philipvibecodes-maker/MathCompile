@@ -5,7 +5,7 @@ import type { StatementOut } from './types';
 import { isArr, isStr, isHead, headOf } from './nodes';
 import { pyIdent } from './identifiers';
 import { freeNames } from './analysis';
-import { emitPlotPython, plotDomainBounds } from './plotting';
+import { emitPlotPython, plotDomainBounds, plotSetExpression } from './plotting';
 
 interface StatementEmitter {
   scope: Scope;
@@ -368,7 +368,7 @@ export function emitStatement(node: MathJson, emitter: StatementEmitter): Statem
   // signature admits.
   if (h === 'Plot') {
     const before = emitter.scope.errorCount;
-    const body = emitter.emit(node[1]);
+    const body = emitter.emit(plotSetExpression(node[1]));
     // A `\text{for}` domain carries per-variable (lo, hi) bounds —
     // either end may be absent (a one-sided bound keeps the signature's
     // default end; the worker fills None with its default).

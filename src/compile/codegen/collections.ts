@@ -284,8 +284,8 @@ export function emitCollection(
             emitter.assumeFrom(elem[1], elem[2]);
             return [
               emitter.isSetish(elem[2])
-                ? `${emitter.sp}ConditionSet(${emitter.sym(elem[1])}, ${emitter.emit(condPred)}, ${emitter.emit(elem[2])})`
-                : `${emitter.sp}Function("ConditionSet")(${emitter.sym(elem[1])}, ${emitter.emit(condPred)}, ${emitter.emit(elem[2])})`,
+                ? `${emitter.sp}ConditionSet(${isStr(elem[1]) ? emitter.sym(elem[1]) : emitter.emit(elem[1])}, ${emitter.emit(condPred)}, ${emitter.emit(elem[2])})`
+                : `${emitter.sp}Function("ConditionSet")(${isStr(elem[1]) ? emitter.sym(elem[1]) : emitter.emit(elem[1])}, ${emitter.emit(condPred)}, ${emitter.emit(elem[2])})`,
               PREC_ATOM,
             ];
           }
@@ -299,9 +299,9 @@ export function emitCollection(
               PREC_ATOM,
             ];
           }
-          if (isStr(elem))
+          if (isStr(elem) || isHead(elem, 'Tuple'))
             return [
-              `${emitter.sp}ConditionSet(${emitter.sym(elem)}, ${emitter.emit(condPred)})`,
+              `${emitter.sp}ConditionSet(${isStr(elem) ? emitter.sym(elem) : emitter.emit(elem)}, ${emitter.emit(condPred)})`,
               PREC_ATOM,
             ];
         }
