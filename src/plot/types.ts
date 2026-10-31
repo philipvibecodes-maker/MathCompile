@@ -5,8 +5,8 @@
 export interface PlotData {
   /** '<domain-dim>x<component-count>', e.g. '1x1' for y=f(x), '2x2'
    * for an ℝ²→ℝ² map (quiver field + grid-image views), '2x3' for an
-   * ℝ²→ℝ³ parametric surface. */
-  kind: '1x1' | '1x2' | '1x3' | '2x1' | '2x2' | '2x3';
+   * ℝ²→ℝ³ parametric surface; 'set2'/'set3' for coordinate sets. */
+  kind: '1x1' | '1x2' | '1x3' | '2x1' | '2x2' | '2x3' | 'set2' | 'set3';
   /** Variable names in grid order (e.g. ['x'], ['u', 'v']). */
   vars: string[];
   /** LaTeX of the plotted expression. */

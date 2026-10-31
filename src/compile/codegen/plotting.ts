@@ -1,3 +1,5 @@
+import { SET_PLOT_PY } from '../set-plot-runtime';
+import { BOOLISH_HEADS } from './heads';
 import type { Issue, MathJson } from '../ir';
 import type { StatementOut } from './types';
 import { isArr, isStr, isHead, headOf } from './nodes';
@@ -36,6 +38,33 @@ export function plotComponents(expr: MathJson): MathJson[] | undefined {
   if (h === 'List' || h === 'Tuple' || h === 'Sequence')
     return expr.slice(1);
   return [expr];
+}
+
+export const isImplicitPlot = (expr: MathJson): boolean =>
+  BOOLISH_HEADS.has(headOf(expr) ?? '');
+
+// Within a plotted set, parenthesized pairs denote coordinate points.
+// Keep ordinary interval/set semantics outside plot statements unchanged.
+export function plotSetExpression(expr: MathJson): MathJson {
+  if (!isArr(expr)) return expr;
+  const h = headOf(expr);
+  if (h === 'Set') {
+    const coordinate = (n: MathJson): MathJson => {
+      if (!isArr(n)) return n;
+      if (headOf(n) === 'Element') return ['Element', coordinate(n[1]), n[2]];
+      if (headOf(n) === 'Interval' && n.slice(1).every((x) => isHead(x, 'Open')))
+        return ['Tuple', ...n.slice(1).map((x) => (x as MathJson[])[1])];
+      if (headOf(n) === 'Matrix') {
+        const c = plotComponents(n);
+        if (c) return ['Tuple', ...c];
+      }
+      return n;
+    };
+    return ['Set', ...expr.slice(1).map(coordinate)];
+  }
+  if (['Union', 'Intersection', 'SetMinus', 'Complement'].includes(h ?? ''))
+    return [expr[0], ...expr.slice(1).map(plotSetExpression)];
+  return expr;
 }
 
 // A `\text{plot} … \text{for} cond` domain as per-variable bounds:
@@ -174,6 +203,21 @@ export function emitPlotPython(
   domain?: Map<string, { lo?: string; hi?: string }>,
 ): StatementOut {
   const sp = emitter.scope.qualified ? 'sp.' : '';
+  const relation = isImplicitPlot(expr);
+  if (isHead(expr, 'Set') || relation) {
+    const variables = [...new Set(freeNames(expr))].sort();
+    const value = relation
+      ? `${sp}ConditionSet((${variables.map(pyIdent).join(', ')}), ${emitted})`
+      : emitted;
+    const dom = `{${[...(domain ?? [])].map(([v, r]) =>
+      `${JSON.stringify(v)}: (${r.lo ?? 'None'}, ${r.hi ?? 'None'})`).join(', ')}}`;
+    return { lines: [
+      'import sympy as sp',
+      ...SET_PLOT_PY.trim().split('\n'),
+      `fig, _ = _mc_set_figure(${value}, ${dom})`,
+      'fig.show()',
+    ], plot: true };
+  }
   const vars = [...new Set(freeNames(expr))].sort();
   const applied =
     isStr(expr) && emitter.scope.decls.declaredFns.has(expr)

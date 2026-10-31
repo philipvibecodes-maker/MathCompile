@@ -58,6 +58,7 @@ interface EvalRequest {
 interface InitRequest {
   type: 'init';
   snapshotBase: string;
+  setPlotPython: string;
 }
 
 type WorkerMessage =
@@ -78,6 +79,9 @@ const PYODIDE_BASE = 'https://cdn.jsdelivr.net/pyodide/v0.29.0/full/';
 // from — pinned to the same version scripts/fetch-pyodide-deps.mjs
 // stages into public/wheels/.
 const PLOTLY_WHEEL = 'plotly-7.1.0-py3-none-any.whl';
+
+// Shared source arrives in init so this worker stays classic in Vite dev.
+let setPlotPython = "";
 
 const SETUP_PY = `
 import json
@@ -1179,6 +1183,17 @@ def _mc_plot_code(d, c, vars_, comps, bounds, ranges):
 
 
 def _mc_plot_payload(v):
+    expr = v['expr']
+    if getattr(expr, 'is_Relational', False) or isinstance(expr, sp.logic.boolalg.BooleanFunction):
+        coords = sorted(expr.free_symbols, key=lambda s: s.name)
+        v = dict(v, expr=sp.ConditionSet(sp.Tuple(*coords), expr))
+    if isinstance(v['expr'], sp.Set):
+        fig, names = _mc_set_figure(v['expr'], v.get('domain'))
+        return {
+            'plot': {'kind': f'set{len(names)}', 'vars': names,
+                     'label': sp.latex(v['expr']), 'figure': json.loads(fig.to_json())},
+            'code': 'import sympy as sp\\nfrom sympy import *\\n' + _MC_SET_PLOT_SOURCE + '\\nfig, _ = _mc_set_figure(' + sp.srepr(v['expr']) + ', ' + repr(v.get('domain')) + ')\\nfig.show()',
+        }
     vars_, comps, label = _mc_plot_signature(v['expr'])
     d = len(vars_)
     c = len(comps)
@@ -1373,7 +1388,7 @@ async function bootEngine(): Promise<PyodideLike> {
           `import sysconfig, zipfile\nzipfile.ZipFile('/tmp/${PLOTLY_WHEEL}').extractall(sysconfig.get_paths()['purelib'])`,
         );
       }
-      await py.runPythonAsync(SETUP_PY);
+      await py.runPythonAsync(SETUP_PY + '\n_MC_SET_PLOT_SOURCE = ' + JSON.stringify(setPlotPython) + '\nexec(_MC_SET_PLOT_SOURCE)');
       return py;
     } catch (err) {
       console.warn('[calc] snapshot restore failed, cold-booting:', err);
@@ -1386,7 +1401,7 @@ async function bootEngine(): Promise<PyodideLike> {
   await py.runPythonAsync(
     'import micropip\nawait micropip.install("plotly")',
   );
-  await py.runPythonAsync(SETUP_PY);
+  await py.runPythonAsync(SETUP_PY + '\n_MC_SET_PLOT_SOURCE = ' + JSON.stringify(setPlotPython) + '\nexec(_MC_SET_PLOT_SOURCE)');
   return py;
 }
 
@@ -1414,6 +1429,7 @@ scope.onmessage = (e) => {
   const msg = e.data as InitRequest | EvalRequest;
   if (msg.type === 'init') {
     snapshotBase = msg.snapshotBase;
+    setPlotPython = msg.setPlotPython;
     // The main thread posts init right after construction, so boot
     // still overlaps the wasm download with the user's menu
     // interaction the same way an unconditional boot on spawn did.
