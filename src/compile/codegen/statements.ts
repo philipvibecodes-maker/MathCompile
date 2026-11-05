@@ -3,7 +3,6 @@ import { isDefNode } from '../ir/normalized';
 import type { Scope } from './scope';
 import type { StatementOut } from './types';
 import { isArr, isStr, isHead, headOf } from './nodes';
-import { pyIdent } from './identifiers';
 import { freeNames } from './analysis';
 import { emitPlotPython, plotDomainBounds } from './plotting';
 
@@ -178,7 +177,8 @@ export function emitStatement(node: MathJson, emitter: StatementEmitter): Statem
       const members = node[1].slice(1).filter(isStr);
       for (const m of members) emitter.scope.markDefined(m);
       if (emitter.scope.errorCount > before) return { lines: [] };
-      const idents = members.map(pyIdent).join(', ');
+      for (const m of new Set(members)) emitter.scope.recordDefinition(m);
+      const idents = members.map((m) => emitter.scope.ident(m)).join(', ');
       return {
         lines: [`${idents} = ${rhs}`],
         display: `${sp}Eq(${sp}Tuple(${members
@@ -229,13 +229,14 @@ export function emitStatement(node: MathJson, emitter: StatementEmitter): Statem
       if (lambdaMatrixFn) emitter.scope.emit.matrixFns.add(node[1]);
     }
     if (emitter.scope.errorCount > before) return { lines: [] };
+    emitter.scope.recordDefinition(name);
     // A python-list RHS binds a raw list (`u = [1, 2, 3]`), which
     // Eq can't sympify — display it as the column vector the ops
     // treat it as, unevaluated like other matrix/set RHSes.
     const displayRhs =
       listRhs && !matrixRhs ? `${sp}Matrix(${rhs})` : rhs;
     return {
-      lines: [`${pyIdent(name)} = ${rhs}`],
+      lines: [`${emitter.scope.ident(name)} = ${rhs}`],
       display: assignDisplay(
         sp,
         name,
@@ -253,8 +254,9 @@ export function emitStatement(node: MathJson, emitter: StatementEmitter): Statem
       ? node[2].slice(1).filter(isStr)
       : [];
     emitter.scope.claimFunction(name, params);
+    emitter.scope.recordDefinition(name);
     return {
-      lines: [`${pyIdent(name)} = ${sp}Function(${JSON.stringify(name)})`],
+      lines: [`${emitter.scope.ident(name)} = ${sp}Function(${JSON.stringify(name)})`],
       // Zero params: show `f` (the function itself), not `f()`.
       display:
         params.length === 0
@@ -272,8 +274,11 @@ export function emitStatement(node: MathJson, emitter: StatementEmitter): Statem
       ? checked[2].slice(1)
       : isHead(node[2], 'List') ? node[2].slice(1).filter(isStr) : [];
     const before = emitter.scope.errorCount;
-    const body = emitter.scope.withBoundOnly(params, () =>
-      emitter.emit(node[3]),
+    const { body, idents } = emitter.scope.withParameters(params, () =>
+      emitter.scope.withBoundOnly(params, () => ({
+        body: emitter.emit(node[3]),
+        idents: params.map((p) => emitter.scope.ident(p)).join(', '),
+      })),
     );
     // A later bare `f` in operand position emits `f(<params>)` — an
     // unapplied function object raises TypeError as an operand.
@@ -287,7 +292,7 @@ export function emitStatement(node: MathJson, emitter: StatementEmitter): Statem
     )
       emitter.scope.emit.matrixFns.add(name);
     if (emitter.scope.errorCount > before) return { lines: [] };
-    const idents = params.map(pyIdent).join(', ');
+    emitter.scope.recordDefinition(name);
     // `f(x) = body` rendered via an undefined function — the def'd python
     // function would just evaluate back to body. The lambda binds the
     // param idents to fresh Symbols so the display needs no namespace
@@ -301,7 +306,7 @@ export function emitStatement(node: MathJson, emitter: StatementEmitter): Statem
             .map((p) => `${sp}Symbol(${JSON.stringify(p)})`)
             .join(', ')})`;
     return {
-      lines: [`def ${pyIdent(name)}(${idents}):`, `    return ${body}`],
+      lines: [`def ${emitter.scope.ident(name)}(${idents}):`, `    return ${body}`],
       display,
       defines: true,
     };
@@ -331,8 +336,9 @@ export function emitStatement(node: MathJson, emitter: StatementEmitter): Statem
       )
         emitter.scope.emit.matrixFns.add(name);
       if (emitter.scope.errorCount > before) return { lines: [] };
+      emitter.scope.recordDefinition(name);
       return {
-        lines: [`${pyIdent(name)} = ${rhs}`],
+        lines: [`${emitter.scope.ident(name)} = ${rhs}`],
         display: assignDisplay(sp, name, rhs),
         defines: true,
       };
@@ -356,8 +362,9 @@ export function emitStatement(node: MathJson, emitter: StatementEmitter): Statem
     )
       emitter.scope.emit.matrixFns.add(name);
     if (emitter.scope.errorCount > before) return { lines: [] };
+    emitter.scope.recordDefinition(name);
     return {
-      lines: [`${pyIdent(name)} = ${rhs}`],
+      lines: [`${emitter.scope.ident(name)} = ${rhs}`],
       display: assignDisplay(sp, name, rhs),
       defines: true,
     };
@@ -533,7 +540,7 @@ export function emitStatement(node: MathJson, emitter: StatementEmitter): Statem
     for (const ic of icNodes) {
       if (!isArr(ic) || headOf(ic) !== 'IC' || !isStr(ic[1])) continue;
       const ident =
-        emitter.scope.emit.functions.get(ic[1]) ?? pyIdent(ic[1]);
+        emitter.scope.emit.functions.get(ic[1]) ?? emitter.scope.ident(ic[1]);
       const pt = emitter.emit(ic[3]);
       const rhs = emitter.emit(ic[4]);
       const order = ic[2];

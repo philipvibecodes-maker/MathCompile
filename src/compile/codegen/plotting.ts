@@ -2,7 +2,6 @@ import type { Issue, MathJson } from '../ir';
 import type { StatementOut } from './types';
 import { isArr, isStr, isHead, headOf } from './nodes';
 import { freeNames } from './analysis';
-import { pyIdent } from './identifiers';
 
 // Plot generation needs recursive expression emission and a small view of
 // name/signature state. It does not own scope or statement compilation.
@@ -10,6 +9,7 @@ interface PlotEmitter {
   emit(node: MathJson | undefined, minPrec?: number): string;
   scope: {
     qualified: boolean;
+    ident(name: string): string;
     decls: { declaredFns: ReadonlySet<string> };
     emit: { fnArgs: ReadonlyMap<string, MathJson[]> };
     flag(severity: Issue['severity'], message: string): void;
@@ -198,7 +198,7 @@ export function emitPlotPython(
         );
   const rng = (v: string, lo: number, hi: number) => {
     const r = domain?.get(v);
-    return `(${pyIdent(v)}, ${r?.lo ?? lo}, ${r?.hi ?? hi})`;
+    return `(${emitter.scope.ident(v)}, ${r?.lo ?? lo}, ${r?.hi ?? hi})`;
   };
   const R1 = (v: string) => rng(v, -10, 10);
   const R2 = (v: string) => rng(v, -3, 3);
@@ -278,7 +278,7 @@ const emitPlotComp =
   (emitter: PlotEmitter, callVars: string[]) =>
   (n: MathJson | string): string =>
     isStr(n) && emitter.scope.decls.declaredFns.has(n)
-      ? `${n}(${callVars.map(pyIdent).join(', ')})`
+      ? `${emitter.scope.ident(n)}(${callVars.map((v) => emitter.scope.ident(v)).join(', ')})`
       : emitter.emit(n);
 
 // The field (quiver) view of an ℝ²→ℝ² plot, python target:
@@ -318,7 +318,7 @@ function emitPlotImagePython(
   dom: [string, string, string, string] = ['-3', '3', '-3', '3'],
 ): StatementOut {
   const sp = emitter.scope.qualified ? 'sp.' : '';
-  const [v0, v1] = callVars.map(pyIdent);
+  const [v0, v1] = callVars.map((v) => emitter.scope.ident(v));
   const [e0, e1] = comps.map(emitPlotComp(emitter, callVars));
   const [x0, x1, y0, y1] = dom;
   return {

@@ -19,7 +19,7 @@ import { emitCollection } from './collections';
 import { emitDerivative } from './derivatives';
 import { emitFunction } from './functions';
 import { BOOLISH_HEADS, CMP_NESTABLE_HEADS, SETISH_OP_HEADS, UNPARSEABLE_MSG } from './heads';
-import { pyIdent } from './identifiers';
+import { pythonName } from './identifiers';
 import {
   asInt,
   headOf,
@@ -76,7 +76,7 @@ export class Emitter {
       (name) =>
         this.matrixRef(name) ||
         this.scope.emit.matrixFns.has(name) ||
-        (minted && this.scope.emit.matrices.has(name)) ||
+        (minted && this.scope.bindings.get(name) === 'matrix') ||
         this.identityDim(name) !== null,
     );
   }
@@ -236,23 +236,6 @@ export class Emitter {
     return c.startsWith('-') ? `-${this.sp}${c.slice(1)}` : `${this.sp}${c}`;
   }
 
-  private alloc(map: Map<string, string>, name: string): string {
-    const existing = map.get(name);
-    if (existing) return existing;
-    let ident = pyIdent(name);
-    // Different symbol names can mangle to the same ident (a_{n} vs a_n) —
-    // disambiguate deterministically by first-seen order.
-    let n = 2;
-    const used = (v: string) =>
-      this.scope.emit.symbols.has(v) ||
-      [...this.scope.emit.symbols.values()].includes(v) ||
-      [...this.scope.emit.functions.values()].includes(v) ||
-      [...this.scope.emit.matrices.values()].includes(v);
-    while (used(ident)) ident = `${pyIdent(name)}_${n++}`;
-    map.set(name, ident);
-    return ident;
-  }
-
   sym(name: string): string {
     // A bare `i` in value position is the imaginary unit (i^2 -> -1,
     // e^{i\pi} -> -1); only a bound operator/def variable or an
@@ -263,10 +246,13 @@ export class Emitter {
       !this.scope.emit.bound.has(name)
     ) {
       return this.scope.emit.lambdaBound.has(name)
-        ? this.alloc(this.scope.emit.symbols, name)
+        ? this.scope.allocate(this.scope.emit.symbols, name, 'symbol')
         : `${this.sp}I`;
     }
-    if (this.scope.emit.bound.has(name)) return pyIdent(name);
+    this.scope.noteReference(name);
+    if (this.scope.emit.bound.has(name)) return this.scope.ident(name);
+    if (this.scope.bindings.get(name) === 'value' && !this.scope.emit.lambdaParams.has(name))
+      return this.scope.ident(name);
     if (this.scope.emit.functions.has(name)) {
       const ident = this.scope.emit.functions.get(name)!;
       const argNodes = this.scope.emit.fnArgs.get(name);
@@ -291,7 +277,7 @@ export class Emitter {
         this.callOrImage(argNodes, (ps) => `${ident}(${ps.join(', ')})`),
       );
     }
-    if (this.scope.decls.defined.has(name)) return pyIdent(name);
+    if (this.scope.decls.defined.has(name)) return this.scope.ident(name);
     // `v^T A v` — `v` was claimed by the matrix tier (Transpose), so a
     // later bare `v` is the SAME name, not a new symbol: reuse the
     // MatrixSymbol ident instead of minting `v_2`.
@@ -303,7 +289,7 @@ export class Emitter {
     if (pySym !== undefined) return pySym;
     const idDim = this.identityDim(name);
     if (idDim) return `${this.sp}eye(${idDim})`;
-    return this.alloc(this.scope.emit.symbols, name);
+    return this.scope.allocate(this.scope.emit.symbols, name, 'symbol');
   }
 
   /** Resolve `name` through the worksheet's python-function registry
@@ -327,17 +313,20 @@ export class Emitter {
   // sp.symbols — symbols aren't callable. A python-cell `def` resolves
   // to the real callable instead.
   fn(name: string): string {
-    if (this.scope.decls.defined.has(name)) {
-      // `x = 5` then `\dot{x}` — the name is already a bound value;
-      // `x(t)` raises TypeError at exec. Def'd/lambda-bound names stay
-      // callable (call-fold).
-      if (!this.scope.decls.declaredFns.has(name))
-        this.scope.flag('error', `${name} is bound to a value — not callable`);
-      return pyIdent(name);
+    this.scope.noteReference(name);
+    if (this.scope.bindings.get(name) === 'value' && !this.scope.emit.lambdaParams.has(name)) {
+      this.scope.flag('error', `${name} is bound to a value — not callable`);
+      return this.scope.ident(name);
+    }
+    const existing = this.scope.emit.functions.get(name);
+    if (existing !== undefined) return existing;
+    if (this.scope.bindings.get(name) === 'symbol' || this.scope.bindings.get(name) === 'matrix') {
+      this.scope.flag('error', `${name} is bound to a value — not callable`);
+      return this.scope.ident(name);
     }
     const py = this.resolvePy(name);
     if (py !== undefined) return py;
-    return this.alloc(this.scope.emit.functions, name);
+    return this.scope.allocate(this.scope.emit.functions, name, 'function');
   }
 
   // Whether a name reads as a function for `^{(n)}` derivative notation:
@@ -345,6 +334,8 @@ export class Emitter {
   // undeclared — like `r(x)`, callee use itself makes it a function.
   // A name bound as a variable (symbol, assign target) is not.
   isFunctionish(name: string): boolean {
+    if (this.scope.bindings.get(name) === 'value')
+      return this.scope.emit.lambdaParams.has(name);
     return (
       this.scope.emit.functions.has(name) ||
       this.scope.decls.declaredFns.has(name) ||
@@ -356,7 +347,8 @@ export class Emitter {
   // of a bare Symbol raises in the worker. Names already bound (an
   // earlier `A = …` assignment) reuse their own ident instead.
   private mat(name: string): string {
-    if (this.scope.decls.defined.has(name)) return pyIdent(name);
+    this.scope.noteReference(name);
+    if (this.scope.decls.defined.has(name)) return this.scope.ident(name);
     const py = this.resolvePy(name);
     if (py !== undefined) {
       this.scope.flag('error', `${name} is a python function — not a matrix`);
@@ -364,7 +356,7 @@ export class Emitter {
     }
     const dim = this.identityDim(name);
     if (dim) return `${this.sp}eye(${dim})`;
-    return this.alloc(this.scope.emit.matrices, name);
+    return this.scope.allocate(this.scope.emit.matrices, name, 'matrix');
   }
 
   // Emit the argument of a matrix-valued op (det/trace): a bare
@@ -373,8 +365,10 @@ export class Emitter {
   private matrixArg(node: MathJson, op: string): string | null {
     if (!isStr(node)) return this.emit(node, PREC_ATOM);
     if (
-      this.scope.emit.symbols.has(node) ||
-      this.scope.emit.functions.has(node) ||
+      (!this.matrixRef(node) && (
+        this.scope.bindings.get(node) === 'symbol' ||
+        this.scope.bindings.get(node) === 'function' ||
+        this.scope.bindings.get(node) === 'definedFunction')) ||
       (this.scope.decls.defined.has(node) &&
         !this.scope.kinds.matrixNames.has(node) &&
         !this.scope.kinds.matrixDims.has(node))
@@ -506,10 +500,7 @@ export class Emitter {
     if (!isStr(member)) return null;
     const c = this.constraintsFor(set);
     if (!c?.assuming) return null;
-    const ident =
-      this.scope.emit.bound.has(member) || this.scope.decls.defined.has(member)
-        ? pyIdent(member)
-        : (this.scope.emit.symbols.get(member) ?? pyIdent(member));
+    const ident = this.scope.ident(member);
     const preds = c.preds.map((p) => `${this.sp}Q.${p}(${ident})`);
     const joined =
       preds.length === 1 ? preds[0] : preds.map((p) => `(${p})`).join(' & ');
@@ -1921,7 +1912,7 @@ export class Emitter {
             PREC_ATOM,
           ];
         }
-        return [`${this.sp}${pyIdent(name)}(${rendered})`, PREC_ATOM];
+        return [`${this.sp}${pythonName(name)}(${rendered})`, PREC_ATOM];
       }
       default:
         if (SP_FUNCS[h]) {
@@ -1953,7 +1944,7 @@ export class Emitter {
         // but stay unblocked if raw IR is fed in directly.
         this.scope.flag('note', `unknown head "${h}" — emitted as ${h}(...)`);
         return [
-          `${this.sp}${pyIdent(h)}(${args.map((a) => this.callArg(a)).join(', ')})`,
+          `${this.sp}${pythonName(h)}(${args.map((a) => this.callArg(a)).join(', ')})`,
           PREC_ATOM,
         ];
     }
