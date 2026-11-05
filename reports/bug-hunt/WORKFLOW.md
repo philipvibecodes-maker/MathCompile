@@ -19,6 +19,11 @@ The embedded worksheet is served at `/app`. To start at a particular
 finding, append its ID: http://localhost:5574/tools/bug-review/#CG-06.
 `BUG_REVIEW_PORT=5576 npm run bugs` chooses a different port.
 
+The embedded worksheet starts in LaTeX output mode so opening the review page
+does not boot the Pyodide/SymPy calculator worker. Loading a prepared setup
+switches to that setup's selected output target; calculator cases therefore
+start the worker only after **Load setup in app** is clicked.
+
 This command runs the current checkout with Vite and adds the local review
 API. It does not switch branches or merge the older product code from the
 reports branch. Its separate port gives the reproduction app separate browser
