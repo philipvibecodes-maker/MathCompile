@@ -4,6 +4,8 @@ The reports were found on **`codex/extended-bug-hunt`**, commit
 `8e12e56b595992996e1dc7943c5bab0e709971b2`. The five original Markdown
 files in this directory are copied unchanged from that commit. They contain
 127 finding groups: 34 UI, 39 compiler/calculator, 36 rendering, and 18 plotting.
+The active workflow excludes CG-02, CG-16, and CG-21, which were fixed by
+PR #114, leaving 124 unresolved findings (36 compiler/calculator).
 
 ## Start
 
@@ -117,10 +119,10 @@ Uses Playwright Chromium. On this cloud workspace, use the installed browser:
 BUG_REVIEW_CHROMIUM=/usr/bin/chromium npm run test:bugs
 ```
 
-The checks cover the exact 127-report catalog, recipe IDs and cell grouping,
+The checks cover the exact 124-finding unresolved catalog, recipe IDs and cell grouping,
 annotation validation, browser input loading, observation capture without an
 automatic verdict, saved decisions surviving reload, mixed Python/math setups,
 and invalid imports. Browser checks use a temporary annotation file on :5575;
 `BUG_REVIEW_TEST_PORT` overrides that test port. They verify the review workflow,
-not whether all 127 historical bugs remain present, and do not need the SymPy
+not whether all 124 remaining bugs are still present, and do not need the SymPy
 CDN to complete.

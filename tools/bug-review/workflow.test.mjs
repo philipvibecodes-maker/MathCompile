@@ -23,7 +23,8 @@ test('review workflow loads mixed worksheets, captures observations, saves and r
     await new Promise(resolve=>setTimeout(resolve,100));
   }
   const catalog = await (await fetch(`${base}/__bug-review/catalog`)).json();
-  assert.equal(catalog.findings.length,127);
+  assert.equal(catalog.findings.length,124);
+  assert.ok(['CG-02','CG-16','CG-21'].every(id => !catalog.findings.some(f => f.id === id)));
   const landing = await fetch(base, { redirect: 'manual' });
   assert.equal(landing.status, 302);
   assert.equal(landing.headers.get('location'), '/tools/bug-review/');

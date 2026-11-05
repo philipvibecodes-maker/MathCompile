@@ -1,12 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readCatalog, validateAnnotations } from './catalog.mjs';
+import { FIXED_FINDINGS, readCatalog, validateAnnotations } from './catalog.mjs';
 import { recipes } from './recipes.js';
 const root = new URL('../../', import.meta.url);
 
-test('all 127 report sections retain full reproduction details and exact source lines', async () => {
+test('the unresolved catalog retains full reproduction details and exact source lines', async () => {
   const catalog = await readCatalog(root);
-  assert.deepEqual(Object.fromEntries(['UI','CG','RENDER','PLOT'].map(area => [area,catalog.filter(f=>f.area===area).length])), {UI:34,CG:39,RENDER:36,PLOT:18});
+  assert.deepEqual(Object.fromEntries(['UI','CG','RENDER','PLOT'].map(area => [area,catalog.filter(f=>f.area===area).length])), {UI:34,CG:36,RENDER:36,PLOT:18});
+  assert.deepEqual([...FIXED_FINDINGS], ['CG-02', 'CG-16', 'CG-21']);
+  assert.ok([...FIXED_FINDINGS].every(id => !catalog.some(f => f.id === id)));
   assert.match(catalog.find(f=>f.id==='CG-06').markdown, /1-\(2\+2\)/);
   assert.match(catalog.find(f=>f.id==='CG-01').markdown, /Further CG-01/);
   assert.ok(!catalog.find(f=>f.id==='RENDER-05').markdown.includes('## Excluded observations'));

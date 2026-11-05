@@ -35,7 +35,7 @@ labeled runs in `perf-results/`.
 ## Bug reproduction and behavior review
 
 Run `npm run bugs` and open http://localhost:5574/tools/bug-review/ to browse
-the 127 findings from `codex/extended-bug-hunt`, load prepared reproduction
+the 124 unresolved findings from `codex/extended-bug-hunt`, load prepared reproduction
 worksheets, and save your observations and desired behavior. See
 [the review workflow](reports/bug-hunt/WORKFLOW.md) for instructions and limits.
 

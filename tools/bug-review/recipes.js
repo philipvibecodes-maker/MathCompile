@@ -7,7 +7,6 @@ const matrix = R`\begin{pmatrix}2&1\\1&2\end{pmatrix}`;
 // These are worksheet setups, not verdicts or automated keyboard reproductions.
 export const recipes = {
   'CG-01': { cells: separate('x=2', R`\sum_{x=1}^{3}x`) },
-  'CG-02': { cells: one('I=2', 'i^2') },
   'CG-03': { cells: one('a=2', R`\frac{1}{a}`) },
   'CG-04': { cells: one(R`\min_{i=1}^{3}2`) },
   'CG-05': { cells: one(R`A\in\mathbb{R}^{2\times2}`, R`\left\|A\right\|`) },
@@ -21,12 +20,10 @@ export const recipes = {
   'CG-13': { cells: one(R`\D^3(x^3+y^3)`) },
   'CG-14': { cells: one(R`\text{solve} x^2=16\text{ for }\pi<x`) },
   'CG-15': { cells: one(R`\int I_2 dx`) },
-  'CG-16': { cells: separate('x_{-}+x_{+}', 'x_{-}-x_{+}') },
   'CG-17': { cells: separate(`A=${matrix}`, R`B=\mathrm{inverse}(A)`, R`\det B`) },
   'CG-18': { cells: [python('def helper(x): return x+1'), python('def outer(x): return 2*helper(x)'), math(R`\mathrm{outer}(3)`)], target: 'python', note: 'After loading, copy cell 3’s standalone Python script and execute it in a Python/SymPy environment. The calculator succeeds and does not reproduce the standalone export defect.' },
   'CG-19': { cells: one(R`\text{solve}x^2=x^2,x`) },
   'CG-20': { cells: one(R`h=(x\mapsto x^2)`, 'h(3)') },
-  'CG-21': { cells: separate('A+1', `A=${matrix}`, R`\det A`) },
   'CG-22': { cells: separate(R`\text{def} A(x)=x^2`, 'A(2)') },
   'CG-23': { cells: one(R`\D(\sum_{j=1}^{3}jx)`) },
   'CG-24': { cells: separate(R`\text{def} f(x)=x^2`, 'f(2)', R`\D f`) },

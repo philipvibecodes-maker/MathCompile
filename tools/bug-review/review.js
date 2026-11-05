@@ -77,7 +77,7 @@ function filtered() {
 function renderList() {
   const list = filtered();
   const reviewed = Object.values(documentData.findings).filter(f => f.status !== 'unreviewed').length;
-  $('progress').textContent = `${reviewed} / 127 reviewed · ${list.length} shown`;
+  $('progress').textContent = `${reviewed} / ${catalog.findings.length} reviewed · ${list.length} shown`;
   $('findings').replaceChildren();
   for (const finding of list) {
     const button = document.createElement('button');

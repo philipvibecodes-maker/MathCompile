@@ -7,6 +7,9 @@ export const SOURCE = {
   reviewBaseline: '8e69e4d92e18b534d51a98f369c66a6778ea6637',
 };
 export const REPORTS = { UI: 'ui', CG: 'codegen', RENDER: 'rendering', PLOT: 'plotting' };
+// Fixed by PR #114. Keep the historical report Markdown unchanged, but do not
+// offer resolved findings in the active reproduction queue.
+export const FIXED_FINDINGS = new Set(['CG-02', 'CG-16', 'CG-21']);
 
 export async function readCatalog(root) {
   const findings = [];
@@ -17,6 +20,7 @@ export async function readCatalog(root) {
     for (let i = 0; i < lines.length; i++) {
       const match = lines[i].match(/^(#{2,3}) ((?:UI|CG|RENDER|PLOT)-\d{2}) — (.+)$/);
       if (!match) continue;
+      if (FIXED_FINDINGS.has(match[2])) continue;
       let end = i + 1;
       while (end < lines.length && !new RegExp(`^#{1,${match[1].length}} `).test(lines[end])) end++;
       const markdown = lines.slice(i, end).join('\n');
@@ -25,8 +29,8 @@ export async function readCatalog(root) {
       findings.push({ id: match[2], title: match[3], area, severity: severity.toLowerCase(), path, line: i + 1, markdown });
     }
   }
-  if (findings.length !== 127 || new Set(findings.map(f => f.id)).size !== 127)
-    throw new Error(`Expected 127 unique findings, found ${findings.length}`);
+  if (findings.length !== 124 || new Set(findings.map(f => f.id)).size !== 124)
+    throw new Error(`Expected 124 unique unresolved findings, found ${findings.length}`);
   return findings;
 }
 
