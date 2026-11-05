@@ -32,6 +32,13 @@ npm run dev        # http://localhost:5573
 other served build; `node perf/compare.mjs <labelA> <labelB>` diffs two
 labeled runs in `perf-results/`.
 
+## Bug reproduction and behavior review
+
+Run `npm run bugs` and open http://localhost:5574/tools/bug-review/ to browse
+the 127 findings from `codex/extended-bug-hunt`, load prepared reproduction
+worksheets, and save your observations and desired behavior. See
+[the review workflow](reports/bug-hunt/WORKFLOW.md) for instructions and limits.
+
 ## Layout
 
 ```
