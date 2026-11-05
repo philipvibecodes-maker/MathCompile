@@ -13,6 +13,14 @@ const series = (opt: Record<string, unknown>) =>
   opt.series as Record<string, unknown>[];
 
 describe('echartsOption', () => {
+  it('renders finite point sets as unconnected markers', () => {
+    const opt = echartsOption({ ...plot([{ type: 'scatter', mode: 'markers',
+      x: [1, 3], y: [2, 4], marker: { color: '#ff0000', size: 6 } }]),
+      kind: 'set2' }, false)!;
+    expect(series(opt)[0]).toMatchObject({ type: 'scatter', symbolSize: 6,
+      data: [[1, 2], [3, 4]], itemStyle: { color: '#ff0000' } });
+  });
+
   it('converts a 2-D scatter to a line series', () => {
     const opt = echartsOption(
       plot([

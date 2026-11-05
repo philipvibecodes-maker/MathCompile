@@ -23,6 +23,7 @@ export function loadECharts(): Promise<EChartsModule> {
   ]).then(([core, charts, comps, renderers, glCharts, glComps]) => {
     core.use([
       charts.LineChart,
+      charts.ScatterChart,
       charts.HeatmapChart,
       comps.GridComponent,
       comps.TooltipComponent,
@@ -264,21 +265,22 @@ function opt2d(
     const ys = tr.y as number[];
     const line = isObj(tr.line) ? tr.line : {};
     const markers = str(tr.mode, '').includes('markers');
+    const marker = isObj(tr.marker) ? tr.marker : {};
     return {
-      type: 'line',
+      type: tr.mode === 'markers' ? 'scatter' : 'line',
       name: str(tr.name, ''),
       data: xs
         .map((x, i) => [x, gap(ys[i])] as const)
         .filter(([x]) => x !== null),
       showSymbol: markers,
       symbol: 'circle',
-      symbolSize: 4,
+      symbolSize: num(marker.size, 4),
       connectNulls: false,
       lineStyle: {
         color: str(line.color, '#3b82f6'),
         width: num(line.width, 2),
       },
-      itemStyle: { color: str(line.color, '#3b82f6') },
+      itemStyle: { color: str(marker.color, str(line.color, '#3b82f6')), opacity: num(marker.opacity, 1) },
       emphasis: { disabled: true },
       z: 3,
     };

@@ -247,6 +247,11 @@ export function parseCellLatex(latex: string): MathJson | undefined {
           ? undefined
           : pythonSourceNode(code);
       }
+      // A leading plot marker before braces makes CE interpret the set
+      // as a conditional application (When/Piecewise). Parse its operand
+      // separately, then restore the marker for statement normalization.
+      const setPlot = /^\s*\\text\s*\{\s*plot\s*\}\s*(?=(?:\\left\s*)?\\\{)/.exec(s);
+      if (setPlot) return ['InvisibleOperator', "'plot'", parseStatement(s.slice(setPlot[0].length))];
       // `\text{solve}`/`\text{dsolve}`/`\text{pdesolve}` — strip the
       // marker word and wrap the rest so normalize() can lower it to
       // the Solve/DSolve/PDESolve heads.

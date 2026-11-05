@@ -540,6 +540,25 @@ column vector (a `\pmatrix` column) is component-wise:
 | `\text{plot} \begin{pmatrix} u\cos v \\ u\sin v \\ v \end{pmatrix}` | a parametric ℝ²→ℝ³ surface |
 | `\text{plot} \begin{pmatrix} -y \\ x \end{pmatrix}` | an ℝ²→ℝ² map — a quiver vector field, with an image-of-the-grid view from the figure's **field**/**image** menu |
 
+Sets of coordinate points and set-builder regions also work:
+
+| You write | Draws |
+| --- | --- |
+| `\text{plot} \{(1,2),(3,4)\}` | isolated 2-D points |
+| `\text{plot} \{(1,2,3),(4,5,6)\}` | isolated 3-D points |
+| `\text{plot} \{(x,y) : x^2+y^2 < 1\}` | a sampled disk |
+| `\text{plot} \{(x,y) : x^2+y^2 = 1\}` | the circle boundary |
+| `\text{plot} \{(x,y,z) : x^2+y^2+z^2 < 1\}` | a sampled ball |
+| `\text{plot} \{(x,y,z) : x^2+y^2+z^2 = 1\}` | the sphere boundary |
+
+You can also plot an implicit equation or inequality directly, such as
+`\text{plot} x^2+y^2=1` or `\text{plot} x^2+y^2+z^2<1`.
+Inside a plotted set, parentheses denote coordinates. Points must have
+consistently two or three finite real coordinates. Set regions use a
+finite grid over `[-3,3]` on each axis; narrow features can be missed.
+Use a `for` clause to change the window. Set plots appear once SymPy is
+ready, and Python export includes the NumPy/Plotly plotting program.
+
 Add `\text{ for }` plus a condition to set the domain (a missing end
 falls back to a default range):
 
@@ -551,8 +570,8 @@ falls back to a default range):
 | `\text{plot} (u,v,1) \text{ for } u \in (0,1),\, v \in (0,2\pi)` | per-variable bounds, combined with `,` or `\land` |
 | `… \text{ for } (u,v) \in I_1 \times I_2` | a product of intervals names both bounds at once |
 
-Conditions that aren't intervals — finite sets, equalities — can't be
-sampled and get an `i` note. Figures are live: pan and zoom 2-D plots,
+Domain clauses that aren't intervals or variable bounds — finite-set
+membership and equalities — get an `i` note. Figures are live: pan and zoom 2-D plots,
 rotate and zoom 3-D scenes, and the ℝ²→ℝ² figure's menu switches
 between the field and image views. While the SymPy engine is still
 booting, the figure is a quick estimate drawn by the in-page engine
