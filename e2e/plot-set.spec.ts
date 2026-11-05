@@ -27,12 +27,16 @@ for (const [label, latex, type, dim] of [
     await expect(page.locator('.js-plotly-plot')).toBeVisible({ timeout: 60_000 });
     await expect.poll(() => page.evaluate(() => {
       const gd = document.querySelector('.js-plotly-plot') as unknown as { data?: { type?: string }[] };
-      return gd?.data?.[0]?.type;
+      return gd?.data?.find((trace) =>
+        ['set', 'set (sampled)', 'surf'].includes((trace as { name?: string }).name ?? '')
+      )?.type;
     }), { timeout: 30_000 }).toBe(type);
     await expect(page.locator('.calc-error')).toHaveCount(0);
     const trace = await page.evaluate(() => {
       const gd = document.querySelector('.js-plotly-plot') as unknown as { data: Record<string, unknown>[] };
-      return gd.data[0];
+      return gd.data.find((item) =>
+        ['set', 'set (sampled)', 'surf'].includes(String(item.name ?? ''))
+      )!;
     });
     if (type.startsWith('scatter')) {
       expect(trace.mode).toBe('markers');
@@ -40,6 +44,19 @@ for (const [label, latex, type, dim] of [
       expect(xs.length).toBeGreaterThan(0);
       if (label.endsWith('points')) expect(xs).toEqual([1, dim === 2 ? 3 : 4]);
       else expect(xs.every(x => Math.abs(x) < 1)).toBe(true);
+    }
+    if (dim === 3) {
+      const names = await page.evaluate(() => {
+        const gd = document.querySelector('.js-plotly-plot') as unknown as { data: { name?: string }[] };
+        return gd.data.map((item) => item.name);
+      });
+      expect(names).toEqual(expect.arrayContaining(['wallgrid', 'box', 'axis', 'xysheet']));
+      await expect.poll(() => page.evaluate(() => {
+        const gd = document.querySelector('.js-plotly-plot') as unknown as {
+          layout?: { scene?: { xaxis?: { visible?: boolean }; camera?: { eye?: { x?: number } } } };
+        };
+        return [gd.layout?.scene?.xaxis?.visible, gd.layout?.scene?.camera?.eye?.x];
+      })).toEqual([false, 0.35]);
     }
   });
 }
