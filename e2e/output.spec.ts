@@ -241,6 +241,31 @@ test('import-all checkbox switches between import * and sp. qualifiers', async (
   await expect(first).toContainText('x = sp.Symbol("x")');
 });
 
+test('Python output spells sign subscripts as readable identifiers', async () => {
+  await cell(page, 0).evaluate((el) => {
+    (el as { value: string }).value = 'x_{-}-x_{+}';
+  });
+  await setTarget(page, 'python');
+  const output = page.locator('.cell-python').first();
+  await expect(output).toContainText('x_minus_ = Symbol("x_{-}")');
+  await expect(output).toContainText('x_plus_ = Symbol("x_{+}")');
+  await expect(output).toContainText('x_minus_ - x_plus_');
+});
+
+test('Python output warns when another cell redefines a variable', async () => {
+  await cell(page, 0).evaluate((el) => {
+    (el as { value: string }).value = 'a=2';
+  });
+  await page.locator('.add-expr').click();
+  await cell(page, 1).evaluate((el) => {
+    (el as { value: string }).value = 'a=3';
+  });
+  await setTarget(page, 'python');
+  const row = page.locator('.expr-row').nth(1);
+  await expect(row.locator('.cell-python')).toContainText('a = 3');
+  await expect(row.locator('.cell-issues')).toContainText('Warning: "a" is redefined');
+});
+
 // \antid is an insertion alias for a boundless indefinite ∫ — the latex
 // output view (and its copy) shows the canonical \int, which is also what
 // a pasted-elsewhere LaTeX doc needs. \iint is a real boundless ∬ sign,

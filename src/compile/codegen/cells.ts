@@ -73,7 +73,10 @@ function cellBody(ir: MathJson, scope: Scope): CellBody {
   });
   const parts = nodes.map(({ stmt, line }) => {
     const issuesAt = scope.issues.length;
+    const errorsAt = scope.errorCount;
+    scope.beginStatement();
     const out = emitStatement(stmt, emitter);
+    scope.finishStatement(out.lines.length > 0 && scope.errorCount === errorsAt);
     // Every issue raised while emitting this statement — notes included,
     // so unbound issues can anchor at the line that produced them.
     const emitted = scope.issues.slice(issuesAt);

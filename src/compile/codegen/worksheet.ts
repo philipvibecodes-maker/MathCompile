@@ -1,5 +1,5 @@
 import { cellStatements, compileCellInScope } from './cells';
-import { collectDeclared, collectMatrices } from './declarations';
+import { collectDeclared } from './declarations';
 import { STATEMENT_CALL_HEADS, STATEMENT_HEADS } from './heads';
 import { headOf, isArr, isStr } from './nodes';
 import { Scope } from './scope';
@@ -129,10 +129,12 @@ export function compileWorksheet(
       message: `cell ${n.cell + 1}: ${n.message}`,
     });
   }
+  // Advisory definition history spans the worksheet, while each exported
+  // cell still gets independent execution/type/name-allocation state.
+  const definitions = new Set<string>();
   const cellBodies = perCell.map((r, i) => {
     if (r.ir === undefined) return { lines: [] as string[], pySrc: [] as string[] };
     const matrixNames = new Set<string>();
-    collectMatrices(r.ir, matrixNames);
     // `declaredFns` is worksheet-wide, but cells are independent
     // programs — a name def'd in cell 1 still gets its own
     // `f = sp.Function` decl when called in cell 2, and only an
@@ -149,6 +151,7 @@ export function compileWorksheet(
       i + 1,
       'python',
       pyRegistry.fns,
+      definitions,
     );
     scope.beginCell(i, issues);
     const lines = cellStatements(r.ir, scope);
