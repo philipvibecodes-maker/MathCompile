@@ -207,7 +207,7 @@ export function emitPlotPython(
   if (isHead(expr, 'Set') || relation) {
     const variables = [...new Set(freeNames(expr))].sort();
     const value = relation
-      ? `${sp}ConditionSet((${variables.map(pyIdent).join(', ')}), ${emitted})`
+      ? `${sp}ConditionSet((${variables.map((name) => emitter.scope.ident(name)).join(', ')}), ${emitted})`
       : emitted;
     const dom = `{${[...(domain ?? [])].map(([v, r]) =>
       `${JSON.stringify(v)}: (${r.lo ?? 'None'}, ${r.hi ?? 'None'})`).join(', ')}}`;
