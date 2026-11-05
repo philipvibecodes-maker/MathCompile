@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FIXED_FINDINGS, readCatalog, validateAnnotations } from './catalog.mjs';
 import { recipes } from './recipes.js';
+import { removeFindings } from './schema.js';
 const root = new URL('../../', import.meta.url);
 
 test('the unresolved catalog retains full reproduction details and exact source lines', async () => {
@@ -33,4 +34,12 @@ test('import validation rejects malformed records and unknown report IDs', () =>
   assert.equal(validateAnnotations({version:1,findings:{'CG-06':record}}, ids).findings['CG-06'].behavior,'not-applicable');
   for (const value of [null, {}, {version:1,findings:[]}, {version:1,findings:{'CG-99':record}}, {version:1,findings:{'CG-06':{...record,status:'fixed'}}}, {version:1,findings:{'CG-06':{...record,notes:null}}}, {version:1,findings:{'CG-06':{...record,setup:{cells:'invalid'}}}}, {version:1,findings:{'CG-06':{...record,evidence:{revision:4}}}}])
     assert.throws(()=>validateAnnotations(value,ids));
+});
+
+test('retired findings are removed without hiding arbitrary unknown IDs', () => {
+  const record = {status:'unreviewed',behavior:'unspecified',observed:'',desired:'',notes:''};
+  const data = {version:1,findings:{'CG-02':record,'CG-06':record,FAKE:record}};
+  const pruned = removeFindings(data,new Set(['CG-02']));
+  assert.deepEqual(Object.keys(pruned.findings),['CG-06','FAKE']);
+  assert.throws(()=>validateAnnotations(pruned,new Set(['CG-06'])),/FAKE/);
 });

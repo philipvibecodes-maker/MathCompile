@@ -1,5 +1,14 @@
 export const STATUSES = ['unreviewed', 'reproduced', 'not-reproduced', 'needs-decision', 'not-a-bug'];
 export const DECISIONS = ['unspecified', 'describe', 'not-applicable'];
+export function removeFindings(data, ids) {
+  if (!data?.findings || typeof data.findings !== 'object' || Array.isArray(data.findings)) return data;
+  return {
+    ...data,
+    findings: Object.fromEntries(
+      Object.entries(data.findings).filter(([id]) => !ids.has(id)),
+    ),
+  };
+}
 export function validateAnnotations(data, ids) {
   if (!data || data.version !== 1 || !data.findings || typeof data.findings !== 'object' || Array.isArray(data.findings))
     throw new Error('Expected a version 1 annotation document with a findings object.');

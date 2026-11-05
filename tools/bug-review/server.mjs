@@ -3,7 +3,7 @@ import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolve, dirname } from 'node:path';
-import { readCatalog, SOURCE, validateAnnotations } from './catalog.mjs';
+import { FIXED_FINDINGS, readCatalog, SOURCE, validateAnnotations } from './catalog.mjs';
 
 const root = new URL('../../', import.meta.url);
 const findings = await readCatalog(root);
@@ -28,7 +28,7 @@ const server = await createServer({
     });
     vite.middlewares.use('/__bug-review', async (req, res) => {
       try {
-        if (req.method === 'GET' && req.url === '/catalog') return send(res, 200, { findings, source: SOURCE, current: { revision, branch } });
+        if (req.method === 'GET' && req.url === '/catalog') return send(res, 200, { findings, fixed: [...FIXED_FINDINGS], source: SOURCE, current: { revision, branch } });
         if (req.url !== '/annotations') return send(res, 404, { error: 'Unknown review endpoint' });
         if (req.method === 'GET') {
           await saveQueue;

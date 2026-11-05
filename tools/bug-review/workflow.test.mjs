@@ -39,8 +39,19 @@ test('review workflow loads mixed worksheets, captures observations, saves and r
   assert.equal(invalid.status,403);
   browser = await chromium.launch({...(process.env.BUG_REVIEW_CHROMIUM ? {executablePath:process.env.BUG_REVIEW_CHROMIUM}:{}),headless:true});
   const page = await browser.newPage({viewport:{width:1700,height:1000}});
+  // A browser draft from the previous 127-finding catalog must not make the
+  // review page fatal after fixed findings are retired.
+  await page.goto(`${base}/tools/bug-review/style.css`);
+  await page.evaluate(() => localStorage.setItem('mathcompile-bug-review-draft-v1', JSON.stringify({
+    version: 1,
+    findings: {
+      'CG-02': {status:'reproduced',behavior:'unspecified',observed:'old',desired:'',notes:''},
+    },
+  })));
+  page.once('dialog', dialog => dialog.accept());
   await page.goto(`${base}/tools/bug-review/#CG-06`);
   await page.locator('#title').filter({hasText:'CG-06'}).waitFor();
+  await page.locator('#fatal').waitFor({state:'hidden'});
   await page.frameLocator('#app').locator('math-field').first().waitFor({timeout:60000});
   await page.locator('#target').selectOption('python');
   await page.locator('#load').click();

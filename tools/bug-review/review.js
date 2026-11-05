@@ -1,6 +1,6 @@
 import { marked } from 'marked';
 import { recipes } from './recipes.js';
-import { validateAnnotations } from './schema.js';
+import { removeFindings, validateAnnotations } from './schema.js';
 
 const $ = id => document.getElementById(id);
 const blank = () => ({ status: 'unreviewed', behavior: 'unspecified', observed: '', desired: '', notes: '' });
@@ -173,11 +173,15 @@ function download(name, data) {
 async function start() {
   [catalog, documentData] = await Promise.all([api('catalog'), api('annotations')]);
   const ids = new Set(catalog.findings.map(f => f.id));
+  const fixedIds = new Set(catalog.fixed ?? []);
   validateAnnotations(documentData, ids);
   documentData.source ??= catalog.source;
   const backup = localStorage.getItem(draftKey);
   if (backup) {
-    const recovered = validateAnnotations(JSON.parse(backup), ids);
+    // Drafts created before a finding was retired can still be recovered.
+    // Remove only server-declared fixed IDs; arbitrary unknown IDs remain a
+    // validation error instead of being silently accepted.
+    const recovered = validateAnnotations(removeFindings(JSON.parse(backup), fixedIds), ids);
     if (confirm('A browser draft from an unfinished save is available. Restore it over the saved review file?')) {
       documentData = recovered; changed();
     } else { localStorage.removeItem(draftKey); }
@@ -213,7 +217,7 @@ async function start() {
   $('import').onchange = async () => {
     try {
       const file = $('import').files[0]; if (!file) return;
-      const incoming = validateAnnotations(JSON.parse(await file.text()), ids);
+      const incoming = validateAnnotations(removeFindings(JSON.parse(await file.text()), fixedIds), ids);
       if (!confirm(`Merge ${Object.keys(incoming.findings).length} reviews? Imported entries replace matching IDs. Other reviews are kept.`)) return;
       Object.assign(documentData.findings, incoming.findings); changed(); select(selected.id);
     } catch (error) { displaySave(`Import failed: ${error.message}`, true); }
