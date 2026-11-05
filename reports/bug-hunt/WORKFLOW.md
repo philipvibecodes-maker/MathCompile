@@ -1,8 +1,9 @@
 # Reproduce and review reported bugs
 
 The reports were found on **`codex/extended-bug-hunt`**, commit
-`8e12e56b595992996e1dc7943c5bab0e709971b2`. The five original Markdown
-files in this directory are copied unchanged from that commit. They contain
+`8e12e56b595992996e1dc7943c5bab0e709971b2`. The five Markdown files in this
+directory originate from that commit; CG-15's title was later corrected to
+describe its incompatible matrix-plus-symbol failure. They contain
 127 finding groups: 34 UI, 39 compiler/calculator, 36 rendering, and 18 plotting.
 The active workflow excludes CG-02, CG-16, and CG-21, which were fixed by
 PR #114, leaving 124 unresolved findings (36 compiler/calculator).

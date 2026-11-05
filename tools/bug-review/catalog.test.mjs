@@ -12,6 +12,7 @@ test('the unresolved catalog retains full reproduction details and exact source 
   assert.ok([...FIXED_FINDINGS].every(id => !catalog.some(f => f.id === id)));
   assert.match(catalog.find(f=>f.id==='CG-06').markdown, /1-\(2\+2\)/);
   assert.match(catalog.find(f=>f.id==='CG-01').markdown, /Further CG-01/);
+  assert.match(catalog.find(f=>f.id==='CG-15').title, /incompatible matrix-plus-symbol operands/);
   assert.ok(!catalog.find(f=>f.id==='RENDER-05').markdown.includes('## Excluded observations'));
   assert.ok(catalog.every(f=>['high','medium','low'].includes(f.severity)));
   for (const id of Object.keys(recipes)) assert.ok(catalog.some(f=>f.id===id), id);
