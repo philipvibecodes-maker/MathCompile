@@ -31,9 +31,9 @@ test('the unresolved catalog retains full reproduction details and exact source 
 
 test('import validation rejects malformed records and unknown report IDs', () => {
   const ids = new Set(['CG-06']);
-  const record = {status:'needs-decision',behavior:'not-applicable',observed:'Observed',desired:'',notes:''};
+  const record = {priority:'high',status:'needs-decision',behavior:'not-applicable',observed:'Observed',desired:'',notes:''};
   assert.equal(validateAnnotations({version:1,findings:{'CG-06':record}}, ids).findings['CG-06'].behavior,'not-applicable');
-  for (const value of [null, {}, {version:1,findings:[]}, {version:1,findings:{'CG-99':record}}, {version:1,findings:{'CG-06':{...record,status:'fixed'}}}, {version:1,findings:{'CG-06':{...record,notes:null}}}, {version:1,findings:{'CG-06':{...record,setup:{cells:'invalid'}}}}, {version:1,findings:{'CG-06':{...record,evidence:{revision:4}}}}])
+  for (const value of [null, {}, {version:1,findings:[]}, {version:1,findings:{'CG-99':record}}, {version:1,findings:{'CG-06':{...record,status:'fixed'}}}, {version:1,findings:{'CG-06':{...record,priority:'urgent'}}}, {version:1,findings:{'CG-06':{...record,notes:null}}}, {version:1,findings:{'CG-06':{...record,setup:{cells:'invalid'}}}}, {version:1,findings:{'CG-06':{...record,evidence:{revision:4}}}}])
     assert.throws(()=>validateAnnotations(value,ids));
 });
 

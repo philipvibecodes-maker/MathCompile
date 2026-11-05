@@ -64,6 +64,8 @@ test('review workflow loads mixed worksheets, captures observations, saves and r
   assert.ok(generated.trim().length > 0);
   await page.locator('#capture').click();
   assert.equal(await page.locator('#status').inputValue(),'unreviewed');
+  assert.equal(await page.locator('#priority').inputValue(),catalog.findings.find(f=>f.id==='CG-06').severity);
+  await page.locator('#priority').selectOption('low');
   await page.locator('#observed').fill('Subtraction loses parentheses.');
   await page.locator('#desired').fill('1-(2+2) must evaluate to -3.');
   await page.locator('#behavior').selectOption('describe');
@@ -72,11 +74,14 @@ test('review workflow loads mixed worksheets, captures observations, saves and r
   let saved = JSON.parse(await readFile(file,'utf8'));
   assert.equal(saved.findings['CG-06'].evidence.worksheet.cells[0].latex,'1-(2+2)');
   assert.equal(saved.findings['CG-06'].status,'reproduced');
+  assert.equal(saved.findings['CG-06'].priority,'low');
   assert.equal(saved.findings['CG-06'].evidence.revision,catalog.current.revision);
   assert.equal(saved.findings['CG-06'].desired,'1-(2+2) must evaluate to -3.');
   await page.reload();
   await page.locator('#desired').filter({visible:true}).waitFor();
   await page.waitForFunction(()=>document.querySelector('#desired').value==='1-(2+2) must evaluate to -3.');
+  assert.equal(await page.locator('#priority').inputValue(),'low');
+  await page.locator('#findings button[aria-current="true"] small').filter({hasText:/^low ·/}).waitFor();
   await page.frameLocator('#app').locator('math-field').first().waitFor();
   await page.locator('#search').click();
   await page.locator('#search').fill('CG-11');

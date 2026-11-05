@@ -52,8 +52,10 @@ visits to retain reproduction worksheets. Review annotations are saved to disk.
    SymPy is ready; wait for the final result when required. For an unobstructed
    viewport, load the setup, then use **Open app in a tab**. That tab reads the
    saved worksheet when opened; it does not live-sync with the embedded app.
-5. Record **Observed behavior** and select a reproduction status. Describe your
-   desired behavior and acceptance criteria, or select **Not applicable**.
+5. Set the review **Priority**, record **Observed behavior**, and select a
+   reproduction status. Priority starts at the report's original severity but
+   is independently editable. Describe your desired behavior and acceptance
+   criteria, or select **Not applicable**.
    The historical report's proposed behavior remains visible separately and is
    never substituted for your decision.
 6. **Capture observation** stores the embedded app's actual worksheet, output

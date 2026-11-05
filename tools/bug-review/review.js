@@ -3,10 +3,10 @@ import { recipes } from './recipes.js';
 import { removeFindings, validateAnnotations } from './schema.js';
 
 const $ = id => document.getElementById(id);
-const blank = () => ({ status: 'unreviewed', behavior: 'unspecified', observed: '', desired: '', notes: '' });
+const blank = priority => ({ priority, status: 'unreviewed', behavior: 'unspecified', observed: '', desired: '', notes: '' });
 let catalog, documentData, selected, saveTimer, pending = false, saving = false;
 const draftKey = 'mathcompile-bug-review-draft-v1';
-const fields = ['status', 'behavior', 'observed', 'desired', 'notes'];
+const fields = ['priority', 'status', 'behavior', 'observed', 'desired', 'notes'];
 const statusLabels = { unreviewed: 'Unreviewed', reproduced: 'Reproduced', 'not-reproduced': 'Not reproduced', 'needs-decision': 'Needs decision', 'not-a-bug': 'Not a bug' };
 const escape = text => text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const renderer = new marked.Renderer();
@@ -45,7 +45,7 @@ async function save() {
   if (pending && snapshot !== JSON.stringify(documentData)) await save();
 }
 function currentRecord() {
-  return documentData.findings[selected.id] ??= blank();
+  return documentData.findings[selected.id] ??= blank(selected.severity);
 }
 function readSetup() {
   return {
@@ -83,23 +83,25 @@ function renderList() {
     const button = document.createElement('button');
     button.setAttribute('aria-current', String(finding.id === selected?.id));
     const title = document.createElement('span'); title.textContent = `${finding.id} · ${finding.title}`;
-    const state = document.createElement('small'); state.textContent = `${finding.severity} · ${statusLabels[documentData.findings[finding.id]?.status ?? 'unreviewed']}`;
+    const record = documentData.findings[finding.id];
+    const priority = record?.priority ?? finding.severity;
+    const state = document.createElement('small'); state.textContent = `${priority} · ${statusLabels[record?.status ?? 'unreviewed']}`;
     button.append(title, state); button.onclick = () => select(finding.id); $('findings').append(button);
   }
 }
 function select(id) {
   selected = catalog.findings.find(f => f.id === id) ?? catalog.findings[0];
   history.replaceState(null, '', `#${selected.id}`);
-  const record = documentData.findings[selected.id] ?? blank();
+  const record = documentData.findings[selected.id] ?? blank(selected.severity);
   const recipe = recipes[selected.id];
   const setup = record.setup ?? recipe ?? { cells: [] };
   $('title').textContent = `${selected.id} · ${selected.title}`;
-  $('source').textContent = `${selected.severity} · ${selected.path}:${selected.line}`;
+  $('source').textContent = `Report priority: ${selected.severity} · ${selected.path}:${selected.line}`;
   $('recipe-note').textContent = recipe?.note ?? (recipe ? 'Representative worksheet setup. Follow the original finding below for additional actions, expected results, and validation limits.' : 'Manual reproduction. Follow the original finding below. Add cells yourself or choose input snippets; some findings require typing, browser configuration, pure-helper checks, or fault injection.');
   $('cells').replaceChildren();
   for (const cell of setup.cells ?? []) addCell(cell, false);
   $('target').value = setup.target ?? 'calculator'; $('import-all').checked = setup.importAll ?? true;
-  fields.forEach(key => { $(key).value = record[key]; });
+  fields.forEach(key => { $(key).value = key === 'priority' ? (record.priority ?? selected.severity) : record[key]; });
   $('capture-info').textContent = record.evidence ? `Captured ${record.evidence.at} · ${record.evidence.revision.slice(0, 8)} · ${record.evidence.target}` : 'No observation captured yet. Capture records the current worksheet, settings, visible app text, and code revision.';
   $('report').innerHTML = marked.parse(selected.markdown, { renderer });
   for (const link of $('report').querySelectorAll('a')) {
